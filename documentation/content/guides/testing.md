@@ -286,16 +286,20 @@ async work that may produce several intermediate renders. It returns a
 that returned snapshot rather than reading `view.html` again:
 
 ```scala
-import org.jsoup.Jsoup
+import scalive.testing.{HtmlQueryError, RenderedHtml}
 
 for
   _ <- view.clickButton("Run report")
   matched <- view.awaitHtml("report succeeds", java.time.Duration.ofSeconds(10)) { html =>
-               val status = Jsoup.parse(html).select("[data-report-status]")
-               status.size() == 1 && status.text() == "Succeeded"
+               RenderedHtml.parse(html).selectOne("[data-report-status]") match
+                 case Right(status) => status.text == "Succeeded"
+                 case Left(HtmlQueryError.NotFound(_) | HtmlQueryError.MultipleMatches(_, _)) =>
+                   false
+                 case Left(error @ HtmlQueryError.InvalidSelector(_, _)) =>
+                   throw IllegalArgumentException(error.toString)
              }
 yield assertTrue(
-  Jsoup.parse(matched).select("[data-report-status]").text() == "Succeeded"
+  RenderedHtml.parse(matched).selectOne("[data-report-status]").map(_.text) == Right("Succeeded")
 )
 ```
 
@@ -306,7 +310,9 @@ limited by `awaitDiff`'s five-second timeout. A
 `java.util.concurrent.TimeoutException` includes the description, requested
 duration, and last observed HTML. Predicate exceptions fail the task. Keep the
 predicate quick and nonblocking. Retirement or disconnection fails the wait;
-it never follows navigation to another view.
+it never follows navigation to another view. In this predicate, missing or multiple
+status elements mean not ready; an invalid selector fails immediately instead of
+being hidden until timeout.
 
 The deadline uses the current ZIO clock. In `ZIOSpecDefault` this is `TestClock`:
 advance it explicitly for deterministic deadline tests, or wrap just the wait in
@@ -318,6 +324,72 @@ Only one waiter may consume a view's diff queue: do not run `awaitHtml` and
 correlated click, send, and form actions before waiting. Each check observes the
 latest semantic server projection, so transient states can be missed. This is
 not browser simulation and does not execute JavaScript or prove DOM patching.
+
+### Inspect Retained HTML Snapshots {#inspect-retained-html-snapshots}
+
+Use @:apiSymbol(def:scalive.testing.RenderedHtml.parse)`RenderedHtml.parse(html)`@:@
+to query any retained HTML string, including `view.html`, the result of `awaitHtml`,
+or a disconnected page's body. A
+@:apiSymbol(class:scalive.testing.RenderedHtml)`RenderedHtml`@:@ keeps the exact
+input in `html`, not a reserialized document; `text` is normalized whole-document
+text. Parse old strings directly rather than querying the current live view:
+
+```scala
+import scalive.testing.{ConnectedRender, HtmlQueryError, RenderedHtml}
+
+for
+  retained <- ZIO.scoped {
+                for
+                  view   <- ConnectedRender.join(CounterLiveView())
+                  before <- view.html
+                  _      <- view.clickButton("Increment")
+                  after  <- view.html
+                yield (before, after)
+              }
+yield
+  // The connected view is already closed; both strings remain queryable.
+  val before = RenderedHtml.parse(retained._1)
+  val after  = RenderedHtml.parse(retained._2)
+  assertTrue(
+    before.html == retained._1,
+    before.selectOne("#count").map(_.text) == Right("0"),
+    after.selectOne("#count").map(_.text) == Right("1"),
+    before.selectOne("#missing") == Left(HtmlQueryError.NotFound("#missing")),
+    after.selectAll("#missing").map(_.isEmpty) == Right(true)
+  )
+```
+
+`CounterLiveView` represents application code with an initial count of zero and
+no `#missing` element. CSS queries use jsoup selector syntax:
+
+- @:apiSymbol(def:scalive.testing.RenderedHtml.selectOne)`selectOne(css)`@:@ returns
+  `Either[HtmlQueryError, RenderedElement]` and requires exactly one match. Zero
+  matches produce `NotFound(selector)`; more than one produces
+  `MultipleMatches(selector, count)`.
+- @:apiSymbol(def:scalive.testing.RenderedHtml.selectAll)`selectAll(css)`@:@ returns
+  `Either[HtmlQueryError, Vector[RenderedElement]]`, including `Right(Vector.empty)`
+  for no matches.
+- Both return
+  @:apiSymbol(enum:scalive.testing.HtmlQueryError)`HtmlQueryError`@:@'s
+  `InvalidSelector(selector, message)` for malformed selectors. Assert on the
+  `Either` or handle its errors explicitly rather than hiding failures in defaults.
+
+Each @:apiSymbol(class:scalive.testing.RenderedElement)`RenderedElement`@:@ exposes
+read-only `tagName`, Jsoup-normalized `text`, and `value`.
+@:apiSymbol(def:scalive.testing.RenderedElement.attribute)`attribute(name)`@:@ is
+case-insensitive and returns entity-decoded values: `None` means absent, while
+`Some("")` means present but empty. Relative URL attributes stay relative; lookup
+does not resolve them against a base URL. `value` follows the existing
+`RenderedField` semantics: textarea text has outer whitespace trimmed but retains
+internal whitespace; other elements return their own `value` attribute or `""`
+if absent. It does not derive a `select`'s
+value from selected options or supply a checkbox's browser-default `"on"` value.
+
+Snapshots and query results are immutable and remain valid after later renders,
+navigation, or harness closure. Every query uses an isolated working document,
+so selector evaluation cannot change other queries or retained results.
+These are semantic server-HTML assertions only: they do not execute JavaScript,
+simulate successful-control selection, or prove browser DOM patching.
 
 ### Test Typed Form Behavior {#test-typed-form-behavior}
 

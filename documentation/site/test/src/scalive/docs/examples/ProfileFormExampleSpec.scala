@@ -1,11 +1,10 @@
 package scalive.docs.examples
 
-import org.jsoup.Jsoup
 import zio.*
 import zio.test.*
 
 import scalive.*
-import scalive.testing.{ConnectedRender, ConnectedView}
+import scalive.testing.{ConnectedRender, ConnectedView, RenderedHtml}
 
 object ProfileFormExampleSpec extends ZIOSpecDefault:
   private def formData(name: String, email: String, biography: String): FormData =
@@ -18,7 +17,7 @@ object ProfileFormExampleSpec extends ZIOSpecDefault:
     )
 
   private def document(harness: ConnectedView[?]) =
-    harness.html.map(Jsoup.parseBodyFragment)
+    harness.html.map(RenderedHtml.parse)
 
   private val validFields = Vector(
     ProfileFormExample.Profile.Name.name      -> "  Ada Lovelace  ",
@@ -55,23 +54,26 @@ object ProfileFormExampleSpec extends ZIOSpecDefault:
         for
           harness <- ConnectedRender.join(new ProfileFormExample)
           initial <- document(harness)
-          _ <- harness.changeForm(
+          _       <- harness.changeForm(
                  "[data-profile-form]",
                  Vector(
-                   profile.Name.name                  -> "",
-                   s"profile[_unused_email]"          -> "",
-                   profile.Email.name                 -> "",
-                   s"profile[_unused_biography]"      -> "",
-                   profile.Biography.name             -> ""
+                   profile.Name.name             -> "",
+                   s"profile[_unused_email]"     -> "",
+                   profile.Email.name            -> "",
+                   s"profile[_unused_biography]" -> "",
+                   profile.Biography.name        -> ""
                  ),
                  target = Some(profile.Name.name)
                )
           changed <- document(harness)
         yield assertTrue(
-          initial.select("[data-field-error] .form-error").isEmpty,
-          changed.select("[data-field-error=name] .form-error").text() == "Name is required.",
-          changed.select("[data-field-error=email] .form-error").isEmpty,
-          changed.select("[data-field-error=biography] .form-error").isEmpty
+          initial.selectAll("[data-field-error] .form-error").map(_.isEmpty) == Right(true),
+          changed.selectOne("[data-field-error=name] .form-error").map(_.text) ==
+            Right("Name is required."),
+          changed.selectAll("[data-field-error=email] .form-error").map(_.isEmpty) == Right(true),
+          changed.selectAll("[data-field-error=biography] .form-error").map(_.isEmpty) == Right(
+            true
+          )
         )
       }
     },
@@ -80,44 +82,47 @@ object ProfileFormExampleSpec extends ZIOSpecDefault:
         val profile = ProfileFormExample.Profile
         for
           harness <- ConnectedRender.join(new ProfileFormExample)
-          _ <- harness.submitForm(
+          _       <- harness.submitForm(
                  "[data-profile-form]",
-                  Vector(
-                    profile.Name.name      -> "",
-                    profile.Email.name     -> "invalid",
-                    profile.Biography.name -> ""
-                  ),
-                  submitter = Some(profile.Submitter.raw(profile.Intent.Save))
-                )
+                 Vector(
+                   profile.Name.name      -> "",
+                   profile.Email.name     -> "invalid",
+                   profile.Biography.name -> ""
+                 ),
+                 submitter = Some(profile.Submitter.raw(profile.Intent.Save))
+               )
           invalid <- document(harness)
-          _ <- harness.submitForm(
+          _       <- harness.submitForm(
                  "[data-profile-form]",
                  validFields,
                  submitter = Some(profile.Submitter.raw(profile.Intent.Preview))
                )
           previewed <- document(harness)
-          _ <- harness.submitForm(
+          _         <- harness.submitForm(
                  "[data-profile-form]",
                  validFields,
                  submitter = Some(profile.Submitter.raw(profile.Intent.Save))
                )
-          saved   <- document(harness)
-          _       <- harness.clickButton("Reset form")
-          reset   <- document(harness)
+          saved <- document(harness)
+          _     <- harness.clickButton("Reset form")
+          reset <- document(harness)
         yield assertTrue(
-          invalid.select("[data-field-error] .form-error").size() == 3,
-          invalid.select("[data-profile-saved]").isEmpty,
-          previewed.select("[data-profile-previewed]").text() ==
-            "Previewing Ada Lovelace's profile.",
-          previewed.select("[data-profile-saved]").isEmpty,
-          saved.select("[data-profile-saved]").text() == "Saved Ada Lovelace's profile.",
-          saved.select("[data-profile-previewed]").isEmpty,
-          saved.select("[name='profile[name]']").attr("value") == "  Ada Lovelace  ",
-          reset.select("[data-profile-saved]").isEmpty,
-          reset.select("[data-profile-previewed]").isEmpty,
-          reset.select("[name='profile[name]']").attr("value").isEmpty,
-          reset.select("[data-field-error] .form-error").isEmpty
+          invalid.selectAll("[data-field-error] .form-error").map(_.size) == Right(3),
+          invalid.selectAll("[data-profile-saved]").map(_.isEmpty) == Right(true),
+          previewed.selectOne("[data-profile-previewed]").map(_.text) ==
+            Right("Previewing Ada Lovelace's profile."),
+          previewed.selectAll("[data-profile-saved]").map(_.isEmpty) == Right(true),
+          saved.selectOne("[data-profile-saved]").map(_.text) == Right(
+            "Saved Ada Lovelace's profile."
+          ),
+          saved.selectAll("[data-profile-previewed]").map(_.isEmpty) == Right(true),
+          saved.selectOne("[name='profile[name]']").map(_.value) == Right("  Ada Lovelace  "),
+          reset.selectAll("[data-profile-saved]").map(_.isEmpty) == Right(true),
+          reset.selectAll("[data-profile-previewed]").map(_.isEmpty) == Right(true),
+          reset.selectOne("[name='profile[name]']").map(_.value) == Right(""),
+          reset.selectAll("[data-field-error] .form-error").map(_.isEmpty) == Right(true)
         )
+        end for
       }
     }
   )

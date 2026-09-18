@@ -118,6 +118,41 @@ object ConnectedAwaitHtmlSpec extends ZIOSpecDefault:
         yield assertTrue(immediate == initial, result == retained, result == observed.get())
       }
     },
+    test("parsed awaitHtml snapshots remain usable after later output, leave, and scope closure") {
+      for
+        retained <- ZIO.scoped {
+                      for
+                        fixture   <- fixture
+                        connected <- ConnectedRender.join(fixture.view)
+                        initial   <- connected.html
+                        matched   <- connected
+                                     .awaitHtml("initial snapshot", deadline)(phase(_) == "initial")
+                        snapshot = RenderedHtml.parse(matched)
+                        element <- ZIO
+                                     .fromEither(snapshot.selectOne("[data-phase]"))
+                                     .orDieWith(error => new AssertionError(error.toString))
+                        _         <- connected.send(Msg.Second)
+                        laterHtml <- connected
+                                       .awaitHtml("second snapshot", deadline)(phase(_) == "second")
+                        later = RenderedHtml.parse(laterHtml)
+                        _ <- connected.leave
+                      yield (initial, matched, snapshot, element, laterHtml, later)
+                    }
+        (initial, matched, snapshot, element, laterHtml, later) = retained
+      yield assertTrue(
+        matched == initial,
+        snapshot.html == initial,
+        snapshot.text == "initial",
+        snapshot.selectOne("[data-phase]").map(_.text) == Right("initial"),
+        element.tagName == "span",
+        element.text == "initial",
+        element.value == "",
+        element.attribute("data-phase").contains(""),
+        later.html == laterHtml,
+        later.text == "second",
+        later.selectOne("[data-phase]").map(_.text) == Right("second")
+      )
+    },
     test("rechecks each uncorrelated diff and returns the exact successful HTML") {
       ZIO.scoped {
         for

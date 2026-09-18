@@ -1,12 +1,10 @@
 package scalive.docs.examples
 
-import org.jsoup.Jsoup
-
 import zio.*
 import zio.test.*
 
 import scalive.*
-import scalive.testing.{ConnectedRender, ConnectedView}
+import scalive.testing.{ConnectedRender, ConnectedView, HtmlQueryError, RenderedHtml}
 
 object AsyncReportExampleSpec extends ZIOSpecDefault:
   private def eventuallyText(
@@ -19,10 +17,19 @@ object AsyncReportExampleSpec extends ZIOSpecDefault:
         harness
           .awaitHtml(s"text at '$selector' equals '$expected'", java.time.Duration.ofSeconds(5)) {
             html =>
-              val matches = Jsoup.parse(html).select(selector)
-              matches.size() == 1 && matches.text() == expected
+              RenderedHtml.parse(html).selectOne(selector) match
+                case Right(element) => element.text == expected
+                case Left(HtmlQueryError.NotFound(_) | HtmlQueryError.MultipleMatches(_, _)) =>
+                  false
+                case Left(error @ HtmlQueryError.InvalidSelector(_, _)) =>
+                  throw IllegalArgumentException(error.toString)
           }
-      ).map(html => Jsoup.parse(html).select(selector).text())
+      ).flatMap { html =>
+        ZIO
+          .fromEither(RenderedHtml.parse(html).selectOne(selector))
+          .mapError(error => IllegalArgumentException(error.toString))
+          .map(_.text)
+      }
 
   override def spec = suite("AsyncReportExampleSpec")(
     test("renders deterministic success and failure states") {

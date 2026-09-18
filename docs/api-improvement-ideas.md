@@ -307,11 +307,12 @@ definition-backed `urlEncoded` constructor; that is not a separate missing featu
 
 ### 7. Condition-Based Waiting And Connected Snapshot Queries
 
-**Status.** Partially implemented: bounded `ConnectedView.awaitHtml` waiting is available with
-focused harness tests and a migrated private helper in the
-[async-report example spec](../documentation/site/test/src/scalive/docs/examples/AsyncReportExampleSpec.scala).
-Immutable parsed queries over retained HTML snapshots remain a proposal. No consumer migration
-is included.
+**Status.** Implemented: bounded `ConnectedView.awaitHtml` waiting and immutable parsed HTML
+snapshots through `RenderedHtml.parse`. The
+[async-report example spec](../documentation/site/test/src/scalive/docs/examples/AsyncReportExampleSpec.scala)
+queries the exact matching snapshot, and the
+[profile-form example spec](../documentation/site/test/src/scalive/docs/examples/ProfileFormExampleSpec.scala)
+uses parsed snapshots for retained before/after assertions. No OsteoView migration is included.
 
 **Evidence.** `test/settings/labels/LabelsPageFixture.scala:52-61` implements a loop that reads
 `view.html`, tests a predicate, otherwise awaits a diff and repeats, with one overall deadline
@@ -320,10 +321,11 @@ The same algorithm appears in online-booking fixtures, searchable-choice tests, 
 tests. Patient form/page tests also duplicate jsoup helpers to inspect values in retained HTML
 snapshots.
 
-**Existing support.** [ConnectedView](../scalive/testing/src/scalive/testing/ConnectedRender.scala)
-provides `html`, `text`, `awaitDiff`, and now condition-based `awaitHtml`.
-[DisconnectedRender](../scalive/testing/src/scalive/testing/DisconnectedRender.scala) already has
-richer semantic field queries.
+**Support at assessment.** [ConnectedView](../scalive/testing/src/scalive/testing/ConnectedRender.scala)
+provided `html`, `text`, and `awaitDiff`.
+[DisconnectedRender](../scalive/testing/src/scalive/testing/DisconnectedRender.scala) already had
+richer semantic field queries. The additions compose these capabilities without restricting queries
+to the current live view.
 
 **Implemented waiting.**
 
@@ -337,16 +339,41 @@ requested duration, and last observed HTML. The deadline does not restart after 
 `awaitDiff`'s five-second limit. See the
 [testing guide](../documentation/content/guides/testing.md#wait-for-an-html-condition).
 
-**Remaining direction.** Reuse existing query semantics in a small immutable parsed HTML snapshot facility with
-exactly-one selection and attribute/value access. Supporting retained snapshots matters; a query
-of only the latest view would not remove the demonstrated comparison helpers.
+**Implemented parsed snapshots.** Retained strings can be parsed independently, including after the
+connected harness has closed:
+
+```scala
+val before = RenderedHtml.parse(beforeHtml)
+val after  = RenderedHtml.parse(afterHtml)
+
+before.selectOne("#name").map(_.value) // Either[HtmlQueryError, String]
+after.selectAll(".form-error").map(_.size)
+```
+
+`html` preserves the exact input and `text` exposes normalized whole-document text. `selectOne`
+requires exactly one match; `selectAll` returns an immutable vector, including an empty vector for
+no matches. `HtmlQueryError` distinguishes `InvalidSelector`, `NotFound`, and `MultipleMatches`.
+Elements expose read-only tag name, normalized text, value, and case-insensitive attribute lookup.
+Attributes are entity-decoded without URL resolution and distinguish absent from present-empty.
+Value follows `RenderedField`: textarea text with outer whitespace trimmed and internal whitespace
+preserved, otherwise the element's own value attribute, not selected-option resolution or browser
+checkbox defaults. Each query clones the private parsed DOM so selector evaluation cannot affect
+another query or retained results.
+See [retained snapshots](../documentation/content/guides/testing.md#inspect-retained-html-snapshots).
+
+**Optional follow-ups.** Form-specific or `FormPath` helpers, scoped traversal, and a live-view
+snapshot convenience are not part of this change and are not required to address the demonstrated
+retained-snapshot gap. Add them only if further consumer evidence justifies them.
 
 **Boundaries and verification.** Waiting tests cover current matches, intermediate diffs, bounded
 timeouts, diagnostics, predicate failures, and view retirement/disconnection. Predicates must be
 quick and nonblocking. Waiting consumes the same queue as `awaitDiff`: use a single waiter per view
 and finish correlated actions first. It never follows navigation. Checks observe the latest semantic
-server projection and can miss transient states; they are not browser DOMs. Test retained-snapshot
-immutability when adding parsed queries. Do not execute JavaScript or simulate successful-control selection.
+server projection and can miss transient states; they are not browser DOMs. Snapshot tests cover
+selector failures and cardinality, text/value/attribute semantics, parity with disconnected fields,
+retained queries after view closure, and query isolation with Jsoup's currently supported mutating
+selector. The migrated example specs, API checks, and documentation generation also pass.
+Do not execute JavaScript or simulate successful-control selection.
 Application service fakes and authorization fixtures should remain in the application.
 
 ## Investigations

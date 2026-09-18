@@ -1358,6 +1358,18 @@
       ]
     },
     {
+      "id" : "class:scalive.testing.RenderedElement",
+      "ownerId" : "package:scalive.testing",
+      "qualifiedName" : "scalive.testing.RenderedElement",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.testing.RenderedElement:134f3b1edc98c747",
+          "signature" : "class RenderedElement"
+        }
+      ]
+    },
+    {
       "id" : "class:scalive.testing.RenderedField",
       "ownerId" : "package:scalive.testing",
       "qualifiedName" : "scalive.testing.RenderedField",
@@ -1378,6 +1390,18 @@
         {
           "id" : "class:scalive.testing.RenderedForm:4887382790a892fe",
           "signature" : "class RenderedForm"
+        }
+      ]
+    },
+    {
+      "id" : "class:scalive.testing.RenderedHtml",
+      "ownerId" : "package:scalive.testing",
+      "qualifiedName" : "scalive.testing.RenderedHtml",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.testing.RenderedHtml:463c7a7ba13ec4e8",
+          "signature" : "class RenderedHtml"
         }
       ]
     },
@@ -10194,6 +10218,18 @@
       ]
     },
     {
+      "id" : "def:scalive.testing.RenderedElement.attribute",
+      "ownerId" : "class:scalive.testing.RenderedElement",
+      "qualifiedName" : "scalive.testing.RenderedElement.attribute",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.testing.RenderedElement.attribute:eeb3b5289bf07ac4",
+          "signature" : "def attribute(name: String): Option[String]"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.testing.RenderedField.id",
       "ownerId" : "class:scalive.testing.RenderedField",
       "qualifiedName" : "scalive.testing.RenderedField.id",
@@ -10386,6 +10422,42 @@
         {
           "id" : "def:scalive.testing.RenderedForm.values:88cf9fe5fe43b876",
           "signature" : "def values(name: String): Vector[String]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.testing.RenderedHtml.parse",
+      "ownerId" : "object:scalive.testing.RenderedHtml",
+      "qualifiedName" : "scalive.testing.RenderedHtml.parse",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.testing.RenderedHtml.parse:039fbfa138d42759",
+          "signature" : "def parse(html: String): testing.RenderedHtml"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.testing.RenderedHtml.selectAll",
+      "ownerId" : "class:scalive.testing.RenderedHtml",
+      "qualifiedName" : "scalive.testing.RenderedHtml.selectAll",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.testing.RenderedHtml.selectAll:9acf2f4a1e9064d9",
+          "signature" : "def selectAll(selector: String): Either[testing.HtmlQueryError, Vector[testing.RenderedElement]]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.testing.RenderedHtml.selectOne",
+      "ownerId" : "class:scalive.testing.RenderedHtml",
+      "qualifiedName" : "scalive.testing.RenderedHtml.selectOne",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.testing.RenderedHtml.selectOne:d9b3122baf70c993",
+          "signature" : "def selectOne(selector: String): Either[testing.HtmlQueryError, testing.RenderedElement]"
         }
       ]
     },
@@ -12442,6 +12514,54 @@
         {
           "id" : "enum:scalive.testing.FormQueryError.NotFound:b76bcde1bdb6f28a",
           "signature" : "enum NotFound(query: testing.FormQuery) extends testing.FormQueryError"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.testing.HtmlQueryError",
+      "ownerId" : "package:scalive.testing",
+      "qualifiedName" : "scalive.testing.HtmlQueryError",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.testing.HtmlQueryError:dbaed7f864c5aba5",
+          "signature" : "enum HtmlQueryError"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.testing.HtmlQueryError.InvalidSelector",
+      "ownerId" : "enum:scalive.testing.HtmlQueryError",
+      "qualifiedName" : "scalive.testing.HtmlQueryError.InvalidSelector",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.testing.HtmlQueryError.InvalidSelector:bbd98e5e208d1589",
+          "signature" : "enum InvalidSelector(selector: String, message: String) extends testing.HtmlQueryError"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.testing.HtmlQueryError.MultipleMatches",
+      "ownerId" : "enum:scalive.testing.HtmlQueryError",
+      "qualifiedName" : "scalive.testing.HtmlQueryError.MultipleMatches",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.testing.HtmlQueryError.MultipleMatches:c72e306893024650",
+          "signature" : "enum MultipleMatches(selector: String, count: Int) extends testing.HtmlQueryError"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.testing.HtmlQueryError.NotFound",
+      "ownerId" : "enum:scalive.testing.HtmlQueryError",
+      "qualifiedName" : "scalive.testing.HtmlQueryError.NotFound",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.testing.HtmlQueryError.NotFound:d37b3ed2981b4cfa",
+          "signature" : "enum NotFound(selector: String) extends testing.HtmlQueryError"
         }
       ]
     },
@@ -18262,6 +18382,18 @@
         {
           "id" : "object:scalive.testing.RenderedForm:32f58f05728ea451",
           "signature" : "object RenderedForm"
+        }
+      ]
+    },
+    {
+      "id" : "object:scalive.testing.RenderedHtml",
+      "ownerId" : "package:scalive.testing",
+      "qualifiedName" : "scalive.testing.RenderedHtml",
+      "kind" : "object",
+      "signatures" : [
+        {
+          "id" : "object:scalive.testing.RenderedHtml:415df30cdfe9e9d3",
+          "signature" : "object RenderedHtml"
         }
       ]
     },
@@ -26649,6 +26781,126 @@
         {
           "id" : "val:scalive.testing.FormQueryError.NotFound.query:6a05236a0d671ce9",
           "signature" : "val query: testing.FormQuery"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.testing.HtmlQueryError.InvalidSelector.message",
+      "ownerId" : "enum:scalive.testing.HtmlQueryError.InvalidSelector",
+      "qualifiedName" : "scalive.testing.HtmlQueryError.InvalidSelector.message",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.testing.HtmlQueryError.InvalidSelector.message:cf8fb61777aa1331",
+          "signature" : "val message: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.testing.HtmlQueryError.InvalidSelector.selector",
+      "ownerId" : "enum:scalive.testing.HtmlQueryError.InvalidSelector",
+      "qualifiedName" : "scalive.testing.HtmlQueryError.InvalidSelector.selector",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.testing.HtmlQueryError.InvalidSelector.selector:44ddc43d765b0772",
+          "signature" : "val selector: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.testing.HtmlQueryError.MultipleMatches.count",
+      "ownerId" : "enum:scalive.testing.HtmlQueryError.MultipleMatches",
+      "qualifiedName" : "scalive.testing.HtmlQueryError.MultipleMatches.count",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.testing.HtmlQueryError.MultipleMatches.count:95230e3d104377d1",
+          "signature" : "val count: Int"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.testing.HtmlQueryError.MultipleMatches.selector",
+      "ownerId" : "enum:scalive.testing.HtmlQueryError.MultipleMatches",
+      "qualifiedName" : "scalive.testing.HtmlQueryError.MultipleMatches.selector",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.testing.HtmlQueryError.MultipleMatches.selector:44ddc43d765b0772",
+          "signature" : "val selector: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.testing.HtmlQueryError.NotFound.selector",
+      "ownerId" : "enum:scalive.testing.HtmlQueryError.NotFound",
+      "qualifiedName" : "scalive.testing.HtmlQueryError.NotFound.selector",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.testing.HtmlQueryError.NotFound.selector:44ddc43d765b0772",
+          "signature" : "val selector: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.testing.RenderedElement.tagName",
+      "ownerId" : "class:scalive.testing.RenderedElement",
+      "qualifiedName" : "scalive.testing.RenderedElement.tagName",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.testing.RenderedElement.tagName:d7343d8a54ac7bf9",
+          "signature" : "val tagName: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.testing.RenderedElement.text",
+      "ownerId" : "class:scalive.testing.RenderedElement",
+      "qualifiedName" : "scalive.testing.RenderedElement.text",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.testing.RenderedElement.text:8d44a9660e7aa540",
+          "signature" : "val text: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.testing.RenderedElement.value",
+      "ownerId" : "class:scalive.testing.RenderedElement",
+      "qualifiedName" : "scalive.testing.RenderedElement.value",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.testing.RenderedElement.value:f0dd26ed1b9f762b",
+          "signature" : "val value: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.testing.RenderedHtml.html",
+      "ownerId" : "class:scalive.testing.RenderedHtml",
+      "qualifiedName" : "scalive.testing.RenderedHtml.html",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.testing.RenderedHtml.html:90e8df35be6fef64",
+          "signature" : "val html: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.testing.RenderedHtml.text",
+      "ownerId" : "class:scalive.testing.RenderedHtml",
+      "qualifiedName" : "scalive.testing.RenderedHtml.text",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.testing.RenderedHtml.text:8d44a9660e7aa540",
+          "signature" : "val text: String"
         }
       ]
     },

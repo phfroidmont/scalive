@@ -52,6 +52,18 @@ class TypedFormFeedbackLiveView
           effects = model.effects :+ s"checkbox:$value"
         )
       )
+    case Msg.TopicsBlurred(value) =>
+      ZIO.succeed(
+        model.copy(
+          topicsBlurValue = value,
+          topicsBlurCount = model.topicsBlurCount + 1,
+          effects = model.effects :+ s"topics:$value"
+        )
+      )
+    case Msg.SeedTopics =>
+      ZIO.succeed(model.copy(form = model.form.updated(Topics, Vector("elixir", "erlang"))))
+    case Msg.ChangeTopicToken =>
+      ZIO.succeed(model.copy(elixirToken = "beam"))
     case Msg.SelectChoice(value) =>
       val updated = model.form.updated(Choice, value)
       ZIO.succeed(
@@ -98,6 +110,10 @@ class TypedFormFeedbackLiveView
     val select   = binding.field(Select)
     val notes    = binding.field(Notes)
     val rows     = binding.rows(RowSchema)
+    val topics   = binding.field(Topics).onBlur(Msg.TopicsBlurred(_))
+    val scala    = topics.item("language-scala")
+    val elixir   = topics.item("language-elixir")
+    val erlang   = topics.item("language-erlang")
 
     div(
       binding.render(
@@ -132,6 +148,16 @@ class TypedFormFeedbackLiveView
         ),
         checkbox.checkbox("checked"),
         checkbox.errorFeedback(error => error.map(_.message)),
+        fieldSet(
+          legend("Topics"),
+          scala.checkbox("scala", topics.validationAttributes),
+          label(forId := scala.id, "Scala"),
+          elixir.checkbox(model.map(_.elixirToken), topics.validationAttributes),
+          label(forId                                                     := elixir.id, "Elixir"),
+          erlang.checkbox("erlang", topics.validationAttributes, disabled := true),
+          label(forId                                                     := erlang.id, "Erlang"),
+          topics.errorFeedback(error => error.map(_.message))
+        ),
         select.select(
           Vector("red" -> "Red", "green" -> "Green", "blue" -> "Blue"),
           multiple := true
@@ -173,6 +199,18 @@ class TypedFormFeedbackLiveView
         "Seed invalid date"
       ),
       button(
+        idAttr := "seed-topics",
+        typ    := "button",
+        on.click(Msg.SeedTopics),
+        "Seed topics"
+      ),
+      button(
+        idAttr := "change-topic-token",
+        typ    := "button",
+        on.click(Msg.ChangeTopicToken),
+        "Change topic token"
+      ),
+      button(
         idAttr := "add-replacement",
         typ    := "button",
         on.click(Msg.AddReplacement),
@@ -186,6 +224,8 @@ class TypedFormFeedbackLiveView
       div(idAttr := "phone-effect-count", model.map(_.phoneEffectCount.toString)),
       div(idAttr := "checkbox-blur-value", model.map(_.checkboxBlurValue)),
       div(idAttr := "checkbox-blur-count", model.map(_.checkboxBlurCount.toString)),
+      div(idAttr := "topics-blur-value", model.map(_.topicsBlurValue)),
+      div(idAttr := "topics-blur-count", model.map(_.topicsBlurCount.toString)),
       div(idAttr := "submit-count", model.map(_.submitCount.toString)),
       div(idAttr := "effects", model.map(_.effects.mkString("|"))),
       div(idAttr := "server-name", formSignal.map(_.field(Name).fieldValue)),
@@ -198,6 +238,7 @@ class TypedFormFeedbackLiveView
       div(idAttr := "server-notes", formSignal.map(_.field(Notes).fieldValue)),
       div(idAttr := "server-choice", formSignal.map(_.field(Choice).fieldValue)),
       div(idAttr := "server-checkbox", formSignal.map(_.field(Checkbox).rawValues.mkString(","))),
+      div(idAttr := "server-topics", formSignal.map(_.field(Topics).rawValues.toJson)),
       div(idAttr := "server-select", formSignal.map(_.field(Select).rawValues.mkString(","))),
       div(
         idAttr := "result",
@@ -217,24 +258,28 @@ object TypedFormFeedbackLiveView:
     date: String,
     choice: String,
     checkbox: Option[String],
+    topics: Vector[String],
     select: Vector[String],
     notes: String,
     rows: Vector[Row])
 
-  val Root       = FormRoot("typed")
-  val Name       = Root.text("name").required(FieldIssue("Name is required"))
-  val Email      = Root.text("email").required(FieldIssue("Email is required"))
-  val Phone      = Root.text("phone").required(FieldIssue("Phone is required"))
-  val Date       = Root.text("date")
-  val Choice     = Root.text("choice").required(FieldIssue("Choice is required"))
-  val Checkbox   = Root.optionalText("checkbox")
-  val Select     = Root.texts("select")
-  val Notes      = Root.text("notes").required(FieldIssue("Notes are required"))
-  val RowGroup   = Root.rows("rows")
-  val RowName    = RowGroup.text("name").required(FieldIssue("Row name is required"))
-  val RowSchema  = RowGroup.product[Row](Tuple1(RowName))
+  val Root      = FormRoot("typed")
+  val Name      = Root.text("name").required(FieldIssue("Name is required"))
+  val Email     = Root.text("email").required(FieldIssue("Email is required"))
+  val Phone     = Root.text("phone").required(FieldIssue("Phone is required"))
+  val Date      = Root.text("date")
+  val Choice    = Root.text("choice").required(FieldIssue("Choice is required"))
+  val Checkbox  = Root.optionalText("checkbox")
+  val Topics    = Root.texts("topics").validate(FieldIssue("Choose at least one topic"))(_.nonEmpty)
+  val Select    = Root.texts("select")
+  val Notes     = Root.text("notes").required(FieldIssue("Notes are required"))
+  val RowGroup  = Root.rows("rows")
+  val RowName   = RowGroup.text("name").required(FieldIssue("Row name is required"))
+  val RowSchema = RowGroup.product[Row](Tuple1(RowName))
   val Definition =
-    Root.product[Data]((Name, Email, Phone, Date, Choice, Checkbox, Select, Notes, RowSchema))
+    Root.product[Data](
+      (Name, Email, Phone, Date, Choice, Checkbox, Topics, Select, Notes, RowSchema)
+    )
 
   val RowA = FormRowKey.from[RowGroup.type]("row-a").toOption.get
   val RowB = FormRowKey.from[RowGroup.type]("row-b").toOption.get
@@ -245,6 +290,9 @@ object TypedFormFeedbackLiveView:
     case PhoneBlurred(value: String)
     case SeedInvalidDate
     case CheckboxBlurred(value: String)
+    case TopicsBlurred(value: String)
+    case SeedTopics
+    case ChangeTopicToken
     case SelectChoice(value: String)
     case RemoveRow(key: RowGroup.Key)
     case MoveRowDown(key: RowGroup.Key)
@@ -259,6 +307,9 @@ object TypedFormFeedbackLiveView:
     phoneEffectCount: Int = 0,
     checkboxBlurValue: String = "not blurred",
     checkboxBlurCount: Int = 0,
+    topicsBlurValue: String = "not blurred",
+    topicsBlurCount: Int = 0,
+    elixirToken: String = "elixir",
     submitCount: Int = 0,
     effects: Vector[String] = Vector.empty,
     mountId: Int = nextMountId())
@@ -272,6 +323,7 @@ object TypedFormFeedbackLiveView:
         Date.initial(""),
         Choice.initial(""),
         Checkbox.initial(None),
+        Topics.initial(Vector.empty),
         Select.initial(Vector.empty),
         Notes.initial(""),
         RowSchema.initial(

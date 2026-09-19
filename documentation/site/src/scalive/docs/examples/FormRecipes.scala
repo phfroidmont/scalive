@@ -89,6 +89,40 @@ object FormRecipes:
       )
   // docs:end form-checkbox-input
 
+  // docs:start form-repeated-checkbox-items
+  object TopicForm:
+    final case class Preferences(topics: Vector[String])
+
+    val Root       = FormRoot("subscriptions")
+    val Topics     = Root.texts("topics")
+    val Definition = Root.product[Preferences](Tuple1(Topics))
+
+    enum Msg:
+      case Updated(update: Definition.Update)
+      case Submitted(event: Definition.Event)
+
+    def render(
+      form: Signal[Definition.Form],
+      researchToken: Signal[String]
+    ): HtmlElement[Msg] =
+      val binding  = form.bind(DomRef("subscriptions-form"), Msg.Updated(_), Msg.Submitted(_))
+      val topics   = binding.field(Topics)
+      val news     = topics.item("news-choice")
+      val research = topics.item("research-choice")
+      binding.render(
+        fieldSet(
+          legend("Topics"),
+          news.checkbox("news", topics.validationAttributes),
+          label(forId := news.id, "News"),
+          research.checkbox(researchToken, topics.validationAttributes),
+          label(forId := research.id, "Research"),
+          topics.errorFeedback(error => error.map(_.message))
+        ),
+        button(typ := "submit", "Save")
+      )
+  end TopicForm
+  // docs:end form-repeated-checkbox-items
+
   // docs:start form-event-target
   object TargetedValidation:
     enum ChangedField:

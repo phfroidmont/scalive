@@ -217,8 +217,10 @@ There is no new signal mutation, reactive effect, or `flatMap` API.
 with API, workflow, and binding tests plus a
 [compiled recipe](../documentation/site/src/scalive/docs/examples/FormRecipes.scala).
 Native `tel`, `date`, and `search` helpers are available on bound controls, field views,
-and signal-backed field views. Refinement conveniences and repeated-choice identity
-remain proposals. No consumer migration is included.
+and signal-backed field views. Repeated-checkbox identity is implemented by
+`FormControl.item(key: String): FormControlItem[Msg]`, with static and reactive checked tokens
+demonstrated in the recipe. Refinement conveniences remain proposals. No consumer migration
+is included.
 
 **Evidence.** `src/settings/appointmenttypes/AppointmentTypeForm.scala:41-72` manually decodes
 checkbox values as absent/false or a single `"true"`/true value, then manually performs the inverse
@@ -248,9 +250,18 @@ identity and modifier behavior. ARIA remains opt-in; no parsing or validation is
 the input type. The [blur example](../documentation/site/src/scalive/docs/examples/BlurFeedbackExample.scala)
 now uses the telephone helper instead of manual input assembly.
 
+**Implemented repeated choices.** Use `Root.texts` for repeated selections and bind each checkbox
+with an explicit stable item key independent of its submitted token. An item exposes `id` and `name`
+as `Signal[String]` and `checkbox(checkedValue, mods*)` with either a `String` or `Signal[String]`
+token. The field name is unchanged; the item ID uses lossless ASCII encoding scoped to the form,
+field, and row when present. Its exact format is private. Arbitrary keys, including empty strings,
+are allowed; null is rejected. Keys are immutable, not signals, and callers must keep them unique
+per rendered control. Checked state is raw token membership; changing a token never rewrites raw
+values. See the [control guide](../documentation/content/guides/typed-forms-and-validation.md#render-richer-controls)
+for separate item labels, a group legend, and one shared feedback region.
+
 **Remaining direction.** Consider small helpers for `Option`-returning refinements before introducing
-a larger validation DSL. For repeated choices, investigate an item binding that provides a shared field name but a
-unique item ID and label target. A signal-valued checkbox overload alone does not solve identity.
+a larger validation DSL.
 
 **Boundaries and verification.** Codec tests cover malformed and duplicate values, custom and empty
 tokens, initial values, unchecked submission, repeated-row presence, unchanged-value/revision
@@ -258,8 +269,18 @@ behavior, and binding feedback. Native-helper tests cover public typing, retaine
 reactive updates, identity, attribute ownership, and blur behavior. Browser tests distinguish
 date attributes and retained server values from the native sanitized value and subsequent form
 snapshots. Raw strings remain in server state until replaced, but native controls may not display
-malformed intermediate values; use text controls when that is required. Repeated choices still
-need unique item IDs. Do not infer domain parsing from an HTML input type, globally trim text, or
+malformed intermediate values; use text controls when that is required. Repeated items reuse the
+parent's opt-in `validationAttributes` and one parent `errorFeedback`. Configure parent `onBlur`
+before deriving items; `AfterBlur` responds to any item's blur, even within the group, not to a
+whole-group focus boundary. Native unchecked, disabled, and removed controls remain omitted,
+without hidden fallbacks. This addition is bound-checkbox-only: no radio API, unbound item helpers,
+or custom label renderer. API and render tests cover scoped identity, key encoding, static and
+reactive token membership, keyed updates/removal, shared feedback and blur, and attribute ownership,
+including conditional modifiers. Browser tests pass on Chromium, Firefox, and WebKit for label
+activation, repeated-value serialization, reactive token changes, disabled omission, shared blur,
+recovery, and reset. The recipe test checks selected and empty submit decoding; it is not a browser
+behavior assertion.
+Do not infer domain parsing from an HTML input type, globally trim text, or
 silently preserve disabled controls; these are separate application policies.
 
 ### 5. Public Typed Layout-Context Projection

@@ -1,5 +1,7 @@
 package scalive
 
+import scalive.FormBinding.controlModifiers
+
 /** Rendering and event wiring for one form instance. Feedback updates are applied in the handler,
   * against the current model, rather than against the form sampled during rendering.
   */
@@ -174,16 +176,25 @@ end FormBinding
 
 private[scalive] object FormBinding:
   private[scalive] def checked[Msg](mods: Vector[Mod[Msg]], owned: Set[String]): Vector[Mod[Msg]] =
-    val overrides = mods
-      .flatMap {
-        case attr: Mod.Attr[Msg] => attr.flattened.flatMap(Form.attributeName)
-        case _                   => Vector.empty
-      }.filter(name => owned.exists(_.equalsIgnoreCase(name)))
+    def attributeNames(mod: Mod[Msg]): Vector[String] = mod match
+      case attr: Mod.Attr[Msg]                      => attr.flattened.flatMap(Form.attributeName)
+      case Mod.Content.SignalModChoice(_, branches) =>
+        branches.flatMap { case (_, branch) => attributeNames(branch) }
+      case _ => Vector.empty
+
+    val overrides =
+      mods.flatMap(attributeNames).filter(name => owned.exists(_.equalsIgnoreCase(name)))
     require(
       overrides.isEmpty,
       s"form binding owns attributes: ${overrides.distinct.mkString(", ")}"
     )
     mods
+
+  private[scalive] def controlModifiers[Msg](mods: Seq[Mod.Input[Msg]]): Vector[Mod[Msg]] =
+    checked(
+      Mod.flatten(mods),
+      Set("id", "name", "value", "type", "checked", "phx-change", "phx-blur")
+    )
 
 /** A reusable field rendering handle. Its ids are scoped to the owning form instance. [[view]]
   * exposes read-only field data; use this handle's ids and ARIA attributes when rendering feedback
@@ -293,6 +304,20 @@ final class FormControl[Owner, Input, Value, Msg] private[scalive] (
       controlModifiers(mods)
     )
 
+  /** Binds one checkbox choice with its own form- and field-scoped identity.
+    *
+    * The stable key is separate from the submitted value and must be unique among items rendered
+    * for this control. Keys are encoded losslessly, including empty strings; null is rejected. Use
+    * the returned id for labels, and this control's validation attributes and error feedback for
+    * the shared field. Configure [[onBlur]] before creating items. Under `AfterBlur`, leaving any
+    * checkbox blurs the field, even when focus moves to another item.
+    */
+  def item(key: String): FormControlItem[Msg] =
+    require(key != null, "form control item key must not be null")
+    // Encoding UTF-16 code units also distinguishes malformed surrogate keys without replacement.
+    val encoded = key.iterator.map(char => f"${char.toInt}%04x").mkString
+    new FormControlItem(id.map(_ + s"_item_$encoded"), name, rawValues, blurAttributes)
+
   def textarea(mods: Mod.Input[Msg]*): HtmlElement[Msg] =
     Form.textareaTag(
       idAttr   := id,
@@ -326,12 +351,54 @@ final class FormControl[Owner, Input, Value, Msg] private[scalive] (
       visibleErrors.splitByIndex((_, error) => span(cls := "form-error", render(error)))
     )
 
-  private def controlModifiers(mods: Seq[Mod.Input[Msg]]): Vector[Mod[Msg]] =
-    FormBinding.checked(
-      Mod.flatten(mods),
-      Set("id", "name", "value", "type", "checked", "phx-change", "phx-blur")
-    )
 end FormControl
+
+/** One checkbox choice within a bound field, created by [[FormControl.item]].
+  *
+  * Items share raw values, validation, and interaction state with their parent field. They do not
+  * add logical fields or hidden fallback inputs. Use a repeated-value codec such as `Root.texts`
+  * for multiple selections; unchecked and disabled items follow native submission rules.
+  */
+final class FormControlItem[Msg] private[scalive] (
+  itemId: Signal[String],
+  fieldName: Signal[String],
+  rawValues: Signal[Vector[String]],
+  blurAttributes: Vector[Mod.Attr[Msg]]):
+
+  /** Form- and field-scoped item identity, suitable for a label's `forId`. */
+  def id: Signal[String] = itemId
+
+  /** The parent's exact browser field name, shared by every item. */
+  def name: Signal[String] = fieldName
+
+  /** Renders a checkbox checked when the parent's raw values contain the explicit token. ARIA
+    * remains opt-in through the parent control's validation attributes.
+    */
+  def checkbox(checkedValue: String, mods: Mod.Input[Msg]*): HtmlElement[Msg] =
+    input(
+      typ      := "checkbox",
+      idAttr   := id,
+      nameAttr := name,
+      value    := checkedValue,
+      checked  := rawValues.map(_.contains(checkedValue)),
+      blurAttributes,
+      controlModifiers(mods)
+    )
+
+  /** Renders a reactive token without changing item identity. Both token and raw-value changes
+    * update checked state; changing the token never rewrites the field's retained values.
+    */
+  def checkbox(checkedValue: Signal[String], mods: Mod.Input[Msg]*): HtmlElement[Msg] =
+    input(
+      typ      := "checkbox",
+      idAttr   := id,
+      nameAttr := name,
+      value    := checkedValue,
+      checked  := rawValues.combineWithFn(checkedValue)((values, token) => values.contains(token)),
+      blurAttributes,
+      controlModifiers(mods)
+    )
+end FormControlItem
 
 extension [Owner, Schema, Domain](form: Signal[Form[Owner, Schema, Domain]])
   /** Connects one rendered form instance to state-preserving updates and typed submission. Apply

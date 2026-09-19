@@ -44,6 +44,20 @@ object FormRecipesSpec extends ZIOSpecDefault:
           Vector(Some("invalid_checkbox"))
       )
     },
+    test("decodes repeated checkbox selections and an empty submission") {
+      val topics   = FormRecipes.TopicForm
+      val selected = topics.Definition.event(
+        FormData(Vector(topics.Topics.name -> "news", topics.Topics.name -> "research")),
+        FormEventKind.Submitted
+      )
+      val empty = topics.Definition.event(FormData.empty, FormEventKind.Submitted)
+
+      assertTrue(
+        selected.valueOption.contains(topics.Preferences(Vector("news", "research"))),
+        empty.valueOption.contains(topics.Preferences(Vector.empty)),
+        empty.form.field(topics.Topics).rawValues.isEmpty
+      )
+    },
     test("keeps malformed custom-control input available for rendering") {
       val quantity = FormRecipes.QuantityForm
       val form     = quantity.Definition

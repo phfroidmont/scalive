@@ -284,6 +284,65 @@ object FormDefinitionApiSpec extends ZIOSpecDefault:
 
       assertTrue(errors.isEmpty)
     },
+    test("exposes bound checkbox items with generic fields, signal tokens, and row bindings") {
+      val errors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+
+        enum Msg:
+          case Focused(value: String)
+          case Updated, Submitted
+
+        def render[Owner, Input, Value](
+          control: FormControl[Owner, Input, Value, Msg],
+          token: Signal[String]
+        ): HtmlElement[Msg] =
+          val first: FormControlItem[Msg] = control.item("stable-key")
+          val second: FormControlItem[Msg] = control.item("")
+          val id: Signal[String] = first.id
+          val name: Signal[String] = first.name
+          div(
+            label(forId := id, "First"),
+            dataAttr("field-name") := name,
+            first.checkbox("submitted-token",
+              control.validationAttributes,
+              Vector(cls := "choice"),
+              Option(title := "First choice"),
+              on.focus.withValue(Msg.Focused.apply)
+            ),
+            second.checkbox(token,
+              control.validationAttributes,
+              Vector(dataAttr("choice") := "second"),
+              Option(title := "Second choice"),
+              on.focus.withValue(Msg.Focused.apply)
+            ),
+            control.errorFeedback(_.map(_.message))
+          )
+
+        val root = FormRoot("choices")
+        val group = root.rows("rows")
+        val values = group.texts("values")
+        val rows = group.product[Tuple1[Vector[String]]](Tuple1(values))
+        val definition = root.product[Tuple1[Vector[Tuple1[Vector[String]]]]](Tuple1(rows))
+
+        def repeated(source: Signal[definition.Form]): HtmlElement[Msg] =
+          val binding = source.bind[Msg](DomRef("choices"), _ => Msg.Updated, _ => Msg.Submitted)
+          binding.render(
+            binding.rows(rows).splitBy(_.key) { (key, row) =>
+              val control = binding.field(rows, key, values)
+              div(row.presence(), render(control, row.map(_.key.value)))
+            }
+          )
+      """)
+
+      assertTrue(errors.isEmpty)
+    },
+    test("checkbox items require an explicit token") {
+      val missingToken = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        def render(item: FormControlItem[Nothing]) = item.checkbox()
+      """)
+      assertTrue(missingToken.nonEmpty)
+    },
     test("exposes tel, date, and search helpers with generic input and refined values") {
       val errors = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*

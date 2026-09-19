@@ -518,6 +518,49 @@ still needs its `row.presence()` control to retain the row when unchecked.
 Requiring a checked value is a separate semantic rule, expressible with
 `field.validate(issue)(identity)`.
 
+For repeated checkbox choices, use `Root.texts`, not the Boolean
+`FieldInput.checkbox` codec. A bound `FormControl` provides
+`item(key: String): FormControlItem[Msg]` so each checkbox has its own label
+target while all items submit under the same field name:
+
+@:sourceRegion(documentation/site/src/scalive/docs/examples/FormRecipes.scala, form-repeated-checkbox-items)
+
+The recipe uses a static `"news"` token and a `Signal[String]` research token;
+both `item.checkbox(checkedValue, mods*)` overloads require an explicit token.
+Each item's `id` and `name` are `Signal[String]`. Here every name is exactly
+`subscriptions[topics]`: no item key, index, or extra `[]` is appended. A
+submission with no successful items decodes to `Vector.empty`.
+
+An item key is an immutable, stable identity, independent of its submitted
+token; it is not a signal. Arbitrary strings, including the empty string, are
+allowed; `null` is rejected. Keys are encoded losslessly into ASCII IDs scoped
+to the form instance, field, and repeated-row identity when present. The exact
+ID format is private: use `item.id`, not a reconstructed ID. Keep keys unique
+among items of the same rendered control; the caller owns that responsibility.
+
+Checked state uses exact membership of the current token in the parent's
+`rawValues`. Items with different keys but the same token are checked together;
+their submitted values do not distinguish them. Changing a reactive token updates
+the checkbox projection but does not rewrite those raw values or migrate an old
+selection. Native successful-control
+rules still apply: unchecked, disabled, and removed checkboxes are omitted from
+the next form snapshot. There are no hidden unchecked fallbacks or automatic
+preservation of omitted selections.
+
+Use a `fieldset` and `legend` for the group and a separate label targeting each
+item's ID. Pass the parent's `validationAttributes` to each checkbox explicitly
+and render one parent `errorFeedback` for the group. Configure any application
+`.onBlur(...)` callback on the parent **before** calling `.item(...)`. With
+`FormFeedback.AfterBlur`, blurring **any** item makes the parent's feedback
+eligible, including when focus moves to another item in the same group. This
+is not whole-group blur; custom composite widgets still own that boundary.
+
+For dynamic choices, use `.splitBy` with stable choice keys and create each item
+inside the keyed rendering scope. Do not use changing tokens or display indexes
+as identity. Choice keys distinguish checkboxes for one repeated-value field;
+they are not form-row keys. Repeated form rows still use the row APIs and
+`row.presence()` described above.
+
 A select marks every option found in `rawValues`; for a `multiple` select, use a
 repeated-value field such as `Root.texts`.
 

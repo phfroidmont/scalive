@@ -290,6 +290,18 @@
       ]
     },
     {
+      "id" : "class:scalive.FormControlItem",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.FormControlItem",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.FormControlItem:eac60d805ec8c2fe",
+          "signature" : "class FormControlItem[Msg]"
+        }
+      ]
+    },
+    {
       "id" : "class:scalive.FormData",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.FormData",
@@ -3230,6 +3242,18 @@
       ]
     },
     {
+      "id" : "def:scalive.FormControl.item",
+      "ownerId" : "class:scalive.FormControl",
+      "qualifiedName" : "scalive.FormControl.item",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FormControl.item:3b226ce9d7e50412",
+          "signature" : "def item(key: String): FormControlItem[Msg]"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.FormControl.name",
       "ownerId" : "class:scalive.FormControl",
       "qualifiedName" : "scalive.FormControl.name",
@@ -3362,6 +3386,46 @@
         {
           "id" : "def:scalive.FormControl.visibleErrors:98d978867ef6d9e0",
           "signature" : "def visibleErrors: Signal[Vector[FormError[Owner]]]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.FormControlItem.checkbox",
+      "ownerId" : "class:scalive.FormControlItem",
+      "qualifiedName" : "scalive.FormControlItem.checkbox",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FormControlItem.checkbox:1163a66b6a56e83c",
+          "signature" : "def checkbox(checkedValue: Signal[String], mods: Mod.Input[Msg]*): HtmlElement[Msg]"
+        },
+        {
+          "id" : "def:scalive.FormControlItem.checkbox:19fe0e74d3f7cc8d",
+          "signature" : "def checkbox(checkedValue: String, mods: Mod.Input[Msg]*): HtmlElement[Msg]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.FormControlItem.id",
+      "ownerId" : "class:scalive.FormControlItem",
+      "qualifiedName" : "scalive.FormControlItem.id",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FormControlItem.id:b39687ee5e8936f3",
+          "signature" : "def id: Signal[String]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.FormControlItem.name",
+      "ownerId" : "class:scalive.FormControlItem",
+      "qualifiedName" : "scalive.FormControlItem.name",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FormControlItem.name:c722270d4034b3c5",
+          "signature" : "def name: Signal[String]"
         }
       ]
     },

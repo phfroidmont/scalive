@@ -31,7 +31,9 @@ Session and route mount aspects decide whether a lifecycle may start and produce
 typed context. Session aspects carry claims across the HTTP-to-socket boundary;
 route aspects derive fresh, claimless context for each route mount.
 Connected-turn guards reuse that context when policy must run again before later
-application work.
+application work. Route and session `withConnectedResources` modifiers attach
+cleanup-owned side effects after admission and context construction, before the
+connected page mount; they do not decide admission or produce context.
 
 | Boundary | `LiveSessionMountAspect` | `LiveRouteMountAspect` |
 | --- | --- | --- |
@@ -140,6 +142,12 @@ it does not make the layout consume the final accumulated context. Only the
 layout's context value is adapted. Parameters, request, URL, message type,
 content, and root page title retain their existing behavior; ordinary layout
 inputs remain the original signals.
+
+Extending a route prefix with `/` also preserves its installed layouts and root
+layout. They continue to receive the path parameters available at installation,
+projected from the extended path through the path codec's combiner; they do not
+suddenly consume the destination's larger parameter tuple. This automatic
+parameter projection is separate from `forContext`.
 
 Selectors must be pure and deterministic. A root layout applies the selector
 independently for `key` and `render`, not once per mount. Including language in a
@@ -343,6 +351,38 @@ checked before every later application turn. Session guards run before route
 guards and are inherited by nested LiveViews. See
 [Lifecycle hooks](lifecycle-hooks.md#connected-turn-guards) for the complete
 scope, ordering, and controlled outcomes.
+
+## Attach Connected Resource Initialization {#connected-resource-initialization}
+
+Install `withConnectedResources` on the named live-session builder for every
+root mounted in that group, or on a route builder for one destination. It is
+available on plain, typed, and admitted session builders and on ordinary and
+routed route builders. Each callback receives the builder's current context and
+`ConnectedResources`, returning `Task[Result]` with `Result <: Unit`.
+
+Install after the aspect that supplies the callback's required context. A plain
+builder supplies `Any`; a later `.context(factory)` is not a context declaration
+for an earlier initializer. If another aspect or admission is appended afterward,
+the initializer retains its installation-time context via projection. Its
+execution still waits for **all** session and route admission/context checks,
+including those declared after it. It cannot provide context to later aspects
+or return a handle to the page model. Capture services or use the supplied typed
+context; the callback's `Task` does not introduce another environment requirement.
+
+Modifiers compose additively: session initializers run first, then route
+initializers, in declaration order within each boundary. They run lazily before
+connected page mount, never during disconnected rendering or rejected admission.
+Page factories and render compilation may already have run. Callback failures
+are mount failures rather than controlled authentication rejections; execution
+stops and the same connected resource scope releases prior successful acquisitions.
+
+Even a session-installed initializer belongs to each connected root lifecycle,
+not the session name, login session, or WebSocket. It runs anew on reconnect or
+navigation, not on patches or ordinary messages, and is not inherited by nested
+LiveViews. Use a service for shared session ownership. See
+[route and session resources](async-work-and-subscriptions.md#route-and-session-resources)
+for the executable example, bounded acquisition/finalization requirements, and
+when to keep acquisition directly in the page's mount.
 
 ## Use Failure Semantics Deliberately {#use-failure-semantics-deliberately}
 

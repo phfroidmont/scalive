@@ -65,6 +65,22 @@ object ConnectedResourceExample:
     case Check, Reset
 // docs:end connected-resource-example
 
+// docs:start connected-resource-route-example
+object ConnectedResourceRouteExample:
+  def application[Msg, Model](
+    registrations: LifecycleRegistrations,
+    page: LiveView[Msg, Model]
+  ): LiveApplication[Any] =
+    val registeredRoute = (live / "registered")
+      .withConnectedResources { (_, resources) =>
+        resources
+          .acquireRelease(registrations.register("registered-page"))(registrations.unregister)
+          .unit
+      }
+
+    Live.router(registeredRoute -> page)
+// docs:end connected-resource-route-example
+
 private[docs] object ConnectedResourceExamplePreview:
   def apply(instanceId: String): ConnectedResourceExample =
     new ConnectedResourceExample(

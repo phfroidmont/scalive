@@ -20,6 +20,19 @@ final case class LiveRootLayoutContext[+A, +Ctx](
 trait LiveLayout[-A, -Ctx]:
   def view[Msg](content: HtmlElement[Msg], context: LiveLayoutContext[A, Ctx]): HtmlElement[Msg]
 
+  final private[scalive] def forPathParams[B](select: B => A): LiveLayout[B, Ctx] =
+    new LiveLayout[B, Ctx]:
+      def view[Msg](content: HtmlElement[Msg], context: LiveLayoutContext[B, Ctx]) =
+        LiveLayout.this.view(
+          content,
+          LiveLayoutContext(
+            context.params.map(select),
+            context.request,
+            context.currentUrl,
+            context.context
+          )
+        )
+
   /** Adapts this layout to another context type by selecting the context it needs.
     *
     * The selector must be pure and deterministic. It changes only this layout's input, not the
@@ -37,6 +50,7 @@ trait LiveLayout[-A, -Ctx]:
             select(context.context)
           )
         )
+end LiveLayout
 
 object LiveLayout:
   val identity: LiveLayout[Any, Any] = new LiveLayout[Any, Any]:
@@ -56,6 +70,27 @@ trait LiveRootLayout[-A, -Ctx]:
     pageTitle: Option[String],
     context: LiveRootLayoutContext[A, Ctx]
   ): HtmlElement[Msg]
+
+  final private[scalive] def forPathParams[B](select: B => A): LiveRootLayout[B, Ctx] =
+    if this eq LiveRootLayout.identity then LiveRootLayout.identity
+    else
+      new LiveRootLayout[B, Ctx]:
+        private def project(context: LiveRootLayoutContext[B, Ctx]) =
+          LiveRootLayoutContext(
+            select(context.params),
+            context.request,
+            context.currentUrl,
+            context.context
+          )
+
+        def key(context: LiveRootLayoutContext[B, Ctx]) =
+          LiveRootLayout.this.key(project(context))
+
+        def render[Msg](
+          content: HtmlElement[Msg],
+          pageTitle: Option[String],
+          context: LiveRootLayoutContext[B, Ctx]
+        ) = LiveRootLayout.this.render(content, pageTitle, project(context))
 
   /** Adapts this document shell to another context type by selecting the context it needs.
     *

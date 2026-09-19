@@ -73,10 +73,10 @@ def mount(ctx: MountContext): Task[Model] =
         .flatMap(monitor => loadConnectedModel(monitor))
 ```
 
-The capability is intentionally exposed only during connected mount. Do not
-retain it in the model, a service, or a callback for later acquisition; use a
-keyed managed API or an explicitly scoped service when ownership changes after
-mount.
+The capability is intentionally limited to connected mount, either directly or
+through the route/session initializer below. Do not retain it in the model, a
+service, or a callback for later acquisition; use a keyed managed API or an
+explicitly scoped service when ownership changes after mount.
 
 The acquisition `Task[A]` may fail normally. Once it succeeds, Scalive registers
 the finalizer before returning the value. That finalizer runs exactly once when
@@ -108,6 +108,56 @@ replaced or cancelled while the LiveView remains mounted.
 Cleanup starts after the server observes lifecycle termination. External
 presence and locks still need leases or expiry for node failure and undetected
 network partitions.
+
+### Initialize At Route Or Session Boundaries {#route-and-session-resources}
+
+Use `withConnectedResources` on a route or named live-session builder when an
+acquired resource is only a lifecycle side effect, such as a registration or
+lease. Keep direct connected-mount acquisition when its result is needed to
+construct the page's model, as in the monitor example above.
+
+The modifier accepts `(Ctx, ConnectedResources) => Task[Result]` with
+`Result <: Unit`. Finish an acquisition with `.unit` when the handle is needed
+only by its finalizer. The callback does not enrich typed context or populate a
+model, and it does not add a new environment requirement to the builder: capture
+services while assembling the application or obtain them from typed context.
+
+This application attaches a registration to a page without changing the page:
+
+@:sourceRegion(documentation/site/src/scalive/docs/examples/ConnectedResourceExample.scala, connected-resource-route-example)
+
+`Ctx` is the context available **where the modifier is installed**. Plain route
+and session builders supply `Any`; install after the aspects that produce the
+typed context you need. Later aspects or admission preserve the earlier callback's
+context through projection, rather than passing it the final accumulated tuple.
+A later `.context(factory)` call does not retroactively type a plain route's
+initializer.
+
+Initializers are lazy: neither constructing the builder nor disconnected
+rendering runs them. After all session and route admission/context checks succeed,
+Scalive runs session initializers first, then route initializers, in declaration
+order within each level, before the page's connected `mount`. Repeated modifiers
+append work; they do not replace earlier callbacks. This guarantee is about
+mount, not construction: page factories and render compilation can precede the
+initializers. Do not rely on registration side effects in a factory or while
+building the render graph.
+
+Execution is sequential and fail-fast. A `Task` failure is a mount failure, not an
+authentication rejection or a `LiveMountFailure` result. Use mount aspects and
+admission for controlled authorization outcomes. All initializers and direct
+connected-mount acquisitions use the same existing `ConnectedResources` scope.
+If an initializer or the remaining mount/initial render fails, lifecycle closure
+rolls back successful acquisitions through their registered finalizers; later
+initializers do not run after a failure. Keep acquisition and finalization short
+and bounded, just as for direct mount acquisition.
+
+The owner is one **connected root lifecycle**, not the physical socket, the named
+live-session group, or a logical application session. A fresh reconnect or route
+navigation runs the applicable initializers again for the new root. Patches and
+ordinary messages do not rerun them, and nested LiveViews do not inherit these
+route/session initializers. Nested views can still acquire their own resources
+directly during connected mount. Shared cross-tab/session ownership requires a
+separate service with explicit leases or reference counting.
 
 ## Run Finite Work With A Typed Key {#run-finite-work-with-a-typed-key}
 

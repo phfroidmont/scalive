@@ -593,6 +593,7 @@ object ZioHttp:
       declaredSession: Option[String],
       codec: PathCodec[A],
       contextDefinition: LiveRouteContext[R, A, In, Ctx],
+      connectedResourceInitializers: LiveConnectedResourceInitializers[Ctx],
       layouts: Vector[LiveLayout[A, Ctx]],
       root: Option[LiveRootLayout[A, Ctx]],
       applicationLayout: Option[LiveLayout[Any, Any]],
@@ -659,9 +660,19 @@ object ZioHttp:
             .fail(ConnectedMountRejected(LiveMountFailure.unauthorized("root layout key differs")))
             .unless(selectedRoot.key(rootContext) == claims.rootLayoutKey) *>
             make(path, request, context, url).map { lifecycle =>
+              val initialized = lifecycle.copy(mount =
+                mountContext =>
+                  ZIO.suspendSucceed {
+                    val initialize = mountContext.connection match
+                      case Connection.Disconnected         => ZIO.unit
+                      case Connection.Connected(connected) =>
+                        connectedResourceInitializers.run(context, connected.resources)
+                    initialize *> lifecycle.mount(mountContext)
+                  }
+              )
               PreparedConnected(
                 composeLayouts(
-                  lifecycle,
+                  initialized,
                   request,
                   context,
                   layouts,
@@ -687,6 +698,7 @@ object ZioHttp:
         sessionName,
         definition.pathCodec,
         definition.context,
+        definition.connectedResourceInitializers,
         definition.layouts,
         definition.rootLayout,
         applicationLayout,
@@ -713,6 +725,7 @@ object ZioHttp:
         sessionName,
         definition.pathCodec,
         definition.context,
+        definition.connectedResourceInitializers,
         definition.layouts,
         definition.rootLayout,
         applicationLayout,

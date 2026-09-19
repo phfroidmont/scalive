@@ -89,8 +89,8 @@ trait Subscriptions[Msg]:
 
 /** Acquisition and finalization owned by one connected `LiveView` lifecycle.
   *
-  * This capability is exposed through [[RootMountConnected.resources]]. Applications should use it
-  * during connected mount and must not retain it for later acquisition.
+  * This capability is exposed through [[RootMountConnected.resources]] and route/session connected
+  * resource initializers. Applications must not retain it for later acquisition.
   */
 trait ConnectedResources:
   /** Acquires a resource and registers its finalizer with the current connected lifecycle.

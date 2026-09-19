@@ -5,6 +5,7 @@ import java.util.concurrent.atomic.AtomicInteger
 
 import zio.*
 import zio.http.*
+import zio.http.codec.PathCodec
 import zio.json.*
 import zio.json.ast.Json
 import zio.test.*
@@ -1524,6 +1525,341 @@ object ZioHttpSpec extends ZIOSpecDefault:
         replacementValid.isRight
       )
     },
+    test("connected resource initializers are lazy, ordered, and retain their typed context") {
+      final case class Greeting(value: String)
+      type SessionContext = (String, Int)
+      type RouteContext   = (SessionContext, String)
+      type FinalContext   = (RouteContext, Boolean)
+      val sessionAspect = LiveSessionMountAspect.fromRequest[Any, String, String](
+        _ => ZIO.succeed("claim" -> "disconnected"),
+        (_, _) => ZIO.succeed("connected")
+      )
+      val laterSessionAspect = LiveSessionMountAspect.make[Any, String, String, Int](
+        (_, _) => ZIO.succeed("later-claim" -> 7),
+        (_, _, _) => ZIO.succeed(7)
+      )
+      val routeAspect = LiveRouteMountAspect.make[Any, Unit, SessionContext, String]((_, context) =>
+        ZIO.succeed(s"route-${context._1}")
+      )
+      val laterRouteAspect =
+        LiveRouteMountAspect.make[Any, Unit, RouteContext, Boolean]((_, _) => ZIO.succeed(true))
+
+      ZIO
+        .foreach(Vector(false, true)) { routed =>
+          for
+            events   <- Ref.make(Vector.empty[String])
+            releases <- Ref.make(0)
+            constructions = AtomicInteger()
+            initialize    = (label: String, resources: ConnectedResources) =>
+                           val _ = constructions.incrementAndGet()
+                           resources.acquireRelease(ZIO.unit)(_ => releases.update(_ + 1)) *>
+                             events.update(_ :+ label)
+            duplicate = (context: String, resources: ConnectedResources) =>
+                          initialize(s"session:$context", resources)
+            builder = scalive.live
+                        .withConnectedResources((context, resources) =>
+                          initialize(s"route-plain:$context", resources)
+                        )
+                        .withMountAspect(routeAspect)
+                        .withConnectedResources((context: RouteContext, resources) =>
+                          initialize(s"route:${context._2}", resources)
+                        )
+                        .withMountAspect(laterRouteAspect)
+            pageMount =
+              (context: FinalContext, greeting: Greeting, connected: Boolean) =>
+                ZIO
+                  .when(connected)(
+                    events.update(_ :+ s"page:${context._1._2}:${context._2}:${greeting.value}")
+                  ).unit
+            route =
+              if routed then
+                builder.params
+                  .withConnectedResources((context, resources) =>
+                    initialize(s"route-later:${context._2}", resources)
+                  )
+                  .context((context: FinalContext, greeting: Greeting) =>
+                    new LiveView.Routed.Eventless[Unit, Unit]:
+                      override val hooks = LiveHooks
+                        .empty[Nothing, Unit].onParams((model, _, ctx) =>
+                          ZIO
+                            .when(ctx.connection != Connection.Disconnected)(
+                              events.update(_ :+ "params-hook")
+                            ).as(LiveHookResult.cont(model))
+                        )
+                      def mount(params: Unit, ctx: MountContext) =
+                        pageMount(context, greeting, ctx.connection != Connection.Disconnected)
+                      override def handleParams(
+                        model: Unit,
+                        params: Unit,
+                        url: URL,
+                        ctx: ParamsContext
+                      ) =
+                        ZIO
+                          .when(ctx.connection != Connection.Disconnected)(
+                            events.update(_ :+ "params")
+                          ).unit
+                      def view(model: Signal[Unit]) = div("routed")
+                  )
+              else
+                builder
+                  .withConnectedResources((context, resources) =>
+                    initialize(s"route-later:${context._2}", resources)
+                  )
+                  .context((context: FinalContext, greeting: Greeting) =>
+                    new LiveView.Eventless[Unit]:
+                      def mount(ctx: MountContext) =
+                        pageMount(context, greeting, ctx.connection != Connection.Disconnected)
+                      def view(model: Signal[Unit]) = div("ordinary")
+                  )
+            application = scalive.Live.router(
+                            scalive.Live
+                              .session("resources")
+                              .withMountAspect(sessionAspect)
+                              .withConnectedResources(duplicate)
+                              .withConnectedResources(duplicate)
+                              .withMountAspect(laterSessionAspect)
+                              .withConnectedResources((context, resources) =>
+                                initialize(s"session-later:${context._2}", resources)
+                              )(route)
+                          )
+            afterDeclaration = constructions.get()
+            compiled         = ZioHttp.validate(application).head
+            response <-
+              run(
+                ZioHttp
+                  .routes(application, config).provideEnvironment(ZEnvironment(Greeting("http"))),
+                Request.get(URL.root)
+              )
+            body   <- response.body.asString.orDie
+            claims <- ZioHttpSecurity.verifySession(config, attribute(body, "data-phx-session").get)
+            _      <- compiled
+                   .prepareConnected(URL.root, Request.get(URL.root), claims)
+                   .provideEnvironment(ZEnvironment(Greeting("unused")))
+            lifecycle <- compiled
+                           .prepareConnected(URL.root, Request.get(URL.root), claims)
+                           .provideEnvironment(ZEnvironment(Greeting("fresh")))
+            beforeMount = constructions.get()
+            beforeEvents <- events.get
+            during       <-
+              ZIO.scoped {
+                for
+                  output <- Queue.unbounded[ConnectionOutput]
+                  _      <- compiled.startPrepared(
+                         lifecycle,
+                         RootConnectionMetadata(staticChanged = false, connectParams = Map.empty),
+                         output.offer(_).unit
+                       )
+                  joined <-
+                    output.take.timeoutFail(Exception("connected mount produced no output"))(
+                      5.seconds
+                    )
+                  observed <- events.get
+                  released <- releases.get
+                yield (joined, observed, released)
+              }
+            released <- releases.get
+            expected = Vector(
+                         "session:connected",
+                         "session:connected",
+                         "session-later:7",
+                         "route-plain:()",
+                         "route:route-connected",
+                         "route-later:true",
+                         "page:route-connected:true:fresh"
+                       ) ++ (if routed then Vector("params-hook", "params") else Vector.empty)
+          yield assertTrue(
+            afterDeclaration == 0,
+            beforeMount == 0,
+            beforeEvents.isEmpty,
+            constructions.get() == 6,
+            during._1.isInstanceOf[ConnectionOutput.Joined],
+            during._2 == expected,
+            during._3 == 0,
+            released == 6
+          )
+        }.map(_.reduce(_ && _))
+    } @@ TestAspect.withLiveClock,
+    test("routes without resource initializers do not evaluate unused context projections") {
+      final case class Combined(name: String, length: Int)
+      val projections = AtomicInteger()
+      given ContextAppend[String, Int] with
+        type Result = Combined
+        def append(name: String, length: Int) = Combined(name, length)
+        def left(context: Combined)           =
+          val _ = projections.incrementAndGet()
+          context.name
+
+      val first  = LiveRouteMountAspect.fromRequest[Any, Unit, String](_ => ZIO.succeed("context"))
+      val second =
+        LiveRouteMountAspect.make[Any, Unit, String, Int]((_, name) => ZIO.succeed(name.length))
+      val application = scalive.Live.router(
+        scalive.live
+          .withMountAspect(first).withMountAspect(second)
+          .context((context: Combined) =>
+            new LiveView.Eventless[Unit]:
+              def mount(ctx: MountContext)  = ZIO.unit
+              def view(model: Signal[Unit]) = div(context.name)
+          )
+      )
+
+      withServer(application) { port =>
+        for
+          page <- bootstrap(port)
+          afterDisconnected = projections.get()
+          socket <- connect(port, page)
+          joined <- joinRoot(socket, page)
+          _      <- socket.close
+        yield assertTrue(
+          status(joined) == "ok",
+          afterDisconnected == 0,
+          projections.get() == 0
+        )
+      }
+    },
+    test(
+      "initializer failures and defects are observed as mount failures and release earlier resources"
+    ) {
+      ZIO
+        .foreach(Vector("initializer", "acquire", "callback-defect", "effect-defect", "page")) {
+          failure =>
+            val acquired      = AtomicInteger()
+            val released      = AtomicInteger()
+            val failedRelease = AtomicInteger()
+            val mounted       = AtomicInteger()
+            val skipped       = AtomicInteger()
+            val view          = new LiveView.Eventless[Unit]:
+              def mount(ctx: MountContext) = ctx.connection match
+                case Connection.Disconnected => ZIO.unit
+                case Connection.Connected(_) =>
+                  ZIO.succeed(mounted.incrementAndGet()) *> ZIO.fail(Exception("page failed"))
+              def view(model: Signal[Unit]) = div("failure")
+            val application = scalive.Live.router(
+              scalive.live
+                .withConnectedResources((_, resources) =>
+                  resources
+                    .acquireRelease(ZIO.succeed(acquired.incrementAndGet()))(_ =>
+                      ZIO.succeed(released.incrementAndGet()).unit
+                    ).unit
+                )
+                .withConnectedResources((_, resources) =>
+                  failure match
+                    case "initializer" => ZIO.fail(Exception("initializer failed"))
+                    case "acquire"     =>
+                      resources.acquireRelease(ZIO.fail(Exception("acquire failed")))(_ =>
+                        ZIO.succeed(failedRelease.incrementAndGet()).unit
+                      )
+                    case "callback-defect" => throw IllegalStateException("callback threw")
+                    case "effect-defect"   => ZIO.dieMessage("initializer died")
+                    case _                 => ZIO.unit
+                )
+                .withConnectedResources((_, _) => ZIO.succeed(skipped.incrementAndGet()).unit)(view)
+            )
+            for
+              events <- Ref.make(Vector.empty[LifecycleEvent])
+              observer = LifecycleObserver.fromFunction(event => events.update(_ :+ event))
+              result <- withServer(application, observer) { port =>
+                          for
+                            page     <- bootstrap(port)
+                            socket   <- connect(port, page)
+                            rejected <- joinRoot(socket, page)
+                            cleaned  <- ZIO
+                                         .succeed(released.get()).repeatUntil(_ > 0)
+                                         .timeoutFail(
+                                           Exception("failed mount resource was not released")
+                                         )(5.seconds)
+                            _        <- socket.close
+                            observed <- events.get
+                            failures =
+                              observed.collect { case event: LifecycleEvent.MountFailed => event }
+                          yield assertTrue(
+                            status(rejected) == "error",
+                            response(rejected) == Json.Obj.empty,
+                            acquired.get() == 1,
+                            cleaned == 1,
+                            failedRelease.get() == 0,
+                            mounted.get() == (if failure == "page" then 1 else 0),
+                            skipped.get() == (if failure == "page" then 1 else 0),
+                            failures.size == 1,
+                            failures.head.error.failure == LifecycleFailure.Stage(
+                              LifecycleFailureStage.Mount
+                            )
+                          )
+                        }
+            yield result
+            end for
+        }.map(_.reduce(_ && _))
+    } @@ TestAspect.withLiveClock,
+    test("slash preserves previously installed guards, resources, layouts, and root keys") {
+      val event       = BrowserToServerEvent[Json]("slash-event")
+      val guards      = AtomicInteger()
+      val initialized = AtomicInteger()
+      val released    = AtomicInteger()
+      val view        = new LiveView[Nothing, Unit]:
+        override val hooks = LiveHooks
+          .empty[Nothing, Unit]
+          .onBrowserEvent(event)((model, _, _) => ZIO.succeed(model))
+        def mount(ctx: MountContext)                                               = ZIO.unit
+        def handleMessage(model: Unit, ctx: MessageContext): Nothing => Task[Unit] = identity
+        def view(model: Signal[Unit]) = div("slash-page")
+      val builder = (scalive.live / "organizations" / PathCodec.int("id"))
+        .guardConnectedTurns(_ => ZIO.succeed(guards.incrementAndGet()).unit)
+        .withConnectedResources((_, resources) =>
+          resources
+            .acquireRelease(ZIO.succeed(initialized.incrementAndGet()))(_ =>
+              ZIO.succeed(released.incrementAndGet()).unit
+            ).unit
+        )
+        .withLayout(
+          LiveLayout[Int, Any]([Msg] =>
+            (content, context) =>
+              mainTag(
+                idAttr := "preserved-layout",
+                context.params.map(id => s"organization:$id"),
+                content
+              )
+          )
+        )
+        .withRootLayout(
+          LiveRootLayout.dynamic[Int, Any](context => s"organization:${context.params}")([Msg] =>
+            (content, _, context) =>
+              htmlRootTag(bodyTag(dataAttr("organization") := context.params.toString, content))
+          )
+        )
+      val application = scalive.Live.router((builder / "retained" / PathCodec.string("name"))(view))
+
+      withServer(application) { port =>
+        for
+          rendered <- run(
+                        ZioHttp.routes(application, config),
+                        Request.get(URL.decode("/organizations/17/retained/example").toOption.get)
+                      )
+          html   <- rendered.body.asString
+          page   <- bootstrap(port, "/organizations/17/retained/example")
+          claims <- ZioHttpSecurity
+                      .verifySession(config, page.session)
+                      .mapError(error => Exception(error.toString))
+          socket <- connect(port, page)
+          joined <- joinRoot(socket, page)
+          reply  <- sendEvent(socket, page, "2", event.value)
+          retained = released.get()
+          _       <- socket.close
+          cleaned <- ZIO
+                       .succeed(released.get()).repeatUntil(_ > 0)
+                       .timeoutFail(Exception("slash resource was not released"))(5.seconds)
+        yield assertTrue(
+          claims.rootLayoutKey == "organization:17",
+          html.contains("data-organization=\"17\""),
+          status(joined) == "ok",
+          response(joined).toJson.contains("preserved-layout"),
+          response(joined).toJson.contains("organization:17"),
+          status(reply) == "ok",
+          guards.get() == 1,
+          initialized.get() == 1,
+          retained == 0,
+          cleaned == 1
+        )
+      }
+    } @@ TestAspect.withLiveClock,
     test("public session and route guards capture connected context and wrap browser events only") {
       val event  = BrowserToServerEvent[Json]("guarded-event")
       val events = scala.collection.mutable.ArrayBuffer.empty[String]
@@ -1753,20 +2089,24 @@ object ZioHttpSpec extends ZIOSpecDefault:
     def close: UIO[Unit] =
       channel.send(ChannelEvent.read(WebSocketFrame.close(1000, None))).ignore
 
-  private def withServer[A](application: LiveApplication[Any])(
+  private def withServer[A](
+    application: LiveApplication[Any],
+    observer: LifecycleObserver = LifecycleObserver.none
+  )(
     runTest: Int => ZIO[Client & Scope, Throwable, A]
   ): Task[A] =
     for
       started <- Promise.make[Nothing, Int]
-      _ <- (Server
-             .install(ZioHttp.routes(application, config))
+      _       <- Server
+             .install(ZioHttp.routes(application, config, observer))
              .tap(started.succeed)
              .zipRight(ZIO.never)
-             .provideLayer(Server.defaultWith(_.onAnyOpenPort)))
+             .provideLayer(Server.defaultWith(_.onAnyOpenPort))
              .forkDaemon
-      port <- started.await
+      port      <- started.await
       completed <- Promise.make[Nothing, Exit[Throwable, A]]
-      _ <- (runTest(port).exit.flatMap(completed.succeed).zipRight(ZIO.never))
+      _         <- runTest(port).exit
+             .flatMap(completed.succeed).zipRight(ZIO.never)
              .provideLayer(Scope.default ++ Client.default)
              .forkDaemon
       result <- completed.await.flatMap(ZIO.suspendSucceed(_))

@@ -50,7 +50,7 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
     case Navigate
 
   private enum AdmissionMsg:
-    case Navigate
+    case Increment, Patch, Navigate
 
   private final case class TestSessionId(value: String) derives JsonCodec
   private final case class TestClaims(sessionId: TestSessionId) derives JsonCodec
@@ -403,53 +403,163 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
         active        <- Ref.make(Set(sessionId))
         revalidations <- Ref.make(0)
         connections   <- LiveConnections.make[TestSessionId](_ => ZIO.unit)
-        state          = TestAuthState(active, revalidations)
-        application    = admittedApplication
-        result <- ZIO.scoped {
-                    for
-                      connected <- ConnectedRender.join(
-                                     application,
-                                     config,
-                                     Request.get(url("/?session=admitted"))
-                                   )
-                      name   <- connected.text("[data-user-name]")
-                      checks <- revalidations.get
-                    yield assertTrue(name == "admitted", checks == 1)
-                  }.provide(
-                    ZLayer.succeed[TestAuthState](state),
-                    ZLayer.succeed[LiveConnections[TestSessionId]](connections)
-                  )
+        state       = TestAuthState(active, revalidations)
+        application = admittedApplication()
+        result <- ZIO
+                    .scoped {
+                      for
+                        connected <- ConnectedRender.join(
+                                       application,
+                                       config,
+                                       Request.get(url("/?session=admitted"))
+                                     )
+                        name   <- connected.text("[data-user-name]")
+                        checks <- revalidations.get
+                      yield assertTrue(name == "admitted", checks == 1)
+                    }.provide(
+                      ZLayer.succeed[TestAuthState](state),
+                      ZLayer.succeed[LiveConnections[TestSessionId]](connections)
+                    )
       yield result
     },
-    test("invalidation retires the transport and reconnect revalidates authorization") {
+    test("route resources survive messages and patches but restart for reconnect and navigation") {
+      val sessionId                      = TestSessionId("resources")
+      def resourceNames(context: String) = Vector(
+        "session:resources",
+        s"route:resources:$context",
+        s"mount:resources:$context"
+      )
+      val initialResources     = resourceNames("initial:/")
+      val reconnectedResources = resourceNames("reconnected:/")
+      val destinationResources = resourceNames("destination:/next")
+
+      for
+        active        <- Ref.make(Set(sessionId))
+        revalidations <- Ref.make(0)
+        connections   <- LiveConnections.make[TestSessionId](_ => ZIO.unit)
+        events        <- Ref.make(Vector.empty[String])
+        context       <- Ref.make("initial")
+        state       = TestAuthState(active, revalidations)
+        application = admittedApplication(event => events.update(_ :+ event), context.get)
+        result <- ZIO
+                    .scoped {
+                      for
+                        client <- ConnectedRender.open(
+                                    application,
+                                    config,
+                                    Request.get(url("/?session=resources"))
+                                  )
+                        prepared           <- events.get
+                        first              <- client.join
+                        joined             <- events.get
+                        initial            <- first.text("[data-resource-context]")
+                        nested             <- first.joinNested("admission-child")
+                        nestedJoined       <- nested.isJoined
+                        afterNested        <- events.get
+                        _                  <- first.click("[data-admission-increment]")
+                        afterMessage       <- events.get
+                        _                  <- first.click("[data-admission-patch]")
+                        _                  <- first.click("[data-admission-increment]")
+                        count              <- first.text("[data-admission-count]")
+                        afterPatch         <- events.get
+                        patchedChildJoined <- nested.isJoined
+                        _                  <- client.disconnect
+                        disconnected       <- awaitResourceReleases(events, 3)
+                        firstJoined        <- first.isJoined
+                        childJoined        <- nested.isJoined
+                        _                  <- context.set("reconnected")
+                        second             <- client.reconnect
+                        reconnected        <- second.text("[data-resource-context]")
+                        afterReconnect     <- events.get
+                        _                  <- context.set("destination")
+                        action             <- second.click("[data-admission-navigate]")
+                        third              <- action match
+                                   case ConnectedAction.LiveNavigation(navigation) =>
+                                     navigation.follow
+                                   case other =>
+                                     ZIO.fail(Exception(s"Expected live navigation, got $other."))
+                        navigated    <- awaitResourceReleases(events, 6)
+                        destination  <- third.text("[data-resource-context]")
+                        sourceJoined <- second.isJoined
+                        nextJoined   <- third.isJoined
+                        _            <- client.disconnect
+                        finished     <- awaitResourceReleases(events, 9)
+                      yield assertTrue(
+                        prepared.isEmpty,
+                        joined == initialResources.map("acquire:" + _),
+                        initial == "initial:/",
+                        nestedJoined,
+                        afterNested == (joined :+ "mount:nested"),
+                        afterMessage == afterNested,
+                        count == "2",
+                        afterPatch == afterNested,
+                        patchedChildJoined,
+                        disconnected.filter(_.startsWith("release:")) ==
+                          initialResources.reverse.map("release:" + _),
+                        !firstJoined,
+                        !childJoined,
+                        reconnected == "reconnected:/",
+                        afterReconnect.filter(_.startsWith("acquire:")) ==
+                          (initialResources ++ reconnectedResources).map("acquire:" + _),
+                        afterReconnect.filter(_.startsWith("release:")) ==
+                          initialResources.reverse.map("release:" + _),
+                        destination == "destination:/next",
+                        !sourceJoined,
+                        nextJoined,
+                        navigated.filter(_.startsWith("release:")) ==
+                          (initialResources.reverse ++ reconnectedResources.reverse)
+                            .map("release:" + _),
+                        finished.filter(_.startsWith("acquire:")) ==
+                          (initialResources ++ reconnectedResources ++ destinationResources)
+                            .map("acquire:" + _),
+                        finished.filter(_.startsWith("release:")) ==
+                          (initialResources.reverse ++ reconnectedResources.reverse ++
+                            destinationResources.reverse).map("release:" + _)
+                      )
+                    }.provide(
+                      ZLayer.succeed[TestAuthState](state),
+                      ZLayer.succeed[LiveConnections[TestSessionId]](connections)
+                    )
+      yield result
+      end for
+    },
+    test("invalidation retires the transport and rejected reconnect acquires no resources") {
       val sessionId = TestSessionId("revoked")
       for
         active        <- Ref.make(Set(sessionId))
         revalidations <- Ref.make(0)
         connections   <- LiveConnections.make[TestSessionId](_ => ZIO.unit)
-        state          = TestAuthState(active, revalidations)
-        result <- ZIO.scoped {
-                    for
-                      client <- ConnectedRender.open(
-                                  admittedApplication,
-                                  config,
-                                  Request.get(url("/?session=revoked"))
-                                )
-                      connected <- client.join
-                      _         <- active.set(Set.empty)
-                      _         <- connections.disconnect(sessionId)
-                      _         <- connected.awaitDisconnected
-                      retry     <- client.reconnect.either
-                      checks    <- revalidations.get
-                    yield assertTrue(
-                      retry == Left(ConnectedJoinFailure.Unauthorized),
-                      checks == 2
+        events        <- Ref.make(Vector.empty[String])
+        state = TestAuthState(active, revalidations)
+        result <- ZIO
+                    .scoped {
+                      for
+                        client <- ConnectedRender.open(
+                                    admittedApplication(event => events.update(_ :+ event)),
+                                    config,
+                                    Request.get(url("/?session=revoked"))
+                                  )
+                        connected  <- client.join
+                        acquired   <- events.get
+                        _          <- active.set(Set.empty)
+                        _          <- connections.disconnect(sessionId)
+                        _          <- connected.awaitDisconnected
+                        _          <- awaitResourceReleases(events, 3)
+                        retry      <- client.reconnect.either
+                        afterRetry <- events.get
+                        checks     <- revalidations.get
+                      yield assertTrue(
+                        retry == Left(ConnectedJoinFailure.Unauthorized),
+                        acquired.size == 3,
+                        afterRetry.filter(_.startsWith("acquire:")) == acquired,
+                        checks == 2
+                      )
+                    }.provide(
+                      ZLayer.succeed[TestAuthState](state),
+                      ZLayer.succeed[LiveConnections[TestSessionId]](connections)
                     )
-                  }.provide(
-                    ZLayer.succeed[TestAuthState](state),
-                    ZLayer.succeed[LiveConnections[TestSessionId]](connections)
-                  )
       yield result
+      end for
     },
     test("reconnect and navigation progress harness-owned mount parameters") {
       def connectedParams(ctx: scalive.MountContext[?, ?]): Task[(Long, String)] =
@@ -551,39 +661,48 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
                   }
       yield result
     },
-    test("live navigation revalidates session admission and reports rejection") {
+    test("live navigation revalidates session admission and rejection acquires no resources") {
       val sessionId = TestSessionId("navigation")
       for
         active        <- Ref.make(Set(sessionId))
         revalidations <- Ref.make(0)
         connections   <- LiveConnections.make[TestSessionId](_ => ZIO.unit)
-        state          = TestAuthState(active, revalidations)
-        result <- ZIO.scoped {
-                    for
-                      client <- ConnectedRender.open(
-                                  admittedApplication,
-                                  config,
-                                  Request.get(url("/?session=navigation"))
-                                )
-                      connected <- client.join
-                      outcome   <- connected.click("[data-admission-navigate]")
-                      _         <- active.set(Set.empty)
-                      rejected <- outcome match
-                                    case ConnectedAction.LiveNavigation(navigation) =>
-                                      navigation.follow.either
-                                    case other =>
-                                      ZIO.fail(Exception(s"Expected live navigation, got $other."))
-                      _      <- connected.awaitDisconnected
-                      checks <- revalidations.get
-                    yield assertTrue(
-                      rejected == Left(ConnectedJoinFailure.Disconnected),
-                      checks == 2
+        events        <- Ref.make(Vector.empty[String])
+        state = TestAuthState(active, revalidations)
+        result <- ZIO
+                    .scoped {
+                      for
+                        client <- ConnectedRender.open(
+                                    admittedApplication(event => events.update(_ :+ event)),
+                                    config,
+                                    Request.get(url("/?session=navigation"))
+                                  )
+                        connected <- client.join
+                        acquired  <- events.get
+                        outcome   <- connected.click("[data-admission-navigate]")
+                        _         <- active.set(Set.empty)
+                        rejected  <- outcome match
+                                      case ConnectedAction.LiveNavigation(navigation) =>
+                                        navigation.follow.either
+                                      case other =>
+                                        ZIO.fail(
+                                          Exception(s"Expected live navigation, got $other.")
+                                        )
+                        _       <- connected.awaitDisconnected
+                        retired <- awaitResourceReleases(events, 3)
+                        checks  <- revalidations.get
+                      yield assertTrue(
+                        rejected == Left(ConnectedJoinFailure.Disconnected),
+                        acquired.size == 3,
+                        retired.filter(_.startsWith("acquire:")) == acquired,
+                        checks == 2
+                      )
+                    }.provide(
+                      ZLayer.succeed[TestAuthState](state),
+                      ZLayer.succeed[LiveConnections[TestSessionId]](connections)
                     )
-                  }.provide(
-                    ZLayer.succeed[TestAuthState](state),
-                    ZLayer.succeed[LiveConnections[TestSessionId]](connections)
-                  )
       yield result
+      end for
     },
     test("live navigation rejoins the destination through redirect admission") {
       val source = new LiveView[RoutedNavigationMsg, Unit]:
@@ -678,10 +797,14 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
                   )
       yield result
     },
-    test("destination route denial happens before lifecycle construction") {
-      val factories = AtomicInteger()
+    test("destination route denial happens before lifecycle construction or resource acquisition") {
+      val factories                                                = AtomicInteger()
+      val resourceStarts                                           = AtomicInteger()
+      def startResource(resources: ConnectedResources): Task[Unit] =
+        resources.acquireRelease(ZIO.succeed(resourceStarts.incrementAndGet()))(_ => ZIO.unit).unit
+
       val source = new LiveView[RoutedNavigationMsg, Unit]:
-        def mount(ctx: MountContext) = ZIO.unit
+        def mount(ctx: MountContext)                        = ZIO.unit
         def handleMessage(model: Unit, ctx: MessageContext) =
           case RoutedNavigationMsg.Navigate => ctx.nav.pushNavigateUnsafe("/denied").as(model)
         override def view(model: Signal[Unit]) =
@@ -690,16 +813,19 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
       val denied = LiveRouteMountAspect.make[Any, Unit, TestUser, Unit]((_, _) =>
         ZIO.fail(LiveRouteMountFailure.forbidden("destination access revoked"))
       )
-      val destination = (scalive.live / "denied").withMountAspect(denied) {
-        factories.incrementAndGet()
-        new LiveView.Eventless[Unit]:
-          def mount(ctx: MountContext) = ZIO.unit
-          def view(model: Signal[Unit]) = div("denied")
-      }
+      val destination = (scalive.live / "denied")
+        .withMountAspect(denied)
+        .withConnectedResources((_, resources) => startResource(resources)) {
+          factories.incrementAndGet()
+          new LiveView.Eventless[Unit]:
+            def mount(ctx: MountContext)  = ZIO.unit
+            def view(model: Signal[Unit]) = div("denied")
+        }
       val application = scalive.Live.router(
         scalive.Live
           .session("denied-navigation")
-          .withAdmission(authentication)(_.sessionId)(
+          .withAdmission(authentication)(_.sessionId)
+          .withConnectedResources((_, resources) => startResource(resources))(
             scalive.live.context((_: TestUser) => source),
             destination
           )
@@ -710,31 +836,34 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
         active        <- Ref.make(Set(sessionId))
         revalidations <- Ref.make(0)
         connections   <- LiveConnections.make[TestSessionId](_ => ZIO.unit)
-        state           = TestAuthState(active, revalidations)
-        result <- ZIO.scoped {
-                    for
-                      root <- ConnectedRender.join(
-                                application,
-                                config,
-                                Request.get(url("/?session=navigation"))
-                              )
-                      action <- root.click("[data-navigate]")
-                      denied <- action match
-                                  case ConnectedAction.LiveNavigation(navigation) =>
-                                    navigation.follow.either
-                                  case other =>
-                                    ZIO.fail(Exception(s"Expected live navigation, got $other."))
-                      checks <- revalidations.get
-                    yield assertTrue(
-                      denied == Left(ConnectedJoinFailure.Unauthorized),
-                      factories.get() == 0,
-                      checks == 2
+        state = TestAuthState(active, revalidations)
+        result <- ZIO
+                    .scoped {
+                      for
+                        root <- ConnectedRender.join(
+                                  application,
+                                  config,
+                                  Request.get(url("/?session=navigation"))
+                                )
+                        action <- root.click("[data-navigate]")
+                        denied <- action match
+                                    case ConnectedAction.LiveNavigation(navigation) =>
+                                      navigation.follow.either
+                                    case other =>
+                                      ZIO.fail(Exception(s"Expected live navigation, got $other."))
+                        checks <- revalidations.get
+                      yield assertTrue(
+                        denied == Left(ConnectedJoinFailure.Unauthorized),
+                        factories.get() == 0,
+                        resourceStarts.get() == 1,
+                        checks == 2
+                      )
+                    }.provide(
+                      ZLayer.succeed[TestAuthState](state),
+                      ZLayer.succeed[LiveConnections[TestSessionId]](connections)
                     )
-                  }.provide(
-                    ZLayer.succeed[TestAuthState](state),
-                    ZLayer.succeed[LiveConnections[TestSessionId]](connections)
-                  )
       yield result
+      end for
     },
     test("route denial after a successful navigation reports its join failure") {
       val factories = AtomicInteger()
@@ -860,32 +989,93 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
         yield user
     )
 
-  private val admittedApplication
-    : LiveApplication[TestAuthState & LiveConnections[TestSessionId]] = scalive.Live.router(
-    scalive.Live
-      .session("authenticated")
-      .withAdmission(authentication)(_.sessionId)(
-        scalive.live.context((user: TestUser) => new LiveView[AdmissionMsg, Unit]:
-          def mount(ctx: MountContext) = ZIO.unit
-          def handleMessage(model: Unit, ctx: MessageContext) =
-            case AdmissionMsg.Navigate => ctx.nav.pushNavigateUnsafe("/next").as(model)
-          override def view(model: Signal[Unit]) =
-            div(
-              dataAttr("user") := "",
-              span(dataAttr("user-name") := "", user.name),
-              button(
-                dataAttr("admission-navigate") := "",
-                on.click(AdmissionMsg.Navigate),
-                "Next"
-              )
+  private def admittedApplication(
+    record: String => UIO[Unit] = _ => ZIO.unit,
+    routeContext: UIO[String] = ZIO.succeed("initial")
+  ): LiveApplication[TestAuthState & LiveConnections[TestSessionId]] =
+    def track(name: String, resources: ConnectedResources): Task[Unit] =
+      resources.acquireRelease(record(s"acquire:$name"))(_ => record(s"release:$name")).unit
+
+    def mountResources(name: String, ctx: scalive.MountContext[?, ?]): Task[Unit] =
+      ctx.connection match
+        case Connection.Disconnected         => ZIO.unit
+        case Connection.Connected(connected) => track(s"mount:$name", connected.resources)
+
+    val routeAuthorization = LiveRouteMountAspect.make[Any, Unit, TestUser, String] { (request, _) =>
+      routeContext.map(value => s"$value:${request.url.path.encode}")
+    }
+    val child = new LiveView.Eventless[Unit]:
+      def mount(ctx: MountContext) = ctx.connection match
+        case Connection.Disconnected => ZIO.unit
+        case Connection.Connected(_) => record("mount:nested")
+      override def view(model: Signal[Unit]) = div("admission child")
+
+    scalive.Live.router(
+      scalive.Live
+        .session("authenticated")
+        .withAdmission(authentication)(_.sessionId)
+        .withConnectedResources((user, resources) => track(s"session:${user.name}", resources))(
+          scalive.live
+            .withMountAspect(routeAuthorization)
+            .withConnectedResources((context, resources) =>
+              track(s"route:${context._1.name}:${context._2}", resources)
             )
-        ),
-        (scalive.live / "next").context((user: TestUser) => new LiveView.Eventless[Unit]:
-          def mount(ctx: MountContext) = ZIO.unit
-          override def view(model: Signal[Unit]) = div(dataAttr("user") := "", user.name)
+            .context((context: (TestUser, String)) =>
+              new LiveView[AdmissionMsg, Int]:
+                def mount(ctx: MountContext) =
+                  mountResources(s"${context._1.name}:${context._2}", ctx).as(0)
+                def handleMessage(model: Int, ctx: MessageContext) =
+                  case AdmissionMsg.Increment => ZIO.succeed(model + 1)
+                  case AdmissionMsg.Patch     => ctx.nav.pushPatchUnsafe("?patched=true").as(model)
+                  case AdmissionMsg.Navigate  => ctx.nav.pushNavigateUnsafe("/next").as(model)
+                override def view(model: Signal[Int]) =
+                  div(
+                    dataAttr("user") := "",
+                    span(dataAttr("user-name")        := "", context._1.name),
+                    span(dataAttr("resource-context") := "", context._2),
+                    span(dataAttr("admission-count")  := "", model.map(_.toString)),
+                    button(
+                      dataAttr("admission-increment") := "",
+                      on.click(AdmissionMsg.Increment),
+                      "Increment"
+                    ),
+                    button(
+                      dataAttr("admission-patch") := "",
+                      on.click(AdmissionMsg.Patch),
+                      "Patch"
+                    ),
+                    button(
+                      dataAttr("admission-navigate") := "",
+                      on.click(AdmissionMsg.Navigate),
+                      "Next"
+                    ),
+                    liveView("admission-child", child)
+                  )
+            ),
+          (scalive.live / "next")
+            .withMountAspect(routeAuthorization)
+            .withConnectedResources((context, resources) =>
+              track(s"route:${context._1.name}:${context._2}", resources)
+            )
+            .context((context: (TestUser, String)) =>
+              new LiveView.Eventless[Unit]:
+                def mount(ctx: MountContext) =
+                  mountResources(s"${context._1.name}:${context._2}", ctx)
+                override def view(model: Signal[Unit]) = div(
+                  dataAttr("user") := "",
+                  context._1.name,
+                  span(dataAttr("resource-context") := "", context._2)
+                )
+            )
         )
-      )
-  )
+    )
+  end admittedApplication
+
+  private def awaitResourceReleases(events: Ref[Vector[String]], expected: Int)
+    : Task[Vector[String]] =
+    (ZIO.yieldNow *> events.get)
+      .repeatUntil(_.count(_.startsWith("release:")) >= expected)
+      .timeoutFail(Exception(s"Expected $expected connected resource releases."))(3.seconds)
 
   private def url(value: String): URL = URL.decode(value).toOption.get
 

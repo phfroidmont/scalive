@@ -34,6 +34,13 @@ Path codecs decode path segments. `query`, `queryOptional`, and schema-derived
 query codecs decode query values. A routed view receives the final value through
 @:apiSymbol(trait:scalive.LiveView.Routed)`LiveView.Routed`@:@ rather than reading raw request strings.
 
+Extending a route prefix with `/` preserves its installed modifiers, including
+layouts, the root layout, connected-turn guards, and connected-resource
+initializers. You do not have to finish the path before installing them. Prefix
+layouts retain their installation-time path parameters: the path codec's combiner
+projects those parameters from the extended destination rather than exposing the
+larger parameter tuple to the earlier layout.
+
 ## Map Parameters Into Domain Types {#map-parameters-into-domain-types}
 
 Use @:apiSymbol(def:scalive.LiveEncodableRouteParamsBuilder.mapParams)`mapParams`@:@ when the codec-facing shape is not the shape the
@@ -108,6 +115,14 @@ and [route-context pipeline](layouts-sessions-and-mount-aspects.md#derive-route-
 The [combined example](layouts-sessions-and-mount-aspects.md#combine-session-and-route-context)
 shows typed destination parameters consuming admitted `CurrentUser` context.
 
+For resource registration rather than authorization or context loading, use
+`withConnectedResources` on the route or named live-session builder. Initializers
+run after all admission/context checks and before connected page mount, with
+session callbacks before route callbacks and declaration order within each level.
+They are additive, do not change context or the page model, and fail through
+`Task` as mount failures, not controlled authorization rejections. See
+[route and session resources](async-work-and-subscriptions.md#route-and-session-resources).
+
 ## Build Locations From Route Declarations {#build-locations-from-route-declarations}
 
 Call @:apiSymbol(def:scalive.LiveEncodableRouteParamsBuilder.location)`location(params)`@:@ to create a
@@ -156,6 +171,12 @@ Navigation changes the routed LiveView:
 
 - @:apiSymbol(def:scalive.MountNavigation.pushNavigate)`pushNavigate`@:@ adds a browser-history entry;
 - @:apiSymbol(def:scalive.MountNavigation.replaceNavigate)`replaceNavigate`@:@ replaces the current entry.
+
+The new connected root lifecycle reruns its route/session resource initializers
+on navigation or reconnect. A patch or ordinary message retains the current
+resources without rerunning those callbacks. Initializers are not inherited by
+nested LiveViews and never imply shared ownership across roots on one socket or
+within one named live session.
 
 Rendered links expose the same four choices through `link`. Prefer links for
 destinations the user can activate directly: they retain an ordinary `href` for

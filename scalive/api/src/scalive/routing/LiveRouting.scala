@@ -92,6 +92,7 @@ sealed private[scalive] trait LiveRouteDefinition[A]:
   private[scalive] def withSession[R, SessionCtx](
     pipeline: LiveSessionMountPipeline[R, Any, SessionCtx],
     sessionGuards: LiveConnectedTurnGuard[SessionCtx],
+    sessionInitializers: LiveConnectedResourceInitializers[SessionCtx],
     sessionLayouts: Vector[LiveLayout[Any, SessionCtx]],
     sessionRootLayout: Option[LiveRootLayout[Any, SessionCtx]],
     supplies: SessionCtx <:< Input
@@ -105,6 +106,7 @@ object LiveRouteDefinition:
     context: LiveRouteContext[R, A, In, Ctx],
     factory: (A, Request, Ctx) => LiveView[Message, State],
     connectedTurnGuards: LiveConnectedTurnGuard[Ctx],
+    connectedResourceInitializers: LiveConnectedResourceInitializers[Ctx],
     layouts: Vector[LiveLayout[A, Ctx]],
     rootLayout: Option[LiveRootLayout[A, Ctx]])
       extends LiveRouteDefinition[A]:
@@ -117,6 +119,7 @@ object LiveRouteDefinition:
     def withSession[R1, SessionCtx](
       pipeline: LiveSessionMountPipeline[R1, Any, SessionCtx],
       sessionGuards: LiveConnectedTurnGuard[SessionCtx],
+      sessionInitializers: LiveConnectedResourceInitializers[SessionCtx],
       sessionLayouts: Vector[LiveLayout[Any, SessionCtx]],
       sessionRootLayout: Option[LiveRootLayout[Any, SessionCtx]],
       supplies: SessionCtx <:< In
@@ -128,6 +131,9 @@ object LiveRouteDefinition:
         sessionGuards
           .contramap((_: (SessionCtx, Ctx))._1)
           .andThen(connectedTurnGuards.contramap((_: (SessionCtx, Ctx))._2)),
+        sessionInitializers
+          .contramap((_: (SessionCtx, Ctx))._1)
+          .andThen(connectedResourceInitializers.contramap((_: (SessionCtx, Ctx))._2)),
         sessionLayouts.map(_.forContext((_: (SessionCtx, Ctx))._1)) ++
           layouts.map(_.forContext((_: (SessionCtx, Ctx))._2)),
         rootLayout
@@ -144,6 +150,7 @@ object LiveRouteDefinition:
     factory: (A, Request, Ctx) => LiveView.Routed[Message, State, Params],
     paramsCodec: LiveParamsDecoder[A, Params],
     connectedTurnGuards: LiveConnectedTurnGuard[Ctx],
+    connectedResourceInitializers: LiveConnectedResourceInitializers[Ctx],
     layouts: Vector[LiveLayout[A, Ctx]],
     rootLayout: Option[LiveRootLayout[A, Ctx]])
       extends LiveRouteDefinition[A]:
@@ -156,6 +163,7 @@ object LiveRouteDefinition:
     def withSession[R1, SessionCtx](
       pipeline: LiveSessionMountPipeline[R1, Any, SessionCtx],
       sessionGuards: LiveConnectedTurnGuard[SessionCtx],
+      sessionInitializers: LiveConnectedResourceInitializers[SessionCtx],
       sessionLayouts: Vector[LiveLayout[Any, SessionCtx]],
       sessionRootLayout: Option[LiveRootLayout[Any, SessionCtx]],
       supplies: SessionCtx <:< In
@@ -168,6 +176,9 @@ object LiveRouteDefinition:
         sessionGuards
           .contramap((_: (SessionCtx, Ctx))._1)
           .andThen(connectedTurnGuards.contramap((_: (SessionCtx, Ctx))._2)),
+        sessionInitializers
+          .contramap((_: (SessionCtx, Ctx))._1)
+          .andThen(connectedResourceInitializers.contramap((_: (SessionCtx, Ctx))._2)),
         sessionLayouts.map(_.forContext((_: (SessionCtx, Ctx))._1)) ++
           layouts.map(_.forContext((_: (SessionCtx, Ctx))._2)),
         rootLayout
@@ -188,11 +199,16 @@ sealed abstract class LiveRoute[R, A] private[scalive] extends LiveRouteFragment
   private[scalive] def attachSession[RS, SessionCtx](
     pipeline: LiveSessionMountPipeline[RS, Any, SessionCtx],
     guards: LiveConnectedTurnGuard[SessionCtx],
+    initializers: LiveConnectedResourceInitializers[SessionCtx],
     layouts: Vector[LiveLayout[Any, SessionCtx]],
     rootLayout: Option[LiveRootLayout[Any, SessionCtx]],
     supplies: SessionCtx <:< Input
   ): Vector[LiveRouteFragment[R & RS] { type Input = Any }] =
-    Vector(LiveRoute(definition.withSession(pipeline, guards, layouts, rootLayout, supplies)))
+    Vector(
+      LiveRoute(
+        definition.withSession(pipeline, guards, initializers, layouts, rootLayout, supplies)
+      )
+    )
 
 object LiveRoute:
   private[scalive] def apply[R, A, Need](
@@ -213,6 +229,7 @@ sealed trait LiveRouteFragment[-R]:
   private[scalive] def attachSession[RS, SessionCtx](
     pipeline: LiveSessionMountPipeline[RS, Any, SessionCtx],
     guards: LiveConnectedTurnGuard[SessionCtx],
+    initializers: LiveConnectedResourceInitializers[SessionCtx],
     layouts: Vector[LiveLayout[Any, SessionCtx]],
     rootLayout: Option[LiveRootLayout[Any, SessionCtx]],
     supplies: SessionCtx <:< Input
@@ -223,10 +240,34 @@ class LiveRouteBuilder[A] private[scalive] (
   private[scalive] val pathCodec: PathCodec[A],
   private val layouts: Vector[LiveLayout[A, Any]] = Vector.empty,
   private val rootLayout: Option[LiveRootLayout[A, Any]] = None,
-  private val connectedTurnGuards: LiveConnectedTurnGuard[Any] = LiveConnectedTurnGuard.empty):
+  private val connectedTurnGuards: LiveConnectedTurnGuard[Any] = LiveConnectedTurnGuard.empty,
+  private val connectedResourceInitializers: LiveConnectedResourceInitializers[Any] =
+    LiveConnectedResourceInitializers.empty):
 
   def /[B](that: PathCodec[B])(using combiner: Combiner[A, B]): LiveRouteSeed[combiner.Out] =
-    LiveRouteSeed(pathCodec / that)
+    val previousParams: combiner.Out => A = out => combiner.separate(out)._1
+    LiveRouteSeed(
+      pathCodec / that,
+      layouts.map(_.forPathParams(previousParams)),
+      rootLayout.map(_.forPathParams(previousParams)),
+      connectedTurnGuards,
+      connectedResourceInitializers
+    )
+
+  /** Appends setup for this route's connected resources, before connected mount. Callbacks run in
+    * declaration order, after session setup, and receive the context available here. They do not
+    * run during disconnected rendering and are not inherited by nested LiveViews.
+    */
+  def withConnectedResources[Result <: Unit](
+    initialize: (Any, ConnectedResources) => zio.Task[Result]
+  ): LiveRouteBuilder[A] =
+    LiveRouteBuilder(
+      pathCodec,
+      layouts,
+      rootLayout,
+      connectedTurnGuards,
+      connectedResourceInitializers.andThen(LiveConnectedResourceInitializers(initialize))
+    )
 
   def location(value: A): LiveLocation =
     locationEither(value).fold(error => throw new LiveLocation.EncodingException(error), identity)
@@ -251,7 +292,8 @@ class LiveRouteBuilder[A] private[scalive] (
       LiveParamsCodec.fromQuery(codec),
       layouts,
       rootLayout,
-      connectedTurnGuards
+      connectedTurnGuards,
+      connectedResourceInitializers
     )
 
   def query[Query: Schema](
@@ -280,18 +322,33 @@ class LiveRouteBuilder[A] private[scalive] (
       LiveParamsCodec.path[A],
       layouts,
       rootLayout,
-      connectedTurnGuards
+      connectedTurnGuards,
+      connectedResourceInitializers
     )
 
   def params[Params](
     codec: LiveParamsCodec[A, Params]
   ): LiveEncodableRouteParamsBuilder[A, Params] =
-    LiveEncodableRouteParamsBuilder(pathCodec, codec, layouts, rootLayout, connectedTurnGuards)
+    LiveEncodableRouteParamsBuilder(
+      pathCodec,
+      codec,
+      layouts,
+      rootLayout,
+      connectedTurnGuards,
+      connectedResourceInitializers
+    )
 
   def paramsDecodeOnly[Params](
     decoder: LiveParamsDecoder[A, Params]
   ): LiveRouteParamsBuilder[A, Params] =
-    LiveRouteParamsBuilder(pathCodec, decoder, layouts, rootLayout, connectedTurnGuards)
+    LiveRouteParamsBuilder(
+      pathCodec,
+      decoder,
+      layouts,
+      rootLayout,
+      connectedTurnGuards,
+      connectedResourceInitializers
+    )
 
   /** Appends a policy check before each connected application turn.
     *
@@ -308,7 +365,8 @@ class LiveRouteBuilder[A] private[scalive] (
       pathCodec,
       layouts,
       rootLayout,
-      connectedTurnGuards.andThen(LiveConnectedTurnGuard(guard))
+      connectedTurnGuards.andThen(LiveConnectedTurnGuard(guard)),
+      connectedResourceInitializers
     )
 
   def withLayout(layout: LiveLayout[A, Any]): LiveRouteBuilder[A] =
@@ -316,7 +374,8 @@ class LiveRouteBuilder[A] private[scalive] (
       pathCodec,
       layouts :+ layout,
       rootLayout,
-      connectedTurnGuards
+      connectedTurnGuards,
+      connectedResourceInitializers
     )
 
   def withRootLayout(layout: LiveRootLayout[A, Any]): LiveRouteBuilder[A] =
@@ -324,7 +383,8 @@ class LiveRouteBuilder[A] private[scalive] (
       pathCodec,
       layouts,
       Some(layout),
-      connectedTurnGuards
+      connectedTurnGuards,
+      connectedResourceInitializers
     )
 
   /** Starts a typed route mount pipeline. The resulting context is supplied to route factories. */
@@ -337,7 +397,8 @@ class LiveRouteBuilder[A] private[scalive] (
       LiveRouteMountPipeline.Identity[A, In]().andThen(aspect),
       layouts.map(_.forContext((_: Result) => ())),
       rootLayout.map(_.forContext((_: Result) => ())),
-      connectedTurnGuards.contramap((_: Result) => ())
+      connectedTurnGuards.contramap((_: Result) => ()),
+      connectedResourceInitializers.contramap((_: Result) => ())
     )
 
   def apply[Msg, Model](view: => LiveView[Msg, Model]): LiveRoute[Any, A] { type Input = Any } =
@@ -358,6 +419,7 @@ class LiveRouteBuilder[A] private[scalive] (
         LiveRouteContext.Required(),
         factory,
         connectedTurnGuards.contramap((_: Ctx) => ()),
+        connectedResourceInitializers.contramap((_: Ctx) => ()),
         layouts.map(_.forContext((_: Ctx) => ())),
         rootLayout.map(_.forContext((_: Ctx) => ()))
       )
@@ -389,6 +451,7 @@ class LiveRouteBuilder[A] private[scalive] (
         LiveRouteContext.WithEnvironment(LiveRouteContext.Required(), summon[Tag[R]]),
         (path, request, contexts) => factory(path, request, contexts._1, contexts._2),
         connectedTurnGuards.contramap((_: (Ctx, R)) => ()),
+        connectedResourceInitializers.contramap((_: (Ctx, R)) => ()),
         requiredLayouts.map(_.forContext((_: (Ctx, R))._1)),
         requiredRootLayout.map(_.forContext((_: (Ctx, R))._1))
       )
@@ -407,6 +470,7 @@ class LiveRouteBuilder[A] private[scalive] (
         LiveRouteContext.Environment(summon[Tag[R]]),
         factory,
         connectedTurnGuards.contramap((_: R) => ()),
+        connectedResourceInitializers.contramap((_: R) => ()),
         layouts.map(_.forContext((_: R) => ())),
         rootLayout.map(_.forContext((_: R) => ()))
       )
@@ -421,6 +485,7 @@ class LiveRouteBuilder[A] private[scalive] (
         LiveRouteContext.Direct(),
         (path, request, _) => factory(path, request),
         connectedTurnGuards,
+        connectedResourceInitializers,
         layouts,
         rootLayout
       )
@@ -432,9 +497,17 @@ object LiveRouteBuilder:
     pathCodec: PathCodec[A],
     layouts: Vector[LiveLayout[A, Any]] = Vector.empty,
     rootLayout: Option[LiveRootLayout[A, Any]] = None,
-    connectedTurnGuards: LiveConnectedTurnGuard[Any] = LiveConnectedTurnGuard.empty
+    connectedTurnGuards: LiveConnectedTurnGuard[Any] = LiveConnectedTurnGuard.empty,
+    connectedResourceInitializers: LiveConnectedResourceInitializers[Any] =
+      LiveConnectedResourceInitializers.empty
   ): LiveRouteBuilder[A] =
-    new LiveRouteBuilder(pathCodec, layouts, rootLayout, connectedTurnGuards)
+    new LiveRouteBuilder(
+      pathCodec,
+      layouts,
+      rootLayout,
+      connectedTurnGuards,
+      connectedResourceInitializers
+    )
 
 /** Route construction after a mount aspect has produced typed lifecycle context. */
 final class LiveRouteMountAspectBuilder[R, A, Need, Ctx] private[scalive] (
@@ -442,7 +515,21 @@ final class LiveRouteMountAspectBuilder[R, A, Need, Ctx] private[scalive] (
   private val pipeline: LiveRouteMountPipeline[R, A, Need, Ctx],
   private val layouts: Vector[LiveLayout[A, Ctx]],
   private val rootLayout: Option[LiveRootLayout[A, Ctx]],
-  private val connectedTurnGuards: LiveConnectedTurnGuard[Ctx]):
+  private val connectedTurnGuards: LiveConnectedTurnGuard[Ctx],
+  private val connectedResourceInitializers: LiveConnectedResourceInitializers[Ctx]):
+
+  /** Appends connected setup using the context available at this declaration. */
+  def withConnectedResources[Result <: Unit](
+    initialize: (Ctx, ConnectedResources) => zio.Task[Result]
+  ): LiveRouteMountAspectBuilder[R, A, Need, Ctx] =
+    LiveRouteMountAspectBuilder(
+      pathCodec,
+      pipeline,
+      layouts,
+      rootLayout,
+      connectedTurnGuards,
+      connectedResourceInitializers.andThen(LiveConnectedResourceInitializers(initialize))
+    )
 
   def withMountAspect[R1, Out, Result](
     aspect: LiveRouteMountAspect[R1, A, Ctx, Out]
@@ -453,7 +540,8 @@ final class LiveRouteMountAspectBuilder[R, A, Need, Ctx] private[scalive] (
       pipeline.andThen(aspect),
       layouts.map(_.forContext(append.left)),
       rootLayout.map(_.forContext(append.left)),
-      connectedTurnGuards.contramap(append.left)
+      connectedTurnGuards.contramap(append.left),
+      connectedResourceInitializers.contramap(append.left)
     )
 
   /** Appends a policy check before each connected application turn.
@@ -472,7 +560,8 @@ final class LiveRouteMountAspectBuilder[R, A, Need, Ctx] private[scalive] (
       pipeline,
       layouts,
       rootLayout,
-      connectedTurnGuards.andThen(LiveConnectedTurnGuard(guard))
+      connectedTurnGuards.andThen(LiveConnectedTurnGuard(guard)),
+      connectedResourceInitializers
     )
 
   def withLayout(layout: LiveLayout[A, Ctx]): LiveRouteMountAspectBuilder[R, A, Need, Ctx] =
@@ -481,7 +570,8 @@ final class LiveRouteMountAspectBuilder[R, A, Need, Ctx] private[scalive] (
       pipeline,
       layouts :+ layout,
       rootLayout,
-      connectedTurnGuards
+      connectedTurnGuards,
+      connectedResourceInitializers
     )
 
   /** Appends a layout, selecting its input from the context available at this declaration. The pure
@@ -500,7 +590,8 @@ final class LiveRouteMountAspectBuilder[R, A, Need, Ctx] private[scalive] (
       pipeline,
       layouts,
       Some(layout),
-      connectedTurnGuards
+      connectedTurnGuards,
+      connectedResourceInitializers
     )
 
   /** Replaces the route root, selecting its input from this declaration's context. Key and render
@@ -520,7 +611,8 @@ final class LiveRouteMountAspectBuilder[R, A, Need, Ctx] private[scalive] (
       pipeline,
       layouts,
       rootLayout,
-      connectedTurnGuards
+      connectedTurnGuards,
+      connectedResourceInitializers
     )
 
   def params: LiveRouteMountAspectParamsBuilder[R, A, Need, Ctx, A] =
@@ -586,6 +678,7 @@ final class LiveRouteMountAspectBuilder[R, A, Need, Ctx] private[scalive] (
         LiveRouteContext.WithEnvironment(LiveRouteContext.Mounted(pipeline), summon[Tag[R1]]),
         (path, request, contexts) => factory(path, request, contexts._1, contexts._2),
         connectedTurnGuards.contramap((_: (Ctx, R1))._1),
+        connectedResourceInitializers.contramap((_: (Ctx, R1))._1),
         layouts.map(_.forContext((_: (Ctx, R1))._1)),
         rootLayout.map(_.forContext((_: (Ctx, R1))._1))
       )
@@ -600,6 +693,7 @@ final class LiveRouteMountAspectBuilder[R, A, Need, Ctx] private[scalive] (
         LiveRouteContext.Mounted(pipeline),
         factory,
         connectedTurnGuards,
+        connectedResourceInitializers,
         layouts,
         rootLayout
       )
@@ -612,9 +706,17 @@ object LiveRouteMountAspectBuilder:
     pipeline: LiveRouteMountPipeline[R, A, Need, Ctx],
     layouts: Vector[LiveLayout[A, Ctx]],
     rootLayout: Option[LiveRootLayout[A, Ctx]],
-    connectedTurnGuards: LiveConnectedTurnGuard[Ctx]
+    connectedTurnGuards: LiveConnectedTurnGuard[Ctx],
+    connectedResourceInitializers: LiveConnectedResourceInitializers[Ctx]
   ): LiveRouteMountAspectBuilder[R, A, Need, Ctx] =
-    new LiveRouteMountAspectBuilder(pathCodec, pipeline, layouts, rootLayout, connectedTurnGuards)
+    new LiveRouteMountAspectBuilder(
+      pathCodec,
+      pipeline,
+      layouts,
+      rootLayout,
+      connectedTurnGuards,
+      connectedResourceInitializers
+    )
 
 /** Parameterized route construction after mount aspects have produced context. */
 final class LiveRouteMountAspectParamsBuilder[R, A, Need, Ctx, Params] private[scalive] (
@@ -623,7 +725,22 @@ final class LiveRouteMountAspectParamsBuilder[R, A, Need, Ctx, Params] private[s
   private val pipeline: LiveRouteMountPipeline[R, A, Need, Ctx],
   private val layouts: Vector[LiveLayout[A, Ctx]],
   private val rootLayout: Option[LiveRootLayout[A, Ctx]],
-  private val connectedTurnGuards: LiveConnectedTurnGuard[Ctx]):
+  private val connectedTurnGuards: LiveConnectedTurnGuard[Ctx],
+  private val connectedResourceInitializers: LiveConnectedResourceInitializers[Ctx]):
+
+  /** Appends connected setup using the context available at this declaration. */
+  def withConnectedResources[Result <: Unit](
+    initialize: (Ctx, ConnectedResources) => zio.Task[Result]
+  ): LiveRouteMountAspectParamsBuilder[R, A, Need, Ctx, Params] =
+    LiveRouteMountAspectParamsBuilder(
+      pathCodec,
+      paramsCodec,
+      pipeline,
+      layouts,
+      rootLayout,
+      connectedTurnGuards,
+      connectedResourceInitializers.andThen(LiveConnectedResourceInitializers(initialize))
+    )
 
   /** Appends a policy check before each connected application turn.
     *
@@ -642,7 +759,8 @@ final class LiveRouteMountAspectParamsBuilder[R, A, Need, Ctx, Params] private[s
       pipeline,
       layouts,
       rootLayout,
-      connectedTurnGuards.andThen(LiveConnectedTurnGuard(guard))
+      connectedTurnGuards.andThen(LiveConnectedTurnGuard(guard)),
+      connectedResourceInitializers
     )
 
   def location(params: Params): LiveLocation =
@@ -687,6 +805,7 @@ final class LiveRouteMountAspectParamsBuilder[R, A, Need, Ctx, Params] private[s
         (path, request, contexts) => factory(path, request, contexts._1, contexts._2),
         paramsCodec,
         connectedTurnGuards.contramap((_: (Ctx, R1))._1),
+        connectedResourceInitializers.contramap((_: (Ctx, R1))._1),
         layouts.map(_.forContext((_: (Ctx, R1))._1)),
         rootLayout.map(_.forContext((_: (Ctx, R1))._1))
       )
@@ -702,6 +821,7 @@ final class LiveRouteMountAspectParamsBuilder[R, A, Need, Ctx, Params] private[s
         factory,
         paramsCodec,
         connectedTurnGuards,
+        connectedResourceInitializers,
         layouts,
         rootLayout
       )
@@ -715,7 +835,8 @@ object LiveRouteMountAspectParamsBuilder:
     pipeline: LiveRouteMountPipeline[R, A, Need, Ctx],
     layouts: Vector[LiveLayout[A, Ctx]],
     rootLayout: Option[LiveRootLayout[A, Ctx]],
-    connectedTurnGuards: LiveConnectedTurnGuard[Ctx]
+    connectedTurnGuards: LiveConnectedTurnGuard[Ctx],
+    connectedResourceInitializers: LiveConnectedResourceInitializers[Ctx]
   ): LiveRouteMountAspectParamsBuilder[R, A, Need, Ctx, Params] =
     new LiveRouteMountAspectParamsBuilder(
       pathCodec,
@@ -723,20 +844,41 @@ object LiveRouteMountAspectParamsBuilder:
       pipeline,
       layouts,
       rootLayout,
-      connectedTurnGuards
+      connectedTurnGuards,
+      connectedResourceInitializers
     )
 
 /** The root route seed exposed as `live`. */
-final class LiveRouteSeed[A] private[scalive] (pathCodec: PathCodec[A])
+final class LiveRouteSeed[A] private[scalive] (
+  pathCodec: PathCodec[A],
+  layouts: Vector[LiveLayout[A, Any]],
+  rootLayout: Option[LiveRootLayout[A, Any]],
+  connectedTurnGuards: LiveConnectedTurnGuard[Any],
+  connectedResourceInitializers: LiveConnectedResourceInitializers[Any])
     extends LiveRouteBuilder[A](
       pathCodec,
-      Vector.empty[LiveLayout[A, Any]],
-      None
+      layouts,
+      rootLayout,
+      connectedTurnGuards,
+      connectedResourceInitializers
     )
 
 object LiveRouteSeed:
-  private[scalive] def apply[A](pathCodec: PathCodec[A]): LiveRouteSeed[A] =
-    new LiveRouteSeed(pathCodec)
+  private[scalive] def apply[A](
+    pathCodec: PathCodec[A],
+    layouts: Vector[LiveLayout[A, Any]] = Vector.empty,
+    rootLayout: Option[LiveRootLayout[A, Any]] = None,
+    connectedTurnGuards: LiveConnectedTurnGuard[Any] = LiveConnectedTurnGuard.empty,
+    connectedResourceInitializers: LiveConnectedResourceInitializers[Any] =
+      LiveConnectedResourceInitializers.empty
+  ): LiveRouteSeed[A] =
+    new LiveRouteSeed(
+      pathCodec,
+      layouts,
+      rootLayout,
+      connectedTurnGuards,
+      connectedResourceInitializers
+    )
 
 /** A route whose path and query values are decoded for a sibling [[LiveView.Routed]]. */
 class LiveRouteParamsBuilder[A, Params] private[scalive] (
@@ -744,7 +886,21 @@ class LiveRouteParamsBuilder[A, Params] private[scalive] (
   protected val paramsCodec: LiveParamsDecoder[A, Params],
   protected val layouts: Vector[LiveLayout[A, Any]],
   protected val rootLayout: Option[LiveRootLayout[A, Any]],
-  protected val connectedTurnGuards: LiveConnectedTurnGuard[Any]):
+  protected val connectedTurnGuards: LiveConnectedTurnGuard[Any],
+  protected val connectedResourceInitializers: LiveConnectedResourceInitializers[Any]):
+
+  /** Appends connected setup before this route's connected mount. */
+  def withConnectedResources[Result <: Unit](
+    initialize: (Any, ConnectedResources) => zio.Task[Result]
+  ): LiveRouteParamsBuilder[A, Params] =
+    LiveRouteParamsBuilder(
+      pathCodec,
+      paramsCodec,
+      layouts,
+      rootLayout,
+      connectedTurnGuards,
+      connectedResourceInitializers.andThen(LiveConnectedResourceInitializers(initialize))
+    )
 
   def mapParamsDecodeOnly[Params2](
     decodeParams: Params => Params2
@@ -754,7 +910,8 @@ class LiveRouteParamsBuilder[A, Params] private[scalive] (
       paramsCodec.mapDecodeOnly(decodeParams),
       layouts,
       rootLayout,
-      connectedTurnGuards
+      connectedTurnGuards,
+      connectedResourceInitializers
     )
 
   /** Appends a policy check before each connected application turn.
@@ -773,7 +930,8 @@ class LiveRouteParamsBuilder[A, Params] private[scalive] (
       paramsCodec,
       layouts,
       rootLayout,
-      connectedTurnGuards.andThen(LiveConnectedTurnGuard(guard))
+      connectedTurnGuards.andThen(LiveConnectedTurnGuard(guard)),
+      connectedResourceInitializers
     )
 
   def apply[Msg, Model](
@@ -805,6 +963,7 @@ class LiveRouteParamsBuilder[A, Params] private[scalive] (
         factory,
         paramsCodec,
         connectedTurnGuards.contramap((_: Ctx) => ()),
+        connectedResourceInitializers.contramap((_: Ctx) => ()),
         layouts.map(_.forContext((_: Ctx) => ())),
         rootLayout.map(_.forContext((_: Ctx) => ()))
       )
@@ -822,6 +981,7 @@ class LiveRouteParamsBuilder[A, Params] private[scalive] (
         (path, request, contexts) => factory(path, request, contexts._1, contexts._2),
         paramsCodec,
         connectedTurnGuards.contramap((_: (Ctx, R)) => ()),
+        connectedResourceInitializers.contramap((_: (Ctx, R)) => ()),
         requiredLayouts.map(_.forContext((_: (Ctx, R))._1)),
         requiredRootLayout.map(_.forContext((_: (Ctx, R))._1))
       )
@@ -842,6 +1002,7 @@ class LiveRouteParamsBuilder[A, Params] private[scalive] (
         factory,
         paramsCodec,
         connectedTurnGuards.contramap((_: R) => ()),
+        connectedResourceInitializers.contramap((_: R) => ()),
         layouts.map(_.forContext((_: R) => ())),
         rootLayout.map(_.forContext((_: R) => ()))
       )
@@ -857,6 +1018,7 @@ class LiveRouteParamsBuilder[A, Params] private[scalive] (
         (path, request, _) => factory(path, request),
         paramsCodec,
         connectedTurnGuards,
+        connectedResourceInitializers,
         layouts,
         rootLayout
       )
@@ -869,23 +1031,46 @@ object LiveRouteParamsBuilder:
     paramsCodec: LiveParamsDecoder[A, Params],
     layouts: Vector[LiveLayout[A, Any]],
     rootLayout: Option[LiveRootLayout[A, Any]],
-    connectedTurnGuards: LiveConnectedTurnGuard[Any]
+    connectedTurnGuards: LiveConnectedTurnGuard[Any],
+    connectedResourceInitializers: LiveConnectedResourceInitializers[Any]
   ): LiveRouteParamsBuilder[A, Params] =
-    new LiveRouteParamsBuilder(pathCodec, paramsCodec, layouts, rootLayout, connectedTurnGuards)
+    new LiveRouteParamsBuilder(
+      pathCodec,
+      paramsCodec,
+      layouts,
+      rootLayout,
+      connectedTurnGuards,
+      connectedResourceInitializers
+    )
 
 final class LiveEncodableRouteParamsBuilder[A, Params] private[scalive] (
   pathCodec: PathCodec[A],
   val codec: LiveParamsCodec[A, Params],
   layouts: Vector[LiveLayout[A, Any]],
   rootLayout: Option[LiveRootLayout[A, Any]],
-  connectedTurnGuards: LiveConnectedTurnGuard[Any])
+  connectedTurnGuards: LiveConnectedTurnGuard[Any],
+  connectedResourceInitializers: LiveConnectedResourceInitializers[Any])
     extends LiveRouteParamsBuilder[A, Params](
       pathCodec,
       codec,
       layouts,
       rootLayout,
-      connectedTurnGuards
+      connectedTurnGuards,
+      connectedResourceInitializers
     ):
+  /** Appends connected setup while retaining parameter encoding and location construction. */
+  override def withConnectedResources[Result <: Unit](
+    initialize: (Any, ConnectedResources) => zio.Task[Result]
+  ): LiveEncodableRouteParamsBuilder[A, Params] =
+    LiveEncodableRouteParamsBuilder(
+      pathCodec,
+      codec,
+      layouts,
+      rootLayout,
+      connectedTurnGuards,
+      connectedResourceInitializers.andThen(LiveConnectedResourceInitializers(initialize))
+    )
+
   /** Appends a policy check before each connected application turn.
     *
     * Guards at one boundary run in declaration order; session guards run before route guards. The
@@ -902,7 +1087,8 @@ final class LiveEncodableRouteParamsBuilder[A, Params] private[scalive] (
       codec,
       layouts,
       rootLayout,
-      connectedTurnGuards.andThen(LiveConnectedTurnGuard(guard))
+      connectedTurnGuards.andThen(LiveConnectedTurnGuard(guard)),
+      connectedResourceInitializers
     )
 
   def mapParams[Params2](
@@ -915,7 +1101,8 @@ final class LiveEncodableRouteParamsBuilder[A, Params] private[scalive] (
       codec.imap(decodeParams)(encodeParams),
       layouts,
       rootLayout,
-      connectedTurnGuards
+      connectedTurnGuards,
+      connectedResourceInitializers
     )
 
   def location(params: Params): LiveLocation =
@@ -931,14 +1118,16 @@ object LiveEncodableRouteParamsBuilder:
     codec: LiveParamsCodec[A, Params],
     layouts: Vector[LiveLayout[A, Any]],
     rootLayout: Option[LiveRootLayout[A, Any]],
-    connectedTurnGuards: LiveConnectedTurnGuard[Any]
+    connectedTurnGuards: LiveConnectedTurnGuard[Any],
+    connectedResourceInitializers: LiveConnectedResourceInitializers[Any]
   ): LiveEncodableRouteParamsBuilder[A, Params] =
     new LiveEncodableRouteParamsBuilder(
       pathCodec,
       codec,
       layouts,
       rootLayout,
-      connectedTurnGuards
+      connectedTurnGuards,
+      connectedResourceInitializers
     )
 
 /** A named, environment-typed group of declarative routes. */
@@ -950,11 +1139,12 @@ final class LiveSession[-R] private[scalive] (
   private[scalive] def attachSession[RS, SessionCtx](
     pipeline: LiveSessionMountPipeline[RS, Any, SessionCtx],
     guards: LiveConnectedTurnGuard[SessionCtx],
+    initializers: LiveConnectedResourceInitializers[SessionCtx],
     layouts: Vector[LiveLayout[Any, SessionCtx]],
     rootLayout: Option[LiveRootLayout[Any, SessionCtx]],
     supplies: SessionCtx <:< Any
   ): Vector[LiveRouteFragment[R & RS] { type Input = Any }] =
-    routes.flatMap(_.attachSession(pipeline, guards, layouts, rootLayout, supplies))
+    routes.flatMap(_.attachSession(pipeline, guards, initializers, layouts, rootLayout, supplies))
 
 object LiveSession:
   private[scalive] def apply[R](
@@ -966,8 +1156,22 @@ final class LiveSessionBuilder[R, Ctx] private[scalive] (
   val name: String,
   private val pipeline: LiveSessionMountPipeline[R, Any, Ctx],
   private val connectedTurnGuards: LiveConnectedTurnGuard[Ctx],
+  private val connectedResourceInitializers: LiveConnectedResourceInitializers[Ctx],
   private val layouts: Vector[LiveLayout[Any, Ctx]],
   private val rootLayout: Option[LiveRootLayout[Any, Ctx]]):
+  /** Appends session setup before route setup and connected mount, in declaration order. */
+  def withConnectedResources[Result <: Unit](
+    initialize: (Ctx, ConnectedResources) => zio.Task[Result]
+  ): LiveSessionBuilder[R, Ctx] =
+    LiveSessionBuilder(
+      name,
+      pipeline,
+      connectedTurnGuards,
+      connectedResourceInitializers.andThen(LiveConnectedResourceInitializers(initialize)),
+      layouts,
+      rootLayout
+    )
+
   def withMountAspect[R1, Claims, Out, Result](
     aspect: LiveSessionMountAspect[R1, Ctx, Claims, Out]
   )(using append: ContextAppend.Aux[Ctx, Out, Result]
@@ -976,6 +1180,7 @@ final class LiveSessionBuilder[R, Ctx] private[scalive] (
       name,
       pipeline.andThen(aspect),
       connectedTurnGuards.contramap(append.left),
+      connectedResourceInitializers.contramap(append.left),
       layouts.map(_.forContext(append.left)),
       rootLayout.map(_.forContext(append.left))
     )
@@ -997,12 +1202,20 @@ final class LiveSessionBuilder[R, Ctx] private[scalive] (
       name,
       pipeline.admitThen(aspect, connectionId, connections),
       connectedTurnGuards.contramap(append.left),
+      connectedResourceInitializers.contramap(append.left),
       layouts.map(_.forContext(append.left)),
       rootLayout.map(_.forContext(append.left))
     )
 
   def withLayout(value: LiveLayout[Any, Ctx]): LiveSessionBuilder[R, Ctx] =
-    LiveSessionBuilder(name, pipeline, connectedTurnGuards, layouts :+ value, rootLayout)
+    LiveSessionBuilder(
+      name,
+      pipeline,
+      connectedTurnGuards,
+      connectedResourceInitializers,
+      layouts :+ value,
+      rootLayout
+    )
 
   /** Appends a layout, selecting its input from the context available at this declaration. The pure
     * selector adapts only the layout; later aspects preserve this context selection.
@@ -1013,7 +1226,14 @@ final class LiveSessionBuilder[R, Ctx] private[scalive] (
   ): LiveSessionBuilder[R, Ctx] = withLayout(layout.forContext(select))
 
   def withRootLayout(value: LiveRootLayout[Any, Ctx]): LiveSessionBuilder[R, Ctx] =
-    LiveSessionBuilder(name, pipeline, connectedTurnGuards, layouts, Some(value))
+    LiveSessionBuilder(
+      name,
+      pipeline,
+      connectedTurnGuards,
+      connectedResourceInitializers,
+      layouts,
+      Some(value)
+    )
 
   /** Replaces the session root, selecting its input from this declaration's context. Key and render
     * select independently, so the selector must be pure and deterministic.
@@ -1038,6 +1258,7 @@ final class LiveSessionBuilder[R, Ctx] private[scalive] (
       name,
       pipeline,
       connectedTurnGuards.andThen(LiveConnectedTurnGuard(guard)),
+      connectedResourceInitializers,
       layouts,
       rootLayout
     )
@@ -1047,6 +1268,7 @@ final class LiveSessionBuilder[R, Ctx] private[scalive] (
       route.attachSession(
         pipeline,
         connectedTurnGuards,
+        connectedResourceInitializers,
         layouts,
         rootLayout,
         summon[Ctx <:< route.Input]
@@ -1060,18 +1282,40 @@ object LiveSessionBuilder:
     name: String,
     pipeline: LiveSessionMountPipeline[R, Any, Ctx],
     connectedTurnGuards: LiveConnectedTurnGuard[Ctx],
+    connectedResourceInitializers: LiveConnectedResourceInitializers[Ctx],
     layouts: Vector[LiveLayout[Any, Ctx]],
     rootLayout: Option[LiveRootLayout[Any, Ctx]]
   ): LiveSessionBuilder[R, Ctx] =
-    new LiveSessionBuilder(name, pipeline, connectedTurnGuards, layouts, rootLayout)
+    new LiveSessionBuilder(
+      name,
+      pipeline,
+      connectedTurnGuards,
+      connectedResourceInitializers,
+      layouts,
+      rootLayout
+    )
 
   /** Session construction after its one admission boundary has been declared. */
   final class Admitted[R, Ctx] private[scalive] (
     val name: String,
     private val pipeline: LiveSessionMountPipeline[R, Any, Ctx],
     private val connectedTurnGuards: LiveConnectedTurnGuard[Ctx],
+    private val connectedResourceInitializers: LiveConnectedResourceInitializers[Ctx],
     private val layouts: Vector[LiveLayout[Any, Ctx]],
     private val rootLayout: Option[LiveRootLayout[Any, Ctx]]):
+    /** Appends session setup using the context available after admission. */
+    def withConnectedResources[Result <: Unit](
+      initialize: (Ctx, ConnectedResources) => zio.Task[Result]
+    ): Admitted[R, Ctx] =
+      Admitted(
+        name,
+        pipeline,
+        connectedTurnGuards,
+        connectedResourceInitializers.andThen(LiveConnectedResourceInitializers(initialize)),
+        layouts,
+        rootLayout
+      )
+
     def withMountAspect[R1, Claims, Out, Result](
       aspect: LiveSessionMountAspect[R1, Ctx, Claims, Out]
     )(using append: ContextAppend.Aux[Ctx, Out, Result]
@@ -1080,12 +1324,20 @@ object LiveSessionBuilder:
         name,
         pipeline.andThen(aspect),
         connectedTurnGuards.contramap(append.left),
+        connectedResourceInitializers.contramap(append.left),
         layouts.map(_.forContext(append.left)),
         rootLayout.map(_.forContext(append.left))
       )
 
     def withLayout(value: LiveLayout[Any, Ctx]): Admitted[R, Ctx] =
-      Admitted(name, pipeline, connectedTurnGuards, layouts :+ value, rootLayout)
+      Admitted(
+        name,
+        pipeline,
+        connectedTurnGuards,
+        connectedResourceInitializers,
+        layouts :+ value,
+        rootLayout
+      )
 
     /** Appends a layout, selecting its input from the context available at this declaration. The
       * pure selector adapts only the layout; later aspects preserve this context selection.
@@ -1096,7 +1348,14 @@ object LiveSessionBuilder:
     ): Admitted[R, Ctx] = withLayout(layout.forContext(select))
 
     def withRootLayout(value: LiveRootLayout[Any, Ctx]): Admitted[R, Ctx] =
-      Admitted(name, pipeline, connectedTurnGuards, layouts, Some(value))
+      Admitted(
+        name,
+        pipeline,
+        connectedTurnGuards,
+        connectedResourceInitializers,
+        layouts,
+        Some(value)
+      )
 
     /** Replaces the session root, selecting its input from this declaration's context. Key and
       * render select independently, so the selector must be pure and deterministic.
@@ -1121,6 +1380,7 @@ object LiveSessionBuilder:
         name,
         pipeline,
         connectedTurnGuards.andThen(LiveConnectedTurnGuard(guard)),
+        connectedResourceInitializers,
         layouts,
         rootLayout
       )
@@ -1130,6 +1390,7 @@ object LiveSessionBuilder:
         route.attachSession(
           pipeline,
           connectedTurnGuards,
+          connectedResourceInitializers,
           layouts,
           rootLayout,
           summon[Ctx <:< route.Input]
@@ -1143,10 +1404,18 @@ object LiveSessionBuilder:
       name: String,
       pipeline: LiveSessionMountPipeline[R, Any, Ctx],
       connectedTurnGuards: LiveConnectedTurnGuard[Ctx],
+      connectedResourceInitializers: LiveConnectedResourceInitializers[Ctx],
       layouts: Vector[LiveLayout[Any, Ctx]],
       rootLayout: Option[LiveRootLayout[Any, Ctx]]
     ): Admitted[R, Ctx] =
-      new Admitted(name, pipeline, connectedTurnGuards, layouts, rootLayout)
+      new Admitted(
+        name,
+        pipeline,
+        connectedTurnGuards,
+        connectedResourceInitializers,
+        layouts,
+        rootLayout
+      )
 end LiveSessionBuilder
 
 /** A complete declarative application; transport and runtime interpretation live elsewhere. */
@@ -1191,6 +1460,7 @@ object Live:
       name,
       LiveSessionMountPipeline.Identity[Any](),
       LiveConnectedTurnGuard.empty,
+      LiveConnectedResourceInitializers.empty,
       Vector.empty,
       None
     )

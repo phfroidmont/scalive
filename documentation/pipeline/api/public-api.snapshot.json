@@ -5826,6 +5826,18 @@
       ]
     },
     {
+      "id" : "def:scalive.LiveEncodableRouteParamsBuilder.withConnectedResources",
+      "ownerId" : "class:scalive.LiveEncodableRouteParamsBuilder",
+      "qualifiedName" : "scalive.LiveEncodableRouteParamsBuilder.withConnectedResources",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveEncodableRouteParamsBuilder.withConnectedResources:f11dd4bf5a7aa814",
+          "signature" : "def withConnectedResources[Result <: Unit](initialize: (Any, ConnectedResources) => zio.Task[Result]): LiveEncodableRouteParamsBuilder[A, Params]"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.LiveEventHookResult.cont",
       "ownerId" : "object:scalive.LiveEventHookResult",
       "qualifiedName" : "scalive.LiveEventHookResult.cont",
@@ -6510,6 +6522,18 @@
       ]
     },
     {
+      "id" : "def:scalive.LiveRouteBuilder.withConnectedResources",
+      "ownerId" : "class:scalive.LiveRouteBuilder",
+      "qualifiedName" : "scalive.LiveRouteBuilder.withConnectedResources",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveRouteBuilder.withConnectedResources:a27e92c6a1bee994",
+          "signature" : "def withConnectedResources[Result <: Unit](initialize: (Any, ConnectedResources) => zio.Task[Result]): LiveRouteBuilder[A]"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.LiveRouteBuilder.withLayout",
       "ownerId" : "class:scalive.LiveRouteBuilder",
       "qualifiedName" : "scalive.LiveRouteBuilder.withLayout",
@@ -6706,6 +6730,18 @@
       ]
     },
     {
+      "id" : "def:scalive.LiveRouteMountAspectBuilder.withConnectedResources",
+      "ownerId" : "class:scalive.LiveRouteMountAspectBuilder",
+      "qualifiedName" : "scalive.LiveRouteMountAspectBuilder.withConnectedResources",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveRouteMountAspectBuilder.withConnectedResources:03d24ee779f4308b",
+          "signature" : "def withConnectedResources[Result <: Unit](initialize: (Ctx, ConnectedResources) => zio.Task[Result]): LiveRouteMountAspectBuilder[R, A, Need, Ctx]"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.LiveRouteMountAspectBuilder.withLayout",
       "ownerId" : "class:scalive.LiveRouteMountAspectBuilder",
       "qualifiedName" : "scalive.LiveRouteMountAspectBuilder.withLayout",
@@ -6834,6 +6870,18 @@
         {
           "id" : "def:scalive.LiveRouteMountAspectParamsBuilder.locationEither:c1200639de3a91ef",
           "signature" : "def locationEither(params: Params): Either[LiveLocation.EncodeError, LiveLocation]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LiveRouteMountAspectParamsBuilder.withConnectedResources",
+      "ownerId" : "class:scalive.LiveRouteMountAspectParamsBuilder",
+      "qualifiedName" : "scalive.LiveRouteMountAspectParamsBuilder.withConnectedResources",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveRouteMountAspectParamsBuilder.withConnectedResources:49a7f3570a4b335b",
+          "signature" : "def withConnectedResources[Result <: Unit](initialize: (Ctx, ConnectedResources) => zio.Task[Result]): LiveRouteMountAspectParamsBuilder[R, A, Need, Ctx, Params]"
         }
       ]
     },
@@ -7010,6 +7058,18 @@
       ]
     },
     {
+      "id" : "def:scalive.LiveRouteParamsBuilder.withConnectedResources",
+      "ownerId" : "class:scalive.LiveRouteParamsBuilder",
+      "qualifiedName" : "scalive.LiveRouteParamsBuilder.withConnectedResources",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveRouteParamsBuilder.withConnectedResources:97a58b833d70bf37",
+          "signature" : "def withConnectedResources[Result <: Unit](initialize: (Any, ConnectedResources) => zio.Task[Result]): LiveRouteParamsBuilder[A, Params]"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.LiveRouter.apply",
       "ownerId" : "class:scalive.LiveRouter",
       "qualifiedName" : "scalive.LiveRouter.apply",
@@ -7094,6 +7154,18 @@
       ]
     },
     {
+      "id" : "def:scalive.LiveSessionBuilder.Admitted.withConnectedResources",
+      "ownerId" : "class:scalive.LiveSessionBuilder.Admitted",
+      "qualifiedName" : "scalive.LiveSessionBuilder.Admitted.withConnectedResources",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveSessionBuilder.Admitted.withConnectedResources:8044a17989328c21",
+          "signature" : "def withConnectedResources[Result <: Unit](initialize: (Ctx, ConnectedResources) => zio.Task[Result]): LiveSessionBuilder.Admitted[R, Ctx]"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.LiveSessionBuilder.Admitted.withLayout",
       "ownerId" : "class:scalive.LiveSessionBuilder.Admitted",
       "qualifiedName" : "scalive.LiveSessionBuilder.Admitted.withLayout",
@@ -7170,6 +7242,18 @@
         {
           "id" : "def:scalive.LiveSessionBuilder.withAdmission:07ce309c0d681380",
           "signature" : "def withAdmission[R1, Claims, Out, Result, Id](aspect: LiveSessionMountAspect[R1, Ctx, Claims, Out])(connectionId: Claims => Id)(using append: ContextAppend.Aux[Ctx, Out, Result], connections: zio.package.Tag[LiveConnections[Id]]): LiveSessionBuilder.Admitted[&[&[R, R1], LiveConnections[Id]], Result]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LiveSessionBuilder.withConnectedResources",
+      "ownerId" : "class:scalive.LiveSessionBuilder",
+      "qualifiedName" : "scalive.LiveSessionBuilder.withConnectedResources",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveSessionBuilder.withConnectedResources:0ce119d08a99f1d2",
+          "signature" : "def withConnectedResources[Result <: Unit](initialize: (Ctx, ConnectedResources) => zio.Task[Result]): LiveSessionBuilder[R, Ctx]"
         }
       ]
     },

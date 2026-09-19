@@ -105,17 +105,25 @@ application code.
 
 ### 2. Connected Resources At Route And Session Boundaries
 
+**Status.** Implemented as `withConnectedResources` on route and live-session builders,
+including typed/admitted sessions and ordinary/routed routes, with API, transport, and
+connected-harness tests plus an
+[executable route example](../documentation/site/src/scalive/docs/examples/ConnectedResourceExample.scala)
+and application/route harness test. No consumer migration is included; replacing the consumer's
+forwarding wrappers remains application work.
+
 **Evidence.** `src/organization/OrganizationRoute.scala:92-138` defines two forwarding LiveView
 wrappers, one ordinary and one routed. Their substantive change is acquiring a session-expiry
 lease before delegating mount; the rest forwards lifecycle methods. The acquisition itself already
 uses `ConnectedResources.acquireRelease` through `src/session/SessionMount.scala:17-22`.
 
-**Existing support.** [ConnectedResources](../scalive/api/src/scalive/lifecycle/Capabilities.scala)
+**Support at assessment.** [ConnectedResources](../scalive/api/src/scalive/lifecycle/Capabilities.scala)
 provides lifecycle-owned cleanup. [Routing](../scalive/api/src/scalive/routing/LiveRouting.scala)
-provides mount aspects, admission, guards, and factories, but not a declarative attachment point
-for this connected resource initialization.
+provided mount aspects, admission, guards, and factories, but lacked a declarative attachment
+point for this connected resource initialization.
 
-**Proposed direction.** Expose a route/session modifier along these lines:
+**Implemented composition.** The modifier accepts
+`(Ctx, ConnectedResources) => Task[Result]` with `Result <: Unit`:
 
 ```scala
 .withConnectedResources { (context, resources) =>
@@ -123,14 +131,30 @@ for this connected resource initialization.
 }
 ```
 
-Run it after admission and typed context construction, before the page's connected mount. The
-same facility should work for ordinary and routed views without application forwarding wrappers.
+Callbacks run lazily after all session and route admission/context checks and before the page's
+connected mount; factories and render compilation may precede them. Session initializers run
+before route initializers, in declaration order at each boundary. Repeated modifiers append work.
+Each callback retains its installation-time context through later aspects/admission; plain
+builders supply `Any`. It adds no new environment requirement: capture services or use typed
+context. It does not enrich context or return model data. Keep direct connected-mount acquisition
+when the page needs the resource handle in its model.
 
 **Boundaries and verification.** Ownership remains the connected LiveView lifecycle, not the
-physical socket or logical application session. Specify ordering when multiple initializers are
-composed. Test disconnected rendering, rejected admission, acquisition or mount failure, connected
-navigation, disconnect, and exactly-once release. Expiry policy and cross-tab sharing through a
-reference-counted service remain application-owned.
+physical socket, named live-session group, or logical application session. Initializers run for
+each connected root, including reconnect/navigation, not for patches, messages, or nested views.
+Execution is fail-fast in the same `ConnectedResources` scope used by direct mount acquisition;
+mount/initial-render failure releases successful acquisitions. `Task` failures are mount failures,
+not controlled authentication rejections. Acquisition and finalization must remain short and
+bounded. Expiry policy and cross-tab sharing through a reference-counted service remain
+application-owned. See the
+[initializer contract](../documentation/content/guides/async-work-and-subscriptions.md#route-and-session-resources).
+
+Tests cover deferred callback construction, disconnected rendering, rejected admission/context,
+initializer and mount failure rollback, ordering and context projection, navigation/reconnect,
+patch retention, nested-view isolation, and release on leave followed by transport closure.
+Extending a path with `/` now preserves initializers, guards, and layouts instead of dropping
+configuration; prefix layouts retain their original typed path parameters for rendering and
+root-key selection. Routes without initializers do not evaluate unused context projections.
 
 ### 3. Flat Multi-Signal Composition
 
@@ -517,8 +541,9 @@ application decisions.
 1. Implement bounded composition improvements: flat signal composition, workflow status/failure
    operations, effectful HTTP validation, public layout projection, checkbox codecs, and
    condition-based test waiting. Add focused tests and examples with each change.
-2. Add connected-resource composition and verify it by removing the consumer's ordinary/routed
-   forwarding wrappers without changing session-expiry policy.
+2. Connected-resource composition is implemented. Separately evaluate replacing the consumer's
+   ordinary/routed forwarding wrappers without changing session-expiry policy; that consumer
+   migration is not included here.
 3. Prototype save-completion integration on one simple settings page and one editable-during-save
    dialog. Judge it by reduced plumbing and preserved explicit domain behavior, not line count alone.
 4. Build the composite-control example, then investigate browser reconciliation separately with

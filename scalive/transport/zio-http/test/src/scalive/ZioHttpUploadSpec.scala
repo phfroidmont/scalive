@@ -99,11 +99,13 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
 
     def view(model: Signal[Unit]) = div()
 
-  private val failingAdmittedApplication
-    : LiveApplication[TestAuthState & LiveConnections[TestSessionId]] = scalive.Live.router(
+  private def failingAdmittedApplication(
+    initialize: (TestCurrentUser, ConnectedResources) => Task[Unit]
+  ): LiveApplication[TestAuthState & LiveConnections[TestSessionId]] = scalive.Live.router(
     scalive.Live
       .session("failing-authenticated")
-      .withAdmission(authentication)(_.sessionId)(scalive.live(FailingAdmissionView))
+      .withAdmission(authentication)(_.sessionId)
+      .withConnectedResources(initialize)(scalive.live(FailingAdmissionView))
   )
 
   private final case class WriterState(name: String, bytes: Chunk[Byte])
@@ -609,14 +611,19 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
       }
     },
     test("unauthorized joins allocate no lifecycle and malformed frames close the socket") {
-      val factories = AtomicInteger(0)
+      val factories    = AtomicInteger(0)
+      val initializers = AtomicInteger()
       object View extends LiveView.Eventless[Unit]:
-        def mount(ctx: MountContext): Task[Unit] = ZIO.unit
+        def mount(ctx: MountContext): Task[Unit]            = ZIO.unit
         def view(model: Signal[Unit]): HtmlElement[Nothing] = div()
-      val application = scalive.Live.router(scalive.live {
-        factories.incrementAndGet()
-        View
-      })
+      val application = scalive.Live.router(
+        scalive.live.withConnectedResources((_, _) =>
+          ZIO.succeed(initializers.incrementAndGet()).unit
+        ) {
+          factories.incrementAndGet()
+          View
+        }
+      )
 
       withServer(application) { port =>
         for
@@ -647,8 +654,8 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
                  )
                )
           heartbeat <- socket.receiveReply("2", "phoenix")
-          _ <- socket.channel.send(ChannelEvent.read(WebSocketFrame.text("{")))
-          closed <- socket.closed.await.timeout(5.seconds)
+          _         <- socket.channel.send(ChannelEvent.read(WebSocketFrame.text("{")))
+          closed    <- socket.closed.await.timeout(5.seconds)
           afterMalformed = factories.get()
         yield assertTrue(
           before == 1,
@@ -656,7 +663,8 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
           afterRejected == 1,
           heartbeat.event == "phx_reply",
           closed.nonEmpty,
-          afterMalformed == 1
+          afterMalformed == 1,
+          initializers.get() == 0
         )
       }
     },
@@ -834,34 +842,53 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
     },
     test("connected startup failure rolls back pending admission") {
       val sessionId = TestSessionId("startup-failure")
-      for
-        active        <- Ref.make(Set(sessionId))
-        revalidations <- Ref.make(0)
-        interrupted   <- Ref.make(0)
-        state          = TestAuthState(active, revalidations, interrupted)
-        connections   <- LiveConnections.make[TestSessionId](_ => ZIO.unit)
-        stateLayer      = ZLayer.succeed[TestAuthState](state)
-        connectionsLayer = ZLayer.succeed[LiveConnections[TestSessionId]](connections)
-        result <- withServer(failingAdmittedApplication) { port =>
-                    for
-                      page     <- bootstrap(port, "/?session=startup-failure")
-                      socket   <- connect(port, page)
-                      rejected <- joinRoot(socket, page)
-                      _        <- connections.disconnect(sessionId)
-                      _ <- socket.send(
-                             PhoenixEnvelope(
-                               PhoenixRef.Null,
-                               PhoenixRef.Value("after-failure"),
-                               "phoenix",
-                               "heartbeat",
-                               Json.Obj.empty
-                             )
-                           )
-                      heartbeat <- socket.receiveReply("after-failure", "phoenix")
-                      _         <- socket.close
-                    yield assertTrue(status(rejected) == "error", status(heartbeat) == "ok")
-                  }.provideLayer(stateLayer ++ connectionsLayer)
-      yield result
+      ZIO
+        .foreach(Vector(false, true)) { failInitializer =>
+          for
+            active        <- Ref.make(Set(sessionId))
+            revalidations <- Ref.make(0)
+            interrupted   <- Ref.make(0)
+            acquired      <- Ref.make(0)
+            released      <- Ref.make(0)
+            state = TestAuthState(active, revalidations, interrupted)
+            connections <- LiveConnections.make[TestSessionId](_ => ZIO.unit)
+            stateLayer       = ZLayer.succeed[TestAuthState](state)
+            connectionsLayer = ZLayer.succeed[LiveConnections[TestSessionId]](connections)
+            application      =
+              failingAdmittedApplication((_, resources) =>
+                resources.acquireRelease(acquired.update(_ + 1))(_ => released.update(_ + 1)) *>
+                  ZIO.when(failInitializer)(ZIO.fail(Exception("initializer failed"))).unit
+              )
+            result <- withServer(application) { port =>
+                        for
+                          page     <- bootstrap(port, "/?session=startup-failure")
+                          socket   <- connect(port, page)
+                          rejected <- joinRoot(socket, page)
+                          _        <- connections.disconnect(sessionId)
+                          _        <- socket.send(
+                                 PhoenixEnvelope(
+                                   PhoenixRef.Null,
+                                   PhoenixRef.Value("after-failure"),
+                                   "phoenix",
+                                   "heartbeat",
+                                   Json.Obj.empty
+                                 )
+                               )
+                          heartbeat   <- socket.receiveReply("after-failure", "phoenix")
+                          bound       <- connections.bindingCount
+                          initialized <- acquired.get
+                          cleaned     <- released.get
+                          _           <- socket.close
+                        yield assertTrue(
+                          status(rejected) == "error",
+                          status(heartbeat) == "ok",
+                          bound == 0,
+                          initialized == 1,
+                          cleaned == 1
+                        )
+                      }.provideLayer(stateLayer ++ connectionsLayer)
+          yield result
+        }.map(_.reduce(_ && _))
     },
     test("normal socket close removes committed admission") {
       val sessionId = TestSessionId("normal-close")
@@ -922,89 +949,129 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
         bindingRemoved
       )
     },
-    test("socket close during lifecycle startup rolls back pending admission") {
+    test("disconnect during an initializer releases acquired resources and rolls back admission") {
       val sessionId = TestSessionId("startup-close")
       for
         entered       <- Promise.make[Nothing, Unit]
         active        <- Ref.make(Set(sessionId))
         revalidations <- Ref.make(0)
         interrupted   <- Ref.make(0)
-        state          = TestAuthState(active, revalidations, interrupted)
-        connections   <- LiveConnections.make[TestSessionId](_ => ZIO.unit)
+        released      <- Ref.make(0)
+        mounted       <- Ref.make(0)
+        state = TestAuthState(active, revalidations, interrupted)
+        connections <- LiveConnections.make[TestSessionId](_ => ZIO.unit)
         view = new LiveView.Eventless[Unit]:
                  def mount(ctx: MountContext) = ctx.connection match
                    case Connection.Disconnected => ZIO.unit
-                   case Connection.Connected(_) => entered.succeed(()).unit *> ZIO.never
+                   case Connection.Connected(_) => mounted.update(_ + 1)
                  def view(model: Signal[Unit]) = div("startup-close")
         application = scalive.Live.router(
                         scalive.Live
                           .session("startup-close")
-                          .withAdmission(authentication)(_.sessionId)(scalive.live(view))
+                          .withAdmission(authentication)(_.sessionId)
+                          .withConnectedResources((_, resources) =>
+                            resources.acquireRelease(ZIO.unit)(_ => released.update(_ + 1)) *>
+                              entered.succeed(()).unit *> ZIO.never
+                          )(scalive.live(view))
                       )
         result <- withServer(application) { port =>
                     for
                       page    <- bootstrap(port, "/?session=startup-close")
                       socket  <- connect(port, page)
                       joining <- joinRoot(socket, page).fork
-                      _       <- entered.await
-                      bound   <- connections.bindingCount
-                      _       <- connections.disconnect(sessionId)
-                      _ <- socket.closed.await.timeoutFail(
+                      _ <- entered.await.timeoutFail(Exception("initializer was not entered"))(
+                             5.seconds
+                           )
+                      bound <- connections.bindingCount
+                      _     <- connections.disconnect(sessionId)
+                      _     <- socket.closed.await.timeoutFail(
                              Exception("startup transport did not close")
                            )(5.seconds)
-                      _       <- joining.interrupt
-                      remaining <- connections.bindingCount
-                                     .repeatUntil(_ == 0)
-                                     .timeoutFail(Exception("pending admission was not rolled back"))(
-                                       5.seconds
-                                     )
-                    yield assertTrue(bound == 1, remaining == 0)
+                      _         <- joining.interrupt
+                      remaining <-
+                        connections.bindingCount
+                          .repeatUntil(_ == 0)
+                          .timeoutFail(Exception("pending admission was not rolled back"))(
+                            5.seconds
+                          )
+                      cleaned <- released.get
+                                   .repeatUntil(_ > 0)
+                                   .timeoutFail(Exception("initializer resource was not released"))(
+                                     5.seconds
+                                   )
+                      pageMounts <- mounted.get
+                    yield assertTrue(bound == 1, remaining == 0, cleaned == 1, pageMounts == 0)
                   }.provide(
                     ZLayer.succeed[TestAuthState](state),
                     ZLayer.succeed[LiveConnections[TestSessionId]](connections)
                   )
       yield result
+      end for
     },
-    test("root layout rejection rolls back pending admission") {
-      val phaseContext = LiveSessionMountAspect.fromRequest[Any, String, String](
-        _ => ZIO.succeed("root-layout" -> "disconnected-root"),
-        (_, _) => ZIO.succeed("connected-root")
-      )
-      val rootLayout = LiveRootLayout.dynamic[Any, String](_.context)([Msg] =>
-        (content, _, _) => htmlRootTag(bodyTag(content))
-      )
-      object View extends LiveView.Eventless[Unit]:
-        def mount(ctx: MountContext) = ZIO.unit
-        def view(model: Signal[Unit]) = div("root-layout")
-      val application = scalive.Live.router(
-        scalive.Live
-          .session("root-layout-rollback")
-          .withAdmission(phaseContext)(identity)
-          .withRootLayout(rootLayout)(scalive.live(View))
-      )
+    test("admission, context, and root layout rejections never initialize resources") {
+      ZIO
+        .foreach(Vector("admission", "context", "root-layout")) { rejectedAt =>
+          val initializers = AtomicInteger()
+          val initialize   = (_: Any, _: ConnectedResources) =>
+            val _ = initializers.incrementAndGet()
+            ZIO.unit
+          val phaseContext = LiveSessionMountAspect.fromRequest[Any, String, String](
+            _ => ZIO.succeed("root-layout" -> "disconnected-root"),
+            (_, _) =>
+              if rejectedAt == "admission" then ZIO.fail(LiveMountFailure.unauthorized("revoked"))
+              else ZIO.succeed("connected-root")
+          )
+          val routeAspect = LiveRouteMountAspect.make[Any, Unit, String, Unit]((_, context) =>
+            if rejectedAt == "context" && context == "connected-root" then
+              ZIO.fail(LiveRouteMountFailure.forbidden("context rejected"))
+            else ZIO.unit
+          )
+          val rootLayout = LiveRootLayout.dynamic[Any, String](context =>
+            if rejectedAt == "root-layout" then context.context else "stable-root"
+          )([Msg] => (content, _, _) => htmlRootTag(bodyTag(content)))
+          object View extends LiveView.Eventless[Unit]:
+            def mount(ctx: MountContext)  = ZIO.unit
+            def view(model: Signal[Unit]) = div("root-layout")
+          val application = scalive.Live.router(
+            scalive.Live
+              .session("root-layout-rollback")
+              .withConnectedResources(initialize)
+              .withAdmission(phaseContext)(identity)
+              .withConnectedResources(initialize)
+              .withRootLayout(rootLayout)(
+                scalive.live.withMountAspect(routeAspect).withConnectedResources(initialize)(View)
+              )
+          )
 
-      for
-        connections <- LiveConnections.make[String](_ => ZIO.unit)
-        result <- withServer(application) { port =>
-                    for
-                      page     <- bootstrap(port)
-                      socket   <- connect(port, page)
-                      rejected <- joinRoot(socket, page)
-                      _        <- connections.disconnect("root-layout")
-                      _ <- socket.send(
-                             PhoenixEnvelope(
-                               PhoenixRef.Null,
-                               PhoenixRef.Value("after-root-layout-rejection"),
-                               "phoenix",
-                               "heartbeat",
-                               Json.Obj.empty
-                             )
-                           )
-                      heartbeat <- socket.receiveReply("after-root-layout-rejection", "phoenix")
-                      _         <- socket.close
-                    yield assertTrue(status(rejected) == "error", status(heartbeat) == "ok")
-                  }.provideLayer(ZLayer.succeed[LiveConnections[String]](connections))
-      yield result
+          for
+            connections <- LiveConnections.make[String](_ => ZIO.unit)
+            result      <- withServer(application) { port =>
+                        for
+                          page     <- bootstrap(port)
+                          socket   <- connect(port, page)
+                          rejected <- joinRoot(socket, page)
+                          _        <- connections.disconnect("root-layout")
+                          _        <- socket.send(
+                                 PhoenixEnvelope(
+                                   PhoenixRef.Null,
+                                   PhoenixRef.Value("after-root-layout-rejection"),
+                                   "phoenix",
+                                   "heartbeat",
+                                   Json.Obj.empty
+                                 )
+                               )
+                          heartbeat <- socket.receiveReply("after-root-layout-rejection", "phoenix")
+                          bound     <- connections.bindingCount
+                          _         <- socket.close
+                        yield assertTrue(
+                          status(rejected) == "error",
+                          status(heartbeat) == "ok",
+                          initializers.get() == 0,
+                          bound == 0
+                        )
+                      }.provideLayer(ZLayer.succeed[LiveConnections[String]](connections))
+          yield result
+        }.map(_.reduce(_ && _))
     },
     test("root preflight projects canonical hosted and external responses with exact claims") {
       for

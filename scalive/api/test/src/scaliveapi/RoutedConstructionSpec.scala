@@ -420,6 +420,263 @@ object RoutedConstructionSpec extends ZIOSpecDefault:
 
       assertTrue(environmentErrors.nonEmpty, resultErrors.nonEmpty, callbackErrors.nonEmpty)
     },
+    test("connected resources preserve all seven builder kinds and infer callback inputs") {
+      val errors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        import zio.*
+        import zio.http.codec.PathCodec
+
+        trait Services
+        val aspect = LiveRouteMountAspect.fromRequest[Services, Unit, String](
+          _ => ZIO.succeed("route")
+        )
+        val admission = LiveSessionMountAspect.fromRequest[Services, String, String](
+          _ => ZIO.succeed("id" -> "session"),
+          (_, _) => ZIO.succeed("session")
+        )
+        val ordinary: LiveRouteBuilder[Unit] = live.withConnectedResources((context, resources) =>
+          val input: Any = context
+          val connected: ConnectedResources = resources
+          ZIO.unit
+        )
+        val decoded: LiveRouteParamsBuilder[Unit, Unit] = ordinary
+          .paramsDecodeOnly(LiveParamsCodec.path[Unit])
+          .withConnectedResources((_, _) => ZIO.unit)
+        val encodable: LiveEncodableRouteParamsBuilder[Unit, Int] = ordinary
+          .query[Int]("id")
+          .withConnectedResources((_, _) => ZIO.unit)
+          .mapParams(identity)(identity)
+        val location: LiveLocation = encodable.location(1)
+        val mounted: LiveRouteMountAspectBuilder[Services, Unit, Any, String] = ordinary
+          .withMountAspect(aspect)
+          .withConnectedResources((context, resources) =>
+            val input: String = context
+            val connected: ConnectedResources = resources
+            ZIO.unit
+          )
+        val mountedParams: LiveRouteMountAspectParamsBuilder[Services, Unit, Any, String, Unit] =
+          mounted.params.withConnectedResources((context, _) => ZIO.attempt(require(context.nonEmpty)))
+        val mountedLocation: LiveLocation = mountedParams.location(())
+        val session: LiveSessionBuilder[Any, Any] = Live.session("main")
+          .withConnectedResources((_, _) => ZIO.unit)
+        val admitted: LiveSessionBuilder.Admitted[Services & LiveConnections[String], String] =
+          session.withAdmission(admission)(identity)
+            .withConnectedResources((context, _) => ZIO.attempt(require(context.nonEmpty)))
+
+        object View extends LiveView.Eventless[Unit]:
+          def mount(ctx: MountContext) = ZIO.unit
+          def view(model: Signal[Unit]) = div()
+        object RoutedView extends LiveView.Routed.Eventless[Unit, Unit]:
+          def mount(params: Unit, ctx: MountContext) = ZIO.unit
+          def view(model: Signal[Unit]) = div()
+
+        val direct: LiveRoute[Any, Unit] { type Input = Any } = ordinary(View)
+        val decodeRoute: LiveRoute[Any, Unit] { type Input = Any } = decoded(RoutedView)
+        val mountedRoute: LiveRoute[Services, Unit] { type Input = Any } = mounted(View)
+        val mountedParamsRoute: LiveRoute[Services, Unit] { type Input = Any } = mountedParams(RoutedView)
+        val application: LiveApplication[Services & LiveConnections[String]] =
+          Live.router(admitted(direct, decodeRoute, mountedRoute, mountedParamsRoute))
+      """)
+
+      assertTrue(errors.isEmpty)
+    },
+    test(
+      "connected resources retain installation context through custom composition and admission"
+    ) {
+      val errors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        import zio.*
+
+        final case class Combined(first: String, second: Int)
+        given ContextAppend[String, Int] with
+          type Result = Combined
+          def append(input: String, output: Int) = Combined(input, output)
+          def left(result: Combined) = result.first
+
+        val firstRoute = LiveRouteMountAspect.fromRequest[Any, Unit, String](_ => ZIO.succeed("first"))
+        val secondRoute = LiveRouteMountAspect.make[Any, Unit, String, Int](
+          (_, context) => ZIO.succeed(context.length)
+        )
+        val firstSession = LiveSessionMountAspect.fromRequest[Any, String, String](
+          _ => ZIO.succeed("id" -> "first"), (_, _) => ZIO.succeed("first")
+        )
+        val secondSession = LiveSessionMountAspect.make[Any, String, Int, Int](
+          (_, context) => ZIO.succeed(1 -> context.length),
+          (_, _, context) => ZIO.succeed(context.length)
+        )
+        def initialize(context: String, resources: ConnectedResources): Task[Unit] = ZIO.unit
+        val route: LiveRouteMountAspectBuilder[Any, Unit, Any, Combined] = live
+          .withMountAspect(firstRoute)
+          .withConnectedResources(initialize)
+          .withMountAspect(secondRoute)
+          .withConnectedResources((context, _) => ZIO.attempt(require(context.second > 0)))
+        val session: LiveSessionBuilder[Any, Combined] = Live.session("session")
+          .withMountAspect(firstSession)
+          .withConnectedResources(initialize)
+          .withMountAspect(secondSession)
+        val admitted: LiveSessionBuilder.Admitted[LiveConnections[Int], Combined] = Live.session("admitted")
+          .withMountAspect(firstSession)
+          .withConnectedResources(initialize)
+          .withAdmission(secondSession)(identity)
+        val laterAspect: LiveSessionBuilder.Admitted[LiveConnections[String], Combined] = Live.session("later")
+          .withAdmission(firstSession)(identity)
+          .withConnectedResources(initialize)
+          .withMountAspect(secondSession)
+      """)
+
+      assertTrue(errors.isEmpty)
+    },
+    test("connected resources reject non-Unit results on every builder kind") {
+      val ordinary = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        import zio.*
+        val invalid = live.withConnectedResources((_, _) => ZIO.succeed(1))
+      """)
+      val params = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        import zio.*
+        def invalid(builder: LiveRouteParamsBuilder[Unit, Unit]) =
+          builder.withConnectedResources((_, _) => ZIO.succeed(1))
+      """)
+      val encodable = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        import zio.*
+        val invalid = live.params.withConnectedResources((_, _) => ZIO.succeed(1))
+      """)
+      val mounted = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        import zio.*
+        def invalid(builder: LiveRouteMountAspectBuilder[Any, Unit, Any, String]) =
+          builder.withConnectedResources((_, _) => ZIO.succeed(1))
+      """)
+      val mountedParams = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        import zio.*
+        def invalid(builder: LiveRouteMountAspectParamsBuilder[Any, Unit, Any, String, Unit]) =
+          builder.withConnectedResources((_, _) => ZIO.succeed(1))
+      """)
+      val session = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        import zio.*
+        val invalid = Live.session("main").withConnectedResources((_, _) => ZIO.succeed(1))
+      """)
+      val admitted = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        import zio.*
+        def invalid(builder: LiveSessionBuilder.Admitted[Any, String]) =
+          builder.withConnectedResources((_, _) => ZIO.succeed(1))
+      """)
+
+      assertTrue(
+        ordinary.nonEmpty,
+        params.nonEmpty,
+        encodable.nonEmpty,
+        mounted.nonEmpty,
+        mountedParams.nonEmpty,
+        session.nonEmpty,
+        admitted.nonEmpty
+      )
+    },
+    test("connected resources reject environment requirements and unavailable context") {
+      val environment = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        import zio.*
+        trait Services
+        val invalid = live.withConnectedResources((_, _) => ZIO.service[Services].unit)
+      """)
+      val ordinaryContext = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        import zio.*
+        val invalid = live.withConnectedResources((context: String, resources: ConnectedResources) => ZIO.unit)
+      """)
+      val mountedContext = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        import zio.*
+        def invalid(builder: LiveRouteMountAspectBuilder[Any, Unit, Any, String]) =
+          builder.withConnectedResources((context: Int, resources: ConnectedResources) => ZIO.unit)
+      """)
+      val admittedContext = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        import zio.*
+        def invalid(builder: LiveSessionBuilder.Admitted[Any, String]) =
+          builder.withConnectedResources((context: Int, resources: ConnectedResources) => ZIO.unit)
+      """)
+
+      assertTrue(
+        environment.nonEmpty,
+        ordinaryContext.nonEmpty,
+        mountedContext.nonEmpty,
+        admittedContext.nonEmpty
+      )
+    },
+    test("modified path prefixes retain path building, typed layouts, and encoding capabilities") {
+      val errors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        import zio.*
+        import zio.http.codec.PathCodec
+
+        val layout = LiveLayout[Int, Any]([Msg] => (content, _) => content)
+        val root = LiveRootLayout.dynamic[Int, Any](_.params.toString)([Msg] => (content, _, _) => content)
+        val prefix = (live / "items" / PathCodec.int("id"))
+          .guardConnectedTurns(_ => ZIO.unit)
+          .withLayout(layout)
+          .withRootLayout(root)
+          .withConnectedResources((_, _) => ZIO.unit)
+        val first: LiveRouteSeed[(Int, String)] = prefix / PathCodec.string("name")
+        val second: LiveRouteSeed[Int] = prefix / "edit"
+        val location: LiveLocation = first.params.location((1, "name"))
+        val query: LiveEncodableRouteParamsBuilder[Int, (Int, Boolean)] = second.query[Boolean]("preview")
+        val aspect = LiveRouteMountAspect.fromRequest[Any, Int, String](_ => ZIO.succeed("ctx"))
+        val mounted = second.withMountAspect(aspect)
+      """)
+
+      assertTrue(errors.isEmpty)
+    },
+    test(
+      "connected resource declarations and context projections remain deferred during assembly"
+    ) {
+      import scalive.*
+      import zio.ZIO
+      import zio.http.codec.PathCodec
+
+      final case class Combined(first: String, second: Int)
+      given ContextAppend[String, Int] with
+        type Result = Combined
+        def append(input: String, output: Int) = Combined(input, output)
+        def left(result: Combined): String     =
+          throw new IllegalStateException("context projection ran during assembly")
+
+      def initialize(context: Any, resources: ConnectedResources): zio.Task[Unit] =
+        throw new IllegalStateException("initializer ran during assembly")
+
+      val first  = LiveRouteMountAspect.fromRequest[Any, Int, String](_ => ZIO.succeed("first"))
+      val second = LiveRouteMountAspect.make[Any, Int, String, Int]((_, _) => ZIO.succeed(1))
+      val prefix = (live / "items" / PathCodec.int("id"))
+        .withConnectedResources(initialize)
+        .withLayout(LiveLayout.identity)
+        .withRootLayout(LiveRootLayout.identity)
+        .guardConnectedTurns(_ => ZIO.unit)
+      val extended = prefix / "edit"
+      val mounted  = extended
+        .withMountAspect(first)
+        .withConnectedResources(initialize)
+        .withMountAspect(second)
+        .params
+        .withConnectedResources(initialize)
+
+      object View extends LiveView.Routed.Eventless[Unit, Int]:
+        def mount(params: Int, ctx: MountContext) = ZIO.unit
+        def view(model: Signal[Unit])             = div()
+
+      val session     = Live.session("deferred").withConnectedResources(initialize)(mounted(View))
+      val application = Live.router(session)
+      assertTrue(
+        application.routes.size == 1,
+        extended.location(1).href == "/items/1/edit",
+        prefix.location(2).href == "/items/2",
+        mounted.location(3).href == "/items/3/edit"
+      )
+    },
     test("layouts cannot change the LiveView message type") {
       val errors = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*

@@ -1,12 +1,63 @@
 package scalive.docs.examples
 
 import zio.*
+import zio.http.*
 import zio.test.*
 
+import scalive.*
 import scalive.testing.ConnectedRender
 
 object ConnectedResourceExampleSpec extends ZIOSpecDefault:
+  private val config = ZioHttpConfig(
+    "01234567890123456789012345678901",
+    java.time.Duration.ofMinutes(30),
+    secureCookie = false,
+    allowedWebSocketOrigins = Set(WebSocketOrigin.https("scalive.test"))
+  ).toOption.get
+
   override def spec = suite("ConnectedResourceExampleSpec")(
+    test("route registration runs only before connected page mount and releases once on leave") {
+      ZIO.scoped {
+        for
+          events <- Ref.make(Vector.empty[String])
+          registrations = new LifecycleRegistrations:
+                            def register(owner: String): UIO[LifecycleRegistration] =
+                              events
+                                .update(_ :+ s"acquire:$owner")
+                                .as(LifecycleRegistration(owner))
+
+                            def unregister(registration: LifecycleRegistration): UIO[Unit] =
+                              events.update(_ :+ s"release:${registration.id}")
+          page = new LiveView.Eventless[Unit]:
+                   def mount(ctx: MountContext): UIO[Unit] = ctx.connection match
+                     case Connection.Disconnected => events.update(_ :+ "disconnected mount")
+                     case Connection.Connected(_) => events.update(_ :+ "connected mount")
+
+                   def view(model: Signal[Unit]) = div("Registered page")
+          client <- ConnectedRender.open(
+                      ConnectedResourceRouteExample.application(registrations, page),
+                      config,
+                      Request.get(URL.decode("/registered").toOption.get)
+                    )
+          afterDisconnected <- events.get
+          connected         <- client.join
+          afterConnected    <- events.get
+          _                 <- connected.leave
+          afterLeave        <- events.get
+          _                 <- client.disconnect
+          afterDisconnect   <- events.get
+        yield assertTrue(
+          afterDisconnected == Vector("disconnected mount"),
+          afterConnected == Vector(
+            "disconnected mount",
+            "acquire:registered-page",
+            "connected mount"
+          ),
+          afterLeave == (afterConnected :+ "release:registered-page"),
+          afterDisconnect == afterLeave
+        )
+      }
+    },
     test("returns visible handles and releases independent lifecycle registrations") {
       ZIO.scoped {
         for

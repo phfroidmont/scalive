@@ -153,7 +153,7 @@ final private[docs] class DocumentationApplication private (
     )
     liveRoutes ++
       AuthHttpRoutes(security).routes ++
-      DocumentationMetadataRoutes.routes(this, config.publicOrigin)
+      DocumentationMetadataRoutes.routes(this, assets, config.publicOrigin)
   end routes
 end DocumentationApplication
 

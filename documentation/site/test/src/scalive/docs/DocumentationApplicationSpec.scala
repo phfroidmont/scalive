@@ -724,8 +724,97 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         robots ==
           "User-agent: *\nAllow: /\nSitemap: https://docs.example.test/sitemap.xml\n"
       )
+    },
+    test("serves a concise Markdown documentation index over ordinary GET and HEAD") {
+      for
+        application <- loadApplication
+        assets      <- StaticAssets.load(StaticAssetConfig.classpath("public", assetNames))
+        routes =
+          application.routes(assets, security, config).provideEnvironment(documentationEnvironment)
+        indexResponse <- ZIO.scoped(routes.runZIO(Request.get(url("/llms.txt"))))
+        headResponse  <- ZIO.scoped(routes.runZIO(Request.head(url("/llms.txt"))))
+        index         <- indexResponse.body.asString
+        headBody      <- headResponse.body.asString
+        links         = "https://docs\\.example\\.test/[^)\\s]+\\.md".r.findAllIn(index).toVector
+        authoredPaths = application.bundle.pages.collect {
+                          case page if page.source.isInstanceOf[PageSource.Authored] =>
+                            config.publicOrigin.absolute(markdownPath(page.route))
+                        }.toSet
+        generatedPaths = application.bundle.pages.collect {
+                           case page if page.source.isInstanceOf[PageSource.GeneratedApi] =>
+                             config.publicOrigin.absolute(markdownPath(page.route))
+                         }.toSet
+      yield assertTrue(
+        indexResponse.status == Status.Ok,
+        headResponse.status == Status.Ok,
+        indexResponse.headers
+          .get(Header.ContentType).exists(header =>
+            header.mediaType.mainType == "text" && header.mediaType.subType == "plain" &&
+              header.charset.exists(_.name().equalsIgnoreCase("UTF-8"))
+          ),
+        headResponse.headers.get(Header.ContentType) == indexResponse.headers.get(
+          Header.ContentType
+        ),
+        headBody.isEmpty,
+        index.startsWith("# Scalive"),
+        index.contains("## Learn"),
+        index.contains("## Guides"),
+        index.contains("## Examples"),
+        index.contains("## API"),
+        links.nonEmpty,
+        links.toSet == authoredPaths,
+        (links.toSet intersect generatedPaths).isEmpty,
+        links.contains("https://docs.example.test/index.md"),
+        links.contains("https://docs.example.test/api.md")
+      )
+    },
+    test("serves Markdown companions for every documentation page and not unknown paths") {
+      for
+        application <- loadApplication
+        assets      <- StaticAssets.load(StaticAssetConfig.classpath("public", assetNames))
+        routes =
+          application.routes(assets, security, config).provideEnvironment(documentationEnvironment)
+        markdown <- ZIO.foreach(application.bundle.pages) { page =>
+                      val path = markdownPath(page.route)
+                      for
+                        response <- ZIO.scoped(routes.runZIO(Request.get(url(path))))
+                        body     <- response.body.asString
+                      yield path -> (response, body)
+                    }
+        head        <- ZIO.scoped(routes.runZIO(Request.head(url("/api/scalive/live-view.md"))))
+        headBody    <- head.body.asString
+        missing     <- ZIO.scoped(routes.runZIO(Request.get(url("/not-a-documentation-page.md"))))
+        missingHead <- ZIO.scoped(routes.runZIO(Request.head(url("/not-a-documentation-page.md"))))
+        byPath              = markdown.toMap
+        markdownContentType = byPath("/index.md")._1.headers.get(Header.ContentType)
+      yield assertTrue(
+        markdown.size == application.bundle.pages.size,
+        markdown.forall { case (_, (response, body)) =>
+          response.status == Status.Ok && body.trim.nonEmpty &&
+          response.headers.get(Header.ContentType) == markdownContentType
+        },
+        markdownContentType.exists(header =>
+          header.mediaType.mainType == "text" && header.mediaType.subType == "markdown" &&
+            header.charset.exists(_.name().equalsIgnoreCase("UTF-8"))
+        ),
+        head.status == Status.Ok,
+        head.headers.get(Header.ContentType) == markdownContentType,
+        headBody.isEmpty,
+        missing.status == Status.NotFound,
+        missingHead.status == Status.NotFound,
+        byPath("/index.md")._2.contains("# Live interfaces. Typed end to end."),
+        byPath("/learn.md")._2.contains("# Learn"),
+        byPath("/learn/models-and-messages.md")._2.contains("LiveView"),
+        byPath("/examples.md")._2.contains("/examples/counter.md"),
+        byPath("/examples/counter.md")._2.contains("class CounterExample"),
+        byPath("/api.md")._2.contains("/api/scalive/live-view.md"),
+        byPath("/api/scalive/live-view.md")._2.contains("trait LiveView")
+      )
     }
   )
+
+  private def markdownPath(route: String): String =
+    if route == "/" then "/index.md" else s"$route.md"
 
   private def flattenOutline(item: scalive.docs.model.OutlineItem)
     : Vector[scalive.docs.model.OutlineItem] =

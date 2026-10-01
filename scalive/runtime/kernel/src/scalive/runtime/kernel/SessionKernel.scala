@@ -49,6 +49,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
   mailbox: Queue[SessionKernel.Envelope[Msg, Model]],
   regularSlots: Queue[Unit],
   patchAcknowledgementQueued: Ref[Boolean],
+  loopInput: Ref[(SessionState[Msg, Model], ImmutableQueue[SessionKernel.Work[Msg, Model]])],
   terminal: Promise[Nothing, SessionState[Msg, Model]],
   sessionScope: Scope.Closeable,
   activeOwner: SessionKernel.ActiveRenderOwner,
@@ -411,24 +412,36 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                   )
               } *> ready.fail(failure).unit *>
                 crash(failure)
-          }.onInterrupt(ready.fail(SessionFailure.Interrupted()).unit)
+          }.onInterrupt(releaseInterruptedLoop)
+          .onInterrupt(ready.fail(SessionFailure.Interrupted()).unit)
           .ensuring(cleanupSession)
       }
     }
   end run
 
+  /** Every turn re-enters the loop in tail position. Wrapping an iteration would keep its state
+    * alive until the session ends, so interrupt cleanup is installed once by `run` and reads the
+    * latest input from `loopInput`.
+    */
   private def loop(
     state: SessionState[Msg, Model],
     work: ImmutableQueue[Work[Msg, Model]]
   ): UIO[Unit] =
-    (state match
+    loopInput.set(state -> work) *> (state match
       case active: SessionState.Active[Msg, Model]         => activeLoop(active, work)
-      case navigating: SessionState.Navigating[Msg, Model] =>
-        navigatingLoop(navigating, work).onInterrupt(
-          ZIO.foreachDiscard(navigating.pending.componentCandidate)(discardCandidate)
-        )
-      case _ => ZIO.unit
-    ).onInterrupt(failWork(work, SessionRejection.Terminal("closed")))
+      case navigating: SessionState.Navigating[Msg, Model] => navigatingLoop(navigating, work)
+      case _                                               => ZIO.unit)
+
+  private def releaseInterruptedLoop: UIO[Unit] =
+    loopInput.get.flatMap { case (state, work) =>
+      val candidate = state match
+        case navigating: SessionState.Navigating[Msg, Model] =>
+          navigating.pending.componentCandidate
+        case _ => None
+      ZIO
+        .foreachDiscard(candidate)(discardCandidate)
+        .ensuring(failWork(work, SessionRejection.Terminal("closed")))
+    }
 
   private def activeLoop(
     state: SessionState.Active[Msg, Model],
@@ -4231,6 +4244,9 @@ private[scalive] object SessionKernel:
         ready                      <- Promise.make[SessionFailure, Unit]
         shutdown                   <- Promise.make[Nothing, Unit]
         activeOwner                <- ActiveRenderOwner.make
+        loopInput <- Ref.make[(SessionState[Msg, Model], ImmutableQueue[Work[Msg, Model]])](
+                       SessionState.Bootstrapping(Epoch.initial) -> ImmutableQueue.empty
+                     )
         kernel = SessionKernel(
                    connection,
                    lifecycle,
@@ -4244,6 +4260,7 @@ private[scalive] object SessionKernel:
                    mailbox,
                    regularSlots,
                    patchAcknowledgementQueued,
+                   loopInput,
                    terminal,
                    sessionScope,
                    activeOwner,

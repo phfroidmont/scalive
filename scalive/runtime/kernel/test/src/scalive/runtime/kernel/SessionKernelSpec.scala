@@ -1,5 +1,6 @@
 package scalive.runtime.kernel
 
+import java.lang.ref.WeakReference
 import java.time.Duration as JavaDuration
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -37,6 +38,15 @@ object SessionKernelSpec extends ZIOSpecDefault:
         ZIO.succeed(ProbeReservation(batch => batches.update(_ :+ batch)))
       )
       outbound -> batches
+    }
+
+  final private class PayloadModel(val count: Int):
+    val payload: Array[Byte] = new Array[Byte](16 * 1024)
+
+  private def reachableAfterCollection[A](references: Vector[WeakReference[A]]): UIO[Int] =
+    ZIO.succeed {
+      (1 to 3).foreach(_ => java.lang.System.gc())
+      references.count(_.get() != null)
     }
 
   private def textProgram: IO[RenderError, RenderProgram[Int, Int]] =
@@ -1630,6 +1640,36 @@ object SessionKernelSpec extends ZIOSpecDefault:
           _           <- kernel.close
           afterClose  <- finalized.get
         yield assertTrue(beforeClose == 100, afterClose == 101)
+      }
+    },
+    test("completed turns do not retain earlier session states") {
+      ZIO.scoped {
+        val turns = 5000
+        for
+          models  <- Ref.make(Vector.empty[WeakReference[PayloadModel]])
+          program <- ZIO.fromEither(
+                       RenderProgram.compile[PayloadModel, Int](model =>
+                         div(model.map(_.count.toString))
+                       )
+                     )
+          outbound = ProbeOutbound(ZIO.succeed(ProbeReservation(_ => ZIO.unit)))
+          track    = (count: Int) =>
+                    ZIO.succeed(PayloadModel(count)).tap(model =>
+                      models.update(_ :+ WeakReference(model))
+                    )
+          logic = SessionLogic[Int, PayloadModel](
+                    bootstrap = track(0).map(model => TurnDraft(model)),
+                    handle = (model, message) =>
+                      track(model.count + message).map(next => TurnDraft(next))
+                  )
+          kernel <- SessionKernel.start(config, logic, program, outbound)
+          _      <- ZIO.foreachDiscard(1 to turns)(_ =>
+                 kernel.submit(SessionCommand.Message(kernel.epoch, 1))
+               )
+          created   <- models.get.map(_.size)
+          reachable <- models.get.flatMap(reachableAfterCollection)
+          current   <- kernel.inspect.map(_.model.count)
+        yield assertTrue(created == turns + 1, current == turns, reachable <= 2)
       }
     },
     test("upload commit runs after installation and before publication without rollback") {

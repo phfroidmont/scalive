@@ -58,6 +58,12 @@ callbacks:
 Callbacks return `Task`, so `mount` and `handleMessage` call the captured service
 directly. Their environment type does not change.
 
+This `mount` loads the reports in both the disconnected and the connected mount,
+so the first HTML response already lists them. When a query is too slow for the
+first response, start it once the page connects instead, as
+[Loading data and live updates](../learn/loading-data-and-live-updates.md#load-data-when-the-page-connects)
+shows.
+
 The model has one case for loaded reports and one for a failure, and the view
 handles both. `loaded` and `failure` are `Signal[Option[...]]` values, and
 `option` renders its content only while the value is defined.

@@ -96,6 +96,28 @@ The documentation examples catalog is a real routed view. Its `topic` query
 parameter controls a URL-addressable filter, and every topic link builds a typed
 location before issuing a patch.
 
+## Give A LiveView Its Services {#give-a-liveview-its-services}
+
+`->` pairs a route with a LiveView that needs nothing from the application. When
+the LiveView needs a service, register the route with
+@:apiSymbol(def:scalive.LiveRouteBuilder.from)`from`@:@ and build the LiveView
+from the service:
+
+@:sourceRegion(documentation/fixtures/learn/src/quickstart/Main.scala, learn-thermostat-registration)
+
+The route adds the service type to the application's ZIO environment, so the
+server must provide a layer for it. Scalive calls the function for the
+disconnected render and for each connected mount. For a route with parameters,
+the three-argument form `from((params, request, service) => ...)` also receives
+the decoded path value and the request. Routes behind a mount aspect receive its
+typed context through `context` instead, which can also take one service, as in
+the [authentication guide](authentication.md#authenticate-both-mount-phases).
+
+[Loading data and live updates](../learn/loading-data-and-live-updates.md#give-the-page-its-service)
+walks through a complete example, and the
+[services guide](services-and-zlayer-injection.md) covers several services,
+layers that own resources, and tests.
+
 ## Authorize Route Mounts {#authorize-route-mounts}
 
 Use @:apiSymbol(class:scalive.LiveRouteMountAspect)`LiveRouteMountAspect`@:@ to

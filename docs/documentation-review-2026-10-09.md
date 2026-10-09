@@ -143,6 +143,64 @@ Left for later phases:
 - `examples/text-upload.md` still describes the wrong upload order
   (finding 17).
 
+### Phase 2 (2026-10-10): Learn path and findings 8–11
+
+The Learn path now builds one application from the quick-start counter, in the
+order the recommended information architecture proposes. Every Scala block in
+Learn is compiled except the two `build.mill` files. The application lives in
+`documentation/fixtures/learn` (Mill module `documentation.learnFixture`), in the
+reader's `quickstart` package. It does not depend on `quickStartFixture`, whose
+classes it replaces, so it carries its own copy of `RootLayout`.
+`documentation.check` runs its tests.
+
+| Order | Page | Change |
+| --- | --- | --- |
+| 1 | Quick start | Mill pinned with `//| mill-version: 1.1.8`, JDK 17 or later named, production settings in one warning callout, artifact and WebSocket `Origin` asides removed, next step added. The root layout key is still unexplained; it waits for finding 16. |
+| 2 | Models, messages, and effects | The counter gains a `Model` case class and `Reset`. The cart model and handler are compiled. The forms detour now links to the form lesson. |
+| 3 | Rendering, bindings, and diffs | Finding 8 and 9: states that `model` is a `Signal` inside `view`; recipes for `when`, `option`, and `choose`; keyed rows; row-specific messages with `on.click(line.map(...))`; helpers that take signals. The tuple-flattening rules moved to Scaladoc on `Signal.combine`, `combineWith`, and `combineWithFn`. |
+| 4 | Your first form (new) | Two fields, change, submit, errors, and reset after success. |
+| 5 | Loading data and live updates (new) | Findings 10 and 11: a service registered with `from`, async work and a subscription started from the connected mount branch, and `AsyncValue` rendering. |
+| 6 | URL state and navigation | The search example is compiled. |
+| 7 | Lifecycle, state ownership, and reconnects | Uses the thermostat's mount; the `withAdmission` and connected-harness references are gone. |
+| 8 | Testing your LiveView (new) | The test module setup and first test moved here from the testing guide, plus tests for the form and the service-backed page. |
+| 9 | How the pieces fit | Renamed from Project anatomy (`/learn/project-anatomy` is now `/learn/how-the-pieces-fit`) and moved to the end. The asset-model paragraph is shorter. |
+| 10 | Where to go next | Example names fixed; navigation guards and component subscriptions added. |
+
+The thermostat page polls a stand-in sensor: it reads once the page connects,
+then a subscription sends `Refresh` every ten seconds, and starting the same
+`AsyncKey` replaces any read still running. This shows both APIs without a race.
+Loading a snapshot and then subscribing to a feed of changes to the same data
+can miss or reorder updates unless the service's stream starts with the current
+value, which is too much for a first lesson. The page mentions push streams in
+a short fragment and links to the async guide.
+
+Other pages changed for these findings:
+
+- **Async guide (finding 10):** now leads with "Start work when the page
+  connects", which embeds the thermostat's mount. Connected resources and
+  route/session initializers moved to the end. Its nine inline blocks became
+  regions of the compiled examples.
+- **Routes guide (finding 11):** new "Give a LiveView its services" section.
+  The services guide says when to load in `mount` and when to load on connect.
+- **Testing guide:** starts from the Learn lesson's test module.
+- **HTML guide, typed forms guide, Phoenix orientation, dynamic HTML essay:**
+  link to the new lessons; the essay uses `on.click(product.map(...))`.
+
+API decision:
+
+- **Added `Connection.isConnected`.** `LifecycleExample` and the e2e app wrote
+  `ctx.connection.isInstanceOf[Connection.Connected[?]]` to read the phase. The
+  greenfield API removed the old `ctx.connected: Boolean` because connected
+  capabilities used to be no-ops during the disconnected render. The new
+  method returns only the phase; capabilities are still reachable only by
+  matching `Connection.Connected`, and a test checks that.
+
+`rg '```scala unverified' documentation/content` now reports 86 blocks.
+
+Verification: `mill __.test`, `mill documentation.check`, and
+`npm run test:xray` pass. `./scripts/e2e-run-upstream.sh` was not run, because
+no runtime behavior changed.
+
 ## How this was verified
 
 - I read all 56 authored pages and every embedded example source they

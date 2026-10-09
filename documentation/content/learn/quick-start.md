@@ -7,9 +7,11 @@ section = learn
 
 ## Before You Begin {#before-you-begin}
 
-Install a JDK and Mill. This quick start uses Scala `3.8.4` and the
-`dev.scalive::scalive:{{scaliveSnapshotVersion}}` artifact. Verify that both
-tools are available before creating the project:
+Install JDK 17 or later and the Mill launcher. This quick start uses Scala
+`3.8.4`, Mill `1.1.8`, and the
+`dev.scalive::scalive:{{scaliveSnapshotVersion}}` artifact. The project's
+`build.mill` pins the Mill version, so any recent launcher downloads the right
+one. Verify that both tools are available before creating the project:
 
 ```bash
 java -version
@@ -48,6 +50,7 @@ scalive-quick-start/
 Create `build.mill` at the project root:
 
 ```scala unverified
+//| mill-version: 1.1.8
 package build
 
 import mill.*, scalalib.*
@@ -66,18 +69,14 @@ object app extends ScalaModule:
 end app
 ```
 
-The `::` in the dependency selects the Scala 3 artifact. Scalive publishes and
-supports exactly two Scala coordinates: `dev.scalive::scalive`, which contains
-all production API, render, runtime, protocol, and transport classes, and the
-optional test-support coordinate `dev.scalive::scalive-testing`. Scalive's ZIO
-and ZIO HTTP dependencies are supplied transitively.
+The `::` in the dependency selects the Scala 3 artifact. `dev.scalive::scalive`
+is the whole library, and it brings ZIO and ZIO HTTP with it. Tests add one more
+artifact, `dev.scalive::scalive-testing`, in
+[Testing your LiveView](testing-your-liveview.md).
 
 Mill automatically places files under `app/resources` on the application's
-classpath. Scalive packages its supported Phoenix and Phoenix LiveView clients,
-so this baseline needs no package manager or bundler. Applications that need
-JavaScript package imports, separate modules, generated chunks, workers, fonts,
-or another custom browser build can follow the
-[custom bundle guide](../guides/static-assets-and-client-setup.md#build-the-client-bundle).
+classpath. Scalive packages the Phoenix and Phoenix LiveView browser clients,
+so this project needs no package manager or bundler.
 
 ## Connect The Browser {#connect-the-browser}
 
@@ -125,22 +124,23 @@ Create `app/src/quickstart/Main.scala`:
 The server loads Scalive's packaged clients through
 @:apiSymbol(class:scalive.LiveViewClientAssets)`LiveViewClientAssets`@:@, loads
 `app.js` as an ordinary classpath asset, builds CSRF-protected Live routes, adds
-both asset route sets, and listens on port `8080`. The client files use the
-default `/_scalive/live-view` asset mount; the Live socket remains at `/live`.
-For local HTTP, this fixture
-uses a fixed development-only signing-secret fallback and sets
-`secureCookie = false`; its WebSocket allowlist admits the exact local page
-origins `http://localhost:8080` and `http://127.0.0.1:8080`. Do not deploy those
-settings unchanged:
-production must require a stable, high-entropy `SCALIVE_TOKEN_SECRET`, set
-`secureCookie = true` behind HTTPS, and replace the allowlist with every exact
-browser-facing HTTP or HTTPS origin. See
+both asset route sets, and listens on port `8080`. The root layout renders the
+asset URLs, which include a version, so the plain `/static/app.js` path returns
+`404`.
+
+The configuration signs session cookies and accepts live connections only from
+pages served at `http://localhost:8080` and `http://127.0.0.1:8080`.
+
+@:callout(warning)
+
+These settings are for local development only. Before deploying, read the
+secret from your own configuration and fail when it is missing instead of
+falling back to a fixed value, set `secureCookie = true` behind HTTPS, and list
+every origin that browsers use to reach the application. See
 [Configuration](../guides/configuration.md#current-configuration-contract)
 and [Deployment](../guides/deployment.md#put-an-http-edge-in-front).
 
-The tracked application-script URL contains Scalive's asset-set version. The unversioned
-`/static/app.js` path returns `404` by default; render asset URLs through the
-loaded `StaticAssets` value rather than hard-coding them.
+@:@
 
 ## Run It {#run-it}
 
@@ -154,13 +154,13 @@ Open `http://localhost:8080/`, substituting the configured `port` value if you
 changed it. The HTTP request first produces disconnected HTML. The client then
 connects to `/live`, Scalive mounts an independent connected model, and button
 events travel over the socket as typed messages.
-Although the socket transport becomes WebSocket, its browser `Origin` remains
-the page's HTTP origin, `http://localhost:8080` with the default port, rather
-than becoming a `ws` URL.
 
 You are done when Mill compiles the application, the server listens on the
 configured port, and the browser shows a counter starting at `0`. Both buttons
 should update it without reloading the page.
+
+Next, [Models, messages, and effects](models-and-messages.md) adds a Reset
+button and explains how the counter's state changes.
 
 ## If Something Fails {#if-something-fails}
 

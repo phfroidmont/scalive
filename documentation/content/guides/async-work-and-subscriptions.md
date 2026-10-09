@@ -9,21 +9,21 @@ group = "Async and lifecycle"
 ## Before You Start {#prerequisites}
 
 Start with a connected `LiveView` whose messages already produce explicit model
-transitions and rendered UI states.
+transitions and rendered UI states. [Loading data and live updates](../learn/loading-data-and-live-updates.md)
+introduces the APIs on this page with a complete example.
 
 ## Choose The Resource By Shape {#choose-the-resource-by-shape}
 
 Scalive gives connected LiveViews and components focused lifecycle-owned resource
-shapes. Use
-`ctx.async` for one finite `Task[A]`: a database query, service call, or report
-that succeeds, fails, or is cancelled. Use `ctx.subscriptions` for a
-`ZStream[Any, Nothing, Msg]` that can emit many messages over time: a clock,
-notification feed, or application event stream. Use
-@:apiSymbol(def:scalive.RootMountConnected.resources)`connected.resources`@:@
-during root LiveView mount for a resource that needs deterministic cleanup but
-does not itself deliver messages to the LiveView. `ConnectedResources` remains a
-root-mount capability; component subscriptions do not add a component resource
-registry.
+shapes:
+
+- Use `async` for one finite `Task[A]`: a database query, service call, or
+  report that succeeds, fails, or is cancelled.
+- Use `subscriptions` for a `ZStream[Any, Nothing, Msg]` that can emit many
+  messages over time: a clock, notification feed, or application event stream.
+- Use [connected resources](#connected-resources) during root LiveView mount for
+  a resource that needs deterministic cleanup but does not itself deliver
+  messages to the LiveView.
 
 A `Task[A]` is finite work that may fail with a `Throwable`; a fiber is its
 running, interruptible execution. A `ZStream[R, E, A]` emits zero or more `A`
@@ -49,134 +49,39 @@ connected-lifecycle scope for other resources.
 
 @:@
 
-## Acquire Other Connected Resources {#connected-resources}
+## Start Work When The Page Connects {#start-work-when-the-page-connects}
 
-The @:apiSymbol(trait:scalive.ConnectedResources)`ConnectedResources`@:@
-capability is exposed through the connected mount branch. Call
-@:apiSymbol(def:scalive.ConnectedResources.acquireRelease)`acquireRelease`@:@
-there and provide a non-failing finalizer:
+Most pages start their work in `mount`: load data that is too slow for the first
+HTML response, or subscribe to updates for as long as the page stays open. Match
+@:apiSymbol(def:scalive.LifecycleContext.connection)`ctx.connection`@:@ and start
+the work in the connected branch:
 
-```scala unverified
-trait SessionMonitor:
-  def stop: UIO[Unit]
+@:sourceRegion(documentation/fixtures/learn/src/quickstart/ThermostatLiveView.scala, learn-thermostat-mount)
 
-def startSessionMonitor: Task[SessionMonitor]
+@:apiSymbol(def:scalive.RootMountConnected.async)`connected.async`@:@ and
+@:apiSymbol(def:scalive.RootMountConnected.subscriptions)`connected.subscriptions`@:@
+exist only in the `Connection.Connected` branch, so the disconnected HTTP render
+cannot start background work. Return a model that renders a loading state from
+both branches. Every connected mount, including the one after a reconnect,
+starts the work again.
 
-def mount(ctx: MountContext): Task[Model] =
-  ctx.connection match
-    case Connection.Disconnected =>
-      loadDisconnectedModel
-
-    case Connection.Connected(connected) =>
-      connected.resources
-        .acquireRelease(startSessionMonitor)(_.stop)
-        .flatMap(monitor => loadConnectedModel(monitor))
-```
-
-The capability is intentionally limited to connected mount, either directly or
-through the route/session initializer below. Do not retain it in the model, a
-service, or a callback for later acquisition; use a keyed managed API or an
-explicitly scoped service when ownership changes after mount.
-
-The acquisition `Task[A]` may fail normally. Once it succeeds, Scalive registers
-the finalizer before returning the value. That finalizer runs exactly once when
-the lifecycle closes, including when the remainder of connected mount or the
-initial render fails. An acquisition failure does not run the finalizer, and an
-attempt made after lifecycle closure fails before acquisition starts.
-
-The finalizer is a `UIO[Unit]`: it has no expected typed failure. If an external
-cleanup API returns `Task[Unit]`, make the policy explicit by recovering and
-logging, retrying within a bound, or deliberately converting the failure to a
-defect. Do not leave that decision implicit at shutdown.
-
-ZIO runs acquisition and finalization uninterruptibly so interruption cannot
-strand a partially registered resource. Keep both effects short and bounded;
-a blocked acquisition or finalizer also delays lifecycle shutdown.
-
-The owner is the connected LiveView lifecycle, not an application session ID.
-Two tabs using the same login session acquire independent resources, and closing
-one tab does not release the other tab's resource. Root and nested LiveViews on
-one WebSocket also have independent lifecycles; closing the socket releases all
-of them. Put genuinely session-shared resources in an injected service with
-explicit reference counting or leases.
-
-Use this capability for registrations, observers, external subscriptions, and
-handles whose release is the only lifecycle interaction. Continue to use
-`ctx.subscriptions` when a timer or feed emits `Msg` values, or when work must be
-replaced or cancelled while the LiveView remains mounted.
-
-Cleanup starts after the server observes lifecycle termination. External
-presence and locks still need leases or expiry for node failure and undetected
-network partitions.
-
-### Initialize At Route Or Session Boundaries {#route-and-session-resources}
-
-Use `withConnectedResources` on a route or named live-session builder when an
-acquired resource is only a lifecycle side effect, such as a registration or
-lease. Keep direct connected-mount acquisition when its result is needed to
-construct the page's model, as in the monitor example above.
-
-The modifier accepts `(Ctx, ConnectedResources) => Task[Result]` with
-`Result <: Unit`. Finish an acquisition with `.unit` when the handle is needed
-only by its finalizer. The callback does not enrich typed context or populate a
-model, and it does not add a new environment requirement to the builder: capture
-services while assembling the application or obtain them from typed context.
-
-This application attaches a registration to a page without changing the page:
-
-@:sourceRegion(documentation/site/src/scalive/docs/examples/ConnectedResourceExample.scala, connected-resource-route-example)
-
-`Ctx` is the context available **where the modifier is installed**. Plain route
-and session builders supply `Any`; install after the aspects that produce the
-typed context you need. Later aspects or admission preserve the earlier callback's
-context through projection, rather than passing it the final accumulated tuple.
-A later `.context(factory)` call does not retroactively type a plain route's
-initializer.
-
-Initializers are lazy: neither constructing the builder nor disconnected
-rendering runs them. After all session and route admission/context checks succeed,
-Scalive runs session initializers first, then route initializers, in declaration
-order within each level, before the page's connected `mount`. Repeated modifiers
-append work; they do not replace earlier callbacks. This guarantee is about
-mount, not construction: page factories and render compilation can precede the
-initializers. Do not rely on registration side effects in a factory or while
-building the render graph.
-
-Execution is sequential and fail-fast. A `Task` failure is a mount failure, not an
-authentication rejection or a `LiveMountFailure` result. Use mount aspects and
-admission for controlled authorization outcomes. All initializers and direct
-connected-mount acquisitions use the same existing `ConnectedResources` scope.
-If an initializer or the remaining mount/initial render fails, lifecycle closure
-rolls back successful acquisitions through their registered finalizers; later
-initializers do not run after a failure. Keep acquisition and finalization short
-and bounded, just as for direct mount acquisition.
-
-The owner is one **connected root lifecycle**, not the physical socket, the named
-live-session group, or a logical application session. A fresh reconnect or route
-navigation runs the applicable initializers again for the new root. Patches and
-ordinary messages do not rerun them, and nested LiveViews do not inherit these
-route/session initializers. Nested views can still acquire their own resources
-directly during connected mount. Shared cross-tab/session ownership requires a
-separate service with explicit leases or reference counting.
+After mount, message handlers reach the same capabilities through
+@:apiSymbol(def:scalive.MessageContext.async)`ctx.async`@:@ and
+@:apiSymbol(def:scalive.MessageContext.subscriptions)`ctx.subscriptions`@:@.
+The rest of this page describes both APIs in detail.
 
 ## Run Finite Work With A Typed Key {#run-finite-work-with-a-typed-key}
 
 An @:apiSymbol(opaque-type:scalive.AsyncKey)`AsyncKey[A]`@:@ names one task and fixes
-its result type. Derive keys from stable instance identity when multiple copies
-of an example or component can coexist:
-
-```scala unverified
-private val ReportTask = AsyncKey[Report](s"async-report-$instanceId")
-```
+its result type, as in `AsyncKey[Double]("reading")`. Derive keys from stable
+instance identity when multiple copies of an example or component can coexist;
+the report example below uses `AsyncKey[Report](s"async-report-$instanceId")`.
 
 Start work through @:apiSymbol(def:scalive.Async.start)`ctx.async.start`@:@ and map
-its result into the owning LiveView's message type:
+its result into the owning LiveView's message type. The report example starts
+every run through one helper:
 
-```scala unverified
-ctx.async
-  .start(ReportTask)(generateReport)(Msg.ReportCompleted(_))
-  .as(model.copy(report = model.report.loading()))
-```
+@:sourceRegion(documentation/site/src/scalive/docs/examples/AsyncReportExample.scala, async-report-start)
 
 The mapper receives a @:apiSymbol(enum:scalive.LiveAsyncResult)`LiveAsyncResult[A]`@:@:
 `Succeeded(value)`, `Failed(cause)`, or `Cancelled(reason)`. This is one task's
@@ -195,14 +100,14 @@ and filtering old results yourself.
 model for rendering work across messages. It distinguishes empty, loading,
 successful, failed, and explicitly cancelled states. Loading, failure, and
 cancellation can retain the last successful value, which lets a refresh show
-existing data instead of replacing the entire panel with a spinner.
+existing data instead of replacing the entire panel with a spinner. Keep it in
+the model:
 
-```scala unverified
-final case class Model(report: AsyncValue[Report] = AsyncValue.empty)
+@:sourceRegion(documentation/site/src/scalive/docs/examples/AsyncReportExample.scala, async-report-model)
 
-case Msg.ReportCompleted(result) =>
-  ZIO.succeed(model.copy(report = model.report.updated(result)))
-```
+Then apply each completion with `updated`:
+
+@:sourceRegion(documentation/site/src/scalive/docs/examples/AsyncReportExample.scala, async-report-completed)
 
 Call `loading(reset = true)` when old data would be misleading. The default
 retains it. Render every state deliberately; a failed task is domain-visible
@@ -220,9 +125,7 @@ If the key exists, Scalive invokes the original mapper with
 `LiveAsyncResult.Cancelled`, including the optional application reason. Use this
 path when cancellation itself belongs in the UI:
 
-```scala unverified
-ctx.async.cancel(ReportTask, Some("Cancelled by the user")).as(model)
-```
+@:sourceRegion(documentation/site/src/scalive/docs/examples/AsyncReportExample.scala, async-report-cancel)
 
 Cancelling an absent key is a no-op. Replacement, component removal, and socket
 shutdown also interrupt work, but intentionally do not deliver cancellation
@@ -237,25 +140,18 @@ instead reuse the normal cancel path.
 
 A @:apiSymbol(opaque-type:scalive.SubscriptionKey)`SubscriptionKey`@:@ identifies one
 registered stream in its root LiveView or exact component owner. The stream must
-emit that owner's `Msg` type and cannot fail:
+emit that owner's `Msg` type and cannot fail. The clock example keys its
+subscription by instance, `SubscriptionKey(s"subscription-clock-$instanceId")`,
+and builds its stream with:
 
-```scala unverified
-private val ClockSubscription =
-  SubscriptionKey(s"subscription-clock-$instanceId")
-
-private def ticks(every: Duration): ZStream[Any, Nothing, Msg] =
-  ZStream.tick(every).mapZIO(_ => Clock.instant).map(Msg.Tick(_))
-```
+@:sourceRegion(documentation/site/src/scalive/docs/examples/SubscriptionClockExample.scala, subscription-clock-ticks)
 
 @:apiSymbol(def:scalive.Subscriptions.start)`start`@:@ rejects a duplicate
 registered key, including a component registration whose worker is suspended by
 dormancy. Use it when starting twice indicates a state-machine mistake. The clock
 guards `start` with its model so the button and server transition agree:
 
-```scala unverified
-ctx.subscriptions
-  .start(ClockSubscription, SubscriptionDelivery.Lossless)(ticks(1.second))
-```
+@:sourceRegion(documentation/site/src/scalive/docs/examples/SubscriptionClockExample.scala, subscription-clock-start)
 
 @:apiSymbol(def:scalive.Subscriptions.replace)`replace`@:@ starts or swaps the
 stream under a key. Replacing the registration interrupts the old stream and
@@ -263,28 +159,20 @@ resubscribes the runtime's current set. Use replacement when changing polling
 frequency, topic, props, or another stream parameter is valid application
 behavior:
 
-```scala unverified
-ctx.subscriptions
-  .replace(ClockSubscription, SubscriptionDelivery.Lossless)(ticks(250.millis))
-```
+@:sourceRegion(documentation/site/src/scalive/docs/examples/SubscriptionClockExample.scala, subscription-clock-replace)
 
 The required `SubscriptionDelivery` argument controls backpressure at the
 LiveView mailbox. `Lossless` delivers every emitted message in order; use it
 when every transition matters. `Latest` coalesces pending delivery so newer
 messages supersede older ones; use it for high-frequency state snapshots where
-only the newest value matters. The compiled clock example below deliberately
-uses `Lossless` for both start and replacement so every tick is counted.
+only the newest value matters. The clock deliberately uses `Lossless` for both
+start and replacement so every tick is counted.
 
 @:apiSymbol(def:scalive.Subscriptions.cancel)`cancel`@:@ removes the registration
 and succeeds when it is already absent. Update the model in the same handler so
 the rendered controls describe the registered state:
 
-```scala unverified
-case Msg.Cancel =>
-  ctx.subscriptions
-    .cancel(ClockSubscription)
-    .as(model.copy(mode = Mode.Stopped))
-```
+@:sourceRegion(documentation/site/src/scalive/docs/examples/SubscriptionClockExample.scala, subscription-clock-cancel)
 
 Root subscription messages pass through the root's typed info lifecycle hooks
 before `handleMessage`. Registrations exist only for the connected lifecycle and
@@ -345,6 +233,105 @@ survive navigation or reconnect. `AsyncValue`, task registrations, and
 subscription registrations are lifecycle state. On page exit, Scalive releases
 the managed resource; on remount, initialize the model and registrations from
 their real source of truth.
+
+## Acquire Other Connected Resources {#connected-resources}
+
+Some work needs cleanup when the page closes but never sends the LiveView a
+message: a registration, an observer, or an external handle. The
+@:apiSymbol(trait:scalive.ConnectedResources)`ConnectedResources`@:@
+capability is exposed through the connected mount branch as
+@:apiSymbol(def:scalive.RootMountConnected.resources)`connected.resources`@:@.
+Call @:apiSymbol(def:scalive.ConnectedResources.acquireRelease)`acquireRelease`@:@
+there and provide a non-failing finalizer. The registration example keeps the
+acquired handle in its model:
+
+@:sourceRegion(documentation/site/src/scalive/docs/examples/ConnectedResourceExample.scala, connected-resource-mount)
+
+The capability is intentionally limited to connected mount, either directly or
+through the route/session initializer below. Do not retain it in the model, a
+service, or a callback for later acquisition; use a keyed managed API or an
+explicitly scoped service when ownership changes after mount.
+
+The acquisition `Task[A]` may fail normally. Once it succeeds, Scalive registers
+the finalizer before returning the value. That finalizer runs exactly once when
+the lifecycle closes, including when the remainder of connected mount or the
+initial render fails. An acquisition failure does not run the finalizer, and an
+attempt made after lifecycle closure fails before acquisition starts.
+
+The finalizer is a `UIO[Unit]`: it has no expected typed failure. If an external
+cleanup API returns `Task[Unit]`, make the policy explicit by recovering and
+logging, retrying within a bound, or deliberately converting the failure to a
+defect. Do not leave that decision implicit at shutdown.
+
+ZIO runs acquisition and finalization uninterruptibly so interruption cannot
+strand a partially registered resource. Keep both effects short and bounded;
+a blocked acquisition or finalizer also delays lifecycle shutdown.
+
+The owner is the connected LiveView lifecycle, not an application session ID.
+Two tabs using the same login session acquire independent resources, and closing
+one tab does not release the other tab's resource. Root and nested LiveViews on
+one WebSocket also have independent lifecycles; closing the socket releases all
+of them. Put genuinely session-shared resources in an injected service with
+explicit reference counting or leases.
+
+Use this capability for registrations, observers, external subscriptions, and
+handles whose release is the only lifecycle interaction. Continue to use
+`ctx.subscriptions` when a timer or feed emits `Msg` values, or when work must be
+replaced or cancelled while the LiveView remains mounted.
+
+Cleanup starts after the server observes lifecycle termination. External
+presence and locks still need leases or expiry for node failure and undetected
+network partitions.
+
+### Initialize At Route Or Session Boundaries {#route-and-session-resources}
+
+Use `withConnectedResources` on a route or named live-session builder when an
+acquired resource is only a lifecycle side effect, such as a registration or
+lease. Keep direct connected-mount acquisition when its result is needed to
+construct the page's model, as in the registration example above.
+
+The modifier accepts `(Ctx, ConnectedResources) => Task[Result]` with
+`Result <: Unit`. Finish an acquisition with `.unit` when the handle is needed
+only by its finalizer. The callback does not enrich typed context or populate a
+model, and it does not add a new environment requirement to the builder: capture
+services while assembling the application or obtain them from typed context.
+
+This application attaches a registration to a page without changing the page:
+
+@:sourceRegion(documentation/site/src/scalive/docs/examples/ConnectedResourceExample.scala, connected-resource-route-example)
+
+`Ctx` is the context available **where the modifier is installed**. Plain route
+and session builders supply `Any`; install after the aspects that produce the
+typed context you need. Later aspects or admission preserve the earlier callback's
+context through projection, rather than passing it the final accumulated tuple.
+A later `.context(factory)` call does not retroactively type a plain route's
+initializer.
+
+Initializers are lazy: neither constructing the builder nor disconnected
+rendering runs them. After all session and route admission/context checks succeed,
+Scalive runs session initializers first, then route initializers, in declaration
+order within each level, before the page's connected `mount`. Repeated modifiers
+append work; they do not replace earlier callbacks. This guarantee is about
+mount, not construction: page factories and render compilation can precede the
+initializers. Do not rely on registration side effects in a factory or while
+building the render graph.
+
+Execution is sequential and fail-fast. A `Task` failure is a mount failure, not an
+authentication rejection or a `LiveMountFailure` result. Use mount aspects and
+admission for controlled authorization outcomes. All initializers and direct
+connected-mount acquisitions use the same existing `ConnectedResources` scope.
+If an initializer or the remaining mount/initial render fails, lifecycle closure
+rolls back successful acquisitions through their registered finalizers; later
+initializers do not run after a failure. Keep acquisition and finalization short
+and bounded, just as for direct mount acquisition.
+
+The owner is one **connected root lifecycle**, not the physical socket, the named
+live-session group, or a logical application session. A fresh reconnect or route
+navigation runs the applicable initializers again for the new root. Patches and
+ordinary messages do not rerun them, and nested LiveViews do not inherit these
+route/session initializers. Nested views can still acquire their own resources
+directly during connected mount. Shared cross-tab/session ownership requires a
+separate service with explicit leases or reference counting.
 
 ## Study The Complete Examples {#study-the-complete-examples}
 

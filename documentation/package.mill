@@ -45,6 +45,8 @@ object `package` extends Module:
       os.sub / "documentation" / "fixtures" / "quick-start" / "src",
       os.sub / "documentation" / "fixtures" / "quick-start" / "resources",
       os.sub / "documentation" / "fixtures" / "quick-start" / "test" / "src",
+      os.sub / "documentation" / "fixtures" / "learn" / "src",
+      os.sub / "documentation" / "fixtures" / "learn" / "test" / "src",
       os.sub / "documentation" / "fixtures" / "guides" / "src",
       os.sub / "documentation" / "fixtures" / "guides" / "test" / "src",
       os.sub / "documentation" / "site" / "src",
@@ -182,6 +184,19 @@ object `package` extends Module:
       override def moduleDeps = super.moduleDeps ++ Seq(build.scalive.testing)
       def zioTestVersion = "2.1.26"
 
+  /** The quick-start application as the Learn pages extend it, in the same `quickstart` package.
+    *
+    * It does not depend on `quickStartFixture`, whose classes it replaces.
+    */
+  object learnFixture extends build.ScalaCommon:
+    def moduleDeps = Seq(build.scalive)
+
+    override def moduleDir = super.moduleDir / os.up / "fixtures" / "learn"
+
+    object test extends ScalaTests with TestModule.ZioTest:
+      override def moduleDeps = super.moduleDeps ++ Seq(build.scalive.testing)
+      def zioTestVersion = "2.1.26"
+
   /** Compiled recipes embedded in guides with `@:sourceRegion`. */
   object guideFixtures extends build.ScalaCommon:
     def moduleDeps = Seq(build.scalive, quickStartFixture)
@@ -240,6 +255,7 @@ object `package` extends Module:
     quickStartFixture.compile()
     quickStartFixture.resources()
     quickStartFixture.test.testCached()
+    learnFixture.test.testCached()
     guideFixtures.test.testCached()
     site.test.testCached()
     site.testJs()

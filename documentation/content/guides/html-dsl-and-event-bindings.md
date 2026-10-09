@@ -33,9 +33,11 @@ A tag call produces an @:apiSymbol(class:scalive.HtmlElement)`HtmlElement[Msg]`@
 become escaped text content, nested elements become child content, and an
 `IterableOnce` of modifiers can be passed directly. Derive dynamic text
 and attributes with signal `.map`; use staged signal operators such as
-`choose`, `option`, and `splitBy` for conditional and repeated content. The
-`view` method constructs this signal-backed view graph once per graph lifetime
-rather than rebuilding the tree after every model update.
+`when`, `choose`, `option`, and `splitBy` for conditional and repeated content.
+[Rendering, bindings, and diffs](../learn/rendering-and-dom-updates.md#show-content-conditionally)
+shows each of them, along with row-specific messages and helpers that take
+signals. The `view` method constructs this signal-backed view graph once per
+graph lifetime rather than rebuilding the tree after every model update.
 
 Keep reusable markup in ordinary functions. Accept @:apiSymbol(type-alias:scalive.Mod.Input)`Mod.Input[Msg]`@:@
 when callers should be able to supply individual modifiers, `Option` values, or

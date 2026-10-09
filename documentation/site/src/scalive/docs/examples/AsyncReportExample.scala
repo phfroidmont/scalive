@@ -19,16 +19,20 @@ final class AsyncReportExample(instanceId: String)
     case Msg.RunFailure => start(model, ctx, failingReport)
     case Msg.Replace    => start(model, ctx, replacementReport)
     case Msg.Retry      => start(model, ctx, retryReport)
-    case Msg.Cancel     =>
+    // docs:start async-report-cancel
+    case Msg.Cancel =>
       if model.report.isLoading then
         ctx.async.cancel(ReportTask, Some("Cancelled by the user")).as(model)
       else ZIO.succeed(model)
+    // docs:end async-report-cancel
     case Msg.Reset =>
       ctx.async.cancel(ReportTask, Some("Example reset")).as(Model())
     case Msg.ReportCompleted(LiveAsyncResult.Cancelled(_)) if model.report == AsyncValue.Empty =>
       ZIO.succeed(model)
+    // docs:start async-report-completed
     case Msg.ReportCompleted(result) =>
       ZIO.succeed(model.copy(report = model.report.updated(result)))
+    // docs:end async-report-completed
 
   def view(model: Signal[Model]): HtmlElement[Msg] =
     val report = model.map(_.report)
@@ -63,10 +67,12 @@ final class AsyncReportExample(instanceId: String)
     )
   end view
 
+  // docs:start async-report-start
   private def start(model: Model, ctx: MessageContext, task: Task[Report]) =
     ctx.async
       .start(ReportTask)(task)(Msg.ReportCompleted(_))
       .as(model.copy(report = model.report.loading()))
+  // docs:end async-report-start
 
   private def reportPanel(
     state: Signal[String],
@@ -112,7 +118,9 @@ end AsyncReportExample
 
 object AsyncReportExample:
   final case class Report(title: String, rows: Int, summary: String)
+  // docs:start async-report-model
   final case class Model(report: AsyncValue[Report] = AsyncValue.empty)
+  // docs:end async-report-model
 
   enum Msg:
     case RunSuccess

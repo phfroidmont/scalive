@@ -47,21 +47,29 @@ is available when you need implementation details.
 
 ## Take The Ordered Path {#take-the-ordered-path}
 
-The pages build one mental model in this order:
+The pages build one application, starting from the quick-start counter. Each
+page adds a file or a page to the same project:
 
 1. [Quick start](quick-start.md) creates and runs a complete standalone counter.
-2. [Project anatomy](project-anatomy.md) assigns startup, routing, layout,
-   LiveView, asset, and browser responsibilities.
-3. [Models, messages, and effects](models-and-messages.md) explains immutable
-   state, typed intent, and the small ZIO vocabulary used by Scalive.
-4. [URL state and navigation](url-state-and-navigation.md) covers typed routes,
-   URL-driven state, and live navigation.
-5. [Rendering, bindings, and diffs](rendering-and-dom-updates.md) follows one
-   update from typed HTML to a browser DOM patch.
-6. [Lifecycle, state ownership, and reconnects](lifecycle-and-connection-behavior.md)
+2. [Models, messages, and effects](models-and-messages.md) gives the counter a
+   model and a Reset message, and introduces the small ZIO vocabulary Scalive
+   uses.
+3. [Rendering, bindings, and diffs](rendering-and-dom-updates.md) builds a cart
+   with conditional content, keyed rows, and row-specific messages.
+4. [Your first form](your-first-form.md) builds a sign-up form that validates as
+   the visitor types.
+5. [Loading data and live updates](loading-data-and-live-updates.md) gives a page
+   a service, loads data once the page connects, and refreshes it on a timer.
+6. [URL state and navigation](url-state-and-navigation.md) keeps search state in
+   a typed URL.
+7. [Lifecycle, state ownership, and reconnects](lifecycle-and-connection-behavior.md)
    explains mount phases, resource lifetime, failures, cleanup, and remounting.
-7. [Where to go next](where-to-go-next.md) maps common application needs to the
-   relevant guides, examples, and API reference.
+8. [Testing your LiveView](testing-your-liveview.md) adds a test module and tests
+   the counter, the form, and the service-backed page.
+9. [How the pieces fit](how-the-pieces-fit.md) recaps the startup path and the
+   boundaries between routes, layouts, LiveViews, services, and the browser.
+10. [Where to go next](where-to-go-next.md) maps common application needs to the
+    relevant guides, examples, and API reference.
 
 Scalive is alpha software. These pages describe the current recommended API and
 may change when a clearer or safer Scala design becomes available.

@@ -1,7 +1,7 @@
 {%
 title = "Rendering, bindings, and diffs"
-description = "Project models into typed HTML, bind messages, and understand how server tree changes become browser DOM patches."
-order = 5
+description = "Render a model with signals, show content conditionally, render keyed lists with row-specific messages, and understand how changes reach the browser."
+order = 3
 section = learn
 %}
 
@@ -9,90 +9,149 @@ section = learn
 
 @:apiSymbol(def:scalive.LiveView.view)`view(model)`@:@ receives a
 `Signal[Model]` and returns an
-@:apiSymbol(class:scalive.HtmlElement)`HtmlElement[Msg]`@:@. Write it as a
-description of what the page should contain:
+@:apiSymbol(class:scalive.HtmlElement)`HtmlElement[Msg]`@:@. This is the
+counter's view from the previous lesson:
 
-```scala unverified
-def view(model: Signal[Int]): HtmlElement[Msg] =
-  mainTag(
-    button(typ := "button", on.click(Msg.Decrement), "Decrease"),
-    outputTag(aria.live := "polite", model.map(_.toString)),
-    button(typ := "button", on.click(Msg.Increment), "Increase")
-  )
-```
+@:sourceRegion(documentation/fixtures/learn/src/quickstart/CounterLiveView.scala, learn-counter-view)
 
-Static values such as the button labels are ordinary Scala values. Put a signal
-in a text or attribute position when that value should follow the model. Leave
-effects and state transitions in lifecycle methods rather than running them
-from `view`.
+Scalive calls `view` once per lifecycle to build the page's structure. The
+model is a `Signal`, not a `Model`: it describes a value that changes over time,
+so `model.count` does not compile. Use `model.map(_.count.toString)` to derive a
+signal, and place it where the HTML should follow the model, in a text position
+as here or in an attribute such as `disabled := model.map(_.count == 0)`.
+
+Everything else in the view is static. The labels, the buttons, and their
+bindings are ordinary Scala values that never change. Leave effects and state
+transitions to lifecycle methods rather than running them from `view`.
+
+## Render The Cart {#render-the-cart}
+
+The cart from the [previous lesson](models-and-messages.md#produce-explicit-state-transitions)
+shows the patterns most views need: content that appears and disappears, a list
+of rows, and buttons that act on one row. Create
+`app/src/quickstart/CartLiveView.scala`:
+
+@:sourceRegion(documentation/fixtures/learn/src/quickstart/CartLiveView.scala, learn-cart)
+
+Add a route for it to `Routes.scala`:
+
+@:sourceRegion(documentation/fixtures/learn/src/quickstart/Routes.scala, learn-cart-route)
+
+Then register it in `Main.scala`, next to the counter:
+
+@:sourceRegion(documentation/fixtures/learn/src/quickstart/Main.scala, learn-cart-registration)
+
+Run `mill app.run` and open `http://localhost:8080/cart`. Add a few products,
+remove one, and add enough to pass $30.00. The sections below explain each part
+of the view.
+
+## Show Content Conditionally {#show-content-conditionally}
+
+An `if` cannot inspect a signal, because the view is built before any model
+value exists. Instead, map the model to the value that decides what to show and
+let Scalive switch the content when that value changes.
+
+**Show a section when a condition holds.** `when` renders its content while a
+`Signal[Boolean]` is `true` and nothing while it is `false`:
+
+@:sourceRegion(documentation/fixtures/learn/src/quickstart/CartLiveView.scala, learn-cart-when)
+
+**Render an optional value.** `option` renders its content while a
+`Signal[Option[A]]` holds a value. The function receives a `Signal[A]` of that
+value, so the text keeps following it:
+
+@:sourceRegion(documentation/fixtures/learn/src/quickstart/CartLiveView.scala, learn-cart-option)
+
+**Switch between two layouts.** `choose` renders its first argument while the
+condition is `true` and its second while it is `false`:
+
+@:sourceRegion(documentation/fixtures/learn/src/quickstart/CartLiveView.scala, learn-cart-choose)
+
+For more than two cases, `choose` also accepts value-to-element pairs, such as
+`status.choose(Status.Open -> openPanel, Status.Closed -> closedPanel)`; it
+renders nothing for a value without a pair. `chooseMod` makes the same choice
+for attributes and other modifiers. Each of these builds every branch once and
+switches between them, which is why the view needs no `if`.
+
+## Preserve Collection Identity {#preserve-collection-identity}
+
+Use @:apiSymbol(extension:scalive.splitBy)`splitBy(key) { ... }`@:@ on a collection
+signal whose entries have stable domain identity. The cart keys each row by
+product SKU in the `choose` above:
+`model.map(_.lines).splitBy(_.product.sku)((_, line) => lineRow(line))`.
+
+The function receives the key and a `Signal` of that row's value. Stable keys
+let the diff distinguish insertion, removal, movement, and an update to an
+existing entry. The rendered protocol sends new entries, changed entry
+dynamics, and positional references to retained entries instead of resending the
+whole keyed region. Keys must be unique within that collection and stable across
+updates. Prefer a domain identifier such as `sku`; use `splitByIndex` only when
+position really is the entry's identity.
+
+The product buttons above the cart use an ordinary Scala `map` instead. Their
+list is a fixed `Vector`, not a signal, so it never changes after the view is
+built.
+
+The collection key is server-side render identity, not an HTML `id`. Give each
+repeated root a stable HTML `id` as well when preserving or moving that exact
+DOM node matters, for example when it owns focus or other browser-local state.
+Use a [stream](../guides/streams-and-collection-updates.md#choose-streams-deliberately)
+when the collection should instead produce explicit ID-addressed browser
+operations.
+
+## Send A Row's Value With Its Message {#send-row-specific-messages}
+
+A binding can take a `Signal` of a message instead of a constant. Each row
+builds its **Remove one** message from its own line:
+
+@:sourceRegion(documentation/fixtures/learn/src/quickstart/CartLiveView.scala, learn-cart-row)
+
+`on.click(line.map(line => Msg.Remove(line.product)))` sends the message for the
+row's current value when the button is clicked. The browser only reports which
+binding fired; the server builds the message, so the product is still a typed
+value that the browser cannot forge.
+
+## Write Helpers That Take Signals {#write-helpers-that-take-signals}
+
+`lineRow` takes a `Signal[Line]`, not a `Line`, because the row it builds must
+keep following the model. Write helpers this way when they return HTML whose
+content changes.
+
+`money` takes a plain `Int` because it only formats a value. Call it inside
+`map`, as in `line.map(line => money(line.subtotalInCents))`. A helper that
+takes plain values is easier to reuse and test, so keep formatting and other
+calculations in plain functions and pass signals only to helpers that render.
 
 ## Derive Display Values With Pure Functions {#derive-display-values}
 
-The counter places its mapped count signal directly in a text position. The cart
-derives disabled states, quantities, subtotals, and totals from the same model
-signal. Use `.map` for one input and the signal-combination operations when a
-display value depends on multiple signals. Operators such as `choose`, `option`,
-and signal `splitBy` describe conditional or repeated content.
+Each value derived from the model, such as the total or a disabled state, is
+one `map` of the model signal. When a value depends on two separate signals,
+combine them:
 
-For two signals, the instance helpers cover the common cases:
-
-```scala unverified
-val fullName = firstName.combineWithFn(lastName) { (first, last) =>
-  s"$first $last"
-}
-val names    = firstName.combineWith(lastName) // Signal[(String, String)]
+```scala fragment
+val fullName = firstName.combineWithFn(lastName)((first, last) => s"$first $last")
 ```
 
-The companion operations accept any non-empty tuple of signals and keep
-multi-input derivations flat and readable:
-
-```scala unverified
-val summary = Signal.combineWithFn((firstName, lastName, itemCount)) {
-  (first, last, count) => s"$first $last - $count items"
-}
-```
-
-Use `Signal.combine(Tuple1(signal))` for a single input. An empty input tuple
-is rejected at compile time.
-
-`a.combineWith(b)` shallow-flattens outer tuples on both sides. This is
-convenient for extending an existing tuple signal: `a.combineWith(b).combineWith(c)`
-produces a flat triple when the three values are scalars. `Signal.combine((a, b, ...))`
-instead preserves every input value as one tuple element, including nested tuple
-values. Both `combineWithFn` forms likewise pass the original, unflattened input
-values to their lambda. For `position` and `size` of type `Signal[(Int, Int)]`:
-
-```scala unverified
-val bounds  = position.combineWith(size)          // Signal[(Int, Int, Int, Int)]
-val grouped = Signal.combine((position, size))    // Signal[((Int, Int), (Int, Int))]
-```
-
-Flattening follows the static value type. Nested tuple elements and case-class
-values remain intact. A value widened to `Any`, or passed through an unconstrained
-generic type parameter, stays one element even if it happens to contain a tuple
-at runtime.
-
-Direct multi-parameter lambdas work with `combineWithFn`. For the companion
-operation, a pre-existing `FunctionN` needs its `.tupled` form, for example
-`Signal.combineWithFn((firstName, lastName))(formatName.tupled)`.
-The binary instance operation accepts a `Function2` directly.
+@:apiSymbol(object:scalive.Signal)`Signal`@:@ documents the tuple forms for more
+inputs.
 
 Keep every signal transformation pure: the same input should produce the same
-output without changing state, performing I/O, or starting work. This lets
-Scalive evaluate only what the rendered result needs. Application code describes
-HTML; it does not issue imperative DOM mutations.
+output without changing state, performing I/O, or starting work. Scalive may
+skip or reuse a transformation whose input has not changed, so a side effect in
+`map` would make the view incorrect.
 
 ## Bind Events To Typed Messages {#bind-events-to-typed-messages}
 
 Bindings from @:apiSymbol(object:scalive.on)`on`@:@ are values in the typed HTML
-tree. For example,
-@:apiSymbol(lazy-val:scalive.on.click)`on.click(Msg.Increment)`@:@ associates a
-button click with a value accepted by the view's `Msg` type. A binding can also
-construct a message carrying data, as in `on.click(Msg.Add(product))`.
+tree. @:apiSymbol(lazy-val:scalive.on.click)`on.click(Msg.Increment)`@:@
+associates a button click with a value accepted by the view's `Msg` type, and
+`on.click(Msg.Add(product))` carries data. Scala checks that the rendered tree
+emits only messages its LiveView accepts.
 
-This is server-side type safety: Scala verifies that the rendered tree emits
-messages accepted by its LiveView. Browser URLs and event payloads remain
-untrusted input and must still be decoded and validated at their boundaries.
+Browser URLs and event payloads remain untrusted input and must still be decoded
+and validated at their boundaries. The
+[HTML and event bindings guide](../guides/html-dsl-and-event-bindings.md) lists
+the other events, such as key presses, focus, and rate limiting.
 
 ## Follow One Event To The DOM {#follow-one-event-to-the-dom}
 
@@ -121,35 +180,5 @@ on a particular wire payload. See
 for implementation-level signal revisions, scopes, candidate rendering, commit,
 and protocol details.
 
-## Preserve Collection Identity {#preserve-collection-identity}
-
-Use @:apiSymbol(extension:scalive.splitBy)`splitBy(key) { ... }`@:@ on a collection
-signal whose entries have stable domain identity. The shopping cart keys each
-retained row by product SKU:
-
-```scala unverified
-model.map(_.lines).splitBy(_.product.sku) { (_, line) =>
-  tr(
-    td(line.map(_.product.name)),
-    td(line.map(_.quantity.toString))
-  )
-}
-```
-
-Stable keys let the diff distinguish insertion, removal, movement, and an update
-to an existing entry. The rendered protocol sends new entries, changed entry
-dynamics, and positional references to retained entries instead of resending the
-whole keyed region. Keys must be unique within that collection and stable across
-updates. Prefer a domain identifier such as `sku`; use an index only when
-position really is the entry's identity.
-
-The collection key is server-side render identity, not an HTML `id`. The browser
-merges the rendered diff and then patches the resulting HTML. Give each repeated
-root a stable HTML `id` as well when preserving or moving that exact DOM node
-matters, for example when it owns focus or other browser-local state. Use a
-[stream](../guides/streams-and-collection-updates.md#choose-streams-deliberately)
-when the collection should instead produce explicit ID-addressed browser
-operations.
-
-The [HTML and event bindings guide](../guides/html-dsl-and-event-bindings.md)
-covers the DSL and input bindings in depth.
+Next, [Your first form](your-first-form.md) adds a page that validates input as
+the visitor types.

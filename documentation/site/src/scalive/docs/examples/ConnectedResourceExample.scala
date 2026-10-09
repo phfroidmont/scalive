@@ -19,12 +19,14 @@ final class ConnectedResourceExample(
     extends LiveView[ConnectedResourceExample.Msg, ConnectedResourceExample.Model]:
   import ConnectedResourceExample.*
 
+  // docs:start connected-resource-mount
   def mount(ctx: MountContext): Task[Model] = ctx.connection match
     case Connection.Disconnected         => ZIO.succeed(Model())
     case Connection.Connected(connected) =>
       connected.resources
         .acquireRelease(registrations.register(instanceId))(registrations.unregister)
         .map(registration => Model(Some(registration)))
+  // docs:end connected-resource-mount
 
   def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.Check =>

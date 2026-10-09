@@ -9,9 +9,9 @@ group = "Interfaces and input"
 ## Before You Start {#prerequisites}
 
 You need a `LiveView` with a typed model and messages, and you should be able to
-render controls and bind browser events. Review [Models and messages](../learn/models-and-messages.md)
-or [HTML and event bindings](html-dsl-and-event-bindings.md) if either part is
-not yet familiar.
+render controls and bind browser events. [Your first form](../learn/your-first-form.md)
+builds a complete two-field form step by step; start there if this is your first
+Scalive form.
 
 For a first pass, follow the definition, model, event, rendering, and reset
 sections through the [typed profile form](../examples/profile-form.md). Return

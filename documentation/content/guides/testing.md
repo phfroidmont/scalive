@@ -8,83 +8,13 @@ group = "Testing and troubleshooting"
 
 ## Before You Start {#prerequisites}
 
-This guide starts from the counter built in the [quick start](../learn/quick-start.md).
+This guide assumes a project with a test module, such as the quick-start
+application after [Testing your LiveView](../learn/testing-your-liveview.md).
+That lesson adds `dev.scalive::scalive-testing`, writes connected tests for a
+counter, a form, and a service-backed page, and runs them with `mill app.test`.
 Later sections test the forms and service-backed pages from other guides. To
 test your own application, start from one observable behavior or incident to
 reproduce and the routes that expose it.
-
-## Add Testing Support {#add-testing-support}
-
-Test support is published as the optional `dev.scalive::scalive-testing`
-artifact (see [the two Scalive artifacts](../learn/quick-start.md#create-the-project)).
-Add a test module to the quick start's `build.mill`. It uses the same snapshot
-repository and revision as the application:
-
-```scala unverified
-package build
-
-import mill.*, scalalib.*
-
-object app extends ScalaModule:
-  def scalaVersion = "3.8.4"
-  def mainClass = Some("quickstart.Main")
-
-  def repositories = Seq(
-    "https://central.sonatype.com/repository/maven-snapshots"
-  )
-
-  def mvnDeps = Seq(
-    mvn"dev.scalive::scalive:{{scaliveSnapshotVersion}}"
-  )
-
-  object test extends ScalaTests with TestModule.ZioTest:
-    def zioTestVersion = "2.1.26"
-
-    def mvnDeps = Seq(
-      mvn"dev.scalive::scalive-testing:{{scaliveSnapshotVersion}}"
-    )
-end app
-```
-
-`TestModule.ZioTest` runs tests with ZIO Test, and the nested `test` module
-depends on `app`, so tests can use the application's classes. Put test sources
-under `app/test/src`:
-
-```text
-scalive-quick-start/
-└── app/
-    ├── src/
-    │   └── quickstart/
-    └── test/
-        └── src/
-            └── quickstart/
-                ├── CounterLiveViewSpec.scala
-                └── CounterPageSpec.scala
-```
-
-## Write A First Test {#write-a-first-test}
-
-Create `app/test/src/quickstart/CounterLiveViewSpec.scala`:
-
-@:sourceRegion(documentation/fixtures/quick-start/test/src/quickstart/CounterLiveViewSpec.scala, quick-start-connected-test)
-
-The spec extends `ZIOSpecDefault`, groups tests with `suite`, and asserts with
-`assertTrue`. @:apiSymbol(def:scalive.testing.ConnectedRender.join)`ConnectedRender.join`@:@
-mounts the LiveView at `/`, renders its first HTML, and then connects it
-through the same Phoenix protocol handling that a browser uses, without starting
-a server. `clickButton` finds the button labeled **Increase** in the latest HTML,
-dispatches its click binding, and waits for the next render. `text` reads one
-element by CSS selector; here the counter's `<output>`. `ZIO.scoped` closes the
-connected view when the test ends.
-
-Run the tests from the project root:
-
-```bash
-mill app.test
-```
-
-Mill compiles the application and its tests, then reports
-`increases the count when Increase is clicked` as passed.
 
 ## Choose The Test Boundary {#choose-the-test-boundary}
 
@@ -211,7 +141,7 @@ accepts only a local `303 See Other` with a `Location` header.
 finalizes a single LiveView at `/`, performs disconnected rendering, validates
 its bootstrap credentials, and starts the connected lifecycle through the
 production in-process Phoenix transport and supervision. The
-[first test](#write-a-first-test) uses it. Use this overload when routing and
+[first test](../learn/testing-your-liveview.md#write-a-first-test) uses it. Use this overload when routing and
 reconnect admission are not part of the claim.
 
 ### Open A Routed Application Client {#open-a-routed-application-client}

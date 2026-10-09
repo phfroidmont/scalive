@@ -1,64 +1,38 @@
 {%
 title = "URL state and navigation"
 description = "Decode typed URL state, build checked destinations, and choose how a LiveView changes the browser URL."
-order = 4
+order = 6
 section = learn
 %}
 
+## Declare The Route Once {#declare-the-route-once}
+
 URLs are an application boundary as well as navigation history. Declare a route
 once, let Scalive decode its parameters, and use that same declaration to build
-destinations:
+destinations. Add a search route with an optional `q` query parameter to
+`Routes.scala`:
 
-```scala unverified
-import scalive.*
-import zio.ZIO
-import zio.http.URL
+@:sourceRegion(documentation/fixtures/learn/src/quickstart/Routes.scala, learn-search-route)
 
-object Routes:
-  val search =
-    (live / "search").queryOptional[String]("q")
+Create `app/src/quickstart/SearchLiveView.scala`:
 
-final case class Model(query: String)
+@:sourceRegion(documentation/fixtures/learn/src/quickstart/SearchLiveView.scala, learn-search)
 
-enum Msg:
-  case ClearQuery
+Register it in `Main.scala`:
 
-final class SearchLiveView
-    extends LiveView.Routed[Msg, Model, Option[String]]:
-
-  private def modelFrom(params: Option[String]) =
-    Model(params.map(_.trim.take(100)).filter(_.nonEmpty).getOrElse(""))
-
-  def mount(params: Option[String], ctx: MountContext) =
-    ZIO.succeed(modelFrom(params))
-
-  override def handleParams(
-      model: Model,
-      params: Option[String],
-      url: URL,
-      ctx: ParamsContext
-  ) = ZIO.succeed(modelFrom(params))
-
-  def handleMessage(model: Model, ctx: MessageContext) =
-    case Msg.ClearQuery =>
-      ctx.nav.replacePatch(Routes.search.location(None)).as(model)
-
-  def view(model: Signal[Model]) =
-    div(
-      p("Search: ", model.map(_.query)),
-      link.pushPatch(Routes.search.location(Some("scala")), "Search for Scala"),
-      button(on.click(Msg.ClearQuery), "Clear")
-    )
-
-val routes = Live.router(
-  Routes.search -> SearchLiveView()
-)
-```
+@:sourceRegion(documentation/fixtures/learn/src/quickstart/Main.scala, learn-search-registration)
 
 `Routes.search` is typed and named. It decodes inbound query state to
-`Option[String]`, and `location` encodes the same type into a checked
-@:apiSymbol(class:scalive.LiveLocation)`LiveLocation`@:@. A `LiveLocation` cannot be assembled from an
-arbitrary string, so route changes remain compiler-visible at call sites.
+`Option[String]`, which is why the view extends
+@:apiSymbol(trait:scalive.LiveView.Routed)`LiveView.Routed`@:@ with that
+parameter type. `location` encodes the same type into a checked
+@:apiSymbol(class:scalive.LiveLocation)`LiveLocation`@:@. A `LiveLocation`
+cannot be assembled from an arbitrary string, so route changes remain
+compiler-visible at call sites.
+
+Run `mill app.run` and open `http://localhost:8080/search?q=zio`. Select
+**Search for Scala**: the address bar and the page both change without a reload.
+Select Back to return to `zio`, then **Clear** to remove the query.
 
 ## Treat Decoded Parameters As Untrusted {#treat-decoded-parameters-as-untrusted}
 
@@ -94,4 +68,6 @@ give up route and encoding checks.
 
 For parameter mappings, session boundaries, redirects, and every navigation
 variant, continue with the full
-[routes and navigation guide](../guides/routes-and-navigation.md).
+[routes and navigation guide](../guides/routes-and-navigation.md). Next,
+[Lifecycle, state ownership, and reconnects](lifecycle-and-connection-behavior.md)
+explains what happens to each page's state when the connection drops.

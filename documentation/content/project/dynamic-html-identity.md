@@ -181,7 +181,7 @@ def view(model: Signal[Products]): HtmlElement[Msg] =
     model.map(_.products).splitBy(_.id) { (_, product) =>
       articleTag(
         product.map(_.name),
-        button(on.click(product)((value, _) => Msg.Select(value.id)), "Select")
+        button(on.click(product.map(value => Msg.Select(value.id))), "Select")
       )
     }
   )

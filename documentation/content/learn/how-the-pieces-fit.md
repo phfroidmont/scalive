@@ -1,17 +1,17 @@
 {%
-title = "Project anatomy"
-description = "Understand the startup path and the boundaries between routes, layouts, LiveViews, services, assets, and the browser."
-order = 2
+title = "How the pieces fit"
+description = "Recap the startup path and the boundaries between routes, layouts, LiveViews, services, assets, and the browser."
+order = 9
 section = learn
 %}
 
 ## Follow The Startup Path {#follow-the-startup-path}
 
-The [quick start](quick-start.md) keeps composition explicit. Read it from the
-process toward the browser:
+The application built in Learn now has five pages, one service, and tests. Read
+it from the process toward the browser:
 
 1. Mill compiles Scala and includes ordinary classpath resources.
-2. `Main` loads configuration, security, supplied LiveView clients, static assets,
+2. `Main` loads configuration, security, the LiveView clients, static assets,
    and application services.
 3. `Main` pairs typed routes with LiveViews and starts ZIO HTTP.
 4. A route selects a LiveView, and its layouts wrap the rendered page.
@@ -44,30 +44,28 @@ and the fallback title. When served through `ZioHttp.routes` with validated
 configuration, Scalive injects the browser-bound CSRF meta token into its
 `<head>`.
 
-`CounterLiveView.scala` is the interactive-page boundary.
-@:apiSymbol(def:scalive.LiveView.mount)`mount`@:@ creates connection-local
-state, @:apiSymbol(def:scalive.LiveView.handleMessage)`handleMessage`@:@ changes
-state, and @:apiSymbol(def:scalive.LiveView.view)`view`@:@ describes typed HTML
-and event bindings. A LiveView does not start the HTTP server or locate its own
+Each LiveView, such as `CounterLiveView.scala`, is an interactive-page
+boundary. @:apiSymbol(def:scalive.LiveView.mount)`mount`@:@ creates
+connection-local state,
+@:apiSymbol(def:scalive.LiveView.handleMessage)`handleMessage`@:@ changes state,
+and @:apiSymbol(def:scalive.LiveView.view)`view`@:@ describes typed HTML and
+event bindings. A LiveView does not start the HTTP server or locate its own
 asset files.
+
+Services, such as `Thermostat.scala`, are the data boundary. They are built
+once by a layer in `Main` and passed to the LiveViews that need them.
 
 `resources/public/app.js` is the browser boundary. It creates `LiveSocket`,
 passes the server-issued CSRF token, and connects to the socket path. Add hooks
 here only for behavior that requires browser APIs. Application state and
 ordinary event handling stay in Scala.
 
-The standard Scala `resources` directory is the quick start's build boundary.
-Mill places its files on the JVM classpath without Node.js or npm.
-@:apiSymbol(class:scalive.LiveViewClientAssets)`LiveViewClientAssets`@:@ loads
-the packaged Phoenix clients, provides script helpers that the root layout must
-render with `phoenixScript` before `liveViewScript`, and serves both clients from
-its default `/_scalive/live-view` mount.
-@:apiSymbol(class:scalive.StaticAssets)`StaticAssets`@:@ versions an ordinary
-[output tree or validates a deployment manifest](../guides/static-assets-and-client-setup.md#choose-an-asset-model),
-renders tracked URLs, and serves the declared files. The root layout still
-explicitly selects its top-level scripts and stylesheets. Applications that need
-package imports, separate modules, or richer browser output can add a custom
-build by following the asset guide.
+@:apiSymbol(class:scalive.LiveViewClientAssets)`LiveViewClientAssets`@:@ serves
+the Phoenix clients packaged with Scalive, and
+@:apiSymbol(class:scalive.StaticAssets)`StaticAssets`@:@ serves the files under
+`resources/public` at versioned URLs. The
+[client setup guide](../guides/static-assets-and-client-setup.md) covers custom
+browser builds.
 
 ## Keep Dependencies Pointing Inward {#keep-dependencies-pointing-inward}
 
@@ -108,3 +106,6 @@ Keep these boundaries as the application expands:
 - Build ZIO layers at startup for services required by routed LiveViews.
 - Add browser packages and hooks only for browser-side behavior.
 - Keep durable state in services or storage rather than a LiveView model.
+
+[Where to go next](where-to-go-next.md) maps the next parts of an application
+to guides and examples.

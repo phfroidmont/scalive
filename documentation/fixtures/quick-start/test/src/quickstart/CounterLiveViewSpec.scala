@@ -1,4 +1,3 @@
-// docs:start quick-start-connected-test
 package quickstart
 
 import zio.*
@@ -19,4 +18,3 @@ object CounterLiveViewSpec extends ZIOSpecDefault:
       }
     }
   )
-// docs:end quick-start-connected-test

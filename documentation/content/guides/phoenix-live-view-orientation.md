@@ -81,8 +81,11 @@ Do not treat the disconnected model instance as connected session storage.
 Make @:apiSymbol(def:scalive.LiveView.mount)`mount`@:@ safe to run in both phases,
 match @:apiSymbol(def:scalive.LifecycleContext.connection)`ctx.connection`@:@,
 and use capabilities from `Connection.Connected(capabilities)` only after the
-live connection exists. [Project anatomy](../learn/project-anatomy.md#understand-both-mounts)
-traces both phases through a complete application.
+live connection exists, which is Scalive's equivalent of
+`if connected?(socket)`. [Loading data and live updates](../learn/loading-data-and-live-updates.md#load-data-when-the-page-connects)
+starts async work and a subscription this way, and
+[the lifecycle page](../learn/lifecycle-and-connection-behavior.md#two-independent-mounts)
+traces both phases.
 
 Original HTTP cookies and headers exist only at HTTP/document and disconnected
 session boundaries. Choose a claim-bearing session aspect or claimless route

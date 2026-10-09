@@ -1,14 +1,14 @@
 {%
 title = "Where to go next"
 description = "Choose the Scalive guide, example, or API reference that matches the next part of your application."
-order = 7
+order = 10
 section = learn
 %}
 
 ## Continue By Task {#continue-by-task}
 
-The Learn path established the programming model and architecture. Continue by
-the task your application needs:
+The Learn path built a small application and established the programming
+model. Continue by the task your application needs:
 
 - **Set up the browser:** [client setup and static assets](../guides/static-assets-and-client-setup.md).
 - **Build interfaces and input:** [HTML and event bindings](../guides/html-dsl-and-event-bindings.md),
@@ -16,6 +16,7 @@ the task your application needs:
   [ordinary HTTP forms and redirects](../guides/http-forms-and-redirects.md), and
   [file uploads](../guides/uploads-and-consumption.md).
 - **Structure and protect pages:** [routes and navigation](../guides/routes-and-navigation.md),
+  [navigation guards](../guides/navigation-guards.md),
   [layouts and live sessions](../guides/layouts-sessions-and-mount-aspects.md),
   [services and dependency injection](../guides/services-and-zlayer-injection.md),
   and [authentication and sessions](../guides/authentication.md).
@@ -41,11 +42,11 @@ Start with the [typed counter](../examples/counter.md) and
 [shopping cart](../examples/shopping-cart.md) for the model-message-render loop.
 Then choose a focused executable slice:
 
-- [Lifecycle and connection phases](../examples/lifecycle.md) for disconnected
+- [Lifecycle and connection state](../examples/lifecycle.md) for disconnected
   render, connected mount, and reconnect behavior.
 - [Typed documentation navigation](../examples/navigation.md) for checked route
   destinations and browser history.
-- [Validated profile form](../examples/profile-form.md),
+- [Typed profile form](../examples/profile-form.md),
   [stable repeated contact rows](../examples/repeated-contacts-form.md),
   [form save workflow](../examples/form-save-workflow.md), and
   [bounded text upload](../examples/text-upload.md) for typed input, field
@@ -56,7 +57,8 @@ Then choose a focused executable slice:
   [subscription clock](../examples/subscription-clock.md) for finite work and
   lifecycle-owned live data backed by application services.
 - [Activity stream](../examples/activity-stream.md),
-  [voting components](../examples/voting-components.md), and
+  [voting components](../examples/voting-components.md),
+  [component-owned subscriptions](../examples/component-subscriptions.md), and
   [browser integration](../examples/browser-integration.md) for larger changing
   collections, local component state, and browser-only APIs.
 

@@ -18,18 +18,24 @@ final class SubscriptionClockExample(instanceId: String)
     ZIO.succeed(Model())
 
   def handleMessage(model: Model, ctx: MessageContext) =
+    // docs:start subscription-clock-start
     case Msg.Start =>
       if model.mode == Mode.Stopped then
         ctx.subscriptions
           .start(ClockSubscription, SubscriptionDelivery.Lossless)(ticks(1.second))
           .as(model.copy(mode = Mode.EverySecond))
       else ZIO.succeed(model)
+    // docs:end subscription-clock-start
+    // docs:start subscription-clock-replace
     case Msg.Replace =>
       ctx.subscriptions
         .replace(ClockSubscription, SubscriptionDelivery.Lossless)(ticks(250.millis))
         .as(model.copy(mode = Mode.FourTimesPerSecond))
+    // docs:end subscription-clock-replace
+    // docs:start subscription-clock-cancel
     case Msg.Cancel =>
       ctx.subscriptions.cancel(ClockSubscription).as(model.copy(mode = Mode.Stopped))
+    // docs:end subscription-clock-cancel
     case Msg.Reset =>
       ctx.subscriptions.cancel(ClockSubscription).as(Model())
     case Msg.Tick(at) =>
@@ -88,6 +94,8 @@ object SubscriptionClockExample:
   private[docs] def subscriptionKey(instanceId: String): SubscriptionKey =
     SubscriptionKey(s"subscription-clock-$instanceId")
 
+  // docs:start subscription-clock-ticks
   private def ticks(every: Duration): ZStream[Any, Nothing, Msg] =
     ZStream.tick(every).mapZIO(_ => Clock.instant).map(Msg.Tick(_))
+  // docs:end subscription-clock-ticks
 // docs:end subscription-clock-example

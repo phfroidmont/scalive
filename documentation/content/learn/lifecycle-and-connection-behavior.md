@@ -1,33 +1,27 @@
 {%
 title = "Lifecycle, state ownership, and reconnects"
 description = "Understand disconnected and connected mounts, state lifetime, commit behavior, cleanup, failures, and reconnects."
-order = 6
+order = 7
 section = learn
 %}
 
 ## Treat Each Mount As Independent {#two-independent-mounts}
 
-The [project anatomy](project-anatomy.md#understand-both-mounts) introduced the
-disconnected HTTP mount and the separate connected socket mount. Both must build
-a valid model from their inputs; the connected mount cannot recover the model
-created for the HTTP response.
+Every page so far has mounted twice: once in the disconnected HTTP request that
+produces the first HTML, and again when the browser connects. Both mounts must
+build a valid model from their inputs; the connected mount cannot recover the
+model created for the HTTP response.
 
 Match @:apiSymbol(def:scalive.LifecycleContext.connection)`ctx.connection`@:@
-when initial state or work depends on the lifecycle. The lifecycle example only
-records which kind of mount created the model:
+when initial state or work depends on the lifecycle, as the thermostat from
+[Loading data and live updates](loading-data-and-live-updates.md#load-data-when-the-page-connects)
+does:
 
-```scala unverified
-def mount(ctx: MountContext): Task[Model] =
-  val connectedMount = ctx.connection match
-    case Connection.Disconnected => false
-    case Connection.Connected(_) => true
+@:sourceRegion(documentation/fixtures/learn/src/quickstart/ThermostatLiveView.scala, learn-thermostat-mount)
 
-  ZIO.succeed(Model(connectedMount, currentTitle = DefaultTitle))
-```
-
-Start lifecycle-owned work only from a matched
-`Connection.Connected(capabilities)` branch. This example starts no clock or
-other background task.
+Start lifecycle-owned work only from the matched
+`Connection.Connected(capabilities)` branch. When only the phase matters, such
+as to label the page, `ctx.connection.isConnected` returns it as a `Boolean`.
 
 ## Follow The Handoff From HTTP To Live {#follow-the-connected-mount}
 
@@ -108,10 +102,6 @@ Use this checklist:
 - Use [lifecycle-managed APIs](../guides/async-work-and-subscriptions.md#choose-the-resource-by-shape)
   for async work, subscriptions, and non-message acquisition and finalization.
 - Make repeated external mount effects idempotent where necessary.
-- Use the connected harness to prove that a new server transport reruns
-  [`withAdmission`](../guides/testing.md#test-reconnect-admission) and remounts.
-- Use a real browser to prove retry delay, retry count, offline behavior, and
-  other JavaScript-client reconnect timing.
 
 ## Understand Failure And Commit Boundaries {#understand-failure-and-commit-boundaries}
 
@@ -144,8 +134,8 @@ disconnect message.
 ## Test At The Lifecycle Boundary {#test-at-the-lifecycle-boundary}
 
 Use a disconnected test for initial HTTP state and a connected test for typed
-server interactions, lifecycle replacement, and server-side reconnect
-admission. Use a real browser when the behavior depends on when the client
-detects transport loss, schedules a reconnect, JavaScript, or DOM patching. The
-[testing guide](../guides/testing.md#choose-the-test-boundary) explains these
-boundaries and their available support.
+server interactions and reconnects. Use a real browser when the behavior
+depends on when the client detects transport loss, schedules a reconnect,
+JavaScript, or DOM patching.
+[Testing your LiveView](testing-your-liveview.md) writes the first connected
+tests for the pages in this path.

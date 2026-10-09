@@ -1,0 +1,682 @@
+# Documentation site review
+
+Reviewed: 2026-10-09
+Revision: `341a561` (documentation content is unchanged since `933c2a7`)
+
+This review replaces the 2026-10-01 content review. Every finding from that
+review that still applies has been rechecked and is included below.
+
+## Summary
+
+The site is in good shape in several ways. The quick start works. Examples are
+embedded from compiled source. Every guide uses the same "Before you start" /
+"Related tasks" frame. The docs are also unusually honest about limits. The
+problems fall into three areas:
+
+1. **Hand-written recipes no longer match the API.** Only the 32
+   `@:sourceRegion` blocks are compiled. The 176 inline ```` ```scala ```` blocks
+   are not. I compiled 18 representative inline snippets against the current
+   classpath, and **10 fail**. They include the whole service-injection recipe,
+   the first test in the testing guide, and the main rendering snippets for
+   streams, uploads, typed forms, and HTTP forms.
+2. **Everyday tasks are missing while edge cases are covered in depth.**
+   Conditional rendering (`when` / `choose` / `option`) is never shown outside a
+   Project essay. No page shows how to start work when a page connects.
+   Route-level service injection (`.from` / `.context`) has no prose. Most event
+   bindings never appear in prose. Meanwhile, the forms, layouts, hooks, async,
+   authentication, and testing pages open with advanced contracts.
+3. **Vocabulary and presentation are inconsistent.** Examples: "durable" for
+   connection-local data, "reset" for logout, "socket" for a LiveView
+   lifecycle, and `routes` / `liveRoutes` naming different types on different
+   pages. Page titles use sentence case but headings use Title Case. Duplicate
+   `order` values scramble the example sidebar.
+
+Fixing (1) mechanically stops it from coming back. Fixing (2) is the biggest
+gain for approachability.
+
+## Decisions for implementation
+
+The maintainer made these decisions on 2026-10-09:
+
+1. **Fix the API first.** When a finding shows that the API is awkward or
+   missing something, change the API and then document it. Change only the docs
+   when the existing API is already the better shape. The implementing agent may
+   reverse a decision during its session if the change turns out not to be a
+   clear improvement or its impact is too large. Record the reason in this file.
+2. **URLs may change freely.** No redirects are needed. Update the links in
+   `README.md` (it links to `/project`, `/project/compatibility`,
+   `/examples/counter`, `/learn/quick-start`, `/learn`, `/examples`, and
+   `/api`).
+3. **Build changes are allowed** for the recipe compile check (finding 7).
+4. **Use only one way to declare a layout** (finding 16).
+
+Candidates for decision 1. These are starting points, not settled designs:
+
+| Finding | Problem | Options |
+| --- | --- | --- |
+| 1 | No clear way to give a route a service. The guide's `-> layer` doesn't exist. `.from((params, request, service) => …)` forces two ignored parameters. `.context((s: S) => …)` works, but its name suggests mount-aspect context. | Pick one way and make it read well: accept a layer in `->`, add a dedicated builder, or keep `.context` and document it. |
+| 2 | Form bindings exist on `Definition` and on a plain `Form`, but not on `Signal[Form]`, and the docs mix all three. No Scala code in the repo calls the plain-`Form` versions. All 13 call sites use `Definition`. | Keep one way to attach form bindings, probably `Definition`, and remove or align the others. `Form.http` is separate and stays. |
+| 3 | Importing both `zio.test.*` and `scalive.*` makes `Live` and `live` ambiguous. | Renaming would touch about 344 call sites. A fix on the testing side, such as a base spec or exports from `scalive.testing`, may be cheaper. Otherwise document `import zio.test.{Live as _, live as _, *}`, which compiles. |
+| 4 | `LiveHooks.afterRender { … }` doesn't exist. Readers have to write `LiveHooks.empty[Msg, Model].afterRender`. | Add shortcuts on the companion object for each stage, with types inferred from `override def hooks: LiveHooks[Msg, Model]`. Do the same for `ComponentLiveHooks`. |
+| 4 | A single-field form needs `Root.product[A](Tuple1(field))`. | Add a single-field overload. |
+| 16 | There are three ways to declare a root layout and two for ordinary layouts. | See finding 16. |
+
+## How this was verified
+
+- I read all 56 authored pages and every embedded example source they
+  reference.
+- I compiled snippets with `scala-cli` (Scala 3.8.4) against
+  `documentation.site.test.runClasspath` from this checkout. I added only the
+  minimal enclosing context each page implies, such as a `LiveView` with
+  `view(model: Signal[Model])`.
+- I ran the quick start as a standalone external project against the published
+  `0.0.1-341a561ee032-SNAPSHOT`, using Mill 1.1.8 and JDK 21.
+  - Results: the dependency resolves, the app compiles, all three scripts
+    return 200, and unversioned `/static/app.js` returns 404 as documented. In a
+    real browser the page connected and **Increase** updated the counter.
+  - One local deviation: NixOS needed `//| mill-jvm-version: system`, because
+    by default Mill downloads a JDK that won't run there. This is specific to
+    this environment.
+- I measured API reference coverage from the generated `content.json`.
+- I rechecked the four external links that `documentation.checkExternalLinks`
+  reported as failing on 2026-10-01.
+- **Not done:** I did not run `mill documentation.check`, replay every
+  interactive example, or audit each generated API page by hand.
+
+| Snippet | Location | Result |
+| --- | --- | --- |
+| Homepage handler | `index.md:14-23` | ✗ `Missing type parameter for scalive.MessageContext`; pattern-function parameter type cannot be inferred |
+| Layer-backed route and startup | `guides/services-and-zlayer-injection.md:114-151` | ✗ `Found: (LiveRouteSeed[Unit], URLayer[Reports, ReportsLiveView]) Required: LiveRouteFragment[Any]` |
+| Stream container | `guides/streams-and-collection-updates.md:155-162` | ✗ `value activityStream is not a member of Signal[Model]` |
+| Upload controls | `guides/uploads-and-consumption.md:68-82` | ✗ `value upload is not a member of Signal[Model]` |
+| Form bindings via the form value | `guides/typed-forms-and-validation.md:188-194` | ✗ `value onChange is not a member of Signal[Form[...]]` |
+| Field error feedback | `guides/typed-forms-and-validation.md:466-470` | ✗ `value message is not a member of Signal[FormError[...]]` |
+| Live validation, then HTTP | `guides/http-forms-and-redirects.md:236-244` | ✗ `value form is not a member of Signal[Model]` |
+| First disconnected test | `guides/testing.md:77-94` | ✗ `Reference to Live is ambiguous` (`zio.test.Live` vs `scalive.Live`) |
+| After-render hook | `guides/flash-title-and-lifecycle-ux.md:93-98`, `guides/lifecycle-hooks.md:307-313` | ✗ `value afterRender is not a member of object scalive.LiveHooks` |
+| Single-field form | `guides/navigation-guards.md:102` | ✗ parse error at `(NoteText,)` |
+| URL state example | `learn/url-state-and-navigation.md:12-56` | ✓ |
+| Signal combination | `learn/rendering-and-dom-updates.md:39-77` | ✓ |
+| Component with output | `guides/components-and-communication.md:53-93` | ✓ |
+| Root and ordinary layout factories | `guides/layouts-sessions-and-mount-aspects.md:52-80` | ✓ |
+| Static hooks | `guides/lifecycle-hooks.md:134-146` | ✓ |
+| Routed eventless view | `guides/routes-and-navigation.md:72-81` | ✓ |
+| Nested LiveView | `guides/nested-liveviews.md:42-51` | ✓ |
+| Typed browser event hook | `guides/browser-integration.md:98-101` | ✓ |
+
+Every failure is in an inline block. Every embedded `@:sourceRegion` I checked
+is correct.
+
+## P1 — Recipes that fail or mislead
+
+### 1. The service-injection guide documents an API that doesn't exist
+
+`guides/services-and-zlayer-injection.md` relies on registering routes with a
+layer, but `LiveRouteBuilder.->` only accepts a `LiveView`
+(`scalive/api/src/scalive/routing/LiveRouting.scala:460`). As a result, the
+following parts are wrong:
+
+- The four-step plan at `:26-31`: "derive a LiveView layer with
+  `ZLayer.fromFunction`".
+- `(live / "reports") -> ReportsLiveView.layer` at `:126-133`, along with the
+  claim that "the route operator adds `Reports` to the route environment".
+- Startup at `:145-150`, which passes a `LiveApplication` straight to
+  `Server.serve` and skips `ZioHttp.routes`, security, and the client assets.
+- "Register its constructor-derived layer" at `:183-185`.
+- `ReportsLiveView.layer.provide(testReports)` at `:201`.
+- `examples/service-injection.md:10`, which mentions `ReportsExample.layer`.
+  That value doesn't exist. Its link label also doesn't match the UI ("Open the
+  layer-backed route" vs "Open layer-backed route").
+
+The supported API is `.from((params, request, service) => ...)` (`:464`) or
+`.context((service: S) => ...)`. Both compile. The guide's own embedded example
+(`ReportsExample.route`) uses `.from`, but the prose never explains it.
+
+The same page also has these problems:
+
+- It introduces `Model.Failed` (`:168`) without adding it to the enum
+  (`:110-111`).
+- The view's partial `model.map { case Model.Loaded(...) => ... }` (`:87-89`)
+  would throw at runtime once `Failed` exists.
+- It declares `object ReportsLiveView` twice (`:106`, `:119`).
+
+**Fix:** Rewrite the guide around `.from` / `.context`. Show `Main` with
+`ZioHttp.routes(application, security)` plus the asset routes, exactly as the
+quick start does. Keep the model and companion object consistent from start to
+finish. Remove "layer-backed" from the example page and UI, or make it true.
+
+### 2. Main rendering recipes treat the model as a plain value inside `view`
+
+The documented view signature is `view(model: Signal[Model])`, but these
+recipes read fields directly from `model` or a form value:
+
+- Streams: `model.activityStream.renderIn(...)` at
+  `guides/streams-and-collection-updates.md:156`.
+- Uploads: `model.upload.dropTarget` and `liveFileInput(model.upload, ...)` at
+  `guides/uploads-and-consumption.md:68-82`.
+- HTTP forms: `model.form.http(...)` and `model.form.onSubmit(...)` at
+  `guides/http-forms-and-redirects.md:237-240`.
+- Typed forms, in three places:
+  - `profileForm.onChange` / `onSubmit` at `:191-192`, `:361-362`, and
+    `paymentForm.disableRecovery` at `:382`. These are plain-`Form` methods with
+    no `Signal[Form]` counterpart. The executable example uses
+    `Profile.Definition.onChange` instead, and so does `:326`, a few
+    paragraphs later.
+  - `contactForm.rows(...).map { row => ... }` at `:418-421`.
+  - `emailField.errorFeedback { error => messages(error.message) }` at
+    `:466-470`. This only works on a plain form, but the signal version follows
+    without explaining when to use which.
+- HTML guide prose: `disabled := model.lines.isEmpty` at
+  `guides/html-dsl-and-event-bindings.md:113`.
+
+The underlying cause is that no page says plainly: "Inside `view`, `model` is a
+`Signal`. Use `model.map(_.field)` and pass signals to helpers." The typed
+forms guide also never explains when to bind through `Definition` and when
+through a form value.
+
+**Fix:** Every recipe that touches `model` should show the enclosing `view`
+signature. In forms, use `Definition.onChange` / `onSubmit` everywhere and say
+when the plain `Form` API applies (for example, HTTP rendering outside a
+LiveView).
+
+### 3. The testing guide's first examples fail for anyone following the docs
+
+- **The imports at `guides/testing.md:78-83` break the example.**
+  `zio.test.*` together with `scalive.*` makes `Live` ambiguous, so
+  `Live.router(...)` on `:93` does not compile. The repository's own tests work
+  around this with `scalive.Live.router` (for example
+  `scalive/testing/test/src/scalive/testing/DisconnectedRenderSpec.scala:62`).
+- **`zio.http.*` shadows the quick start's `Routes` object.** A wildcard import
+  outranks a same-package object defined in another file, so `Routes.profile`
+  resolves to `zio.http.Routes`.
+- **The connected example doesn't match either documented counter.** At
+  `:208-216` it calls `view.clickButton("Increment")` and reads `#count`. Both
+  documented counters label the button **Increase**, and neither has a `#count`
+  element (the quick start renders an `<output>`).
+- **There is no complete test-module setup.** `:47-65` repeats the
+  artifact-coordinates paragraph but never shows
+  `object test extends ScalaTests with TestModule.ZioTest`, `zioTestVersion`, or a
+  working command such as `mill app.test`. The line "Inside this repository,
+  Mill modules use `moduleDeps = Seq(..., scalive.testing)`" is contributor
+  information.
+
+**Fix:** First decide whether to fix the `Live` / `live` clash in the API (see
+"Decisions for implementation"). Then start the guide with a complete, compiled
+test of the quick-start counter: the build changes, the file location, the
+imports, and `mill app.test`. If the API keeps the clash, these imports compile
+against the current classpath:
+
+```scala
+import zio.http.{Routes as _, *}
+import zio.test.{Live as _, live as _, *}
+
+import scalive.*
+import scalive.testing.*
+```
+
+### 4. Two more invalid recipes
+
+- **`LiveHooks.afterRender { ... }`** (`guides/flash-title-and-lifecycle-ux.md:94`,
+  `guides/lifecycle-hooks.md:308`). The companion object has no such method.
+  Use `LiveHooks.empty[Msg, Model].afterRender { ... }`, as
+  `LifecycleExample.scala:12` does.
+- **`Root.product[Note]((NoteText,))`** (`guides/navigation-guards.md:102`).
+  This is a syntax error; the repository uses `Tuple1(NoteText)` everywhere.
+  The forms guide never says that a single-field form needs `Tuple1`, which is
+  surprising enough to deserve a sentence.
+
+### 5. The external-upload recipe can report completion before success
+
+The XHR progress listener at `guides/uploads-and-consumption.md:307-311` sends
+`Math.round(loaded / total * 100)`. That reaches 100 before the `load` handler
+has checked the response status, and the Phoenix client treats 100 as done.
+
+**Fix:** Cap progress at 99 and send 100 only in the successful `load` branch.
+
+### 6. The homepage snippet is not valid Scala as shown
+
+`index.md:14-23` is a top-level `def` with no enclosing `LiveView`, so its
+`MessageContext` alias and the parameter type of the pattern function cannot be
+resolved. This is the first code most visitors see.
+
+**Fix:** Show a compact, complete LiveView that includes the `on.click`
+binding. The page advertises the browser-to-server loop, so the snippet should
+show it.
+
+### 7. Systemic cause: 176 inline Scala blocks are never compiled
+
+Pages with the most unchecked blocks: typed forms (21), HTML (13), testing (12),
+uploads (11), HTTP forms (10).
+
+The quick-start pattern works: real files with `docs:start` / `docs:end`
+regions, rendered with `@:sourceRegion` and compiled by `documentation.check`.
+
+**Fix:** Move every recipe a reader is expected to copy into compiled fixtures,
+for example `documentation/fixtures/guides/<guide>/...`. Allow inline blocks
+only for short fragments labeled as such. During alpha this is the only way to
+keep up with API churn.
+
+## P2 — Everyday knowledge that is missing
+
+### 8. Conditional rendering is never taught
+
+`when`, `choose`, and `option` are only named
+(`learn/rendering-and-dom-updates.md:34-35`,
+`guides/html-dsl-and-event-bindings.md:35-36`). `.when(` does not appear in any
+content page.
+
+The one explanation of why `if model.x` doesn't work in a view, and what to do
+instead, is in the Project essay `project/dynamic-html-identity.md:222-242`.
+Meanwhile the Learn rendering page spends `:46-78` on tuple-flattening rules
+and `.tupled`.
+
+**Fix:** Replace that space with three short recipes: show a section when a
+flag is set, render an optional value, and switch between two layouts. Move
+the tuple semantics to Scaladoc on `Signal.combine` / `combineWith`.
+
+### 9. Messages carrying a row's current value, and helpers that take signals
+
+Two patterns that real apps need are not explained anywhere:
+
+- **Row-specific messages.** The shopping cart builds row messages with
+  `on.click(line.map(line => Msg.Remove(line.product)))`
+  (`ShoppingCartExample.scala:99`). The essay shows another form,
+  `on.click(product)((value, _) => ...)` (`dynamic-html-identity.md:184`).
+  Neither is explained, and the Learn `splitBy` snippet (`:130-137`) has no
+  binding at all.
+- **Reusable helpers.** No page explains how to write a helper that takes a
+  `Signal[A]` rather than an `A`.
+
+### 10. No page shows how to start work when a page connects
+
+This is the most common LiveView pattern: Phoenix's
+`if connected?(socket), do: subscribe(...)` and `assign_async`.
+`RootMountConnected` exposes `async` and `subscriptions`
+(`scalive/api/src/scalive/lifecycle/Connection.scala:15-21`), yet no page calls
+`connected.async.start(...)` or `connected.subscriptions.start(...)` from a
+root `mount`. Every example starts work from a button.
+
+The async guide also opens with `ConnectedResources` and route/session
+initializers (`guides/async-work-and-subscriptions.md:52-160`), before its
+first finite task.
+
+**Fix:** Lead with "load data when the page connects" and "subscribe to live
+updates when the page connects". Move connected resources to an advanced
+section.
+
+### 11. Route-level service injection is undocumented
+
+Apart from the broken layer section (finding 1), no prose covers
+`.from((params, request, service) => ...)` or `.context((s: S) => ...)`. The
+authentication guide shows `.context` with a service (`:234-243`), but you have
+to already know to look there.
+
+### 12. Most event bindings are missing from prose
+
+None of these appear in any content page: `keyUp` / `keyDown` (with key
+filtering), `clickAway`, the window variants, `focus`, `viewportTop` /
+`viewportBottom` (infinite scroll), `throttle`, `debounceOnBlur`, and
+`connection.onConnect` / `connection.onDisconnect`. All of them are defined in
+`scalive/api/src/scalive/Scalive.scala`, in `object on` and `object connection`.
+`throttle` and `debounceOnBlur` are on `HtmlAttrBinding`
+(`scalive/api/src/scalive/HtmlElement.scala:153-158`).
+
+The HTML guide's only rate-limiting example debounces a **blur** event
+(`:231`, `:247`), which is a confusing choice. Add a compact binding table with
+one example per family.
+
+### 13. The API reference rarely explains anything
+
+Of 2,210 symbols, **1,347** carry the generator's fallback summary ("The
+`scalive.X.y` method."). Central entries such as `LiveView.mount`,
+`LiveView.view`, `LiveView.pageTitle`, `LiveView.hooks`,
+`LiveRouteBuilder.->` / `.from` / `.context`, `Live.session`, every
+`LiveComponent` lifecycle method, and `Form` / `FormDefinition.onChange` all
+have the fallback. Every `@:apiSymbol` link in the guides that points at them
+leads nowhere useful.
+
+The overview page (`api/index.md`) also has these issues:
+
+- It says **Filter symbols**, which doesn't match the UI label.
+- It describes `scalive.testing` without mentioning the connected client.
+- It lists lifecycle resources and observability under **Forms**.
+- Its package names are not links.
+
+**Fix:** Write Scaladoc for the roughly 40 symbols a first application uses
+before anything else.
+
+## P2 — Structure: advanced material comes first
+
+### 14. The Learn path
+
+- **Order and placement:** URL state (order 4) comes before rendering
+  (order 5) (`learn/index.md:57-60`). Project anatomy is the second page, yet
+  it covers asset models and deployment manifests (`:59-70`).
+- **The quick start mixes production advice into the first run:** secret,
+  cookie, and origin policy (`:130-143`), artifact internals (`:69-73`), and a
+  WebSocket `Origin` aside (`:157-159`). It never explains what the root
+  layout's `key` is for, or its `[Any, Any]` / `[Msg]` type parameters.
+- **The lifecycle page assumes advanced knowledge:** it sends Learn readers to
+  `withAdmission` and the connected harness (`:111-112`).
+- **Models and messages takes a detour** through forms examples (`:53-55`)
+  before finishing its own example.
+- **Missing steps:** there is no path from the counter to a first form, a
+  first service-backed page, or a first test.
+
+### 15. Guides lead with contracts instead of the common case
+
+| Page | What comes first today | What should come first |
+| --- | --- | --- |
+| Typed forms | Blur-feedback policy (`:221-274`) sits between the change binding and the submit handler. Basic field rendering first appears at `:454`, after repeated rows and the Phoenix adapter. | One continuous path: define → mount → change → submit → render fields and errors → reset. Then variants. |
+| Layouts, live sessions, and mount aspects | A table comparing session and route mount aspects (`:16-45`) before any layout is shown | Root layout → ordinary layout → named sessions. Aspects and context selection on a separate page. |
+| Lifecycle hooks | Connected-turn guards (`:53-126`), a routing feature | A decision table (handler / hook / guard / observer), then static hooks |
+| Async work | Connected resources and route initializers | Connected mount → async → subscriptions → resources |
+| Authentication | Physical-connection admission (`:94-109`) before both-phase authentication (`:111`) | The login → protected page → logout journey, then admission and fanout |
+| Testing | WebSocket origin tests as a top-level section (`:537-563`); following a navigation sits inside the typed-forms subsection (`:454-475`) | First test, then connected interactions, then forms, then reference material |
+| HTML and bindings | Static HTML rendering, portals, and focus wrap come before keyed lists | Tree → attributes → bindings → conditionals and lists → helpers → advanced |
+| Client setup and static assets | "Choose an asset model" (manifest vs tree) is the first section | Packaged clients → `LiveSocket` → application assets. Manifests last. |
+
+### 16. Too many ways to declare a layout
+
+Root layouts can be declared in three ways
+(`scalive/api/src/scalive/routing/LiveLayouts.scala`):
+
+- **Extend the `LiveRootLayout` trait** and implement `key` and `render[Msg]`.
+  Used by the quick start, the documentation site, the e2e app, and the
+  navigation-guards guide (`:57-79`).
+- **The factory** `LiveRootLayout[A, Ctx]("key")([Msg] => (content, pageTitle, ctx) => …)`.
+  Used by the layouts guide (`:53-59`), `rootSliceApp`, and tests.
+- **`LiveRootLayout.dynamic[A, Ctx](ctx => key)([Msg] => …)`.** Used by
+  `LayoutContextExample` and tests.
+
+Ordinary layouts can be declared in two ways: extend `LiveLayout` and implement
+`view`, or call `LiveLayout[A, Ctx]([Msg] => …)`. The two traits also name
+their method differently (`view` and `render`). Only the layouts guide explains
+what the root key is for.
+
+**Decision:** keep only one way.
+
+**Recommendation:** keep the trait, implemented by a class, and remove the
+`apply` and `dynamic` factories for both root and ordinary layouts:
+
+- Every real root layout in the repository is already a class, because it
+  needs loaded assets, and those fit naturally in a constructor.
+- `key(ctx)` handles both fixed and context-dependent keys. The factories need
+  two separate functions for that.
+- The factories need a polymorphic function literal (`[Msg] => …`), plus
+  explicit `[A, Ctx]` type arguments. That is the hardest syntax in the API for
+  a newcomer.
+
+The class form is verbose: it spells out the full `render[Msg](...)` signature
+and must define `key` even when the key never changes. Reduce that as part of
+the change if possible, for example with a simpler way to declare a fixed key.
+Also give the methods of the two traits the same name. Roughly 20 factory call
+sites change, mostly in tests. The docs for the remaining form must explain the
+key.
+
+### 17. Example catalog order and format
+
+- **Duplicate `order` values** (2, 5, 7, 11) and an outlier (`text-upload.md`:
+  110) produce this sidebar: Counter, **Browser integration**, Shopping cart,
+  Lifecycle, Profile form, Activity stream, Repeated contacts, and so on. An
+  advanced example ends up second.
+- **Pages lack "try this" guidance.** Example pages put the full source before
+  the live result. The counter page is a single sentence.
+- **`examples/text-upload.md:8` gives the wrong order.** It says to submit
+  "after the upload completes", but uploads are manual: submitting starts the
+  transfer. The button label "Summarize completed file"
+  (`TextUploadExample.scala:82`) reinforces the mistake.
+- **`examples/component-subscriptions.md:13-20` depends on timing.** It asks
+  readers to remove and reinsert a component before the browser confirms
+  destruction, which can't be reproduced reliably by hand.
+- **`examples/navigation.md:8-11` doesn't warn that its buttons leave the
+  page.** They navigate to the site's search route. Say so before the action
+  and explain how to come back with Back.
+
+Standardize each example page as: what it shows → try these steps → what to
+expect → key lines → full source → related guide.
+
+## P2 — Consistency
+
+### 18. Terminology drift
+
+| Term | Problem | Where |
+| --- | --- | --- |
+| durable | Used for an in-memory `Vector` rebuilt on every mount, contradicting Learn's definition | `examples/activity-stream.md:3,9`; `ExampleCatalog.scala:27,31`; UI label `ActivityStreamExample.scala:45`; `guides/streams-and-collection-updates.md:3,119,139`; `guides/index.md:60` |
+| logout / reset | The title and description say "logout"; the guides index says "reset"; a section is titled "Revoke Through A CSRF-Protected Reset" | `guides/authentication.md:3,192`; `guides/index.md:51` |
+| socket | Means "LiveView lifecycle" in some places and "WebSocket" in others. Nested LiveViews share one WebSocket. | `guides/components-and-communication.md:23`; `guides/nested-liveviews.md:28`; `guides/index.md:58` |
+| `SCALIVE_TOKEN_SECRET` | The quick start says production "must require" it, while Configuration says Scalive reads no environment variables. Only Deployment clarifies it is an application convention. | `learn/quick-start.md:135`; `guides/configuration.md:17`; `guides/troubleshooting.md:182`; `guides/deployment.md:38-41` |
+| `ZioHttp.routes(application, config)` vs `(application, security)` | Both overloads appear with no explanation of when to use which | `guides/configuration.md:32` vs `:105`; `guides/testing.md:94` |
+| `routes` / `liveRoutes` | Each name refers to different types on different pages. `routes` is a `LiveApplication` in some places and ZIO HTTP routes in others. `liveRoutes` is ZIO HTTP routes in the quick start but route declarations passed to `Live.router` in navigation guards. | `learn/url-state-and-navigation.md:53`; `guides/routes-and-navigation.md:28`; `guides/layouts-sessions-and-mount-aspects.md:186`; `guides/navigation-guards.md:33` |
+| Example names | "Lifecycle and connection phases" and "Validated profile form" don't match the actual titles ("Lifecycle and connection state", "Typed profile form") | `learn/where-to-go-next.md:44,48` |
+| Quick start | Written as "Quick Start", "quick start", and "Quick start" | `guides/deployment.md:13,16,30,39,46` and elsewhere |
+
+### 19. Presentation
+
+- **Heading case:** 337 of 342 multi-word H2/H3 headings capitalize every word,
+  articles included ("Take The Ordered Path", "Know Which Side Owns What").
+  Page titles use sentence case. The Project essays don't ("Why I Built
+  Scalive", "Designing Dynamic HTML"). The guides index uses "Setup And
+  Foundations" while the sidebar group says "Setup and foundations".
+  Recommendation: sentence case everywhere.
+- **Snippets change the model mid-recipe:** `saved` (`typed-forms…:144`),
+  `resetEpoch` (`components…:137`), `Model.Failed` (`services…:168`). Two
+  snippets on the same page give `workspaces.authorize` different signatures
+  (`layouts…:254` vs `:299-302`).
+- **Snippets call operations that are never defined:** the save workflow ends
+  with `install(nextModel)` and `submission.foreach(enqueueSave)`
+  (`typed-forms…:641-643`). Neither exists, so the reader never sees the
+  actual `handleMessage` case that commits the model and starts the save with
+  `ctx.async.start`.
+- **Repeated text:**
+  - The "exactly two Scala coordinates" paragraph appears verbatim in three
+    places (`quick-start.md:69-73`, `testing.md:49-52`,
+    `runtime-architecture.md:51-55`).
+  - WebSocket `Origin` rules are restated in six pages.
+  - After-render limits are explained twice.
+  - The two-mount explanation appears in six pages.
+
+  Keep one canonical explanation of each and link to it from the others.
+- **Test evidence in user guides:** "Current tests cover…"
+  (`html-dsl…:335-338`), protocol-auditing notes (`troubleshooting.md:205-211`),
+  and test names in the compatibility matrix. Move these to contributor-facing
+  material.
+- **Formatting glitches:**
+  - `testing.md:177` is misindented, and `testing.md:423` is not indented at
+    all.
+  - In `typed-forms…:110-111`, a ZIO aside sits between "store … in the model:"
+    and its code block.
+
+### 20. Pages that contradict each other on safety and ownership
+
+- **Browser input validation is placed on the client.**
+  `guides/browser-integration.md:105-107` says JavaScript is not trustworthy,
+  then says to "validate shape, length, permissions, and browser failures before
+  calling `this.pushEvent`". That reads as advice to validate in JavaScript.
+  Say clearly that the server must validate and authorize every decoded
+  payload, and that client-side checks are only for usability and
+  browser-error handling.
+- **The nested LiveView guide leaves out a sticky exception.**
+  `guides/lifecycle-hooks.md:100-102` says a nested view with connected-turn
+  guards becomes non-sticky. `guides/nested-liveviews.md:103-116`, where readers
+  decide whether to use `sticky = true`, doesn't mention this.
+
+## P3 — Smaller fixes
+
+- **Toolchain:** the quick start names no Mill or JDK version. The build uses
+  Mill 1.x syntax (`mvn"..."`), which fails on Mill 0.12. Add a
+  `//| mill-version: 1.1.8` header; that combination works, as verified above.
+  The "dependency resolution" link (`quick-start.md:167-168`) points to a
+  troubleshooting section with no dependency-resolution advice.
+- **Phoenix orientation:** it opens with "No Elixir or Phoenix experience is
+  required" (`:11`) on a page meant for Phoenix users. The mapping table lacks
+  `handle_params`, `handle_info` / PubSub, `assign_async` / `start_async`,
+  streams, uploads, `push_event`, `put_flash`, `push_patch` / `push_navigate`,
+  and `LiveViewTest`.
+- **Flash guide:** "Lifecycle feedback and page state" is hard to find by
+  search; consider "Flash messages, page titles, and connection status". The
+  promised offline-control pattern (`:83-86`) has no example.
+- **Guides index:** the descriptions describe mechanisms rather than tasks.
+  "Assets and operations" contains no asset guide. "Where to go next" skips
+  Navigation guards and the component-subscriptions example.
+- **Troubleshooting:** it starts with lifecycle metrics (`:38-57`) before basic
+  startup, asset, and socket checks.
+- **HTTP forms:** it names Post/Redirect/Get (`:19`) without explaining it. It
+  also defines a `createSession` handler (`:170`) and an `httpRoutes(security)`
+  value (`:101`) but never shows how the handler is registered on
+  `SessionRoute`.
+- **Deployment:** it has no concrete reverse-proxy configuration and no
+  end-to-end success check for one.
+- **Lifecycle observability:** the exporter setup is left to the reader
+  (`:84-87`). One concrete connector setup, such as Prometheus, would make the
+  verification steps on `:89-93` something a reader can actually follow.
+- **Project index:** it leads with essays (`:8-31`) before status and
+  compatibility (`:32+`).
+- **Compatibility matrix:** the "Known gap or decision" column mixes
+  maintainer to-dos with support status. One entry is stale: "More ergonomic
+  typed URL builders may be exposed" (`compatibility.md:88`), even though the
+  guides already teach `location`.
+- **External links:** two MDN URLs in the generated API reference return 404
+  (`/Web/HTML/Attributes/action`, `/Web/HTML/Attributes/alt`). On 2026-10-01
+  the link checker reported `osteoview.app` (404) and the dev.to article (403)
+  as failing. Both returned 200 today with a browser user agent, so no change
+  is needed.
+
+## Recommended information architecture
+
+Keep the five top-level sections. Change what each one teaches.
+
+**Learn: build one application step by step**
+
+1. Quick start: pinned toolchain; production settings moved into one callout.
+2. Models, messages, and effects: extend the counter with Reset.
+3. Rendering views: `map`, `when` / `choose` / `option`, `splitBy` with
+   row-specific messages, and helpers that take signals.
+4. Your first form: two fields, change, submit, errors, reset.
+5. Loading data and live updates: a service, async work on connect, and a
+   subscription.
+6. URL state and navigation.
+7. Lifecycle and reconnects.
+8. Testing your LiveView: a complete test module for the counter.
+9. How the pieces fit: today's Project anatomy, moved to the end as a recap.
+
+**Guides: task first, reference second.** Split these pages:
+
+- **Typed forms:** build and validate; feedback and recovery; richer controls;
+  repeated rows; save workflow.
+- **Layouts:** layouts; live sessions and mount aspects.
+- **Async:** async work; subscriptions; connected resources.
+- **Testing:** testing basics; connected-harness reference.
+- **New:** an event-bindings reference.
+
+Each page should open with one minimal working recipe before variants and
+contracts.
+
+**Examples:** order them within each topic from simple to advanced and use the
+standard page format from finding 17.
+
+**API:** write Scaladoc for the core types first. Turn the overview page into a
+topic map with links to each package.
+
+**Project:** status and compatibility first, essays after.
+
+## Editorial standard
+
+1. Open with the reader's outcome, then the shortest working recipe.
+2. Use one model per recipe. If a snippet uses `model`, show the `view`
+   signature around it.
+3. Recipes come from compiled files. Inline fragments are labeled as fragments.
+4. Use one name per concept: `application` for `LiveApplication`, `routes` for
+   ZIO HTTP routes, and the terms below.
+5. Use sentence case for every title and heading. Quote UI labels exactly.
+6. Explain each cross-cutting rule once, in one place, and link to it.
+7. Keep test evidence and maintainer decisions out of user guides.
+8. End each page with a way to check that it worked and one next step.
+
+| Term | Use it for |
+| --- | --- |
+| Model | Immutable state owned by one LiveView or component lifecycle |
+| Durable state | Data that outlives the connection or process because it is kept in external storage or a longer-lived service |
+| WebSocket connection | The physical browser-to-server transport |
+| LiveView lifecycle | One independently mounted root or nested view, with its own topic on the shared WebSocket |
+| Named live session | A group of routes that share navigation and mount policy |
+| Application session | Login state managed by the application |
+| Subscription | A message-producing `ZStream` managed by a lifecycle |
+| Rendered stream | A collection updated by ID through `LiveStream` |
+| Browser hook | JavaScript attached to an element's browser lifecycle |
+| Lifecycle hook | Server-side interception or observation of a lifecycle stage |
+
+## Notes for implementers
+
+- **Work on one phase per session.** Each phase in "Suggested order of work"
+  is a reasonable unit of work. The whole review is too much for one session.
+- **Line numbers refer to revision `341a561`.** They shift after the first
+  edits, so search for the quoted text instead.
+- **Commands:**
+  - `mill --ticker false documentation.check` runs the content pipeline,
+    internal link and anchor checks, `@:sourceRegion` extraction, the
+    quick-start fixture compile, the model, pipeline, and site tests, and the JS
+    unit tests.
+  - `npm run test:xray`, run in `documentation/site`, runs the Playwright site
+    tests. `documentation.check` does not run them.
+  - `mill --ticker false documentation.checkExternalLinks` checks external links.
+  - `mill --ticker false __.test`, and `./scripts/e2e-run-upstream.sh` when
+    runtime behavior changes, after any API change.
+  - `mill --ticker false __.reformat + __.fix` before committing.
+- **Compiled snippets:** mark a region in a source file with
+  `// docs:start <name>` and `// docs:end <name>`, then embed it with
+  `@:sourceRegion(<path>, <name>)`. The pipeline reads only from the roots in
+  `allowedSourceRoots` (`documentation/package.mill:42-49`). A new fixtures
+  directory needs an entry there, plus a compiled Mill module added to
+  `documentation.check`, as `quickStartFixture` is.
+- **Things that must change together:**
+  - **Example pages:** an example page's route must be `/examples/<id>`, where
+    `<id>` comes from `ExampleCatalog.scala`. Its front-matter `title` and
+    `description` must match the catalog entry exactly. Otherwise
+    `DocumentationApplication.from` rejects the generated documentation and the
+    site won't load (`validateCanonicalExamples`,
+    `DocumentationApplication.scala:305`). The `order` value in the front matter
+    controls the sidebar.
+  - **Example UI labels:** these are defined in
+    `documentation/site/src/scalive/docs/examples/*.scala`. Unit tests in
+    `documentation/site/test/src` and the Playwright specs in
+    `documentation/site/test/xray` may assert them.
+  - **Other pages:** a page's URL comes from its file path under
+    `documentation/content`.
+- **Heading anchors:** every heading has an explicit `{#id}` anchor. Changing a
+  heading's text or case is safe; changing its ID breaks links, and the internal
+  link check reports them.
+- **API changes:** Scaladoc-only edits don't affect `pipeline.checkApi`, because
+  `documentation/pipeline/api/public-api.snapshot.json` records signatures
+  only. After a signature change, run
+  `mill --ticker false documentation.pipeline.updateApiSnapshot`. Scalive is in
+  alpha, so no compatibility shims or deprecations are needed (`AGENTS.md`).
+
+## Suggested order of work
+
+1. Add a compile check for recipes (finding 7) and fix findings 1–6. Make API
+   changes first, as described in "Decisions for implementation".
+2. Fill the Learn gaps (findings 8–11) and add first-form and first-test
+   lessons.
+3. Restructure the guides that lead with contracts (finding 15), split the four
+   largest pages, and settle on one way to declare layouts (finding 16).
+4. Write Scaladoc for the core API (finding 13). Fix the example catalog order
+   and page format (finding 17).
+5. Make an editorial pass for terminology, headings, repetition, and
+   contradictions between pages (findings 18–20).
+
+The work is done when:
+
+- A Scala developer new to Scalive can follow the quick start to a running
+  counter without guessing tool versions or missing files.
+- Every recipe a reader is expected to copy compiles in `documentation.check`.
+  Anything else is clearly labeled as a fragment.
+- A reader can build a basic form, a service-backed page, and a connected test
+  without piecing together advanced sections.
+- Prose, catalog cards, UI labels, and example source agree about how long state
+  lives, the order of actions, and what is supported.
+- Each long guide offers a short recommended path before alternatives and exact
+  contracts.
+- Core API entries say when to call the method, what it returns, and what can
+  fail, and they link to a guide.
+- External links pass, or failures are confirmed to be access restrictions.

@@ -18,7 +18,7 @@ class ErrorLiveView
   override def handleParams(model: Model, params: QueryParams, _url: URL, ctx: ParamsContext) =
     if ctx.connection == Connection.Disconnected && params.deadMountRaise then
       ZIO.fail(RuntimeException("boom"))
-    else if ctx.connection.isInstanceOf[Connection.Connected[?]] && params.connectedMountRaise then
+    else if ctx.connection.isConnected && params.connectedMountRaise then
       ZIO.fail(RuntimeException("boom"))
     else
       val next = model.copy(child = childBehavior(params, ctx))

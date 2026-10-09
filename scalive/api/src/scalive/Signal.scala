@@ -32,6 +32,11 @@ object Signal:
 
   /** Combines a non-empty tuple of signals, preserving one result element per signal.
     *
+    * Tuple-valued inputs stay nested, unlike [[combineWith]]. For `position` and `size` of type
+    * `Signal[(Int, Int)]`, `Signal.combine((position, size))` is a `Signal[((Int, Int), (Int,
+    * Int))]`. Use `Signal.combine(Tuple1(signal))` for a single input; an empty tuple does not
+    * compile.
+    *
     * The render engine validates scope compatibility and samples inputs from left to right.
     */
   def combine[Signals <: NonEmptyTuple](
@@ -53,8 +58,16 @@ object Signal:
   /** Combines signals and derives a value when the render engine samples the result. Scope
     * validation and left-to-right input sampling are the same as [[combine]].
     *
-    * Pass `.tupled` for a pre-existing FunctionN. Tuples containing `Nothing` also require a typed
-    * function's `.tupled` form because Scala cannot untuple an untyped lambda over them.
+    * {{{
+    * val summary = Signal.combineWithFn((firstName, lastName, itemCount)) { (first, last, count) =>
+    *   s"$first $last - $count items"
+    * }
+    * }}}
+    *
+    * The function receives each input value unflattened. Pass `.tupled` for a pre-existing
+    * FunctionN, as in `Signal.combineWithFn((firstName, lastName))(formatName.tupled)`. Tuples
+    * containing `Nothing` also require a typed function's `.tupled` form because Scala cannot
+    * untuple an untyped lambda over them.
     */
   def combineWithFn[Signals <: NonEmptyTuple, Result](
     signals: Signals
@@ -76,11 +89,24 @@ object Signal:
   extension [A](left: Signal[A])
     /** Combines two signals and derives a value when sampled, without flattening either input. The
       * render engine validates scope compatibility and samples the left input first.
+      *
+      * {{{
+      * val fullName = firstName.combineWithFn(lastName)((first, last) => s"$first $last")
+      * }}}
       */
     def combineWithFn[B, Result](right: Signal[B])(f: (A, B) => Result): Signal[Result] =
       Expression.Zipped(left, right).map { case (a, b) => f(a, b) }
 
     /** Combines two signals by shallowly concatenating statically tuple-valued operands.
+      *
+      * `firstName.combineWith(lastName)` is a `Signal[(String, String)]`, and
+      * `a.combineWith(b).combineWith(c)` is a flat triple when the three values are not tuples. For
+      * `position` and `size` of type `Signal[(Int, Int)]`, `position.combineWith(size)` is a
+      * `Signal[(Int, Int, Int, Int)]`; use [[Signal.combine]] to keep the pairs nested.
+      *
+      * Flattening follows the static value type, one level deep. Nested tuple elements and case
+      * classes stay intact, and a value typed as `Any` or an unconstrained type parameter is one
+      * element even when it holds a tuple at runtime.
       *
       * The render engine validates scope compatibility and samples the left input first.
       */
@@ -93,25 +119,36 @@ object Signal:
       Expression.Zipped(left, right).map { case (a, b) =>
         leftShape(a) ++ rightShape(b)
       }
+  end extension
 
   extension (condition: Signal[Boolean])
+    /** Renders `content` while the condition is `true` and nothing while it is `false`. */
     def when[Msg](content: => HtmlElement[Msg]): Mod[Msg] =
       Mod.Content.SignalChoice(condition, Vector(true -> content))
 
+    /** Renders `whenTrue` or `whenFalse`, following the condition. Both branches are built once. */
     def choose[Msg](whenTrue: => HtmlElement[Msg], whenFalse: => HtmlElement[Msg]): Mod[Msg] =
       Mod.Content.SignalChoice(condition, Vector(true -> whenTrue, false -> whenFalse))
 
+    /** Applies `whenTrue` or `whenFalse` modifiers, such as attributes, following the condition. */
     def chooseMod[Msg](whenTrue: => Mod[Msg], whenFalse: => Mod[Msg]): Mod[Msg] =
       Mod.Content.SignalModChoice(condition, Vector(true -> whenTrue, false -> whenFalse))
 
   extension [A](value: Signal[Option[A]])
+    /** Renders `project` while the value is defined and nothing while it is empty.
+      *
+      * `project` receives a signal of the present value, so the rendered element keeps following
+      * it.
+      */
     def option[Msg](project: Signal[A] => HtmlElement[Msg]): Mod[Msg] =
       Mod.Content.SignalOption(value, project)
 
   extension [A](value: Signal[A])
+    /** Renders the branch whose key equals the current value, or nothing when none matches. */
     def choose[Msg](branches: (A, HtmlElement[Msg])*): Mod[Msg] =
       Mod.Content.SignalChoice(value, branches.toVector)
 
+    /** Applies the modifiers whose key equals the current value, or none when none matches. */
     def chooseMod[Msg](branches: (A, Mod[Msg])*): Mod[Msg] =
       Mod.Content.SignalModChoice(value, branches.toVector)
 end Signal

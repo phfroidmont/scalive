@@ -2,10 +2,18 @@ package scalive
 
 import zio.json.ast.Json
 
-/** Makes connected-only lifecycle capabilities explicit. */
+/** Makes connected-only lifecycle capabilities explicit.
+  *
+  * Match on it to use connected capabilities. Use [[isConnected]] when only the phase matters.
+  */
 enum Connection[+Connected]:
   case Disconnected
   case Connected(capabilities: Connected)
+
+  /** Whether this stage runs in a connected lifecycle rather than the disconnected HTTP render. */
+  def isConnected: Boolean = this match
+    case Disconnected => false
+    case Connected(_) => true
 
 /** Metadata supplied by a connected client. Values in `connectParams` are untrusted. */
 trait ConnectedMetadata:

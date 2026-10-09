@@ -11,7 +11,7 @@ final class LifecycleExample extends LiveView[LifecycleExample.Msg, LifecycleExa
   override def hooks: LiveHooks[Msg, Model] =
     LiveHooks.afterRender { (model, ctx) =>
       ZIO
-        .when(ctx.connection.isInstanceOf[Connection.Connected[?]]) {
+        .when(ctx.connection.isConnected) {
           ZIO.logDebug(s"Lifecycle example rendered with title '${model.currentTitle}'")
         }.unit
     }
@@ -21,7 +21,7 @@ final class LifecycleExample extends LiveView[LifecycleExample.Msg, LifecycleExa
   def mount(ctx: MountContext): Task[Model] =
     ZIO.succeed(
       Model(
-        connectedMount = ctx.connection.isInstanceOf[Connection.Connected[?]],
+        connectedMount = ctx.connection.isConnected,
         currentTitle = DefaultTitle
       )
     )

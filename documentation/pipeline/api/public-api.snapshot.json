@@ -2242,6 +2242,18 @@
       ]
     },
     {
+      "id" : "def:scalive.Connection.isConnected",
+      "ownerId" : "enum:scalive.Connection",
+      "qualifiedName" : "scalive.Connection.isConnected",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.Connection.isConnected:2d6e69321ca874ca",
+          "signature" : "def isConnected: Boolean"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.ConsumeDecision",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.ConsumeDecision",

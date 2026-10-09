@@ -64,6 +64,19 @@ object ConnectionCapabilitiesSpec extends ZIOSpecDefault:
 
       assertTrue(errors.isEmpty)
     },
+    test("the connection phase is readable without exposing capabilities") {
+      val capabilityErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        def invalid(ctx: MountContext[Unit, Unit]) =
+          if ctx.connection.isConnected then ctx.async else ()
+      """)
+
+      assertTrue(
+        !scalive.Connection.Disconnected.isConnected,
+        scalive.Connection.Connected(()).isConnected,
+        capabilityErrors.nonEmpty
+      )
+    },
     test("connected resources are available only during root mount") {
       val paramsErrors = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*

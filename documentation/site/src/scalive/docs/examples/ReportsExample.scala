@@ -66,7 +66,7 @@ final class ReportsExample(reports: Reports)
           a(
             cls  := "docs-reports-lab-link",
             href := "/examples/service-injection/lab",
-            "Open layer-backed route"
+            "Open service-backed route"
           )
         )
       ),
@@ -152,7 +152,7 @@ object ReportsExample:
 
   val route =
     (live / "examples" / "service-injection" / "lab")
-      .from((_, _, reports: Reports) => ReportsExample(reports))
+      .from((reports: Reports) => ReportsExample(reports))
 
   enum Model:
     case Loaded(reports: Vector[Report], selected: Report)

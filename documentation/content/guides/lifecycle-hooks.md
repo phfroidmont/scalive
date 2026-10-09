@@ -59,7 +59,7 @@ work, rather than at only one hook stage. Declare a route guard after the mount
 aspects that produce its context. Succeed to continue; fail through the typed
 control channel to stop the turn:
 
-```scala
+```scala unverified
 val accountRoute = (live / "account")
   .withMountAspect(loadAccountAccess)
   .guardConnectedTurns((access: AccountAccess) =>
@@ -75,7 +75,7 @@ val accountRoute = (live / "account")
 
 A named session can likewise declare guards after admission:
 
-```scala
+```scala unverified
 val authenticated = Live
   .session("authenticated")
   .withAdmission(authenticatedAdmission)(_.sessionId)
@@ -131,7 +131,7 @@ Override `LiveView.hooks` for hooks that always belong to the view. Fluent calls
 append hooks, so hooks in the same stage run in declaration order and each
 continued model becomes the next hook's input:
 
-```scala
+```scala unverified
 override def hooks: LiveHooks[Msg, Model] =
   LiveHooks
     .empty[Msg, Model]
@@ -156,7 +156,7 @@ Override `LiveComponent.hooks` with `ComponentLiveHooks`. Component hooks also
 receive the current props and are installed separately for every `(component
 class, logical id)` instance:
 
-```scala
+```scala unverified
 override def hooks: ComponentLiveHooks[Props, Msg, Model] =
   ComponentLiveHooks
     .empty[Props, Msg, Model]
@@ -187,7 +187,7 @@ Typed `event`, `params`, `info`, and `async` hooks use `LiveHookResult`:
 For example, a typed root event hook can consume a forbidden action before the
 normal handler, but cannot reply to a JavaScript caller:
 
-```scala
+```scala unverified
 override def hooks: LiveHooks[Msg, Model] =
   LiveHooks.empty[Msg, Model].onEvent { (model, msg, _) =>
     if allowed(model.user, msg) then
@@ -209,7 +209,7 @@ Use `ctx.hooks.<stage>.attach(id)` when a hook is conditional for the current
 lifecycle. Static hooks run first; dynamic hooks follow in successful attachment
 order:
 
-```scala
+```scala unverified
 private val AuditHookId = "audit-events"
 
 def mount(ctx: MountContext): Task[Model] =
@@ -240,7 +240,7 @@ current invocation.
 Inside a component lifecycle context, the same shape operates on only that
 component instance and includes current props:
 
-```scala
+```scala unverified
 def mount(props: Props, ctx: MountContext): Task[Model] =
   ctx.hooks.event
     .attach("read-only-policy") { (currentProps, model, msg, _) =>
@@ -262,7 +262,7 @@ typed handling. Its `kind`, `bindingId`, unmodified JSON `value`, normalized
 string `params`, optional component `cid`, and optional JSON `meta` expose the
 wire envelope:
 
-```scala
+```scala unverified
 import zio.json.ast.Json
 
 override def hooks: LiveHooks[Msg, Model] =
@@ -303,15 +303,12 @@ Root `AfterRenderContext` exposes a phase-aware connection and dynamic root
 hooks. The connected capabilities expose `client`; obtaining it by matching the
 connection makes disconnected use impossible:
 
-```scala
-override def hooks: LiveHooks[Msg, Model] =
-  LiveHooks.afterRender { (model, ctx) =>
-    ctx.connection match
-      case Connection.Connected(capabilities) =>
-        capabilities.client.push(RenderedEvent, Rendered(model.id))
-      case Connection.Disconnected => ZIO.unit
-  }
-```
+@:sourceRegion(documentation/fixtures/guides/src/feedback/DocumentLiveView.scala, feedback-after-render)
+
+`RenderedEvent` is a `ServerToBrowserEvent[Rendered]`. `LiveHooks.afterRender`
+starts the declarations with one stage; its types come from the declared
+`hooks` type. To declare several stages, start from `LiveHooks.empty[Msg, Model]`
+and chain them, as in [Declare static root hooks](#static-root-hooks).
 
 Component `ComponentAfterRenderContext` is intentionally narrower: it exposes
 lifecycle metadata and that instance's dynamic hooks, but no client operations,

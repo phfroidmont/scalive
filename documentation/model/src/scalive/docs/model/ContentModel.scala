@@ -175,12 +175,14 @@ object Block:
   @jsonHint("heading")
   final case class Heading(level: Int, id: String, content: Vector[Inline]) extends Block
 
+  /** A code block. `fragment` marks inline code that is not a complete, compiled recipe. */
   @jsonHint("code")
   final case class Code(
     language: Option[String],
     text: String,
     tokens: Vector[CodeToken],
-    sourceRegion: Option[SourceRegion])
+    sourceRegion: Option[SourceRegion],
+    fragment: Boolean = false)
       extends Block
 
   @jsonHint("bulletList")

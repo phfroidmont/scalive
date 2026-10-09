@@ -10,6 +10,9 @@ import laika.parse.code.languages.ScalaSyntax
 import scalive.docs.model.CodeToken
 
 private[pipeline] object CodeHighlighter:
+  /** The Laika language an authored `scala fragment` fence is normalized to. */
+  private[pipeline] val ScalaFragment = "scala-fragment"
+
   private[pipeline] val syntaxHighlighting =
     SyntaxHighlighting.withSyntaxBinding("scala", ScalaSyntax.Scala3)
 

@@ -99,7 +99,8 @@ final private[docs] class DocumentationMarkdown(
     case Block.Paragraph(content)          => inlines(content)
     case Block.Heading(level, id, content) =>
       s"${anchor(id)}\n${"#" * level} ${inlines(content)}"
-    case Block.Code(language, text, _, region)       => sourceCode(language, text, region, None)
+    case Block.Code(language, text, _, region, fragment) =>
+      sourceCode(language, text, region, Option.when(fragment)("Fragment"))
     case Block.SourceCode(region, language, text, _) =>
       sourceCode(language, text, Some(region), None)
     case Block.BulletList(items)         => list(items, _ => "- ", route)

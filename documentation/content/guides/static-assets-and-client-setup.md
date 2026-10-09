@@ -35,7 +35,7 @@ inventory every output in a deployment manifest.
 Load @:apiSymbol(class:scalive.LiveViewClientAssets)`LiveViewClientAssets`@:@ at
 startup and add its routes alongside the Live and application-asset routes:
 
-```scala
+```scala unverified
 for
   clientAssets <- LiveViewClientAssets.load()
   assets       <- StaticAssets.load(
@@ -60,7 +60,7 @@ prefix.
 
 Render the dependencies before the application bootstrap:
 
-```scala
+```scala unverified
 headTag(
   clientAssets.phoenixScript,
   clientAssets.liveViewScript,
@@ -143,7 +143,7 @@ Generate and commit `package-lock.json`. Add the following members to the
 application's `ScalaModule` to track the npm inputs, build in Mill's task output,
 and add the complete `dist` tree below the `public` classpath prefix:
 
-```scala
+```scala unverified
 def packageJson = Task.Source(moduleDir / "package.json")
 def packageLock = Task.Source(moduleDir / "package-lock.json")
 def assetSources = Task.Sources(moduleDir / "assets")
@@ -186,7 +186,7 @@ packaged-client path instead.
 For packaged applications using the ordinary versioned tree, load the exact
 resources that the build placed below a classpath prefix:
 
-```scala
+```scala unverified
 assets <- StaticAssets.load(
   StaticAssetConfig.classpath(
     resourcePrefix = "public",
@@ -207,7 +207,7 @@ disabled by default.
 Use @:apiSymbol(def:scalive.StaticAssetConfig.directory)`StaticAssetConfig.directory`@:@ when assets are deployed
 outside the application classpath but still use the ordinary versioned tree:
 
-```scala
+```scala unverified
 import java.nio.file.Paths
 
 assets <- StaticAssets.load(
@@ -246,7 +246,7 @@ unversioned access is required. Originals serve current bytes with a current
 Use the deployment-manifest model when an external asset build owns exact final
 public paths and per-file cache policy:
 
-```scala
+```scala unverified
 import java.nio.file.Paths
 
 assets <- StaticAssets.load(
@@ -311,7 +311,7 @@ its current bytes with a current `ETag` at its stable final path.
 Both models expose the same route and lookup API. Add
 @:apiSymbol(val:scalive.StaticAssets.routes)`StaticAssets.routes`@:@ to the application routes:
 
-```scala
+```scala unverified
 val routes = liveRoutes ++ assets.routes
 ```
 
@@ -333,7 +333,7 @@ final path, not an optional revalidating original.
 
 Pass @:apiSymbol(class:scalive.StaticAssets)`StaticAssets`@:@ to the root layout and render bundle tags in `<head>`:
 
-```scala
+```scala unverified
 headTag(
   metaTag(charset := "utf-8"),
   assets.trackedStylesheet("app.css"),
@@ -383,7 +383,7 @@ Connected capabilities implement
 `Map[String, zio.json.ast.Json]`. Match the phase, then decode and validate the
 expected shape:
 
-```scala
+```scala unverified
 val locale = ctx.connection match
   case Connection.Connected(capabilities) =>
     capabilities.connectParams.get("locale").collect {

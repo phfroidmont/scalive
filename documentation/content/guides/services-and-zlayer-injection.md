@@ -1,6 +1,6 @@
 {%
 title = "Services and dependency injection"
-description = "Inject application services into LiveViews, derive route layers from constructors, and provide shared dependencies at startup."
+description = "Pass application services to LiveViews through their constructors, register service-backed routes with from, and provide the services when the server starts."
 order = 22
 section = guides
 group = "Routing and application structure"
@@ -8,62 +8,43 @@ group = "Routing and application structure"
 
 ## Before You Start {#prerequisites}
 
-Start with a working Live route whose `mount` and `handleMessage` callbacks can
-call application operations through `Task` effects.
+Start from a working application such as the one in the
+[quick start](../learn/quick-start.md). This guide adds a reports page whose data
+comes from an application service.
 
 ## Inject A Service Into A LiveView {#inject-a-service-into-a-liveview}
 
 Use constructor injection when a @:apiSymbol(trait:scalive.LiveView)`LiveView`@:@
 needs an application service such as a repository, API client, or mailer. The
-constructor makes the dependency explicit, while a ZIO layer supplies its
+constructor makes the dependency explicit, and a ZIO layer supplies the
 implementation when the application starts.
 
 In the types used below, `ZIO[R, E, A]` needs environment `R`, may fail with
-`E`, and may produce `A`; `Task[A]` uses `Throwable` as its error and `UIO[A]`
-cannot fail. A `ZLayer[RIn, E, ROut]` constructs `ROut` from `RIn`, while
-`ULayer` and `URLayer` are infallible aliases.
+`E`, and may produce `A`. `Task[A]` uses `Throwable` as its error and `UIO[A]`
+cannot fail. A `ZLayer[RIn, E, ROut]` constructs `ROut` from `RIn`, and `ULayer`
+is a layer that needs nothing and cannot fail.
 
-The complete path has four parts:
+The complete path has four steps:
 
-1. define a service trait;
-2. accept that service in the LiveView constructor;
-3. derive a LiveView layer with `ZLayer.fromFunction`;
-4. provide the service implementation to the assembled routes.
+1. Define a service trait.
+2. Accept that service in the LiveView constructor.
+3. Build the route with `from`, which takes the service from the application
+   environment.
+4. Provide the service's layer where the server starts.
 
 ## Define The Service Boundary {#define-the-service-boundary}
 
 Expose the operations the LiveView needs instead of passing low-level clients or
-mutable references into UI code. For example, a reports page can depend on this
-service:
+mutable references into UI code. A reports page can depend on this service:
 
-```scala
-final case class Report(id: Long, title: String)
-
-trait Reports:
-  def recent: Task[Vector[Report]]
-```
+@:sourceRegion(documentation/fixtures/guides/src/reports/Reports.scala, services-service)
 
 Use an error type appropriate to the application. `Task` works when callers
-handle arbitrary operational failures. A more specific `IO[ReportsError, A]`
-can preserve domain failures until the LiveView maps them into user-facing state.
+handle arbitrary operational failures. A more specific `IO[ReportsError, A]` can
+preserve domain failures until the LiveView maps them into user-facing state.
 
-Implementations belong outside the LiveView. This small in-memory layer is useful
-for local development and tests:
-
-```scala
-object Reports:
-  val inMemory: ULayer[Reports] =
-    ZLayer.succeed(new Reports:
-      def recent = ZIO.succeed(
-        Vector(
-          Report(1L, "Daily sales"),
-          Report(2L, "Open incidents")
-        )
-      )
-    )
-```
-
-A production layer can instead acquire a database pool or HTTP client and expose
+`Reports.inMemory` is a small layer for local development and tests. A
+production layer can instead acquire a database pool or HTTP client and expose
 the same `Reports` interface. If it acquires resources, build it with
 `ZLayer.scoped` so ZIO releases them when the application shuts down.
 
@@ -72,154 +53,109 @@ the same `Reports` interface. If it acquires resources, build it with
 Accept the service in the LiveView constructor and use it from lifecycle
 callbacks:
 
-```scala
-final class ReportsLiveView(reports: Reports)
-    extends LiveView[ReportsLiveView.Msg, ReportsLiveView.Model]:
-  import ReportsLiveView.*
+@:sourceRegion(documentation/fixtures/guides/src/reports/ReportsLiveView.scala, services-liveview)
 
-  def mount(ctx: MountContext): Task[Model] =
-    reports.recent.map(Model.Loaded.apply)
+Callbacks return `Task`, so `mount` and `handleMessage` call the captured service
+directly. Their environment type does not change.
 
-  def handleMessage(model: Model, ctx: MessageContext) =
-    case Msg.Refresh => reports.recent.map(Model.Loaded.apply)
+The model has one case for loaded reports and one for a failure, and the view
+handles both. `loaded` and `failure` are `Signal[Option[...]]` values, and
+`option` renders its content only while the value is defined.
 
-  def view(model: Signal[Model]) =
-    val loaded = model.map {
-      case Model.Loaded(reports) => Some(reports)
-    }
-    div(
-      button(on.click(Msg.Refresh), "Refresh"),
-      loaded.option { reports =>
-        ul(reports.splitBy(_.id) { (_, report) =>
-          li(report.map(_.title))
-        })
-      }
-    )
-```
+## Register The Route {#register-the-route}
 
-Callbacks return `Task`, so the constructor-captured service is directly available
-to `mount` and `handleMessage`; callback environment types do not need to change.
+Build the route with @:apiSymbol(def:scalive.LiveRouteBuilder.from)`from`@:@:
 
-Define the model and messages as usual:
+@:sourceRegion(documentation/fixtures/guides/src/reports/Main.scala, services-route)
 
-```scala
-object ReportsLiveView:
-  enum Msg:
-    case Refresh
+`from` receives the service from the application environment and returns the
+LiveView. The route's type, `LiveRoute[Reports, Unit]`, records that it needs
+`Reports`. An application built from it is a `LiveApplication[Reports]`, and the
+server does not compile until something provides `Reports`.
 
-  enum Model:
-    case Loaded(reports: Vector[Report])
-```
+Two variants cover other needs:
 
-## Derive And Register The LiveView Layer {#derive-and-register-the-liveview-layer}
+- `from((path, request, reports) => ...)` also receives the decoded path values
+  and the request.
+- `context((ctx, reports) => ...)` also receives the context produced by a live
+  session's mount aspect, such as the signed-in user. See
+  [Authentication and sessions](authentication.md#provide-one-shared-authentication-service).
 
-Derive an infallible LiveView layer from its constructor:
-
-```scala
-object ReportsLiveView:
-  val layer: URLayer[Reports, ReportsLiveView] =
-    ZLayer.fromFunction(reports => new ReportsLiveView(reports))
-```
-
-Register that layer instead of constructing the LiveView manually:
-
-```scala
-val reportsRoute =
-  (live / "reports") -> ReportsLiveView.layer
-```
-
-The @:apiSymbol(def:scalive.LiveRouteBuilder.->)`route operator`@:@ adds `Reports`
-to the route environment. If the application does not provide a `Reports` layer,
-the server startup effect cannot compile with a fully provided environment.
-
-`ZLayer.fromFunction` also handles multiple constructor dependencies. A
-LiveView constructed with `(reports: Reports, audit: AuditLog)` produces a layer
-requiring both services; no manual environment lookup is necessary.
+`from` takes one service type. When a LiveView needs several services, group
+them in one service that a layer builds from the others, and pass that service.
 
 ## Provide Services At Startup {#provide-services-at-startup}
 
-Build the router, combine it with any ordinary HTTP routes, and provide shared
-service layers where the server starts:
+Register the route and provide the service where the server starts:
 
-```scala
-val routes = Live.router(reportsRoute)
+@:sourceRegion(documentation/fixtures/guides/src/reports/Main.scala, services-main)
 
-Server.serve(routes).provide(
-  Server.default,
-  Reports.inMemory
-)
-```
-
-In a production application, replace `Reports.inMemory` with the production
-implementation. Provide database pools, HTTP clients, repositories, and other
-long-lived resources at this boundary. This keeps construction in one place and
-lets ZIO report missing dependencies before the server can run.
+This is the quick start's `Main` with two changes: the router registers
+`Routes.reports`, and `provide` adds `Reports.inMemory` next to the server layer.
+In a production application, provide the production implementation instead.
+Provide database pools, HTTP clients, repositories, and other long-lived
+resources here. Construction then stays in one place, and the compiler reports a
+missing layer before the server can run.
 
 ## Handle Service Failures In The Model {#handle-service-failures-in-the-model}
 
-An unhandled service failure fails the LiveView lifecycle or message operation.
-Recover when the user can act on the failure, and represent that state explicitly
-in the model:
+An unhandled service failure fails the LiveView's mount or message handling.
+Recover when the user can act on the failure, and represent that state in the
+model. In `ReportsLiveView`, `load` logs the cause and returns `Model.Failed`
+with a message that is safe to show. **Refresh** sends a typed message that
+calls the service again.
 
-```scala
-def load: UIO[Model] =
-  reports.recent
-    .map(Model.Loaded.apply)
-    .catchAll(_ => ZIO.succeed(Model.Failed("Reports are temporarily unavailable.")))
-```
-
-Prefer a safe user-facing message over displaying raw exception details. Log the
-underlying cause with request or correlation context where the application can
-diagnose it. Keep retry as a typed message that invokes the service again.
+Show a safe user-facing message rather than raw exception details. Log the
+underlying cause with enough context, such as a request or correlation ID, to
+diagnose it.
 
 ## Understand Service And LiveView Lifetimes {#understand-service-and-liveview-lifetimes}
 
-The service layer provided to `Server.serve` is normally built once and shared by
-the routes that require it. Scalive builds the route's LiveView layer separately
-for disconnected rendering and connected mount. Both LiveView objects may refer
-to the same shared service, but each socket owns its own immutable model and
-lifecycle resources.
+The layer given to `provide` is built once and shared by every route that needs
+the service. Scalive calls the route's `from` function for the disconnected
+render and again for each connected mount. Every LiveView lifecycle therefore
+gets its own LiveView instance, model, and lifecycle resources, while all of
+them share the same service.
 
-Do not provide a prebuilt LiveView as an application service. Register its
-constructor-derived layer so Scalive can create the lifecycle instances it
-needs.
-
-A shared service may own mutable or durable application state, but it must apply
-the application's authorization and isolation rules. Scope records by tenant or
-user when required, bound retained data, and use concurrency-safe implementations.
-Visitor-specific presentation state still belongs in the LiveView model.
+A shared service may own mutable application state, or durable state kept in a
+database. It must apply the application's authorization and isolation rules.
+Scope records by tenant or user when required, bound retained data, and use
+concurrency-safe implementations. Per-visitor presentation state, such as the
+selected report, still belongs in the LiveView model.
 
 ## Supply A Test Implementation {#supply-a-test-implementation}
 
-Tests can replace the production service without changing the LiveView:
+Because the service is a constructor argument, a test can pass its own
+implementation directly:
 
-```scala
-val testReports = ZLayer.succeed(new Reports:
-  def recent = ZIO.succeed(Vector(Report(42L, "Fixture report")))
-)
+@:sourceRegion(documentation/fixtures/guides/test/src/reports/ReportsLiveViewSpec.scala, services-test)
 
-val viewLayer = ReportsLiveView.layer.provide(testReports)
-```
+Use fixed results for rendering and message tests. Add failing or delayed
+implementations to test errors, retries, and cancellation.
 
-Use fixed results for rendering and message tests. Add failing or delayed test
-implementations when verifying error, retry, replacement, or cancellation
-behavior.
+To test the registered route, provide a test layer to the application instead:
+
+@:sourceRegion(documentation/fixtures/guides/test/src/reports/ReportsRouteSpec.scala, services-route-test)
+
+The `zio.test` import excludes `Live` because Scalive's
+@:apiSymbol(object:scalive.Live)`Live`@:@ has the same name. See
+[Testing LiveViews](testing.md#test-disconnected-rendering).
 
 ## Explore The Runnable Example {#explore-the-runnable-example}
 
-The reports example applies the complete structure from this guide. It handles
-loaded, empty, and failed service results; refresh queries the service again,
-while reset changes only connection-local selection state.
+The reports example applies the same structure. It handles loaded, empty, and
+failed service results. Refresh queries the service again, while reset changes
+only connection-local selection state.
 
 @:sourceRegion(documentation/site/src/scalive/docs/examples/ReportsExample.scala, reports-service)
 
 @:sourceRegion(documentation/site/src/scalive/docs/examples/ReportsExample.scala, reports-liveview)
 
-Try the embedded preview or open the real layer-backed route from the
+Try the embedded preview, or open the real service-backed route from the
 [reports service injection example](../examples/service-injection.md).
 
 ## Related Tasks {#related-tasks}
 
 - Share an authentication store between HTTP and Live routes in [Authentication and sessions](authentication.md#provide-one-shared-authentication-service).
 - Move finite, streaming, or acquired work under lifecycle ownership with [Asynchronous work, subscriptions, and connected resources](async-work-and-subscriptions.md#prerequisites).
-- Replace production layers in [Testing LiveViews](testing.md#prerequisites).
+- Test LiveViews at each boundary in [Testing LiveViews](testing.md#prerequisites).

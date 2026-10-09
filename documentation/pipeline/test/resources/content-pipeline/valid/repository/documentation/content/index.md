@@ -14,7 +14,7 @@ Use snapshot `{{scaliveSnapshotVersion}}`.
 
 ### Details {#details}
 
-```scala
+```scala fragment
 enum Answer:
   case Value
 

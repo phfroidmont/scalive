@@ -19,7 +19,7 @@ configuration. The application loads and validates its settings, then constructs
 one @:apiSymbol(class:scalive.ZioHttpConfig)`ZioHttpConfig`@:@ for the LiveView
 transport:
 
-```scala
+```scala unverified
 import java.time.Duration
 
 val transportConfig = ZioHttpConfig(
@@ -48,7 +48,7 @@ source literals. Parse deployment input through
 invalid value remains in the startup error channel. For example, load a
 comma-separated set without logging the untrusted value:
 
-```scala
+```scala unverified
 def parseOrigins(value: String): Either[String, Set[WebSocketOrigin]] =
   val entries = value.split(",", -1).iterator.map(_.trim).toVector
   if entries.isEmpty || entries.exists(_.isEmpty) then
@@ -100,7 +100,7 @@ rendered paths before the server starts.
 Construct @:apiSymbol(class:scalive.LiveSecurity)`LiveSecurity`@:@ when ordinary
 HTTP handlers need the same CSRF, flash, or cookie policy as Live routes:
 
-```scala
+```scala unverified
 val security = LiveSecurity(transportConfig)
 val liveRoutes = ZioHttp.routes(application, security)
 ```
@@ -131,7 +131,7 @@ build owns exact final filenames and cache policy through a deployment manifest.
 
 The Scala and JavaScript socket paths must agree:
 
-```scala
+```scala unverified
 val application = Live.router
   .withSocketPath(PathCodec.empty / "socket")(
     Routes.home -> HomeLiveView()
@@ -153,7 +153,7 @@ third route argument. The built-in adapter records fixed, low-cardinality ZIO
 metrics for disconnected renders, joins, mounts, connected turns, failures,
 queue pressure, and lifecycle termination:
 
-```scala
+```scala unverified
 val liveRoutes = ZioHttp.routes(
   application,
   security,

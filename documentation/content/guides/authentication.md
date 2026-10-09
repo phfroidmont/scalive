@@ -54,7 +54,7 @@ The decoder applies a byte limit, validates the framework CSRF token, and then
 projects the rooted definition. Login only continues for valid domain output, so
 use `urlEncodedValue`:
 
-```scala
+```scala unverified
 private val loginDecoder =
   HttpFormDecoder.urlEncodedValue(LoginForm.Definition, 4096L, security.csrf)
 ```
@@ -127,7 +127,7 @@ claim instead of becoming part of every route's context.
 Install the aspect once as the named live session's admission boundary and
 inject the small context into only the LiveViews that use it:
 
-```scala
+```scala unverified
 val protectedRoutes = Live
   .session("authenticated")
   .withAdmission(AuthMountAspect.authenticated)(_.publicSessionId)(
@@ -223,7 +223,7 @@ instance. The admitted session also makes `LiveConnections[PublicSessionId]` a
 visible application environment requirement. For one backend instance, provide
 both layers once at `Server.serve`:
 
-```scala
+```scala unverified
 Server.serve(routes).provide(
   Server.default,
   AuthService.live,
@@ -234,7 +234,7 @@ Server.serve(routes).provide(
 The same `.context` API can infer one application service from a typed
 constructor without an explicit service type argument:
 
-```scala
+```scala unverified
 final class ProfileLiveView(currentUser: CurrentUser, accounts: Accounts)
 
 val profile = routes.profile.context((auth: ConnectedAuth, accounts: Accounts) =>
@@ -260,7 +260,7 @@ ID to every node. Scalive provides the interface and distributed connection
 layer, not a Redis, NATS, or other transport adapter. Compose your adapter layer
 like this:
 
-```scala
+```scala unverified
 def liveConnections(
   bus: ZLayer[Any, Throwable, LiveDisconnectBus[PublicSessionId]]
 ): ZLayer[Any, Throwable, LiveConnections[PublicSessionId]] =

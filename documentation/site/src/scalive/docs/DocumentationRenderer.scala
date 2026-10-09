@@ -226,8 +226,8 @@ final private[docs] class DocumentationRenderer(
         case 6 => h6(mods)
         case _ =>
           throw new IllegalArgumentException(s"Unsupported documentation heading level: $level")
-    case Block.Code(language, text, tokens, sourceRegion) =>
-      codeBlock(language, text, tokens, sourceRegion)
+    case Block.Code(language, text, tokens, sourceRegion, fragment) =>
+      codeBlock(language, text, tokens, sourceRegion, caption = Option.when(fragment)("Fragment"))
     case Block.BulletList(items) =>
       ul(items.map(item => li(item.content.map(renderBlock(pageRoute)))))
     case Block.OrderedList(start, items) =>

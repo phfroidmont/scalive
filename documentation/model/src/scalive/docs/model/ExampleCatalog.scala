@@ -187,10 +187,10 @@ object ExampleCatalog:
     id = "service-injection",
     title = "Reports service injection",
     description =
-      "A layer-backed route constructor-injects a reports service while selection remains connection-local.",
+      "A route builds its LiveView from a reports service while selection remains connection-local.",
     category = ExampleCategory.AsyncAndEffects,
     topics = Vector("services", "ZLayer", "dependency injection", "route environments"),
-    aliases = Vector("constructor injection", "ZLayer.fromFunction", "Reports", "refresh"),
+    aliases = Vector("constructor injection", "from", "Reports", "refresh"),
     resetDescription = "Restore the first loaded report without querying the service again.",
     sources = Vector(
       ExampleSource(
@@ -200,7 +200,7 @@ object ExampleCatalog:
         language = Some("scala")
       ),
       ExampleSource(
-        label = "Layer-backed LiveView route",
+        label = "Service-backed LiveView route",
         path = "documentation/site/src/scalive/docs/examples/ReportsExample.scala",
         region = "reports-liveview",
         language = Some("scala")

@@ -49,7 +49,7 @@ connected page mount; they do not decide admission or produce context.
 The root layout owns `<html>`, `<head>`, assets, and `<body>`. Give it a stable
 compatibility key:
 
-```scala
+```scala unverified
 val root = LiveRootLayout[Any, Any]("application-root")([Msg] =>
   (content, pageTitle, _) =>
     htmlRootTag(
@@ -65,7 +65,7 @@ instead of trying to reuse an incompatible document shell.
 
 Ordinary layouts wrap the LiveView inside the selected root:
 
-```scala
+```scala unverified
 val applicationShell = LiveLayout[Any, Any]([Msg] =>
   (content, _) =>
     div(
@@ -83,7 +83,7 @@ Ordinary layouts are signal-backed view graphs. Their `params`, `request`, and
 `currentUrl` context values are read-only `Signal`s, so route-dependent chrome
 updates without reconstructing the layout:
 
-```scala
+```scala unverified
 val routeShell = LiveLayout[WorkspaceId, CurrentUser]([Msg] =>
   (content, ctx) =>
     div(
@@ -109,7 +109,7 @@ application-wide `Any` or a runtime search through accumulated context tuples.
 Use @:apiSymbol(def:scalive.LiveRootLayout.forContext)`forContext`@:@ to adapt an
 existing root layout to another context type:
 
-```scala
+```scala unverified
 // documentRoot expects DocumentContext; AccountContext contains .document.
 val accountRoot = documentRoot.forContext[AccountContext](_.document)
 ```
@@ -122,7 +122,7 @@ context or construct a different layout for each request.
 
 When the selection is local to installation, pass the selector directly:
 
-```scala
+```scala unverified
 Live.session("account")
   .withMountAspect(accountContext)
   .withRootLayout(documentRoot, _.document)
@@ -175,7 +175,7 @@ protected routes.
 A named live session applies common modifiers to several routes and defines which
 routes may use live navigation together:
 
-```scala
+```scala unverified
 val accountRoutes = Live
   .session("account")
   .withLayout(accountLayout)(
@@ -198,7 +198,7 @@ runs before both the disconnected HTTP mount and the fresh connected mount. It
 can reject the request or produce typed context required by routes in the named
 session:
 
-```scala
+```scala unverified
 val account = Live
   .session("account")
   .withMountAspect(currentUser)(
@@ -247,7 +247,7 @@ containing the route's typed path parameters and URL, plus any typed context sup
 by its named live session or a preceding route aspect. Install it only on a
 route builder through `withMountAspect`:
 
-```scala
+```scala unverified
 val authorizeWorkspace =
   LiveRouteMountAspect.make[Any, String, CurrentUser, WorkspaceAccess] {
     (request, currentUser) =>
@@ -278,7 +278,7 @@ This complete pipeline authenticates the application session at the named live
 session's boundary, binds each physical connection to its public ID, and then
 authorizes the typed destination:
 
-```scala
+```scala unverified
 import scalive.*
 import zio.*
 import zio.http.*

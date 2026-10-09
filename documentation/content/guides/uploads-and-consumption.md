@@ -28,14 +28,7 @@ A @:apiSymbol(type-alias:scalive.LiveUploadDef)`LiveUploadDef[Result]`@:@ fixes 
 name, selection policy, limits, destination result type, and whether transfer
 starts automatically:
 
-```scala
-private val TextFiles = LiveUploadDef.inMemory(
-  name = "text-file",
-  accept = LiveUploadAccept.only(".txt", ".md"),
-  maxEntries = 1,
-  maxFileSize = 64L * 1024L
-)
-```
+@:sourceRegion(documentation/fixtures/guides/src/uploads/TextUploadLiveView.scala, uploads-definition)
 
 `inMemory` buffers every byte in server heap and returns `Chunk[Byte]`, so keep
 the limits strict and expected concurrency modest.
@@ -45,14 +38,11 @@ the limits strict and expected concurrency modest.
 Keep one stable definition value and retain the returned
 @:apiSymbol(type-alias:scalive.LiveUpload)`LiveUpload[Result]`@:@ snapshot:
 
-```scala
-def mount(ctx: MountContext): Task[Model] =
-  ctx.uploads.allow(TextFiles).map(Model(_))
-```
+@:sourceRegion(documentation/fixtures/guides/src/uploads/TextUploadLiveView.scala, uploads-mount)
 
 Disconnected and connected mounts own independent registrations. Calling
-`allow` in `mount` supports both the initial HTML and connected socket without
-sharing state between visitors.
+`allow` in `mount` supports both the initial HTML and the connected LiveView
+without sharing state between visitors.
 
 An upload and each `LiveUploadEntry` are immutable point-in-time views.
 Progress, cancellation, and consumption return replacement snapshots. Store
@@ -62,24 +52,12 @@ value renders old protocol attributes and status.
 ## Render Selection, Drop, And Progress Controls {#render-selection-drop-and-progress-controls}
 
 Use @:apiSymbol(def:scalive.liveFileInput)`liveFileInput`@:@ rather than assembling
-protocol attributes by hand. Put `upload.dropTarget` on any element that should
-accept files dropped for this upload:
+protocol attributes by hand. Inside `view`, `model` is a `Signal[Model]`, so
+select the upload with `model.map(_.upload)` and pass that signal to the upload
+helpers. Put `upload.dropTarget` on any element that should accept files dropped
+for this upload:
 
-```scala
-form(
-  on.change(_ => Msg.Validate),
-  on.submit(Msg.Save),
-  div(
-    cls := "drop-zone",
-    model.upload.dropTarget,
-    liveFileInput(
-      model.upload,
-      aria.label := "Text files",
-      model.upload.onProgress(Msg.Progress)
-    )
-  )
-)
-```
+@:sourceRegion(documentation/fixtures/guides/src/uploads/TextUploadLiveView.scala, uploads-render)
 
 The file input supplies the upload reference, active, preflighted, and completed
 entry references, accepted values, multiplicity, automatic-upload marker, and
@@ -89,23 +67,21 @@ does not relax acceptance, count, or size checks.
 `upload.onProgress(Msg.Progress)` is a DOM event binding. Handle the message by
 fetching the latest snapshot rather than trusting raw browser metadata:
 
-```scala
-case Msg.Progress =>
-  ctx.uploads.get(TextFiles).map(_.fold(model)(upload => model.copy(upload = upload)))
-```
+@:sourceRegion(documentation/fixtures/guides/src/uploads/TextUploadLiveView.scala, uploads-progress)
 
 The overload taking `Map[String, String] => Msg` exposes raw `ref`,
 `entry_ref`, `progress`, and optional `error` values. They are client-controlled
 protocol data, not authorization evidence.
 
 Render upload-wide and entry-specific
-@:apiSymbol(def:scalive.uploadErrors)`uploadErrors`@:@ explicitly. Display
-`entry.progress` as status only; 100 percent is not proof that valid content
-reached durable storage.
+@:apiSymbol(def:scalive.uploadErrors)`uploadErrors`@:@ explicitly, as
+`errorMessages` does above. Display `entry.progress` as status only; 100 percent
+is not proof that valid content reached permanent storage.
 
-This definition keeps the default `autoUpload = false`, so submitting the form
-starts transfer. Wait for its valid entries to complete before consuming them.
-Automatic transfer is covered after the basic path.
+This definition keeps the default `autoUpload = false`, so selecting a file only
+validates it. Submitting the form starts the transfer, and Phoenix sends the
+submit event after the transfer completes. Automatic transfer is covered after
+the basic path.
 
 ## Consume And Transfer Ownership {#consume-and-transfer-ownership}
 
@@ -124,22 +100,13 @@ what happens next:
 For this bounded in-memory path, process the completed bytes before returning
 `Consume`, then retain both the callback values and replacement upload snapshot:
 
-```scala
-ctx.uploads.consumeCompleted(TextFiles) { completed =>
-  ZIO.succeed(ConsumeDecision.Consume(summarize(completed.result)))
-}.map { case (summaries, upload) =>
-  model.copy(upload = upload, summaries = model.summaries ++ summaries)
-}
-```
+@:sourceRegion(documentation/fixtures/guides/src/uploads/TextUploadLiveView.scala, uploads-consume)
 
 Retain the returned replacement upload snapshot even when application code does
 not need the callback results. Cancel with the current entry snapshot and retain
 that returned upload too:
 
-```scala
-case Msg.Cancel(entry) =>
-  ctx.uploads.cancel(entry).map(upload => model.copy(upload = upload))
-```
+@:sourceRegion(documentation/fixtures/guides/src/uploads/TextUploadLiveView.scala, uploads-cancel)
 
 A stale or already removed entry fails with a typed upload operation error.
 
@@ -176,15 +143,10 @@ The default `autoUpload = false` waits for the form submit before valid entries
 start transferring. Set `autoUpload = true` when selection should start transfer
 immediately:
 
-```scala
-private val Avatars = LiveUploadDef.hosted(
-  name = "avatar",
-  accept = LiveUploadAccept.only("image/jpeg", "image/png"),
-  writer = avatarWriter,
-  maxFileSize = 2L * 1024L * 1024L,
-  autoUpload = true
-)
-```
+@:sourceRegion(documentation/fixtures/guides/src/uploads/HostedUploads.scala, uploads-auto-upload)
+
+`tempFileWriter` is the hosted writer shown in
+[Stream through a hosted writer](#stream-through-a-hosted-writer).
 
 Automatic transfer does not consume an entry, publish a result, or submit the
 surrounding form. Keep a separate Save action that validates application state
@@ -192,11 +154,7 @@ and calls `consume` or `consumeCompleted` after entries complete.
 
 For a server-side progress hook, pass `progress = Some(...)` on the definition:
 
-```scala
-val progress = new LiveUploadProgress[StoredTempFile]:
-  def onProgress(entry: LiveUploadEntry[StoredTempFile]): Task[Unit] =
-    metrics.record(entry.ref, entry.progress)
-```
+@:sourceRegion(documentation/fixtures/guides/src/uploads/HostedUploads.scala, uploads-progress-hook)
 
 This callback runs after an accepted browser progress report has updated runtime
 state. It is not called for every hosted chunk, and its effect failing fails the
@@ -209,43 +167,7 @@ authoritative place to count hosted bytes.
 A hosted writer owns an in-progress `State` and eventually produces a typed
 `Result`. A temporary-file writer can follow this shape:
 
-```scala
-final case class PendingFile(path: Path, expected: Long, written: Long)
-final case class StoredTempFile(path: Path, bytes: Long)
-
-val MaxBytes = 2L * 1024L * 1024L
-
-val writer = new LiveUploadWriter[PendingFile, StoredTempFile]:
-  def init(client: UploadClientMetadata): Task[PendingFile] =
-    ZIO.attemptBlocking {
-      if client.sizeBytes > MaxBytes then
-        throw new IllegalArgumentException("upload exceeds destination limit")
-      val path = Files.createTempFile("scalive-upload-", ".pending")
-      PendingFile(path, client.sizeBytes, 0L)
-    }
-
-  def writeChunk(data: Chunk[Byte], state: PendingFile): Task[PendingFile] =
-    ZIO.attemptBlocking {
-      val nextSize = state.written + data.length
-      if nextSize > MaxBytes then
-        throw new IllegalArgumentException("upload exceeds destination limit")
-      Files.write(state.path, data.toArray, StandardOpenOption.APPEND)
-      state.copy(written = nextSize)
-    }
-
-  def complete(state: PendingFile): Task[StoredTempFile] =
-    ZIO.attempt {
-      if state.written != state.expected then
-        throw new IllegalStateException("upload length mismatch")
-      StoredTempFile(state.path, state.written)
-    }
-
-  def abort(state: PendingFile, reason: LiveUploadAbortReason): Task[Unit] =
-    ZIO.attemptBlocking(Files.deleteIfExists(state.path)).unit
-
-  def discard(result: StoredTempFile): Task[Unit] =
-    ZIO.attemptBlocking(Files.deleteIfExists(result.path)).unit
-```
+@:sourceRegion(documentation/fixtures/guides/src/uploads/HostedUploads.scala, uploads-hosted-writer)
 
 Use a server-generated path. Never resolve `client.fileName` or
 `client.relativePath` directly into storage. Enforce a destination-side byte
@@ -270,23 +192,7 @@ upload protocol.
 An external uploader authorizes one entry, reserves a server-side handle, and
 returns only browser-safe configuration:
 
-```scala
-final case class ReservedObject(key: String, uploadId: String)
-
-val uploader = new LiveUploadExternalUploader[ReservedObject]:
-  def preflight(client: UploadClientMetadata): Task[LiveExternalUploadResult[ReservedObject]] =
-    authorizeUpload(client) *> objectStore.preparePut(client.sizeBytes).map { prepared =>
-      val config = ExternalUploadClientConfig(Json.Obj(
-        "uploader" -> Json.Str("object-store"),
-        "url"      -> Json.Str(prepared.signedUrl),
-        "method"   -> Json.Str("PUT")
-      ))
-      LiveExternalUploadResult.Ready(config, ReservedObject(prepared.key, prepared.uploadId))
-    }
-
-  override def discard(result: ReservedObject): Task[Unit] =
-    objectStore.abort(result.key, result.uploadId)
-```
+@:sourceRegion(documentation/fixtures/guides/src/uploads/ExternalUploads.scala, uploads-external-uploader)
 
 Authorize in `preflight`, generate the object key on the server, scope signed
 credentials narrowly, and keep server secrets out of `ExternalUploadClientConfig`.
@@ -306,7 +212,7 @@ const uploaders = {
       onViewError(() => xhr.abort())
       xhr.upload.addEventListener("progress", event => {
         if (event.lengthComputable) {
-          entry.progress(Math.round((event.loaded / event.total) * 100))
+          entry.progress(Math.min(99, Math.round((event.loaded / event.total) * 100)))
         }
       })
       xhr.addEventListener("load", () => {
@@ -323,6 +229,11 @@ const uploaders = {
 const liveSocket = new LiveView.LiveSocket("/live", Phoenix.Socket, { params, uploaders })
 ```
 
+The Phoenix client treats progress `100` as a finished upload. The `progress`
+listener therefore stops at `99`, and only the `load` handler reports `100`,
+after it has checked the response status. Otherwise a request that the storage
+service rejects could already count as complete.
+
 Scalive never receives external bytes. Browser-reported completion merely makes
 the prepared result consumable. In the consume callback, query the external
 service and verify ownership, final size, media type, checksum or integrity, and
@@ -333,20 +244,15 @@ scan status as appropriate before publishing the object and returning `Consume`.
 Disallowing a definition releases every result the runtime still owns. A full
 reset can then allow the stable definition again:
 
-```scala
-case Msg.Reset =>
-  ctx.uploads.disallow(TextFiles) *>
-    ctx.uploads.allow(TextFiles).map(Model(_))
-```
+@:sourceRegion(documentation/fixtures/guides/src/uploads/TextUploadLiveView.scala, uploads-reset)
 
 Socket shutdown and component removal also clean framework-owned resources on a
 best-effort basis. Once `Consume` transfers ownership, application retention,
 deletion, and failure compensation policies apply instead.
 
-The complete bounded in-memory implementation is extracted from executable
-source:
+The complete bounded in-memory recipe from this page:
 
-@:sourceRegion(documentation/site/src/scalive/docs/examples/TextUploadExample.scala, text-upload-example)
+@:sourceRegion(documentation/fixtures/guides/src/uploads/TextUploadLiveView.scala, uploads-liveview)
 
 Try the [summarize-and-discard text upload](../examples/text-upload.md). Its
 diagnostic view shows lifecycle state and aggregate counts; upload chunks are

@@ -125,7 +125,11 @@ object ContentPipelineSpec extends ZIOSpecDefault:
       "unsupported callout kind 'success'",
       "unclosed @:callout directive"
     )),
-    ("rejects unclosed fenced code", "unclosed-fence", Vector("unclosed fenced code block"))
+    ("rejects unclosed fenced code", "unclosed-fence", Vector("unclosed fenced code block")),
+    ("rejects unlabeled and unknown inline Scala blocks", "inline-scala", Vector(
+      "index.md:10: inline Scala must be a compiled @:sourceRegion",
+      "index.md:14: unknown Scala code block label 'snippet'"
+    ))
   )
 
   override def spec = suite("ContentPipelineSpec")(
@@ -205,6 +209,8 @@ object ContentPipelineSpec extends ZIOSpecDefault:
             home.content.exists(_.isInstanceOf[Block.Quote]),
             home.content.contains(Block.Rule),
             code.language.contains("scala"),
+            code.fragment,
+            code.tokens.exists(_.styles.contains("keyword")),
             source.region == SourceRegion("examples/Sample.scala", 3, 4),
             source.language.contains("scala"),
             source.text == "val greeting = \"hello\"\nprintln(greeting)",

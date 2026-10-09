@@ -19,7 +19,7 @@ Import `scalive.*`, then call tag values such as @:apiSymbol(lazy-val:scalive.di
 @:apiSymbol(lazy-val:scalive.button)`button`@:@, and @:apiSymbol(lazy-val:scalive.table)`table`@:@.
 Pass attributes and children in document order:
 
-```scala
+```scala unverified
 def view(model: Signal[Model]): HtmlElement[Msg] =
   sectionTag(
     cls        := "cart",
@@ -41,7 +41,7 @@ Keep reusable markup in ordinary functions. Accept @:apiSymbol(type-alias:scaliv
 when callers should be able to supply individual modifiers, `Option` values, or
 collections. Forward every input unchanged with `mods*`:
 
-```scala
+```scala unverified
 def passthrough[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg] =
   articleTag(mods*)
 ```
@@ -49,7 +49,7 @@ def passthrough[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg] =
 When adding the component's own modifiers, normalize the caller inputs with
 @:apiSymbol(def:scalive.Mod.flatten)`Mod.flatten`@:@:
 
-```scala
+```scala unverified
 def card[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg] =
   articleTag(cls := "card", Mod.flatten(mods))
 
@@ -79,7 +79,7 @@ Use @:apiSymbol(def:scalive.StaticHtml.render)`StaticHtml.render`@:@ when markup
 LiveView lifecycle. It evaluates the concrete tree once and returns a ZIO effect containing the
 serialized string:
 
-```scala
+```scala unverified
 val rendered = StaticHtml.render(
   htmlRootTag(
     lang := "en",
@@ -110,9 +110,12 @@ discarded or mounted.
 ## Set Typed Attributes {#set-typed-attributes}
 
 Assign attributes with @:apiSymbol(def:scalive.HtmlAttr.:=)`:=`@:@. Each @:apiSymbol(class:scalive.HtmlAttr)`HtmlAttr[V]`@:@
-accepts its declared Scala value type, so `disabled := model.lines.isEmpty` takes
-a `Boolean` while `cls := "cart"` takes a `String`. Boolean presence attributes
-are emitted when true and omitted when false.
+accepts its declared Scala value type, either as a plain value or as a signal of
+that type. `cls := "cart"` takes a `String`, and `disabled := true` takes a
+`Boolean`. Inside `view`, where `model` is a `Signal[Model]`,
+`disabled := model.map(_.lines.isEmpty)` takes a `Signal[Boolean]` and updates
+when the model changes. Boolean presence attributes are emitted when true and
+omitted when false.
 
 ### Compose Token-List Attributes {#compose-token-list-attributes}
 
@@ -123,7 +126,7 @@ built-in @:apiSymbol(val:scalive.className)`className`@:@,
 @:apiSymbol(val:scalive.cls)`cls`@:@, @:apiSymbol(lazy-val:scalive.rel)`rel`@:@, and
 @:apiSymbol(lazy-val:scalive.role)`role`@:@ definitions use this behavior:
 
-```scala
+```scala unverified
 div(
   cls := "panel selected",
   cls := model.map(model => if model.expanded then "expanded" else ""),
@@ -156,7 +159,7 @@ custom attribute only when its grammar is a space-separated token list.
 Use @:apiSymbol(def:scalive.dataAttr)`dataAttr(name)`@:@ for application `data-*` attributes and
 the @:apiSymbol(object:scalive.aria)`aria`@:@ namespace for ARIA attributes:
 
-```scala
+```scala unverified
 button(
   typ                    := "button",
   dataAttr("product")    := product.sku,
@@ -170,7 +173,7 @@ button(
 For an attribute absent from the DSL, use @:apiSymbol(def:scalive.htmlAttr)`htmlAttr(name, encoder)`@:@ with
 an explicit encoder rather than assembling rendered HTML:
 
-```scala
+```scala unverified
 private val popover = htmlAttr("popover", scalive.codecs.StringAsIsEncoder)
 
 div(popover := "manual", "Details")
@@ -187,7 +190,7 @@ HTML event attributes: `on.click` renders `phx-click`, and `on.change` renders
 `phx-change` rather than `onchange`. A constant binding is enough when the event
 carries no application value:
 
-```scala
+```scala unverified
 enum Msg:
   case Add(product: Product)
   case Clear
@@ -222,7 +225,7 @@ should construct the message, and use
 @:apiSymbol(def:scalive.HtmlAttrBinding.withValueOption)`withValueOption`@:@ when a missing value is
 meaningful:
 
-```scala
+```scala unverified
 enum Msg:
   case SearchChanged(value: String)
 
@@ -241,7 +244,7 @@ Configure rate limiting with @:apiSymbol(def:scalive.HtmlAttrBinding.debounce)`d
 before supplying the message. Durations are rendered in milliseconds, and
 negative durations are rejected:
 
-```scala
+```scala unverified
 import scala.concurrent.duration.*
 
 input(on.blur.debounce(300.millis).withValue(Msg.SearchChanged.apply))
@@ -269,7 +272,7 @@ Use @:apiSymbol(def:scalive.portal)`portal`@:@ when content must remain owned by
 LiveView but appear elsewhere in the document, such as below a root-level modal
 container:
 
-```scala
+```scala unverified
 portal("cart-dialog", target = DomSelector.css("#modal-root"))(
   sectionTag(aria.label := "Cart", "...")
 )
@@ -286,7 +289,7 @@ does not make untrusted HTML safe.
 Use @:apiSymbol(def:scalive.focusWrap)`focusWrap`@:@ for content whose keyboard focus
 should cycle at its boundaries:
 
-```scala
+```scala unverified
 focusWrap("cart-dialog-focus", cls := "dialog-body")(
   button(on.click(Msg.Close), "Close")
 )
@@ -320,7 +323,7 @@ signal when entries have stable domain identity. Choose a key that is unique
 within that collection and
 does not change while the entry represents the same entity:
 
-```scala
+```scala unverified
 tbody(
   model.map(_.lines).splitBy(_.product.sku) { (sku, line) =>
     tr(

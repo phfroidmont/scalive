@@ -127,7 +127,7 @@ The default packaged-client configuration is
 The Phoenix client opens the WebSocket endpoint at `/live/websocket`. If the
 router uses another mount, configure both sides:
 
-```scala
+```scala unverified
 import zio.http.codec.PathCodec
 
 val liveRoutes = Live.router

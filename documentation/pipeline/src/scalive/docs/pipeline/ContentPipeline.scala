@@ -384,8 +384,12 @@ object ContentPipeline:
         case Some(_) => ()
         case None    =>
           line match
-            case Fence(marker, _) => fence = Some(marker.head -> marker.length)
-            case _                =>
+            case Fence(marker, info) =>
+              fence = Some(marker.head -> marker.length)
+              scalaFenceLanguage(sourcePath, lineNumber, info, errors).foreach { language =>
+                normalized(index) = s"${line.takeWhile(_ == ' ')}$marker$language"
+              }
+            case _ =>
               val withoutCode = stripInlineCode(line)
               if RawHtml.findFirstIn(withoutCode).nonEmpty then
                 errors += s"$sourcePath:$lineNumber: raw HTML is not allowed."
@@ -442,6 +446,28 @@ object ContentPipeline:
       errors.toVector
     )
   end validateBody
+
+  /** Inline Scala is never compiled, so each block must say what it is. Recipes a reader copies
+    * belong in compiled `@:sourceRegion` files; `scala fragment` marks a partial snippet for
+    * readers, and `scala unverified` marks a block that still has to be moved or relabeled.
+    */
+  private def scalaFenceLanguage(
+    sourcePath: String,
+    lineNumber: Int,
+    info: String,
+    errors: ArrayBuffer[String]
+  ): Option[String] =
+    info.trim.split("\\s+").toVector match
+      case Vector("scala") =>
+        errors +=
+          s"$sourcePath:$lineNumber: inline Scala must be a compiled @:sourceRegion or a `scala fragment` block."
+        None
+      case Vector("scala", "fragment")   => Some(CodeHighlighter.ScalaFragment)
+      case Vector("scala", "unverified") => Some("scala")
+      case Vector("scala", label*)       =>
+        errors += s"$sourcePath:$lineNumber: unknown Scala code block label '${label.mkString(" ")}'."
+        None
+      case _ => None
 
   private def closesFence(line: String, character: Char, length: Int): Boolean =
     val trimmed = line.dropWhile(_ == ' ')
@@ -970,14 +996,18 @@ object ContentPipeline:
     case header: laika.ast.Header =>
       convertHeading(header, source, routeByPath, apiSymbols).map(value => Vector(value))
     case laika.ast.CodeBlock(language, content, _, _) =>
-      val tokens = CodeHighlighter.fromSpans(content)
+      val fragment = language == CodeHighlighter.ScalaFragment
+      val parsed   = CodeHighlighter.fromSpans(content)
+      val text     = parsed.map(_.text).mkString
+      val tokens   = if fragment then CodeHighlighter.highlight(Some("scala"), text) else parsed
       Right(
         Vector(
           Block.Code(
-            language = Option(language).filter(_.nonEmpty),
-            text = tokens.map(_.text).mkString,
+            language = if fragment then Some("scala") else Option(language).filter(_.nonEmpty),
+            text = text,
             tokens = tokens,
-            sourceRegion = None
+            sourceRegion = None,
+            fragment = fragment
           )
         )
       )

@@ -37,7 +37,7 @@ observed lifecycle.
 Create a custom observer for structured logging or tracing and pass it to
 @:apiSymbol(def:scalive.ZioHttp.routes)`ZioHttp.routes`@:@:
 
-```scala
+```scala unverified
 val applicationObserver = LifecycleObserver.fromFunction { event =>
   ZIO.logAnnotate("lifecycle_event", event.name) {
     ZIO.logDebug("Scalive lifecycle event")
@@ -72,7 +72,7 @@ records unknown cases so a library upgrade does not introduce a runtime
 exporter-independent ZIO Metrics adapter with fixed metric names, labels, and
 histogram boundaries:
 
-```scala
+```scala unverified
 val liveRoutes = ZioHttp.routes(
   application,
   security,
@@ -96,7 +96,7 @@ Compose the metrics adapter with application-specific logging or tracing when
 both are needed. Observers run in composition order, and a failure in one does
 not prevent the next observer from receiving the event:
 
-```scala
+```scala unverified
 val observer = LifecycleMetrics.observer.andThen(applicationObserver)
 val liveRoutes = ZioHttp.routes(application, security, observer)
 ```

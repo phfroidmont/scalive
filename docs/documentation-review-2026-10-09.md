@@ -61,6 +61,88 @@ Candidates for decision 1. These are starting points, not settled designs:
 | 4 | A single-field form needs `Root.product[A](Tuple1(field))`. | Add a single-field overload. |
 | 16 | There are three ways to declare a root layout and two for ordinary layouts. | See finding 16. |
 
+## Implementation progress
+
+### Phase 1 (2026-10-09): recipe compile check and findings 1–6
+
+API decisions taken:
+
+- **Finding 1:** added a one-argument `from(service => view)` to
+  `LiveRouteBuilder` and `LiveRouteParamsBuilder`:
+  `(live / "reports").from((reports: Reports) => ReportsLiveView(reports))`.
+  A layer in `->` was rejected because Scalive would have to build a layer for
+  every mount, which is a runtime change, and `.context` keeps its meaning of
+  mount-aspect context. `from` takes one service type; the services guide says
+  to group several services in one. The runtime could already support two
+  (`LiveRouteContext.WithEnvironment`) if that becomes necessary.
+- **Finding 2:** form bindings now live only on `FormDefinition`. Removed
+  `Form.onChange`, both `Form.onSubmit` overloads, `Form.onRecover`,
+  `Form.disableRecovery`, `Form.triggerHttpSubmitWhen`, and the instance
+  `Form#http`. `Form.http` on the companion stays. The replacements are
+  `phx.autoRecover := "ignore"` and `phx.triggerAction := model.map(...)`;
+  the old `triggerHttpSubmitWhen` took a `Boolean`, so it could not follow the
+  model inside `view` anyway. The plain-`Form` field APIs (`field`, `rows`,
+  `errorFeedback`) stay, because constant forms and HTTP rendering need them.
+- **Finding 3: decision reversed, docs only.** `Live` and `live` keep their
+  names. Renaming the routing entry points (more than 400 call sites,
+  including every `live / "..."`) to avoid a test-library clash costs more than
+  it gains. A base spec in `scalive.testing` would add a `zio-test` dependency to
+  `scalive-testing` and a class whose only purpose is to shadow two names. The
+  first test in the testing guide (`ConnectedRender.join`) does not reference
+  `Live`. Tests that build a router use `import zio.test.{Live as _, *}`, and the
+  guide explains why.
+- **Finding 4:** added one shortcut per stage on the `LiveHooks` and
+  `ComponentLiveHooks` companions. Their types are inferred only when the
+  shortcut is the whole `hooks` expression; a chain of stages still starts from
+  `LiveHooks.empty[Msg, Model]`. Added single-field `product(field)` overloads to
+  `FormRoot` and `RepeatedGroup`, and migrated the repository's `Tuple1` call
+  sites.
+
+Compile check (finding 7):
+
+- `documentation.check` now runs `quickStartFixture.test` and
+  `guideFixtures.test`. Guide recipes live in
+  `documentation/fixtures/guides/src` and `documentation/fixtures/guides/test/src`;
+  the quick-start tests live in `documentation/fixtures/quick-start/test/src`.
+  `guideFixtures` depends on `quickStartFixture`, so recipes can extend the
+  quick-start application.
+- `@:sourceRegion` regions may now nest (inner markers are removed from the
+  outer region) and are dedented. A guide can show one method of a compiled
+  LiveView and then the whole file.
+- The content pipeline rejects a bare ```` ```scala ```` block. Inline Scala must
+  be either ```` ```scala fragment ````, rendered with a **Fragment** caption, or
+  the temporary ```` ```scala unverified ````, rendered as before. All 176
+  existing blocks were marked `unverified`, and phase 1 converted or relabeled
+  70 of them. Run `rg '```scala unverified' documentation/content` for the
+  remaining 106. When none remain, delete the `unverified` case in
+  `ContentPipeline.scalaFenceLanguage`.
+
+Pages fixed: the services guide (rewritten around `from`, with a full `Main` and
+route tests), the service-injection example page, UI label, and catalog entry
+("service-backed"), streams, uploads (including finding 5), HTTP forms, typed
+forms (main path, repeated rows, and a save workflow that uses
+`ctx.async.start`), the HTML guide's attribute sentence, the testing guide (build
+setup, first test, disconnected test, form submission, snapshots, typed-form
+test, and routed client), the after-render hooks in the flash and lifecycle-hook
+guides, navigation guards, and the homepage, which now shows the quick-start
+counter. The quick-start counter dropped `typ := "button"` to stay compact.
+
+Verification: `mill __.test`, `mill documentation.check`, and
+`npm run test:xray` pass. The testing guide's `build.mill` was checked by hand
+as an external project against the published `0.0.1-341a561ee032-SNAPSHOT`
+with Mill 1.1.8, and `mill app.test` passed. Mill builds are not compiled by
+`documentation.check`, so both `build.mill` blocks remain `unverified`.
+`./scripts/e2e-run-upstream.sh` was not run, because no runtime behavior
+changed.
+
+Left for later phases:
+
+- On the mount-aspect builders, `from` still means
+  `(path, request, context) => view` and duplicates `apply` and `context`.
+  Consider removing it in a later API pass.
+- `examples/text-upload.md` still describes the wrong upload order
+  (finding 17).
+
 ## How this was verified
 
 - I read all 56 authored pages and every embedded example source they

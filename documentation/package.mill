@@ -44,6 +44,9 @@ object `package` extends Module:
       os.sub / "scalive" / "testing" / "src",
       os.sub / "documentation" / "fixtures" / "quick-start" / "src",
       os.sub / "documentation" / "fixtures" / "quick-start" / "resources",
+      os.sub / "documentation" / "fixtures" / "quick-start" / "test" / "src",
+      os.sub / "documentation" / "fixtures" / "guides" / "src",
+      os.sub / "documentation" / "fixtures" / "guides" / "test" / "src",
       os.sub / "documentation" / "site" / "src",
       os.sub / "documentation" / "site" / "assets" / "js"
     )
@@ -175,6 +178,20 @@ object `package` extends Module:
 
     override def moduleDir = super.moduleDir / os.up / "fixtures" / "quick-start"
 
+    object test extends ScalaTests with TestModule.ZioTest:
+      override def moduleDeps = super.moduleDeps ++ Seq(build.scalive.testing)
+      def zioTestVersion = "2.1.26"
+
+  /** Compiled recipes embedded in guides with `@:sourceRegion`. */
+  object guideFixtures extends build.ScalaCommon:
+    def moduleDeps = Seq(build.scalive, quickStartFixture)
+
+    override def moduleDir = super.moduleDir / os.up / "fixtures" / "guides"
+
+    object test extends ScalaTests with TestModule.ZioTest:
+      override def moduleDeps = super.moduleDeps ++ Seq(build.scalive.testing)
+      def zioTestVersion = "2.1.26"
+
   object site extends build.ScalaCommon with build.NpmAssets:
     def moduleDeps = Seq(build.scalive, model)
     override def mvnDeps = Seq(mvn"com.lihaoyi::pprint:0.9.6")
@@ -222,6 +239,8 @@ object `package` extends Module:
     pipeline.generate()
     quickStartFixture.compile()
     quickStartFixture.resources()
+    quickStartFixture.test.testCached()
+    guideFixtures.test.testCached()
     site.test.testCached()
     site.testJs()
     site.checkRuntimeClasspath()

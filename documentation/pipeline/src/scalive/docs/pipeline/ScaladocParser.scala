@@ -372,7 +372,7 @@ private[pipeline] object ScaladocParser:
     .flatMap {
       case Block.Paragraph(content)     => Vector(inlineText(content))
       case Block.Heading(_, _, content) => Vector(inlineText(content))
-      case Block.Code(_, code, _, _)    => Vector(code)
+      case Block.Code(_, code, _, _, _) => Vector(code)
       case Block.BulletList(items)      => items.map(item => blockText(item.content))
       case Block.OrderedList(_, items)  => items.map(item => blockText(item.content))
       case Block.Quote(content)         => Vector(blockText(content))

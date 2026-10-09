@@ -9,7 +9,7 @@ import scalive.docs.model.*
 final private[docs] case class HomePageContent(
   introduction: Block.Paragraph,
   actions: Block.Paragraph,
-  preview: Block.Code,
+  preview: Block.SourceCode,
   example: Block.ExampleRef,
   principles: Block.BulletList,
   howHeading: Block.Heading,
@@ -63,8 +63,8 @@ private[docs] object HomePageContent:
                      value
                  }
       _       <- validateActions(page, actions)
-      preview <- block(page, 2, "a Scala code preview") {
-                   case value @ Block.Code(Some("scala"), text, _, None) if text.trim.nonEmpty =>
+      preview <- block(page, 2, "a compiled Scala source preview") {
+                   case value @ Block.SourceCode(_, Some("scala"), text, _) if text.trim.nonEmpty =>
                      value
                  }
       example <- block(page, 3, "@:example(counter)") { case value @ Block.ExampleRef("counter") =>
@@ -207,7 +207,7 @@ final private[docs] class DocumentationHomeLiveView(
               content.preview.language,
               content.preview.text,
               content.preview.tokens,
-              content.preview.sourceRegion
+              Some(content.preview.region)
             )
           ),
           compactExample

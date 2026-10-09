@@ -47,7 +47,7 @@ scalive-quick-start/
 
 Create `build.mill` at the project root:
 
-```scala
+```scala unverified
 package build
 
 import mill.*, scalalib.*

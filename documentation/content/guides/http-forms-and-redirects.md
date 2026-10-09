@@ -19,16 +19,15 @@ changing cookies, crossing an authentication boundary, downloading a response,
 leaving LiveView, or applying Post/Redirect/Get. Keep purely interactive
 validation and in-page updates as Live events.
 
-Define the target as a ZIO HTTP `RoutePattern` and derive a checked
-@:apiSymbol(class:scalive.FormAction)`FormAction`@:@:
+Define the target as a ZIO HTTP `RoutePattern`. This guide uses one login
+form, two Live pages, and two POST routes:
 
-```scala
-val SearchRoute  = Method.GET / "search"
-val SessionRoute = Method.POST / "session"
+@:sourceRegion(documentation/fixtures/guides/src/httpforms/LoginForm.scala, http-forms-definition)
 
-val searchAction  = FormAction.from(SearchRoute)
-val sessionAction = FormAction.from(SessionRoute)
-```
+@:sourceRegion(documentation/fixtures/guides/src/httpforms/LoginForm.scala, http-forms-routes)
+
+Derive a checked @:apiSymbol(class:scalive.FormAction)`FormAction`@:@ from a route
+pattern with `FormAction.from(SessionRoute)`.
 
 Checked actions accept only GET and POST, format typed path parameters, URL
 encode the resulting path, and mark POST for CSRF injection. `FormAction.from`
@@ -43,37 +42,23 @@ application routes.
 
 ## Render A Reusable HTTP Form {#render-a-reusable-http-form}
 
-Use the rooted form's `http` method when controls and codecs already come from a
-`FormDefinition`:
+Render the form with @:apiSymbol(def:scalive.Form.http)`Form.http`@:@. When the
+form does not depend on the model, as on this login page, build a plain form
+value with `Definition.initial()` and read its fields directly. The controls and
+codecs still come from `LoginForm.Definition`:
 
-```scala
-val loginForm = LoginForm.Definition.initial()
-val email     = loginForm.field(LoginForm.Email)
-val password  = loginForm.field(LoginForm.Password)
+@:sourceRegion(documentation/fixtures/guides/src/httpforms/LoginLiveView.scala, http-forms-static-form)
 
-loginForm.http(FormAction.from(SessionRoute))(
-  idAttr := "login-form",
-  label(forId := email.id, "Email"),
-  email.email(autoComplete := "username", required := true),
-  label(forId := password.id, "Password"),
-  password.password(autoComplete := "current-password", required := true),
-  button(typ := "submit", "Sign in")
-)
-```
+A form without fields uses `Form.http` the same way:
 
-Use @:apiSymbol(def:scalive.Form.http)`Form.http`@:@ directly when no form model
-is needed:
+@:sourceRegion(documentation/fixtures/guides/src/httpforms/LoginLiveView.scala, http-forms-sign-out)
 
-```scala
-Form.http(FormAction.from(Method.POST / "session" / "reset"))(
-  button(typ := "submit", "Sign out")
-)
-```
+ZIO HTTP also defines `Form`. In a file that imports `zio.http.*`, write
+`scalive.Form.http`, or import only the ZIO HTTP names you use.
 
 `Form.http` owns the `action` and `method` attributes and rejects direct
-overrides. It does not add `phx-change`, `phx-submit`, or `phx-trigger-action`.
-The rooted variant does not render controls automatically; pass them as
-modifiers.
+overrides. It does not add `phx-change`, `phx-submit`, or `phx-trigger-action`,
+and it does not render controls automatically; pass them as modifiers.
 
 Both checked GET and POST actions render with native browser methods. GET is
 appropriate only for safe, idempotent retrieval and puts successful controls in
@@ -85,21 +70,10 @@ your application.
 
 ## Share Security And Inject CSRF {#share-security-and-inject-csrf}
 
-Create one validated transport config and share it between Live transport routes
-and the HTTP route owner:
+Create one validated transport config and `LiveSecurity` value, as the quick
+start's `Main` does, and share it between the Live routes and the HTTP routes:
 
-```scala
-val transportConfig = ZioHttpConfig(
-  signingSecret = config.signingSecret,
-  sessionMaxAge = java.time.Duration.ofMinutes(30),
-  secureCookie = config.publicHttps,
-  allowedWebSocketOrigins = Set(WebSocketOrigin.https("example.com"))
-).fold(error => throw IllegalArgumentException(error.toString), identity)
-
-val security = LiveSecurity(transportConfig)
-val application = Live.router(liveRoutes*)
-val routes = ZioHttp.routes(application, security) ++ httpRoutes(security)
-```
+@:sourceRegion(documentation/fixtures/guides/src/httpforms/LoginHttpRoutes.scala, http-forms-assembly)
 
 A checked POST rendered through `Form.http` is marked for Scalive's hidden CSRF
 token injection. Injection occurs only while rendering through transport routes
@@ -114,23 +88,10 @@ forwarding headers.
 
 ## Decode A Bounded POST Body {#decode-a-bounded-post-body}
 
-Build one reusable decoder from the same typed definition used by the form:
+Build one reusable decoder from the same typed definition used by the form, and
+register the handlers as ordinary ZIO HTTP routes:
 
-```scala
-private val FormMaxBytes = 4096L
-
-private val loginFormDecoder = HttpFormDecoder.urlEncoded(
-  LoginForm.Definition,
-  maxBytes = FormMaxBytes,
-  csrf = security.csrf
-)
-
-private val loginValueDecoder = HttpFormDecoder.urlEncodedValue(
-  LoginForm.Definition,
-  maxBytes = FormMaxBytes,
-  csrf = security.csrf
-)
-```
+@:sourceRegion(documentation/fixtures/guides/src/httpforms/LoginHttpRoutes.scala, http-forms-handler)
 
 @:apiSymbol(def:scalive.HttpFormDecoder.urlEncoded)`urlEncoded`@:@ accepts only
 `application/x-www-form-urlencoded`, honors its declared charset with UTF-8 as
@@ -163,23 +124,9 @@ transport and security rejections to fixed responses.
 
 Call `decode(request)` when the handler needs to pattern match the typed error
 channel directly. For the common case, `respond` runs the success callback only
-after every stage succeeds. A semantic validation failure can return the signed
-flash redirect defined [below](#redirect-http-flash-into-a-live-route):
-
-```scala
-private def createSession(request: Request): UIO[Response] =
-  loginValueDecoder.respond(
-    request,
-    onValidation = _ => invalidLogin,
-    onRejected = error => ZIO.logWarning(s"login form rejected code=${error.code}")
-  ) { credentials =>
-    sessions.create(credentials).map { session =>
-      Dashboard.location.seeOther.addCookie(
-        security.cookies.make("session", session.token)
-      )
-    }
-  }
-```
+after every stage succeeds. In `createSession` above, a semantic validation
+failure returns the signed flash redirect described
+[below](#redirect-http-flash-into-a-live-route).
 
 Failures remain distinct:
 
@@ -211,37 +158,14 @@ application failures to HTTP responses at the appropriate application boundary.
 
 Sometimes a form should provide Live validation first, then perform an ordinary
 POST only after the typed value is valid. Keep that transition explicit in the
-model:
+model, and render an ordinary action, the Live bindings, and the conditional
+trigger on the same form:
 
-```scala
-final case class Model(form: LoginForm.Definition.Form, submitHttp: Boolean = false)
+@:sourceRegion(documentation/fixtures/guides/src/httpforms/ValidatedLoginLiveView.scala, http-forms-trigger)
 
-case Msg.Submit(event) =>
-  event.form.result match
-    case Right(_) =>
-      ZIO.succeed(model.copy(
-        form = event.form,
-        submitHttp = true
-      ))
-    case Left(_) =>
-      ZIO.succeed(model.copy(
-        form = event.form,
-        submitHttp = false
-      ))
-```
-
-Render an ordinary action, a Live submit binding, and the conditional trigger on
-the same form:
-
-```scala
-model.form.http(FormAction.from(SessionRoute))(
-  idAttr := "login-form",
-  model.form.onSubmit(Msg.Submit(_)),
-  model.form.triggerHttpSubmitWhen(model.submitHttp),
-  // controls
-  button(typ := "submit", submission.replaceTextWith("Signing in..."), "Sign in")
-)
-```
+The change and submit bindings come from `LoginForm.Definition`. The form value
+lives in the model, so `view` reads it through `model.map(_.form)`, and
+`phx.triggerAction` follows `model.map(_.submitHttp)`.
 
 The first submit is a Live event. When the next patch renders
 `phx-trigger-action`, Phoenix hands the form back to the browser for normal HTTP
@@ -257,24 +181,22 @@ automatically.
 ## Redirect HTTP Flash Into A Live Route {#redirect-http-flash-into-a-live-route}
 
 For a failed POST followed by a Live page, issue a 303 with a signed flash
-cookie through the shared security value:
+cookie through the shared security value, as `invalidLogin` does above:
 
-```scala
+```scala fragment
 val LoginError = FlashKind("error")
 
 private def invalidLogin: UIO[Response] =
   security.flash.seeOther(
-    Login.location,
+    Pages.login.location,
     LoginError -> "The sign-in request was invalid. Please try again."
   )
 ```
 
-Render the same kind in the destination LiveView:
+Render the same kind in the destination LiveView, as `LoginLiveView` does:
 
-```scala
-flash(LoginError)(message =>
-  div(role := "alert", message)
-)
+```scala fragment
+flash(LoginError)(message => div(role := "alert", message))
 ```
 
 `HttpFlash.seeOther` accepts a typed `LiveLocation`; use `seeOtherUnsafe` only

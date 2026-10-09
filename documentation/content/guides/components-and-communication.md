@@ -22,7 +22,7 @@ instance is identified by its component class and stable logical ID.
 Use a [nested LiveView](nested-liveviews.md) instead when the child needs a
 separate socket rather than only isolated state.
 
-```scala
+```scala unverified
 private val ScalaVote = component(VoteComponent, "scala-vote")
 private val ZioVote   = component(VoteComponent, "zio-vote")
 ```
@@ -50,7 +50,7 @@ uses the simpler `render(props)` placement API.
 This compact path shows a local message becoming an output and then a parent
 message:
 
-```scala
+```scala unverified
 object VoteComponent
     extends LiveComponent.WithOutput[
       VoteComponent.Props,
@@ -123,7 +123,7 @@ Changed props in an ordinary parent render invoke the component's `update`
 lifecycle. For an explicit update to an already mounted instance, call
 @:apiSymbol(def:scalive.ComponentUpdates.sendUpdate)`ctx.components.sendUpdate`@:@:
 
-```scala
+```scala unverified
 case Msg.UpdateScalaProps =>
   ctx.components.sendUpdate(ScalaVote, revisedProps).as(updatedParentModel)
 ```
@@ -131,7 +131,7 @@ case Msg.UpdateScalaProps =>
 `update` receives the existing component model. Preserve it unless the props
 represent a deliberate reset:
 
-```scala
+```scala unverified
 override def update(props: Props, model: Model, ctx: UpdateContext) =
   ZIO.succeed(
     if props.resetEpoch == model.resetEpoch then model

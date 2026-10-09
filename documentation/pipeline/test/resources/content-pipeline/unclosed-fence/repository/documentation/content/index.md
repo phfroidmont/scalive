@@ -5,5 +5,5 @@ order = 0
 section = home
 %}
 
-```scala
+```scala fragment
 val unclosed = true

@@ -30,7 +30,7 @@ JavaScript should not become a second application model.
 
 Commands are immutable values executed in composition order:
 
-```scala
+```scala unverified
 private val openDialog =
   JS.pushFocus()
     .show(to = dialogRef.selector)
@@ -72,7 +72,7 @@ binding, where Scalive can encode that binding correctly.
 
 Name the direction explicitly and derive JSON codecs for the payload:
 
-```scala
+```scala unverified
 final case class CopyRequest(requestId: String, text: String) derives JsonEncoder
 
 private val CopyRequestEvent =
@@ -89,14 +89,14 @@ Do not put secrets in browser events or traces.
 
 Declare the reverse direction and install it once on the LiveView:
 
-```scala
+```scala unverified
 final case class CopyResult(requestId: String, ok: Boolean) derives JsonDecoder
 
 private val CopyResultEvent =
   BrowserToServerEvent[CopyResult]("browser-copy-result")
 
 override def hooks: LiveHooks[Msg, Model] =
-  LiveHooks.empty.onBrowserEvent(CopyResultEvent) { (model, result, _) =>
+  LiveHooks.onBrowserEvent(CopyResultEvent) { (model, result, _) =>
     ZIO.succeed(applyCopyResult(model, result))
   }
 ```
@@ -109,9 +109,9 @@ and browser failures before calling `this.pushEvent`.
 For an event targeted at a stateful component, declare the same boundary on the
 component instead. The static handler also receives current props:
 
-```scala
+```scala unverified
 override def hooks: ComponentLiveHooks[Props, Msg, Model] =
-  ComponentLiveHooks.empty.onBrowserEvent(CopyResultEvent) {
+  ComponentLiveHooks.onBrowserEvent(CopyResultEvent) {
     (props, model, result, _) => ZIO.succeed(applyCopyResult(props, model, result))
   }
 ```
@@ -230,7 +230,7 @@ with `Phoenix.Socket`, without adding npm dependencies.
 
 Phoenix hooks require an element ID. @:apiSymbol(def:scalive.dom.hook)`dom.hook`@:@ renders the hook name and typed ID together:
 
-```scala
+```scala unverified
 private val hookRef = DomRef(s"$instanceId-hook")
 
 div(

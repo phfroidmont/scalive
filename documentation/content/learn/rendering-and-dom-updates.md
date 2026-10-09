@@ -12,7 +12,7 @@ section = learn
 @:apiSymbol(class:scalive.HtmlElement)`HtmlElement[Msg]`@:@. Write it as a
 description of what the page should contain:
 
-```scala
+```scala unverified
 def view(model: Signal[Int]): HtmlElement[Msg] =
   mainTag(
     button(typ := "button", on.click(Msg.Decrement), "Decrease"),
@@ -36,7 +36,7 @@ and signal `splitBy` describe conditional or repeated content.
 
 For two signals, the instance helpers cover the common cases:
 
-```scala
+```scala unverified
 val fullName = firstName.combineWithFn(lastName) { (first, last) =>
   s"$first $last"
 }
@@ -46,7 +46,7 @@ val names    = firstName.combineWith(lastName) // Signal[(String, String)]
 The companion operations accept any non-empty tuple of signals and keep
 multi-input derivations flat and readable:
 
-```scala
+```scala unverified
 val summary = Signal.combineWithFn((firstName, lastName, itemCount)) {
   (first, last, count) => s"$first $last - $count items"
 }
@@ -62,7 +62,7 @@ instead preserves every input value as one tuple element, including nested tuple
 values. Both `combineWithFn` forms likewise pass the original, unflattened input
 values to their lambda. For `position` and `size` of type `Signal[(Int, Int)]`:
 
-```scala
+```scala unverified
 val bounds  = position.combineWith(size)          // Signal[(Int, Int, Int, Int)]
 val grouped = Signal.combine((position, size))    // Signal[((Int, Int), (Int, Int))]
 ```
@@ -127,7 +127,7 @@ Use @:apiSymbol(extension:scalive.splitBy)`splitBy(key) { ... }`@:@ on a collect
 signal whose entries have stable domain identity. The shopping cart keys each
 retained row by product SKU:
 
-```scala
+```scala unverified
 model.map(_.lines).splitBy(_.product.sku) { (_, line) =>
   tr(
     td(line.map(_.product.name)),

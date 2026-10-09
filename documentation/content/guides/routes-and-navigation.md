@@ -20,7 +20,7 @@ reversible, an outbound location builder. Keep important declarations as named
 values so mounting, links, and navigation effects cannot drift onto different
 paths or query names:
 
-```scala
+```scala unverified
 object Routes:
   val search =
     (live / "search").queryOptional[String]("q")
@@ -46,7 +46,7 @@ larger parameter tuple to the earlier layout.
 Use @:apiSymbol(def:scalive.LiveEncodableRouteParamsBuilder.mapParams)`mapParams`@:@ when the codec-facing shape is not the shape the
 application should use. Supply both directions:
 
-```scala
+```scala unverified
 final case class SearchParams(query: Option[SearchTerm])
 
 val search =
@@ -69,7 +69,7 @@ that it discarded.
 again for the fresh connected lifecycle. @:apiSymbol(def:scalive.LiveView.Routed.handleParams)`handleParams`@:@ runs after mount and after
 each successful live patch:
 
-```scala
+```scala unverified
 final class SearchLiveView
     extends LiveView.Routed.Eventless[Model, Option[String]]:
 
@@ -128,7 +128,7 @@ They are additive, do not change context or the page model, and fail through
 Call @:apiSymbol(def:scalive.LiveEncodableRouteParamsBuilder.location)`location(params)`@:@ to create a
 @:apiSymbol(class:scalive.LiveLocation)`LiveLocation`@:@:
 
-```scala
+```scala unverified
 val destination = Routes.search.location(Some("LiveView"))
 // destination.href == "/search?q=LiveView"
 ```
@@ -141,7 +141,7 @@ encoder.
 
 Add an in-page fragment after building the typed path and query:
 
-```scala
+```scala unverified
 val heading = Routes.search.location(Some("LiveView")).withFragment("results")
 // heading.href == "/search?q=LiveView#results"
 ```

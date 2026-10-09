@@ -9,7 +9,7 @@ URLs are an application boundary as well as navigation history. Declare a route
 once, let Scalive decode its parameters, and use that same declaration to build
 destinations:
 
-```scala
+```scala unverified
 import scalive.*
 import zio.ZIO
 import zio.http.URL

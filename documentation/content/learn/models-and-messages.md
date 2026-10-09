@@ -10,7 +10,7 @@ section = learn
 A @:apiSymbol(trait:scalive.LiveView)`LiveView[Msg, Model]`@:@ owns one model
 type and accepts one message type:
 
-```scala
+```scala unverified
 trait LiveView[Msg, Model]:
   def mount(ctx: MountContext): Task[Model]
   def handleMessage(model: Model, ctx: MessageContext): Msg => Task[Model]
@@ -25,7 +25,7 @@ at the current lifecycle stage; they are not additional application state.
 The quick start deliberately used an `Int` and two messages. A more
 representative counter makes the model extensible and adds another intent:
 
-```scala
+```scala unverified
 final case class Model(count: Int)
 
 enum Msg:
@@ -84,7 +84,7 @@ transition and graph evaluation succeed.
 
 For example, a small cart can keep its source state and transitions together:
 
-```scala
+```scala unverified
 enum Product(val sku: String, val name: String):
   case Coffee extends Product("coffee", "Coffee beans")
   case Notebook extends Product("notebook", "Notebook")
@@ -122,7 +122,7 @@ enum Msg:
 second value that could become inconsistent. The message handler is then an
 exhaustive description of the allowed transitions:
 
-```scala
+```scala unverified
 def handleMessage(model: Model, ctx: MessageContext): Msg => Task[Model] =
   case Msg.Add(product)    => ZIO.succeed(model.add(product))
   case Msg.Remove(product) => ZIO.succeed(model.remove(product))

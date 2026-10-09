@@ -27,27 +27,7 @@ examples form this progression:
 Start with a @:apiSymbol(class:scalive.FormRoot)`FormRoot`@:@, define fields relative
 to it, and combine those fields into one domain constructor:
 
-```scala
-final case class Profile(name: String, email: String)
-
-object Profile:
-  val Root = FormRoot("profile")
-
-  val Name = Root
-    .text("name")
-    .map(_.trim)
-    .required(FieldIssue("validation.name.required", Some("required")))
-
-  val Email = Root
-    .text("email")
-    .map(_.trim)
-    .required(FieldIssue("validation.email.required", Some("required")))
-    .validate(FieldIssue("validation.email.invalid", Some("invalid_email")))(
-      EmailPattern.matches
-    )
-
-  val Definition = Root.product[Profile]((Name, Email))
-```
+@:sourceRegion(documentation/fixtures/guides/src/forms/Profile.scala, forms-definition)
 
 The stable root value gives each field a complete browser name such as
 `profile[name]`. Its singleton owner type prevents fields from another root,
@@ -68,7 +48,8 @@ email therefore produce both path-specific errors rather than stopping after
 the first field. The tuple arity and element types must exactly match the case
 class constructor, so missing fields and differently typed positions are
 rejected at compile time. When adjacent case-class fields have the same type,
-their semantic order remains the caller's responsibility.
+their semantic order remains the caller's responsibility. A form with one field
+passes that field without a tuple, as in `Root.product[Note](Text)`.
 
 Use `text` for a scalar that treats absence as its default and rejects
 duplicates, `optionalText` for `Option[String]`, and `texts` for repeated
@@ -77,7 +58,7 @@ checkbox, or supply a custom `FieldInput` to own decoding and encoding.
 Then compose normalization and domain refinement with
 `map`, `required`, `validate`, and `emap`:
 
-```scala
+```scala fragment
 val Age = Root.text("age").emap { text =>
   text.toIntOption.filter(_ >= 0).toRight(
     FieldIssues.one(FieldIssue("validation.age.invalid", Some("invalid_age")))
@@ -104,45 +85,29 @@ profile definition also limits biography length:
 
 ## Keep Form State In The Model {#keep-form-state-in-the-model}
 
-Create pristine form state during mount and store the definition's path-dependent
-`Form` alias in the model:
+Store the definition's path-dependent `Form` alias in the model. `Definition.Event`
+is the matching event alias, so model and message declarations stay tied to
+this exact schema:
 
-`Task[A]` is the effect returned from LiveView lifecycle methods, and
-`ZIO.succeed` creates one that cannot fail.
+@:sourceRegion(documentation/fixtures/guides/src/forms/ProfileLiveView.scala, forms-model)
 
-```scala
-final case class Model(form: Profile.Definition.Form)
+Create pristine form state during mount. `Task[A]` is the effect returned from
+LiveView lifecycle methods, and `ZIO.succeed` creates one that cannot fail:
 
-def mount(ctx: MountContext): Task[Model] =
-  ZIO.succeed(Model(Profile.Definition.initial()))
-```
+@:sourceRegion(documentation/fixtures/guides/src/forms/ProfileLiveView.scala, forms-mount)
 
 Pass owner-checked typed initial values when editing existing data:
 
-```scala
-Profile.Definition.initial(
-  Profile.Name.initial(existing.name),
-  Profile.Email.initial(existing.email)
-)
-```
+@:sourceRegion(documentation/fixtures/guides/src/forms/ProfileLiveView.scala, forms-initial-values)
 
 @:apiSymbol(def:scalive.FormDefinition.initial)`FormDefinition.initial`@:@ decodes
 the initial editable values immediately, so state may contain required-field errors.
 Those errors are intentionally not visible yet: the form has not been submitted
 and no field is used.
 
-Store the already rebuilt form from every typed event. `Definition.Event` is the
-matching event alias, so model and message declarations stay tied to this exact
-schema:
+Store the already rebuilt form from every typed event:
 
-```scala
-enum Msg:
-  case Validate(event: Profile.Definition.Event)
-  case Save(event: Profile.Definition.Event)
-
-case Msg.Validate(event) =>
-  ZIO.succeed(model.copy(form = event.form, saved = None))
-```
+@:sourceRegion(documentation/fixtures/guides/src/forms/ProfileLiveView.scala, forms-change)
 
 `FormValues` is the immutable, canonical, metadata-free editable state. It
 contains schema-owned scalar values and stable keyed rows, but not event target,
@@ -155,14 +120,10 @@ use `Definition.fromValues(values)` when interaction should become pristine or
 
 Use @:apiSymbol(def:scalive.Form.updated)`Form.updated`@:@ when a server-side action
 needs to replace one field with its typed editable input without rebuilding
-@:apiSymbol(class:scalive.FormData)`FormData`@:@ or validation state manually:
+@:apiSymbol(class:scalive.FormData)`FormData`@:@ or validation state manually. In
+`handleMessage`, `model.form` is a plain `Form` value:
 
-```scala
-val updatedForm = profileForm.updated(
-  Profile.Name,
-  "Grace Hopper"
-)
-```
+@:sourceRegion(documentation/fixtures/guides/src/forms/ProfileLiveView.scala, forms-update)
 
 The input type comes from the field's `FieldInput`: `String` for `text`,
 `Option[String]` for `optionalText`, `Vector[String]` for `texts`, and `Boolean`
@@ -183,16 +144,21 @@ value while it remains focused.
 
 ## Handle LiveView Change And Submit Bindings {#handle-change-and-submit-events}
 
-Bind both LiveView events through the rooted form:
+Bind both LiveView events through the form definition, and read fields from the
+form stored in the model:
 
-```scala
-form(
-  idAttr := "profile-form",
-  profileForm.onChange(Msg.Validate(_)),
-  profileForm.onSubmit(Msg.Save(_)),
-  // fields and actions
-)
-```
+@:sourceRegion(documentation/fixtures/guides/src/forms/ProfileLiveView.scala, forms-render)
+
+Inside `view`, `model` is a `Signal[Model]`. `model.map(_.form)` selects the form
+as a `Signal[Form]`, and its `field` method returns a signal-backed field view
+that renders the control, its label target, and its error feedback. The event
+bindings come from `Profile.Definition` because they do not depend on the
+current form value.
+
+The same field methods exist on a plain `Form` value. Use them when the form is
+not in the model: a constant form such as a login page, or an HTML form rendered
+by an ordinary HTTP handler. See
+[Ordinary HTTP forms and redirects](http-forms-and-redirects.md#render-a-reusable-http-form).
 
 `onChange` installs Phoenix's `phx-change` binding, not the native HTML `onchange`
 attribute. The LiveView client observes both browser `input` and `change` events, so
@@ -276,18 +242,7 @@ default gives field-local feedback before submit.
 On submit, persist or pass the domain value only from the `Right` branch. Do not
 re-decode strings manually in `handleMessage`:
 
-```scala
-case Msg.Save(event) =>
-  event.form.result match
-    case Right(profile) => save(profile).as(model.copy(
-      form = event.form,
-      saved = Some(profile)
-    ))
-    case Left(_) => ZIO.succeed(model.copy(
-      form = event.form,
-      saved = None
-    ))
-```
+@:sourceRegion(documentation/fixtures/guides/src/forms/ProfileLiveView.scala, forms-submit)
 
 ## Route Multiple Submit Actions {#route-multiple-submit-actions}
 
@@ -295,7 +250,7 @@ Use one definition-owned @:apiSymbol(class:scalive.FormSubmitter)`FormSubmitter`
 native submit buttons send the same typed form to different operations. Give each enum case an
 explicit wire value so renaming a Scala case does not silently change the browser contract:
 
-```scala
+```scala unverified
 enum Intent(val wireValue: String):
   case Discover extends Intent("discover")
   case Preview  extends Intent("preview")
@@ -307,14 +262,14 @@ val Submitter = Profile.Definition.submitter(Intent.values)(_.wireValue)
 The default browser name is generated below the form root in Scalive's reserved namespace. Supply a
 checked custom name only when an existing HTTP or Phoenix boundary requires one:
 
-```scala
+```scala unverified
 val CompatibleSubmitter =
   Profile.Definition.submitter(Intent.values, wireName = "action")(_.wireValue)
 ```
 
 Bind the descriptor once and render each operation from the same mapping:
 
-```scala
+```scala unverified
 enum Msg:
   case Validate(event: Profile.Definition.Event)
   case Submit(
@@ -353,15 +308,11 @@ Phoenix normally recovers client form values through the change event after a
 LiveView reconnect. Storing `event.form` restores the projected values and
 validation state produced by the same definition.
 
-Use a dedicated typed recovery message when recovery needs different behavior:
+Use a dedicated typed recovery message when recovery needs different behavior.
+Pass a second callback to `onChange` and handle the extra message:
 
-```scala
-form(
-  idAttr := "profile-form",
-  profileForm.onChange(Msg.Validate(_), Msg.Recover(_)),
-  profileForm.onSubmit(Msg.Save(_)),
-  // controls
-)
+```scala fragment
+Profile.Definition.onChange(Msg.Validate(_), Msg.Recover(_))
 
 case Msg.Recover(event) =>
   ZIO.succeed(model.copy(form = event.form))
@@ -374,15 +325,10 @@ still comes from recovered payload markers. Protocol details remain available in
 `event.meta` without contaminating `event.form.values`.
 
 Disable client auto-recovery explicitly when replay would be unsafe or the
-server is authoritative:
+server is authoritative. Add this attribute to the form:
 
-```scala
-form(
-  idAttr := "payment-form",
-  paymentForm.disableRecovery,
-  paymentForm.onSubmit(Msg.Pay(_)),
-  // controls
-)
+```scala fragment
+phx.autoRecover := "ignore"
 ```
 
 Current recovery is browser/LiveView protocol recovery, not durable draft
@@ -394,32 +340,14 @@ application service when those guarantees are required.
 
 Use a repeated group when each row has several fields and a stable identity:
 
-```scala
-final case class Phone(label: String, number: String)
-final case class Contact(name: String, phones: Vector[Phone])
-
-object Contact:
-  val Root        = FormRoot("contact")
-  val Name        = Root.text("name").map(_.trim)
-  val Phones      = Root.rows("phones")
-  val PhoneLabel  = Phones.text("label").map(_.trim)
-  val PhoneNumber = Phones.text("number").map(_.trim).required(
-    FieldIssue("validation.phone.required", Some("required"))
-  )
-  val PhoneRows  = Phones.product[Phone]((PhoneLabel, PhoneNumber))
-  val Definition = Root.product[Contact]((Name, PhoneRows))
-```
+@:sourceRegion(documentation/fixtures/guides/src/forms/ContactForm.scala, forms-rows-definition)
 
 Initialize rows with `PhoneRows.initial(PhoneRows.row(key)(...))`. At render
-time, `contactForm.rows(Contact.PhoneRows)` returns stable keyed row views. Each
-core row must render its presence control, then can render bound field views:
+time, `rows(Contact.PhoneRows)` on the form signal returns stable keyed row
+views. Render them with `splitBy` on the row key. Each row must render its
+presence control, then can render its field views:
 
-```scala
-contactForm.rows(Contact.PhoneRows).map { row =>
-  val number = row.field(Contact.PhoneNumber)
-  div(row.presence(), number.text(number.validationAttributes))
-}
-```
+@:sourceRegion(documentation/fixtures/guides/src/forms/ContactForm.scala, forms-rows-render)
 
 Use `added`, `removed`, `movedBefore`, and `movedAfter` with a
 `FormRowKey[Contact.Phones.type]` for server-side row operations. Use
@@ -427,8 +355,9 @@ Use `added`, `removed`, `movedBefore`, and `movedAfter` with a
 one exact row. Stable keys, rather than display indexes, preserve row identity,
 used state, and error addresses across reordering.
 
-In a signal-backed keyed projection, call `row.presence()` on the retained
-`Signal[FormRowView]`. The [stable repeated contact rows example](../examples/repeated-contacts-form.md)
+Each row is a `Signal[FormRowView]`, so `row.map(_.field(...))` selects a field
+view and `row.presence()` renders the presence control. The
+[stable repeated contact rows example](../examples/repeated-contacts-form.md)
 shows complete initialization, rendering, typed events, add, remove, both move
 directions, row-local validation, submission, and reset. Its order summary makes
 the persistent keys visible while rows move.
@@ -453,37 +382,23 @@ markup.
 
 ## Render Richer Controls {#render-richer-controls}
 
-Ask the form for a field view, then use its generated ID, name, current
-raw value, and validation helpers:
+Ask the form for a field view, then use its generated ID, name, current raw
+value, and validation helpers, as the [render recipe](#handle-change-and-submit-events)
+does. Its error feedback translates each stable message key:
 
-```scala
-val emailField = profileForm.field(Profile.Email)
-val messages = Map(
-  "validation.email.required" -> "Email is required.",
-  "validation.email.invalid"  -> "Enter a valid email address."
-)
-
-label(forId := emailField.id, "Email")
-emailField.email(emailField.validationAttributes)
-emailField.errorFeedback { error =>
-  messages(error.message)
-}
-```
+@:sourceRegion(documentation/fixtures/guides/src/forms/ProfileLiveView.scala, forms-messages)
 
 `FormFieldView`, its signal-backed operations, and `FormControl` provide `text`,
 `email`, `tel`, `date`, `search`, `password`, `hidden`, `checkbox`, `textarea`,
 and `select` helpers. Normal attributes such as `autocomplete`, `maxlength`,
 `required`, `multiple`, or CSS classes remain available:
 
-```scala
-val bioField  = profileForm.field(Profile.Bio)
-val roleField = profileForm.field(Profile.Role)
+```scala fragment
+val bio  = profileForm.field(Profile.Bio)
+val role = profileForm.field(Profile.Role)
 
-bioField.textarea(rows := 6, bioField.validationAttributes)
-roleField.select(
-  List("reader" -> "Reader", "editor" -> "Editor"),
-  roleField.validationAttributes
-)
+bio.textarea(rows := 6, bio.validationAttributes)
+role.select(List("reader" -> "Reader", "editor" -> "Editor"), role.validationAttributes)
 ```
 
 The native `tel`, `date`, and `search` helpers render retained raw scalar values;
@@ -598,16 +513,9 @@ attributes, visibility rules, and `form-errors` and `form-error` wrappers. The
 renderer owns only each error's presentation, so `FormError.message` may remain
 a stable localization key instead of pre-rendered text.
 
-The signal-backed field accepts the same pattern and passes a retained error
-signal to the renderer:
-
-```scala
-val emailField = profileFormSignal.field(Profile.Email)
-
-emailField.errorFeedback { error =>
-  error.map(value => messages(value.message))
-}
-```
+A signal-backed field passes a retained `Signal[FormError]` to the renderer, so
+the recipe maps it: `error.map(value => message(value.message))`. A plain field
+view passes the `FormError` itself.
 
 Use a real `label` with `forId` and keep success feedback in a separate status
 region.
@@ -616,54 +524,31 @@ region.
 
 For simple screens, storing `Definition.Form` directly is enough. When a screen
 also needs a baseline, dirty tracking, reset, and one in-flight save, wrap it in
-the optional @:apiSymbol(class:scalive.FormWorkflow)`FormWorkflow`@:@:
+the optional @:apiSymbol(class:scalive.FormWorkflow)`FormWorkflow`@:@. The model
+stores `Definition.Workflow[SaveError]` instead of the form, and submit starts
+the save:
 
-```scala
-final case class SaveError(message: String)
+@:sourceRegion(documentation/fixtures/guides/src/forms/ProfileSaveLiveView.scala, forms-workflow-start)
 
-final case class Model(workflow: Profile.Definition.Workflow[SaveError])
-
-val initialModel = Model(
-  Profile.Definition.workflow(Profile.Definition.initial())
-)
-
-def prepareSave(model: Model, event: Profile.Definition.Event) =
-  val changed = model.workflow.updated(event.form)
-
-  changed.beginSave match
-    case FormSaveStart.Invalid(next) =>
-      model.copy(workflow = next) -> None
-    case FormSaveStart.AlreadySaving(current, _) =>
-      model.copy(workflow = current) -> None
-    case FormSaveStart.Started(next, submission) =>
-      model.copy(workflow = next) -> Some(submission)
-
-val (nextModel, submission) = prepareSave(model, event)
-install(nextModel)
-submission.foreach(enqueueSave)
-```
-
-The state/effect boundary must install `nextModel` before dispatching
-persistence, so even an immediate completion observes the matching `Saving`
-workflow. The invalid branch renders `next.current` with all errors visible.
+`beginSave` returns the next workflow together with a submission that captures
+the valid value. The handler starts persistence with
+[`ctx.async.start`](async-work-and-subscriptions.md#run-finite-work-with-a-typed-key)
+and returns the `Saving` workflow in the same turn. The completion arrives as a
+later message, so it always finds the matching `Saving` state, even when the
+save finishes immediately. The invalid branch renders `next.current` with all
+errors visible.
 
 `isDirty` compares canonical `FormValues`. `isSaving` reports whether a save is
 in flight; `beginSave` still enforces duplicate-submit rejection. When no save
 is active, `reset` returns to the baseline.
 Each save captures a valid value-and-values snapshot plus a token and revision.
-Send the captured `FormSubmissionToken` through the persistence callback and
-apply exactly one completion transition:
+The completion message carries the captured `FormSubmissionToken` unchanged.
+Apply exactly one completion transition for it:
 
-```scala
-model.workflow.saveSucceeded(token) match
-  case FormWorkflowTransition.Applied(next) => model.copy(workflow = next)
-  case FormWorkflowTransition.Stale(_)       => model
-```
+@:sourceRegion(documentation/fixtures/guides/src/forms/ProfileSaveLiveView.scala, forms-workflow-complete)
 
-Carry the captured token unchanged through the persistence callback. A
-completion carrying a token from another save attempt is stale. Run the effect with
-[`ctx.async.start`](async-work-and-subscriptions.md#run-finite-work-with-a-typed-key)
-and close over that token in the completion-message mapper.
+A completion carrying a token from another save attempt is `Stale` and leaves the
+model unchanged.
 
 Use `saveFailed` to retain the failed submission for retry diagnostics and
 `saveCancelled` to return to idle without advancing the baseline. A stale token
@@ -674,14 +559,11 @@ edits made while saving stay current and remain dirty. `reset` returns
 in-flight operation, so cancellation policy remains an application decision.
 
 Use `failureForCurrentRevision` when failure feedback should apply only to the
-draft that was submitted:
+draft that was submitted. The view renders it with
+`workflow.map(_.failureForCurrentRevision).option(...)`, and an explicit dismiss
+action preserves the draft and its interaction state:
 
-```scala
-val currentFailure: Option[SaveError] = model.workflow.failureForCurrentRevision
-
-// An explicit dismiss action preserves the draft and its interaction state.
-val dismissed = model.copy(workflow = model.workflow.dismissFailure)
-```
+@:sourceRegion(documentation/fixtures/guides/src/forms/ProfileSaveLiveView.scala, forms-workflow-failure)
 
 The query returns a failure only when the failed submission's revision equals
 the current revision. Blur, feedback-only updates, and identical-value updates
@@ -699,6 +581,10 @@ current form, baseline, revision, and submission-token correlation. It leaves
 idle and saving workflows unchanged; it does not cancel persistence or reset
 the form. Failure storage is the last retained failed attempt, not an audit log.
 
+The complete save recipe:
+
+@:sourceRegion(documentation/fixtures/guides/src/forms/ProfileSaveLiveView.scala, forms-workflow)
+
 The [form save workflow example](../examples/form-save-workflow.md) provides
 deterministic controls for invalid and overlapping starts, success, failure,
 cancellation, revision-specific failure feedback and dismissal, edits during
@@ -707,9 +593,12 @@ save, stale replay, blocked reset, and baseline advancement.
 ## Reset Deliberately {#reset-deliberately}
 
 For a model that stores `Definition.Form` directly, a reset message should
-construct fresh initial form state and clear any saved result. This resets raw
-values, used fields, submission state, and visible errors together. Replacing
-only input strings can leave stale validation state behind.
+construct fresh initial form state and clear any saved result:
+
+@:sourceRegion(documentation/fixtures/guides/src/forms/ProfileLiveView.scala, forms-reset)
+
+This resets raw values, used fields, submission state, and visible errors
+together. Replacing only input strings can leave stale validation state behind.
 
 For a model that stores `FormWorkflow`, call `workflow.reset` and handle
 `FormWorkflowReset.Saving` explicitly. Do not replace an active workflow with a

@@ -11,16 +11,7 @@ updates over the wire.
 
 [Build your first LiveView](learn/quick-start.md) [Browse examples](examples/index.md)
 
-```scala
-import scalive.*
-import zio.ZIO
-
-enum Msg:
-  case Increment
-
-def handleMessage(model: Int, ctx: MessageContext) =
-  case Msg.Increment => ZIO.succeed(model + 1)
-```
+@:sourceRegion(documentation/fixtures/quick-start/src/quickstart/CounterLiveView.scala, home-counter)
 
 @:example(counter)
 

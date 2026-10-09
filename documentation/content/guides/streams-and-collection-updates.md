@@ -1,6 +1,6 @@
 {%
 title = "Streams and collection updates"
-description = "Render large or frequently changing collections with stable stream identities while retaining durable domain state separately."
+description = "Render large or frequently changing collections with stable stream identities while keeping domain data separately in the model."
 order = 32
 section = guides
 group = "State and components"
@@ -24,7 +24,7 @@ Use a stream when collection changes should instead become explicit
 ID-addressed insert, update, delete, or reset operations in the browser. Streams
 are especially useful for feeds, logs, and bounded windows that change
 frequently. They require more explicit ownership than keyed rendering, so they
-are not a general replacement for `Vector`, database state, or another durable
+are not a general replacement for a `Vector` in the model, a database, or another
 source of truth.
 
 ## Separate Domain State From Stream State {#separate-domain-state-from-stream-state}
@@ -34,18 +34,12 @@ rendering handle. It intentionally does not expose collection operations or its
 entries. Keep queryable domain data separately and store the latest stream
 handle beside it:
 
-```scala
-final case class Model(
-  activities: Vector[Activity],
-  activityStream: LiveStream[Activity],
-  nextId: Int
-)
-```
+@:sourceRegion(documentation/fixtures/guides/src/activity/ActivityLiveView.scala, streams-model)
 
-The `Vector` can answer application questions such as total activity count and
-category totals. The stream handle carries the current snapshot and pending DOM
-operations. Stream state belongs to one socket or component lifecycle, so mount
-must recreate it after a remount.
+The `Vector` can answer application questions such as the total activity count.
+The stream handle carries the current snapshot and pending DOM operations.
+Stream state belongs to one LiveView or component lifecycle, so mount must
+recreate it after a remount.
 
 This separation also permits a bounded DOM without discarding domain data. The
 activity example keeps its complete history in a `Vector` while retaining only
@@ -57,10 +51,7 @@ Create one @:apiSymbol(type-alias:scalive.LiveStreamDef)`LiveStreamDef[A, Id]`@:
 logical stream. Its name identifies the stream within the owning LiveView or
 component, and its DOM-ID function identifies rows:
 
-```scala
-private val ActivityStreamDef =
-  LiveStreamDef.byId[Activity, Int]("activity")(_.id).keepLast(5)
-```
+@:sourceRegion(documentation/fixtures/guides/src/activity/ActivityLiveView.scala, streams-definition)
 
 Every generated ID must be stable, non-empty, and unique in the rendered
 document. Inserting an item with an existing ID updates that row in place.
@@ -79,12 +70,7 @@ retained domain state.
 Call @:apiSymbol(def:scalive.Streams.create)`ctx.streams.create`@:@ once for a stream
 name in each lifecycle and retain the returned handle:
 
-```scala
-def mount(ctx: MountContext): Task[Model] =
-  ctx.streams.create(ActivityStreamDef, InitialActivities).map { stream =>
-    Model(InitialActivities, stream, nextId = 5)
-  }
-```
+@:sourceRegion(documentation/fixtures/guides/src/activity/ActivityLiveView.scala, streams-mount)
 
 Creating the same name twice for one owner fails. Definitions are owner-scoped,
 but rendered container and row IDs are still document IDs and must remain unique
@@ -95,17 +81,7 @@ across nested LiveViews and component instances.
 Every stream operation returns a replacement handle. Store and render that exact
 value; rendering an older handle loses the pending operation:
 
-```scala
-case Msg.Add =>
-  val activity = Activity(model.nextId, "Streams", "Inserted one row")
-  ctx.streams.insert(ActivityStreamDef, activity).map { stream =>
-    model.copy(
-      activities = model.activities :+ activity,
-      activityStream = stream,
-      nextId = model.nextId + 1
-    )
-  }
-```
+@:sourceRegion(documentation/fixtures/guides/src/activity/ActivityLiveView.scala, streams-insert)
 
 @:apiSymbol(def:scalive.Streams.insert)`insert`@:@ appends by default. Supply a
 @:apiSymbol(type-alias:scalive.StreamAt)`StreamAt`@:@ value to insert first or at an
@@ -116,19 +92,11 @@ order.
 
 ## Delete And Reset Coherently {#delete-and-reset-coherently}
 
-Apply the same domain operation to durable data and the stream. The definition
+Apply the same domain operation to the domain data and the stream. The definition
 retains the domain ID type and maps that ID to the row's DOM ID, so deletion does
 not need the complete item:
 
-```scala
-case Msg.Delete(activityId) =>
-  ctx.streams.delete(ActivityStreamDef, activityId).map { stream =>
-    model.copy(
-      activities = model.activities.filterNot(_.id == activityId),
-      activityStream = stream
-    )
-  }
-```
+@:sourceRegion(documentation/fixtures/guides/src/activity/ActivityLiveView.scala, streams-delete)
 
 @:apiSymbol(def:scalive.Streams.deleteByDomId)`deleteByDomId`@:@ is a lower-level
 alternative for a trusted rendered DOM ID belonging to that stream. Prefer
@@ -136,37 +104,29 @@ alternative for a trusted rendered DOM ID belonging to that stream. Prefer
 DOM-ID operation.
 
 @:apiSymbol(def:scalive.Streams.reset)`reset`@:@ replaces the stream snapshot and
-instructs the browser to rebuild the container. Reset durable state in the same
-message handler when the user-facing contract resets the whole example:
+instructs the browser to rebuild the container. Reset the domain data in the same
+message handler when the user-facing contract resets the whole list:
 
-```scala
-case Msg.Reset =>
-  ctx.streams.reset(ActivityStreamDef, InitialActivities).map { stream =>
-    Model(InitialActivities, stream, nextId = 5)
-  }
-```
+@:sourceRegion(documentation/fixtures/guides/src/activity/ActivityLiveView.scala, streams-reset)
 
 ## Render The Stream Container {#render-the-stream-container}
 
-@:apiSymbol(extension:scalive.renderIn)`renderIn`@:@ creates the stream container,
-assigns its required update mode, and assigns each projected row its generated
-DOM ID:
+Inside `view`, `model` is a `Signal[Model]`, so select the stream handle with
+`model.map(_.activityStream)`. @:apiSymbol(extension:scalive.renderIn)`renderIn`@:@
+creates the stream container, assigns its required update mode, and assigns each
+projected row its generated DOM ID:
 
-```scala
-model.activityStream.renderIn(ol, aria.label := "Recent activity") { activity =>
-  li(
-    p(activity.summary),
-    button(on.click(Msg.Delete(activity.id)), "Delete")
-  )
-}
-```
+@:sourceRegion(documentation/fixtures/guides/src/activity/ActivityLiveView.scala, streams-render)
 
-Do not override the container or row IDs produced by the stream. Keep controls
-inside each projected row typed to the owning LiveView's message type as usual.
+Each row receives a `Signal[Activity]`. Read its fields with `map`, and build a
+row-specific message the same way:
+`on.click(activity.map(value => Msg.Delete(value.id)))` sends the ID of the row
+that was clicked. Do not override the container or row IDs produced by the
+stream.
 
-The complete implementation is extracted from executable source:
+The complete recipe on this page:
 
-@:sourceRegion(documentation/site/src/scalive/docs/examples/ActivityStreamExample.scala, activity-stream-example)
+@:sourceRegion(documentation/fixtures/guides/src/activity/ActivityLiveView.scala, streams-liveview)
 
 Try insertion, bounded retention, deletion, and reset in the
 [bounded activity stream example](../examples/activity-stream.md).

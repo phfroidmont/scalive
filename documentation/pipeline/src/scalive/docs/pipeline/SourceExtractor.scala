@@ -217,7 +217,9 @@ object SourceExtractor:
                       s"Missing start marker for region '$regionName' in '$sourcePath'."
                     )
                   )
-      contentLines = lines.slice(region.start.line, region.end.line - 1)
+      contentLines = lines
+                       .slice(region.start.line, region.end.line - 1)
+                       .filterNot(MarkerPattern.matches)
       _ <- Either.cond(
              contentLines.exists(_.trim.nonEmpty),
              (),
@@ -227,8 +229,17 @@ object SourceExtractor:
       path = sourcePath,
       startLine = region.start.line + 1,
       endLine = region.end.line - 1,
-      content = contentLines.mkString("\n")
+      content = dedent(contentLines).mkString("\n")
     )
+
+  /** Regions inside a definition render without the indentation they share. */
+  private def dedent(lines: Vector[String]): Vector[String] =
+    val indentation = lines
+      .filter(_.trim.nonEmpty)
+      .map(_.takeWhile(_ == ' ').length)
+      .minOption
+      .getOrElse(0)
+    lines.map(_.drop(indentation))
 
   private def parseMarkers(
     lines: Vector[String],
@@ -316,14 +327,17 @@ object SourceExtractor:
         }
       }
 
+  /** Regions may nest, so a guide can show part of an embedded example, but may not cross. */
   private def rejectOverlappingRegions(
     regions: Vector[Region],
     sourcePath: String
   ): Either[SourceExtractionError, Unit] =
-    regions.sortBy(_.start.line).sliding(2).collectFirst {
-      case Seq(first, second) if second.start.line < first.end.line =>
+    val ordered = regions.sortBy(_.start.line)
+    ordered.combinations(2).collectFirst {
+      case Seq(first, second)
+          if second.start.line < first.end.line && first.end.line < second.end.line =>
         SourceExtractionError(
-          s"Nested or overlapping regions '${first.name}' and '${second.name}' in '$sourcePath'."
+          s"Overlapping regions '${first.name}' and '${second.name}' in '$sourcePath'."
         )
     } match
       case Some(error) => Left(error)

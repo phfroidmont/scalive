@@ -16,7 +16,7 @@ Match @:apiSymbol(def:scalive.LifecycleContext.connection)`ctx.connection`@:@
 when initial state or work depends on the lifecycle. The lifecycle example only
 records which kind of mount created the model:
 
-```scala
+```scala unverified
 def mount(ctx: MountContext): Task[Model] =
   val connectedMount = ctx.connection match
     case Connection.Disconnected => false

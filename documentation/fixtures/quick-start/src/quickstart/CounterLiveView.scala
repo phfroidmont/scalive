@@ -1,6 +1,7 @@
 // docs:start quick-start-live-view
 package quickstart
 
+// docs:start home-counter
 import zio.{Task, ZIO}
 
 import scalive.*
@@ -18,12 +19,13 @@ final class CounterLiveView extends LiveView[CounterLiveView.Msg, Int]:
   def view(model: Signal[Int]): HtmlElement[Msg] =
     mainTag(
       h1("Scalive counter"),
-      button(typ          := "button", on.click(Msg.Decrement), "Decrease"),
+      button(on.click(Msg.Decrement), "Decrease"),
       outputTag(aria.live := "polite", model.map(_.toString)),
-      button(typ          := "button", on.click(Msg.Increment), "Increase")
+      button(on.click(Msg.Increment), "Increase")
     )
 
 object CounterLiveView:
   enum Msg:
     case Decrement, Increment
+// docs:end home-counter
 // docs:end quick-start-live-view

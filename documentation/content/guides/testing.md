@@ -8,9 +8,83 @@ group = "Testing and troubleshooting"
 
 ## Before You Start {#prerequisites}
 
-Start with one observable behavior or incident to reproduce, the application
-routes that expose it, and a decision about whether it belongs to initial HTTP
-rendering, the connected socket, or the browser.
+This guide starts from the counter built in the [quick start](../learn/quick-start.md).
+Later sections test the forms and service-backed pages from other guides. To
+test your own application, start from one observable behavior or incident to
+reproduce and the routes that expose it.
+
+## Add Testing Support {#add-testing-support}
+
+Test support is published as the optional `dev.scalive::scalive-testing`
+artifact (see [the two Scalive artifacts](../learn/quick-start.md#create-the-project)).
+Add a test module to the quick start's `build.mill`. It uses the same snapshot
+repository and revision as the application:
+
+```scala unverified
+package build
+
+import mill.*, scalalib.*
+
+object app extends ScalaModule:
+  def scalaVersion = "3.8.4"
+  def mainClass = Some("quickstart.Main")
+
+  def repositories = Seq(
+    "https://central.sonatype.com/repository/maven-snapshots"
+  )
+
+  def mvnDeps = Seq(
+    mvn"dev.scalive::scalive:{{scaliveSnapshotVersion}}"
+  )
+
+  object test extends ScalaTests with TestModule.ZioTest:
+    def zioTestVersion = "2.1.26"
+
+    def mvnDeps = Seq(
+      mvn"dev.scalive::scalive-testing:{{scaliveSnapshotVersion}}"
+    )
+end app
+```
+
+`TestModule.ZioTest` runs tests with ZIO Test, and the nested `test` module
+depends on `app`, so tests can use the application's classes. Put test sources
+under `app/test/src`:
+
+```text
+scalive-quick-start/
+└── app/
+    ├── src/
+    │   └── quickstart/
+    └── test/
+        └── src/
+            └── quickstart/
+                ├── CounterLiveViewSpec.scala
+                └── CounterPageSpec.scala
+```
+
+## Write A First Test {#write-a-first-test}
+
+Create `app/test/src/quickstart/CounterLiveViewSpec.scala`:
+
+@:sourceRegion(documentation/fixtures/quick-start/test/src/quickstart/CounterLiveViewSpec.scala, quick-start-connected-test)
+
+The spec extends `ZIOSpecDefault`, groups tests with `suite`, and asserts with
+`assertTrue`. @:apiSymbol(def:scalive.testing.ConnectedRender.join)`ConnectedRender.join`@:@
+mounts the LiveView at `/`, renders its first HTML, and then connects it
+through the same Phoenix protocol handling that a browser uses, without starting
+a server. `clickButton` finds the button labeled **Increase** in the latest HTML,
+dispatches its click binding, and waits for the next render. `text` reads one
+element by CSS selector; here the counter's `<output>`. `ZIO.scoped` closes the
+connected view when the test ends.
+
+Run the tests from the project root:
+
+```bash
+mill app.test
+```
+
+Mill compiles the application and its tests, then reports
+`increases the count when Increase is clicked` as passed.
 
 ## Choose The Test Boundary {#choose-the-test-boundary}
 
@@ -44,86 +118,31 @@ successful-control selection or execute JavaScript.
 
 @:@
 
-## Add Testing Support {#add-testing-support}
-
-Scalive publishes and supports exactly two Scala coordinates:
-`dev.scalive::scalive`, containing all production API, render, runtime, protocol,
-and transport classes, and `dev.scalive::scalive-testing` for optional test
-support. Add the latter to the test module that already depends on your
-application. Inside this repository, Mill modules use `moduleDeps = Seq(...,
-scalive.testing)`. External snapshot consumers use the same snapshot repository
-and revision as the application artifact:
-
-```scala
-def repositories = Seq(
-  "https://central.sonatype.com/repository/maven-snapshots"
-)
-
-def mvnDeps = Seq(
-  mvn"dev.scalive::scalive-testing:{{scaliveSnapshotVersion}}"
-)
-```
-
 ## Test Disconnected Rendering {#test-disconnected-rendering}
 
-The @:apiSymbol(object:scalive.testing.DisconnectedRender)`DisconnectedRender.run`@:@ method accepts
-finalized `Routes` and a ZIO HTTP `Request`. It runs the route, consumes the
-response body once, restores a replayable body, and parses the HTML with jsoup:
+The @:apiSymbol(object:scalive.testing.DisconnectedRender)`DisconnectedRender.run`@:@
+method accepts finalized `Routes` and a ZIO HTTP `Request`. It runs the route,
+consumes the response body once, restores a replayable body, and parses the
+HTML. Create `app/test/src/quickstart/CounterPageSpec.scala`:
 
-The example uses `ZIOSpecDefault` for the test runtime, `suite` to group tests,
-and `test` for an effectful assertion. `orDieWith` turns an unexpected typed
-failure into a test defect with a useful assertion error.
+@:sourceRegion(documentation/fixtures/quick-start/test/src/quickstart/CounterPageSpec.scala, quick-start-disconnected-test)
 
-```scala
-import zio.*
-import zio.http.*
-import zio.test.*
-
-import scalive.*
-import scalive.testing.*
-
-object ProfilePageSpec extends ZIOSpecDefault:
-  private val config = ZioHttpConfig(
-    signingSecret = "fixed-test-signing-secret-000000000000",
-    sessionMaxAge = java.time.Duration.ofMinutes(30),
-    secureCookie = false,
-    allowedWebSocketOrigins = Set(WebSocketOrigin.http("localhost"))
-  ).fold(error => throw IllegalArgumentException(error.toString), identity)
-
-  private val application = Live.router(Routes.profile -> ProfileLiveView())
-  private val routes = ZioHttp.routes(application, config)
-
-  def spec = suite("ProfilePageSpec")(
-    test("renders the profile form") {
-      for
-        page <- DisconnectedRender.run(routes, Request.get(URL.root))
-        profileForm <- ZIO
-                         .fromEither(
-                           page.form(
-                             FormQuery(
-                               action = Some("/profiles"),
-                               method = Some(Method.POST)
-                             )
-                           )
-                         )
-                         .orDieWith(error => new AssertionError(error.toString))
-      yield assertTrue(
-        page.response.status == Status.Ok,
-        page.text.contains("Profile"),
-        profileForm.hasSubmitBinding,
-        profileForm.values(FormPath("profile", "name")) == Vector("Alice")
-      )
-    }
-  )
-end ProfilePageSpec
-```
-
-The names `Routes.profile` and `ProfileLiveView` represent application code. Use
-a fixed, valid test @:apiSymbol(class:scalive.ZioHttpConfig)`ZioHttpConfig`@:@
-when assertions depend on signed cookies or tokens; do not compare output
+This test builds the same router as the quick start's `Main`, without the root
+layout, and turns it into ZIO HTTP routes with a fixed test
+@:apiSymbol(class:scalive.ZioHttpConfig)`ZioHttpConfig`@:@. Use one fixed, valid
+config when assertions depend on signed cookies or tokens; do not compare output
 produced with independently constructed configurations. Even disconnected tests
 must supply a non-empty origin allowlist because it is part of valid transport
 configuration.
+
+Two imports need care:
+
+- `zio.test` and Scalive both define `Live`. Excluding it with
+  `import zio.test.{Live as _, *}` makes `Live.router` refer to Scalive. When a
+  test also builds routes with `live / "..."`, exclude `live` the same way:
+  `import zio.test.{Live as _, live as _, *}`.
+- `zio.http.*` would also import ZIO HTTP's `Routes`, which hides the quick
+  start's `Routes` object. Import only the ZIO HTTP names the test uses.
 
 ## Query Forms Semantically {#query-forms-semantically}
 
@@ -159,26 +178,15 @@ groups, are valid.
 Use @:apiSymbol(def:scalive.testing.RenderedForm.submit)`RenderedForm.submit`@:@
 when a rendered GET or POST form should execute an ordinary local HTTP route.
 Supply the complete ordered @:apiSymbol(class:scalive.FormData)`FormData`@:@,
-including the rendered CSRF field for a checked POST:
+including the rendered CSRF field for a checked POST. This test signs in through
+the login page from
+[Ordinary HTTP forms and redirects](http-forms-and-redirects.md#render-a-reusable-http-form):
 
-```scala
-for
-  page <- DisconnectedRender.run(liveRoutes, Request.get(loginUrl))
-  form <- ZIO.fromEither(page.form(FormQuery(method = Some(Method.POST))))
-  csrf <- ZIO.fromOption(form.values(CsrfProtection.ParamName).headOption)
-  redirect <- form.submit(
-                httpRoutes,
-                FormData(
-                  Vector(
-                    CsrfProtection.ParamName -> csrf,
-                    LoginForm.Email.name      -> "ada@example.test"
-                  )
-                ),
-                 submitter = Some(RawFormSubmitter("sign-in", "yes"))
-              )
-  dashboard <- redirect.followSeeOther(liveRoutes)
-yield assertTrue(dashboard.text.contains("Welcome"))
-```
+@:sourceRegion(documentation/fixtures/guides/test/src/httpforms/LoginFlowSpec.scala, testing-submit-form)
+
+Here `routes` combines the Live routes and the HTTP handlers, built with one
+fixed test config, and `login` is a GET request for `/login`. The handler needs
+a `Sessions` service, so the effect is provided with a test layer.
 
 Submission retains duplicate field names and appends the optional submitter.
 GET fields replace the action query. POST fields become an
@@ -202,22 +210,9 @@ accepts only a local `303 See Other` with a `Location` header.
 @:apiSymbol(def:scalive.testing.ConnectedRender.join)`ConnectedRender.join`@:@
 finalizes a single LiveView at `/`, performs disconnected rendering, validates
 its bootstrap credentials, and starts the connected lifecycle through the
-production in-process Phoenix transport and supervision:
-
-```scala
-test("increments after a connected click") {
-  ZIO.scoped {
-    for
-      view  <- ConnectedRender.join(CounterLiveView())
-      _     <- view.clickButton("Increment")
-      count <- view.text("#count")
-    yield assertTrue(count == "1")
-  }
-}
-```
-
-Use this overload when routing and reconnect admission are not part of the
-claim. The name `CounterLiveView` represents application code.
+production in-process Phoenix transport and supervision. The
+[first test](#write-a-first-test) uses it. Use this overload when routing and
+reconnect admission are not part of the claim.
 
 ### Open A Routed Application Client {#open-a-routed-application-client}
 
@@ -228,25 +223,15 @@ that should render the route. It performs the disconnected request and returns a
 @:apiSymbol(class:scalive.testing.ConnectedClient)`ConnectedClient`@:@ whose
 @:apiSymbol(def:scalive.testing.ConnectedClient.join)`join`@:@ and
 @:apiSymbol(def:scalive.testing.ConnectedClient.reconnect)`reconnect`@:@ operations
-each create a distinct in-process transport:
+each create a distinct in-process transport. This test opens the reports route
+from [Services and dependency injection](services-and-zlayer-injection.md#register-the-route)
+and provides its service:
 
-```scala
-ZIO.scoped {
-  for
-    client <- ConnectedRender.open(
-                application,
-                config,
-                Request.get(URL.decode("/accounts/42").fold(throw _, identity))
-              )
-    view   <- client.join
-    title  <- view.text("h1")
-  yield assertTrue(title == "Account 42")
-}
-```
+@:sourceRegion(documentation/fixtures/guides/test/src/reports/ReportsRouteSpec.scala, services-route-test)
 
-Here `application` and its `/accounts/42` route are application code. This form
-exercises the actual route, mount aspects, layouts, signed bootstrap, request
-URL, Phoenix event dispatcher, and any root admission installed with
+`ConnectedRender.open` exercises the actual route, mount aspects, layouts, signed
+bootstrap, request URL, Phoenix event dispatcher, and any root admission
+installed with
 @:apiSymbol(def:scalive.LiveSessionBuilder.withAdmission)`withAdmission`@:@.
 That transport-owned boundary is sometimes called physical admission. It
 revalidates every root join before installing its connected lifecycle, including
@@ -285,7 +270,7 @@ async work that may produce several intermediate renders. It returns a
 `Task[String]` containing the exact HTML that satisfied the predicate; inspect
 that returned snapshot rather than reading `view.html` again:
 
-```scala
+```scala unverified
 import scalive.testing.{HtmlQueryError, RenderedHtml}
 
 for
@@ -334,33 +319,10 @@ or a disconnected page's body. A
 input in `html`, not a reserialized document; `text` is normalized whole-document
 text. Parse old strings directly rather than querying the current live view:
 
-```scala
-import scalive.testing.{ConnectedRender, HtmlQueryError, RenderedHtml}
+@:sourceRegion(documentation/fixtures/quick-start/test/src/quickstart/CounterSnapshotSpec.scala, testing-snapshots)
 
-for
-  retained <- ZIO.scoped {
-                for
-                  view   <- ConnectedRender.join(CounterLiveView())
-                  before <- view.html
-                  _      <- view.clickButton("Increment")
-                  after  <- view.html
-                yield (before, after)
-              }
-yield
-  // The connected view is already closed; both strings remain queryable.
-  val before = RenderedHtml.parse(retained._1)
-  val after  = RenderedHtml.parse(retained._2)
-  assertTrue(
-    before.html == retained._1,
-    before.selectOne("#count").map(_.text) == Right("0"),
-    after.selectOne("#count").map(_.text) == Right("1"),
-    before.selectOne("#missing") == Left(HtmlQueryError.NotFound("#missing")),
-    after.selectAll("#missing").map(_.isEmpty) == Right(true)
-  )
-```
-
-`CounterLiveView` represents application code with an initial count of zero and
-no `#missing` element. CSS queries use jsoup selector syntax:
+The counter starts at zero and has no `#missing` element. CSS queries use jsoup
+selector syntax:
 
 - @:apiSymbol(def:scalive.testing.RenderedHtml.selectOne)`selectOne(css)`@:@ returns
   `Either[HtmlQueryError, RenderedElement]` and requires exactly one match. Zero
@@ -397,38 +359,16 @@ Use `changeForm` with a target and `_unused_*` markers to verify field-local
 feedback. Use `submitForm` without unused markers to verify that submission
 reveals all errors and produces a domain value only when valid. Query the
 committed HTML after each action rather than asserting against an independently
-decoded form:
+decoded form. This spec tests the profile form from
+[Typed forms and validation](typed-forms-and-validation.md#handle-change-and-submit-events):
 
-```scala
-for
-  view <- ConnectedRender.join(ProfileLiveView())
-  _ <- view.changeForm(
-         "#profile-form",
-         Vector(
-           Profile.Name.name        -> "",
-           "profile[_unused_email]" -> "",
-           Profile.Email.name       -> ""
-         ),
-         target = Some(Profile.Name.name)
-       )
-  changed <- view.html
-  _ <- view.submitForm(
-         "#profile-form",
-         Vector(Profile.Name.name -> "", Profile.Email.name -> "invalid")
-       )
-  submitted <- view.html
-yield assertTrue(
-  changed.contains("Name is required"),
-  !changed.contains("Enter a valid email"),
-submitted.contains("Enter a valid email")
-)
-```
+@:sourceRegion(documentation/fixtures/guides/test/src/forms/ProfileLiveViewSpec.scala, forms-test)
 
 For a definition-owned typed submitter, pass its raw successful-control pair explicitly. The
 connected harness appends that pair to the ordered payload just as the Phoenix browser serializer
 does; it does not synthesize optional protocol metadata:
 
-```scala
+```scala unverified
 view.submitForm(
   "#profile-form",
   validFields,
@@ -460,7 +400,7 @@ then call
 @:apiSymbol(def:scalive.testing.ConnectedNavigation.follow)`follow`@:@ to execute
 the production redirect-join admission path:
 
-```scala
+```scala unverified
 for
   action <- view.click("[data-open-settings]")
   settings <- action match
@@ -482,7 +422,7 @@ disconnected GET. Revoke durable authorization, retire the admitted transport,
 wait until the view observes disconnection, and assert that the next transport
 is rejected:
 
-```scala
+```scala unverified
 val request = Request.get(
   URL.decode("/accounts/42?session=test-session").fold(throw _, identity)
 )
@@ -541,7 +481,7 @@ behavior under test. This boundary can prove that one configured origin produces
 an upgrade response and a missing origin receives HTTP 403 without starting a
 server or browser:
 
-```scala
+```scala unverified
 val socketUrl = URL.decode("/live/websocket").fold(throw _, identity)
 val allowedUpgrade = Request
   .get(socketUrl)

@@ -15,21 +15,14 @@ before attaching effects to lifecycle hooks.
 ## Render Keyed Flash {#render-keyed-flash}
 
 Define a stable @:apiSymbol(opaque-type:scalive.FlashKind)`FlashKind`@:@, update it through the phase context, and render only
-that key with @:apiSymbol(object:scalive.flash)`flash`@:@:
+that key with @:apiSymbol(object:scalive.flash)`flash`@:@. `Saved` is
+`FlashKind("saved")`. Put the message from `handleMessage`:
 
-```scala
-private val Saved = FlashKind("saved")
+@:sourceRegion(documentation/fixtures/guides/src/feedback/DocumentLiveView.scala, feedback-flash-put)
 
-case Msg.Save =>
-  save *> ctx.flash.put(Saved, "Changes saved.").as(model)
+Then render that key in `view`:
 
-def view(model: Signal[Model]) =
-  div(
-    flash(Saved) { message =>
-      p(role := "status", aria.live := "polite", message)
-    }
-  )
-```
+@:sourceRegion(documentation/fixtures/guides/src/feedback/DocumentLiveView.scala, feedback-flash-render)
 
 @:apiSymbol(def:scalive.Flash.put)`put`@:@ replaces the value for the same key.
 @:apiSymbol(def:scalive.Flash.clear)`clear`@:@ removes that key, and
@@ -47,10 +40,7 @@ Override @:apiSymbol(def:scalive.LiveView.pageTitle)`pageTitle`@:@ on the routed
 @:apiSymbol(trait:scalive.LiveView)`LiveView`@:@ and derive it from the same
 model exposed as a signal to @:apiSymbol(def:scalive.LiveView.view)`view`@:@:
 
-```scala
-override def pageTitle(model: Model): Option[String] =
-  Some(model.currentTitle)
-```
+@:sourceRegion(documentation/fixtures/guides/src/feedback/DocumentLiveView.scala, feedback-page-title)
 
 The root layout's @:apiSymbol(def:scalive.liveTitle)`liveTitle`@:@ renders that title during disconnected HTTP
 rendering. Connected model changes send title metadata so the client updates
@@ -68,12 +58,7 @@ that boundary visible by displaying its projection inside the example.
 Render both states and let declarative connection bindings switch them in the
 browser:
 
-```scala
-div(
-  span(connection.visibleWhenConnected, "Connected"),
-  span(connection.visibleWhenDisconnected, "Offline")
-)
-```
+@:sourceRegion(documentation/fixtures/guides/src/feedback/DocumentLiveView.scala, feedback-connection)
 
 The disconnected state is visible in static HTML by default. Once the
 LiveSocket connects, the client hides it and reveals the connected state; it
@@ -89,14 +74,7 @@ or explain unavailable interaction.
 
 Declare static hooks once on the @:apiSymbol(trait:scalive.LiveView)`LiveView`@:@:
 
-```scala
-override def hooks: LiveHooks[Msg, Model] =
-  LiveHooks.afterRender { (model, ctx) =>
-    ctx.connection match
-      case Connection.Connected(_) => recordRenderedTitle(model.currentTitle)
-      case Connection.Disconnected => ZIO.unit
-  }
-```
+@:sourceRegion(documentation/fixtures/guides/src/feedback/DocumentLiveView.scala, feedback-after-render)
 
 An after-render hook observes a render that already succeeded. It cannot return
 a replacement model. Use @:apiSymbol(def:scalive.LiveView.handleMessage)`handleMessage`@:@,

@@ -56,7 +56,7 @@ capability is exposed through the connected mount branch. Call
 @:apiSymbol(def:scalive.ConnectedResources.acquireRelease)`acquireRelease`@:@
 there and provide a non-failing finalizer:
 
-```scala
+```scala unverified
 trait SessionMonitor:
   def stop: UIO[Unit]
 
@@ -165,14 +165,14 @@ An @:apiSymbol(opaque-type:scalive.AsyncKey)`AsyncKey[A]`@:@ names one task and 
 its result type. Derive keys from stable instance identity when multiple copies
 of an example or component can coexist:
 
-```scala
+```scala unverified
 private val ReportTask = AsyncKey[Report](s"async-report-$instanceId")
 ```
 
 Start work through @:apiSymbol(def:scalive.Async.start)`ctx.async.start`@:@ and map
 its result into the owning LiveView's message type:
 
-```scala
+```scala unverified
 ctx.async
   .start(ReportTask)(generateReport)(Msg.ReportCompleted(_))
   .as(model.copy(report = model.report.loading()))
@@ -197,7 +197,7 @@ successful, failed, and explicitly cancelled states. Loading, failure, and
 cancellation can retain the last successful value, which lets a refresh show
 existing data instead of replacing the entire panel with a spinner.
 
-```scala
+```scala unverified
 final case class Model(report: AsyncValue[Report] = AsyncValue.empty)
 
 case Msg.ReportCompleted(result) =>
@@ -220,7 +220,7 @@ If the key exists, Scalive invokes the original mapper with
 `LiveAsyncResult.Cancelled`, including the optional application reason. Use this
 path when cancellation itself belongs in the UI:
 
-```scala
+```scala unverified
 ctx.async.cancel(ReportTask, Some("Cancelled by the user")).as(model)
 ```
 
@@ -239,7 +239,7 @@ A @:apiSymbol(opaque-type:scalive.SubscriptionKey)`SubscriptionKey`@:@ identifie
 registered stream in its root LiveView or exact component owner. The stream must
 emit that owner's `Msg` type and cannot fail:
 
-```scala
+```scala unverified
 private val ClockSubscription =
   SubscriptionKey(s"subscription-clock-$instanceId")
 
@@ -252,7 +252,7 @@ registered key, including a component registration whose worker is suspended by
 dormancy. Use it when starting twice indicates a state-machine mistake. The clock
 guards `start` with its model so the button and server transition agree:
 
-```scala
+```scala unverified
 ctx.subscriptions
   .start(ClockSubscription, SubscriptionDelivery.Lossless)(ticks(1.second))
 ```
@@ -263,7 +263,7 @@ resubscribes the runtime's current set. Use replacement when changing polling
 frequency, topic, props, or another stream parameter is valid application
 behavior:
 
-```scala
+```scala unverified
 ctx.subscriptions
   .replace(ClockSubscription, SubscriptionDelivery.Lossless)(ticks(250.millis))
 ```
@@ -279,7 +279,7 @@ uses `Lossless` for both start and replacement so every tick is counted.
 and succeeds when it is already absent. Update the model in the same handler so
 the rendered controls describe the registered state:
 
-```scala
+```scala unverified
 case Msg.Cancel =>
   ctx.subscriptions
     .cancel(ClockSubscription)

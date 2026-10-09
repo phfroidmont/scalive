@@ -24,21 +24,7 @@ deployment manifest; the dedicated loader serves it independently.
 Load @:apiSymbol(object:scalive.NavigationGuardAssets)`NavigationGuardAssets`@:@ at startup, pass it to the root
 layout, and add its routes alongside the application assets:
 
-```scala
-for
-  clientAssets <- LiveViewClientAssets.load()
-  appAssets    <- StaticAssets.load(appAssetConfig)
-  guardAssets  <- NavigationGuardAssets.load()
-  rootLayout    = RootLayout(clientAssets, appAssets, guardAssets)
-  application  = Live.router.withRootLayout(rootLayout)(liveRoutes*)
-  routes       =
-    ZioHttp.routes(application, security) ++
-      clientAssets.routes ++
-      appAssets.routes ++
-      guardAssets.routes
-  _ <- Server.serve(routes)
-yield ()
-```
+@:sourceRegion(documentation/fixtures/guides/src/guards/Main.scala, guards-load)
 
 The guard runtime defaults to its own `/_scalive/assets` mount. Pass another
 `zio.http.Path` to @:apiSymbol(def:scalive.NavigationGuardAssets.load)`NavigationGuardAssets.load`@:@ when that path conflicts with
@@ -53,30 +39,7 @@ before the packaged clients and application bootstrap. Every script shown below
 is deferred, so document order installs the guard listener before `LiveSocket`
 connects:
 
-```scala
-final class RootLayout(
-  clientAssets: LiveViewClientAssets,
-  appAssets: StaticAssets,
-  guardAssets: NavigationGuardAssets
-) extends LiveRootLayout[Any, Any]:
-  def key(ctx: LiveRootLayoutContext[Any, Any]) = "application-root"
-
-  def render[Msg](
-    content: HtmlElement[Msg],
-    pageTitle: Option[String],
-    ctx: LiveRootLayoutContext[Any, Any]
-  ) =
-    htmlRootTag(
-      headTag(
-        guardAssets.script,
-        clientAssets.phoenixScript,
-        clientAssets.liveViewScript,
-        appAssets.trackedScript("app.js", defer := true),
-        liveTitle(pageTitle, default = "Application")
-      ),
-      bodyTag(content)
-    )
-```
+@:sourceRegion(documentation/fixtures/guides/src/guards/RootLayout.scala, guards-root-layout)
 
 The packaged client scripts may be omitted when `app.js` is a custom bundle
 which already includes Phoenix and Phoenix LiveView. In either setup, keep the
@@ -93,61 +56,16 @@ Derive dirty state from canonical typed form values and add
 @:apiSymbol(def:scalive.navigation.guardWhen)`navigation.guardWhen`@:@ to the
 element which owns it:
 
-```scala
-final case class Note(value: String)
+@:sourceRegion(documentation/fixtures/guides/src/guards/NoteLiveView.scala, guards-note-form)
 
-object NoteForm:
-  val Root       = FormRoot("note")
-  val NoteText   = Root.text("value")
-  val Definition = Root.product[Note]((NoteText,))
+@:sourceRegion(documentation/fixtures/guides/src/guards/NoteLiveView.scala, guards-liveview)
 
-final case class Model(
-  form: NoteForm.Definition.Form,
-  baseline: NoteForm.Definition.Values
-):
-  def isDirty: Boolean = form.values != baseline
-
-enum Msg:
-  case Validate(event: NoteForm.Definition.Event)
-  case Save(event: NoteForm.Definition.Event)
-
-def handleMessage(model: Model, ctx: MessageContext) =
-  case Msg.Validate(event) =>
-    ZIO.succeed(model.copy(form = event.form))
-  case Msg.Save(event) =>
-    event.form.result match
-      case Right(note) =>
-        saveNote(note.value).as(
-          model.copy(form = event.form, baseline = event.form.values)
-        )
-      case Left(_) =>
-        ZIO.succeed(model.copy(form = event.form))
-
-override def view(model: Signal[Model]) =
-  val noteForm  = model.map(_.form)
-  val noteField = noteForm.field(NoteForm.NoteText)
-
-  form(
-    idAttr := "note-form",
-    navigation.guardWhen(
-      dirty = model.map(_.isDirty),
-      message = "Discard unsaved changes?"
-    ),
-    NoteForm.Definition.onChange(Msg.Validate(_)),
-    NoteForm.Definition.onSubmit(Msg.Save(_)),
-    label(forId := noteField.id, "Note"),
-    noteField.text(noteField.validationAttributes),
-    button(typ := "submit", "Save")
-  )
-```
-
-Here `saveNote: String => Task[Unit]` is the application's persistence operation.
-Because `as` advances the `FormValues` baseline only after that effect succeeds,
-a failed save leaves the guard active. Construct the initial baseline from
-`val form = NoteForm.Definition.initial(...)` and `form.values`. A reset or
-deliberate discard should likewise replace the form from that baseline. For
-screens that need reset and stale-save handling together, use
-`NoteForm.Definition.workflow(form)` and derive dirty state from
+Here `Notes` is the application's persistence service. Because `as` advances
+the `FormValues` baseline only after that effect succeeds, a failed save leaves
+the guard active. `mount` builds the initial baseline from the values of the
+initial form. A reset or deliberate discard should likewise replace the form
+from that baseline. For screens that need reset and stale-save handling
+together, use `NoteForm.Definition.workflow(form)` and derive dirty state from
 `workflow.isDirty`.
 
 The marker is absent while clean and contains the confirmation message while

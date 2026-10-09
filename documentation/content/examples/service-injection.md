@@ -1,15 +1,16 @@
 {%
 title = "Reports service injection"
-description = "A layer-backed route constructor-injects a reports service while selection remains connection-local."
+description = "A route builds its LiveView from a reports service while selection remains connection-local."
 order = 7
 section = examples
 %}
 
 Select a report loaded through a constructor-injected service. Refresh queries
 the service again, while reset changes only connection-local selection state.
-The “Open the layer-backed route” link runs the same `ReportsExample.layer`
-shown in source with `Reports` supplied by the router environment.
+The **Open service-backed route** link opens `ReportsExample.route`, shown in the
+source below. That route builds the LiveView with `.from`, taking `Reports` from
+the application environment.
 
 @:example(service-injection)
 
-Related guidance: [inject services with ZLayer](../guides/services-and-zlayer-injection.md#inject-a-service-into-a-liveview).
+Related guidance: [inject services into LiveViews](../guides/services-and-zlayer-injection.md#inject-a-service-into-a-liveview).

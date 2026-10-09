@@ -68,6 +68,27 @@ object SourceExtractorSpec extends ZIOSpecDefault:
             )
           }
         }
+      },
+      test("removes the indentation shared by a region inside a definition") {
+        withTempDirectory("source-extractor-indent-") { temporaryRoot =>
+          ZIO.attemptBlocking {
+            val repository = Files.createDirectory(temporaryRoot.resolve("repository"))
+            val examples   = Files.createDirectory(repository.resolve("examples"))
+            val _ = Files.writeString(
+              examples.resolve("Indented.scala"),
+              "object Sample:\n  // docs:start method\n  def run =\n\n    true\n  // docs:end method\n",
+              StandardCharsets.UTF_8
+            )
+            val result = SourceExtractor.extract(
+              repository,
+              Seq(Path.of("examples")),
+              Path.of("examples/Indented.scala"),
+              "method"
+            )
+
+            assertTrue(result.map(_.content) == Right("def run =\n\n  true"))
+          }
+        }
       }
     ),
     suite("path validation")(
@@ -231,18 +252,30 @@ object SourceExtractorSpec extends ZIOSpecDefault:
           "End marker precedes start marker for region 'sample' in 'examples/Reversed.scala'."
         )
       },
-      test("rejects nested regions") {
-        assertFixtureError(
-          "Nested.scala",
-          "outer",
-          "Nested or overlapping regions 'outer' and 'inner' in 'examples/Nested.scala'."
+      test("extracts nested regions without the inner markers") {
+        val outer = SourceExtractor.extract(
+          fixtureRepository,
+          allowedRoots,
+          Path.of("examples/Nested.scala"),
+          "outer"
+        )
+        val inner = SourceExtractor.extract(
+          fixtureRepository,
+          allowedRoots,
+          Path.of("examples/Nested.scala"),
+          "inner"
+        )
+
+        assertTrue(
+          outer.map(_.content) == Right("val outer = true\nval inner = true"),
+          inner.map(_.content) == Right("val inner = true")
         )
       },
       test("rejects overlapping regions") {
         assertFixtureError(
           "Overlapping.scala",
           "first",
-          "Nested or overlapping regions 'first' and 'second' in 'examples/Overlapping.scala'."
+          "Overlapping regions 'first' and 'second' in 'examples/Overlapping.scala'."
         )
       },
       test("rejects malformed markers") {

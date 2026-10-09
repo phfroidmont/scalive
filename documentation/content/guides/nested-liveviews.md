@@ -39,7 +39,7 @@ separate lifecycle is needed.
 
 Embed the child with @:apiSymbol(def:scalive.liveView)`liveView`@:@:
 
-```scala
+```scala unverified
 def view(model: Signal[Model]) =
   sectionTag(
     liveView(
@@ -123,7 +123,7 @@ generic join or `phx_error` behavior and may rejoin independently.
 
 Set `linkParentOnCrash = true` when the parent is invalid without that child:
 
-```scala
+```scala unverified
 liveView(
   id = "required-editor",
   value = RequiredEditorLiveView(documentId),

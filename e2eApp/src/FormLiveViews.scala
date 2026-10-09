@@ -509,7 +509,7 @@ object FormDynamicInputsLiveView:
     val Name       = Root.text("name")
     val Users      = Root.rows("users")
     val UserName   = Users.text("name")
-    val UserRows   = Users.product[UserInput](Tuple1(UserName))
+    val UserRows   = Users.product[UserInput](UserName)
     val Definition = Root.product[DynamicInputsForm]((Name, UserRows))
     val Adapter    = PhoenixNestedParamsAdapter(Definition, UserRows)
 

@@ -8,7 +8,7 @@ object FormWorkflowSpec extends ZIOSpecDefault:
   final private case class Draft(name: String)
   private val Root       = FormRoot("draft")
   private val Name       = Root.text("name").required(FieldIssue("Name is required"))
-  private val Definition = Root.product[Draft](Tuple1(Name))
+  private val Definition = Root.product[Draft](Name)
 
   def spec = suite("FormWorkflowSpec")(
     test("keeps absent false checkboxes clean and tracks checked then unchecked revisions") {
@@ -370,8 +370,8 @@ object FormWorkflowSpec extends ZIOSpecDefault:
         final case class Draft(name: String)
         val root = FormRoot("draft")
         val name = root.text("name")
-        val first = root.product[Draft](Tuple1(name))
-        val second = root.product[Draft](Tuple1(name))
+        val first = root.product[Draft](name)
+        val second = root.product[Draft](name)
         val workflow = first.workflow[String](first.initial(name.initial("Ada")))
         val snapshot = second.initial(name.initial("Grace")).validSnapshot.get
         workflow.beginSave match

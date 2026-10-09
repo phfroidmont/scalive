@@ -154,6 +154,46 @@ object RoutedConstructionSpec extends ZIOSpecDefault:
 
       assertTrue(errors.isEmpty)
     },
+    test("service factories add one environment requirement without route context") {
+      val valid = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        import zio.*
+        import zio.http.codec.PathCodec
+
+        trait Reports
+
+        final class ReportsView(reports: Reports) extends LiveView.Eventless[String]:
+          def mount(ctx: MountContext) = ZIO.succeed("mounted")
+          def view(model: Signal[String]) = div(model)
+
+        final class ReportView(reports: Reports) extends LiveView.Routed.Eventless[String, Int]:
+          def mount(id: Int, ctx: MountContext) = ZIO.succeed(id.toString)
+          def view(model: Signal[String]) = div(model)
+
+        val inline: LiveRoute[Reports, Unit] { type Input = Any } =
+          (live / "reports").from((reports: Reports) => ReportsView(reports))
+        val constructor: LiveRoute[Reports, Unit] { type Input = Any } =
+          (live / "reports").from(ReportsView(_: Reports))
+        val routed: LiveRoute[Reports, Int] { type Input = Any } =
+          (live / "reports" / PathCodec.int("id")).params.from(ReportView(_: Reports))
+        val application: LiveApplication[Reports] = Live.router(inline, routed)
+      """)
+      val missingService = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        import zio.*
+
+        trait Reports
+
+        final class ReportsView(reports: Reports) extends LiveView.Eventless[String]:
+          def mount(ctx: MountContext) = ZIO.succeed("mounted")
+          def view(model: Signal[String]) = div(model)
+
+        val invalid: LiveApplication[Any] =
+          Live.router((live / "reports").from(ReportsView(_: Reports)))
+      """)
+
+      assertTrue(valid.isEmpty, missingService.nonEmpty)
+    },
     test("routed and post-aspect builders expose the complete context family") {
       val errors = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*

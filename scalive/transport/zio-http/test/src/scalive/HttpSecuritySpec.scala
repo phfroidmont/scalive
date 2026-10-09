@@ -104,7 +104,7 @@ object HttpSecuritySpec extends ZIOSpecDefault:
       final case class Profile(name: String)
       val root       = FormRoot("profile")
       val name       = root.text("name").required(FieldIssue("Name is required"))
-      val definition = root.product[Profile](Tuple1(name))
+      val definition = root.product[Profile](name)
       val decoder    = HttpFormDecoder.urlEncoded(definition, 1024, security.csrf)
 
       for

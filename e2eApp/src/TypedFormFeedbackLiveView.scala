@@ -275,7 +275,7 @@ object TypedFormFeedbackLiveView:
   val Notes     = Root.text("notes").required(FieldIssue("Notes are required"))
   val RowGroup  = Root.rows("rows")
   val RowName   = RowGroup.text("name").required(FieldIssue("Row name is required"))
-  val RowSchema = RowGroup.product[Row](Tuple1(RowName))
+  val RowSchema = RowGroup.product[Row](RowName)
   val Definition =
     Root.product[Data](
       (Name, Email, Phone, Date, Choice, Checkbox, Topics, Select, Notes, RowSchema)

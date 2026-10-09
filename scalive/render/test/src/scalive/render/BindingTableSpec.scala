@@ -16,7 +16,7 @@ object BindingTableSpec extends ZIOSpecDefault:
   private final case class TypedData(name: String)
   private val TypedRoot       = FormRoot("typed")
   private val TypedName       = TypedRoot.text("name")
-  private val TypedDefinition = TypedRoot.product[TypedData](Tuple1(TypedName))
+  private val TypedDefinition = TypedRoot.product[TypedData](TypedName)
   private enum TypedIntent(val wireValue: String):
     case Preview extends TypedIntent("preview")
     case Save    extends TypedIntent("save")
@@ -32,8 +32,8 @@ object BindingTableSpec extends ZIOSpecDefault:
   private val NestedRoot       = FormRoot("nested")
   private val NestedItems      = NestedRoot.rows("items")
   private val NestedName       = NestedItems.text("name")
-  private val NestedItemRows   = NestedItems.product[NestedItem](Tuple1(NestedName))
-  private val NestedDefinition = NestedRoot.product[NestedBasket](Tuple1(NestedItemRows))
+  private val NestedItemRows   = NestedItems.product[NestedItem](NestedName)
+  private val NestedDefinition = NestedRoot.product[NestedBasket](NestedItemRows)
   private val NestedAdapter    = PhoenixNestedParamsAdapter(NestedDefinition, NestedItemRows)
   private val NestedSubmitter =
     NestedDefinition.submitter(TypedIntent.values)(_.wireValue)
@@ -265,30 +265,6 @@ object BindingTableSpec extends ZIOSpecDefault:
         },
         html.contains("name=\"typed[_scalive_submitter]\""),
         html.contains("value=\"preview\"")
-      )
-    },
-    test("decodes typed submit actions through a current form") {
-      val current = TypedDefinition.initial(TypedName.initial("Ada"))
-      val compiled = RenderProgram.compile[Unit, TypedFormMsg] { _ =>
-        form(idAttr := "current-typed-form", current.onSubmit(TypedSubmitter)(TypedFormMsg.Submitted.apply))
-      }
-      val data = FormData(
-        Vector(TypedName.name -> "Ada", TypedSubmitter.name -> TypedIntent.Save.wireValue)
-      )
-
-      for
-        program   <- ZIO.fromEither(compiled)
-        candidate <- program.evaluate(())
-        submitId = bindingAttribute(candidate, "phx-submit")
-        submitted = candidate.bindings.resolve(submitId).map(
-                      _.dispatch(BindingPayload.Form(data))
-                    )
-      yield assertTrue(
-        submitted.exists {
-          case Right(BindingDispatch.Owner(TypedFormMsg.Submitted(event, intent))) =>
-            event.form.valueOption.contains(TypedData("Ada")) && intent == Right(TypedIntent.Save)
-          case _ => false
-        }
       )
     },
     test("decodes typed submit actions after translating Phoenix nested parameters") {

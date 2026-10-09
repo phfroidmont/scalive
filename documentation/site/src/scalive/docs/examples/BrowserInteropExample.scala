@@ -27,7 +27,7 @@ final class BrowserInteropExample(instanceId: String)
       .show(to = placeholderRef.selector)
 
   override def hooks: LiveHooks[Msg, Model] =
-    LiveHooks.empty[Msg, Model].onBrowserEvent(CopyResultEvent) { (model, result, _) =>
+    LiveHooks.onBrowserEvent(CopyResultEvent) { (model, result, _) =>
       ZIO.succeed(applyCopyResult(model, result))
     }
 

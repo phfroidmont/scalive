@@ -1,7 +1,5 @@
 package scalive
 
-import scala.reflect.Enum
-
 import scalive.codecs.StringAsIsEncoder
 
 /** Immutable current semantic values, validation result, and interaction state.
@@ -23,57 +21,6 @@ final class Form[Owner, Schema, Domain] private[scalive] (
 
   /** All validation errors, including errors currently hidden by interaction state. */
   def errors: FormErrors[Owner] = result.left.getOrElse(FormErrors.empty)
-
-  /** Renders an ordinary HTTP form; `action` and `method` are owned by `target`. */
-  def http[Msg](target: FormAction)(mods: Mod.Input[Msg]*): HtmlElement[Msg] =
-    Form.http(target)(mods*)
-
-  /** Handles LiveView `phx-change` and recovery while preserving this form's schema type. */
-  def onChange[Msg](f: FormEvent[Owner, Schema, Domain] => Msg): Mod.Attr[Msg] =
-    owningDefinition.onChange(event => f(event.asInstanceOf[FormEvent[Owner, Schema, Domain]]))
-
-  /** Handles LiveView `phx-change` and recovery with separate schema-safe callbacks. */
-  def onChange[Msg](
-    changed: FormEvent[Owner, Schema, Domain] => Msg,
-    recovered: FormEvent[Owner, Schema, Domain] => Msg
-  ): Mod.Attr[Msg] =
-    owningDefinition.onChange(
-      event => changed(event.asInstanceOf[FormEvent[Owner, Schema, Domain]]),
-      event => recovered(event.asInstanceOf[FormEvent[Owner, Schema, Domain]])
-    )
-
-  /** Handles a typed submission event. */
-  def onSubmit[Msg](f: FormEvent[Owner, Schema, Domain] => Msg): Mod.Attr[Msg] =
-    owningDefinition.onSubmit(event => f(event.asInstanceOf[FormEvent[Owner, Schema, Domain]]))
-
-  /** Handles a typed submission and decodes one definition-owned submit action. */
-  def onSubmit[Action <: Enum, Msg](
-    submitter: FormSubmitter[Owner, Schema, Action]
-  )(
-    f: (
-      FormEvent[Owner, Schema, Domain],
-      Either[FormSubmitter.DecodeError, Action]
-    ) => Msg
-  ): Mod.Attr[Msg] =
-    require(
-      submitter.definition eq owningDefinition,
-      "form submitter belongs to another definition"
-    )
-    owningDefinition.onSubmit(event =>
-      val typed = event.asInstanceOf[FormEvent[Owner, Schema, Domain]]
-      f(typed, submitter.decode(typed.data))
-    )
-
-  /** Handles a typed recovery event. */
-  def onRecover[Msg](f: FormEvent[Owner, Schema, Domain] => Msg): Mod.Attr[Msg] =
-    owningDefinition.onRecover(event => f(event.asInstanceOf[FormEvent[Owner, Schema, Domain]]))
-
-  /** Disables Phoenix automatic form recovery for the rendered form. */
-  def disableRecovery: Mod.Attr[Nothing] = phx.autoRecover := "ignore"
-
-  /** Requests a conventional HTTP submission when `condition` becomes true. */
-  def triggerHttpSubmitWhen(condition: Boolean): Mod.Attr[Nothing] =
-    phx.triggerAction := condition
 
   /** Returns the renderable view of a static field declared by this form's definition. */
   def field[Input, Value](

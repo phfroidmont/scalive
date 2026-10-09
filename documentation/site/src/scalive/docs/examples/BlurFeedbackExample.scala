@@ -86,7 +86,7 @@ object BlurFeedbackExample:
     val Choice       = Root.text("choice").required(FieldIssue("Choose an option"))
     val Contacts     = Root.rows("contacts")
     val ContactEmail = Contacts.text("email").required(FieldIssue("Email is required"))
-    val ContactRows  = Contacts.product[Contact](Tuple1(ContactEmail))
+    val ContactRows  = Contacts.product[Contact](ContactEmail)
     val Definition   = Root.product[Profile]((Name, Phone, Choice, ContactRows))
 
     private val FirstContact = FormRowKey

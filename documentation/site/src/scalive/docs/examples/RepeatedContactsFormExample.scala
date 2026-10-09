@@ -180,7 +180,7 @@ object RepeatedContactsFormExample:
       .required(FieldIssue("contact.email.required"))
       .validate(FieldIssue("contact.email.invalid"))(_.contains('@'))
     val Rows       = Group.product[Contact]((Name, Email))
-    val Definition = Root.product[ContactBook](Tuple1(Rows))
+    val Definition = Root.product[ContactBook](Rows)
 
     def key(number: Long): Group.Key =
       keyFromValue(s"contact-$number")

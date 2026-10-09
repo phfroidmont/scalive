@@ -47,7 +47,7 @@ object FormRecipes:
 
     val Root       = FormRoot("order")
     val Quantity   = Root.field("quantity", PositiveInteger)
-    val Definition = Root.product[Order](Tuple1(Quantity))
+    val Definition = Root.product[Order](Quantity)
 
     def quantityControl(form: Definition.Form): HtmlElement[Nothing] =
       val quantity = form.field(Quantity)
@@ -71,7 +71,7 @@ object FormRecipes:
 
     val Root       = FormRoot("notifications")
     val Enabled    = Root.field("enabled", FieldInput.checkbox())
-    val Definition = Root.product[Preferences](Tuple1(Enabled))
+    val Definition = Root.product[Preferences](Enabled)
     val initial    = Definition.initial(Enabled.initial(true))
 
     enum Msg:
@@ -95,7 +95,7 @@ object FormRecipes:
 
     val Root       = FormRoot("subscriptions")
     val Topics     = Root.texts("topics")
-    val Definition = Root.product[Preferences](Tuple1(Topics))
+    val Definition = Root.product[Preferences](Topics)
 
     enum Msg:
       case Updated(update: Definition.Update)
@@ -146,7 +146,7 @@ object FormRecipes:
     val Label      = Phones.text("label")
     val Number     = Phones.text("number")
     val PhoneRows  = Phones.product[Phone]((Label, Number))
-    val Definition = Root.product[Contact](Tuple1(PhoneRows))
+    val Definition = Root.product[Contact](PhoneRows)
     val Adapter    = PhoenixNestedParamsAdapter(Definition, PhoneRows)
 
     enum Msg:

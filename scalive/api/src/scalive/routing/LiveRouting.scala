@@ -461,6 +461,18 @@ class LiveRouteBuilder[A] private[scalive] (
     view: => LiveView[Msg, Model]
   ): LiveRoute[Any, A] { type Input = Any } = apply(view)
 
+  /** Builds each lifecycle's LiveView from one service in the application environment.
+    *
+    * The route adds `R` to the application's environment requirement, so the server must provide
+    * it. Scalive calls the factory for the disconnected render and for each connected mount.
+    */
+  def from[R: Tag, Msg, Model](
+    factory: R => LiveView[Msg, Model]
+  ): LiveRoute[R, A] { type Input = Any } =
+    from((_: A, _: Request, service: R) => factory(service))
+
+  /** Builds each lifecycle's LiveView from path values, the request, and one environment service.
+    */
   def from[R: Tag, Msg, Model](
     factory: (A, Request, R) => LiveView[Msg, Model]
   ): LiveRoute[R, A] { type Input = Any } =
@@ -992,6 +1004,19 @@ class LiveRouteParamsBuilder[A, Params] private[scalive] (
   ): LiveRoute[Any, A] { type Input = Any } =
     apply(view)
 
+  /** Builds each lifecycle's routed LiveView from one service in the application environment.
+    *
+    * The route adds `R` to the application's environment requirement, so the server must provide
+    * it. Scalive calls the factory for the disconnected render and for each connected mount.
+    */
+  def from[R: Tag, Msg, Model](
+    factory: R => LiveView.Routed[Msg, Model, Params]
+  ): LiveRoute[R, A] { type Input = Any } =
+    from((_: A, _: Request, service: R) => factory(service))
+
+  /** Builds each lifecycle's routed LiveView from path values, the request, and one environment
+    * service.
+    */
   def from[R: Tag, Msg, Model](
     factory: (A, Request, R) => LiveView.Routed[Msg, Model, Params]
   ): LiveRoute[R, A] { type Input = Any } =

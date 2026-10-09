@@ -11,7 +11,7 @@ object FormBindingSpec extends ZIOSpecDefault:
   final private case class Profile(name: String)
   private val ProfileRoot       = FormRoot("profile")
   private val Name              = ProfileRoot.text("name").required(FieldIssue("Name is required"))
-  private val ProfileDefinition = ProfileRoot.product[Profile](Tuple1(Name))
+  private val ProfileDefinition = ProfileRoot.product[Profile](Name)
 
   private enum ProfileMsg:
     case Updated(update: ProfileDefinition.Update)
@@ -21,7 +21,7 @@ object FormBindingSpec extends ZIOSpecDefault:
   final private case class Consent(accepted: Boolean)
   private val ConsentRoot       = FormRoot("consent")
   private val Accepted          = ConsentRoot.field("accepted", FieldInput.checkbox())
-  private val ConsentDefinition = ConsentRoot.product[Consent](Tuple1(Accepted))
+  private val ConsentDefinition = ConsentRoot.product[Consent](Accepted)
 
   private enum ConsentMsg:
     case Updated(update: ConsentDefinition.Update)
@@ -32,8 +32,8 @@ object FormBindingSpec extends ZIOSpecDefault:
   private val BasketRoot       = FormRoot("basket")
   private val Items            = BasketRoot.rows("items")
   private val ItemName         = Items.text("name").required(FieldIssue("Item name is required"))
-  private val ItemRows         = Items.product[Item](Tuple1(ItemName))
-  private val BasketDefinition = BasketRoot.product[Basket](Tuple1(ItemRows))
+  private val ItemRows         = Items.product[Item](ItemName)
+  private val BasketDefinition = BasketRoot.product[Basket](ItemRows)
   private val RowA             = FormRowKey.from[Items.type]("row_a").toOption.get
   private val RowB             = FormRowKey.from[Items.type]("row_b").toOption.get
 
@@ -327,7 +327,7 @@ object FormBindingSpec extends ZIOSpecDefault:
         .foreach(Vector("yes", "")) { token =>
           val root       = FormRoot("consent")
           val accepted   = root.field("accepted", FieldInput.checkbox(checkedValue = token))
-          val definition = root.product[Consent](Tuple1(accepted))
+          val definition = root.product[Consent](accepted)
           val checked    = definition.initial(accepted.initial(true))
           val unchecked  = checked.updated(accepted, false)
           val compiled   = RenderProgram.compile[definition.Form, Unit] { source =>
@@ -916,7 +916,7 @@ object FormBindingSpec extends ZIOSpecDefault:
       val compiled        = profileProgram()
       val OtherRoot       = FormRoot("profile")
       val OtherName       = OtherRoot.text("name")
-      val OtherDefinition = OtherRoot.product[Profile](Tuple1(OtherName))
+      val OtherDefinition = OtherRoot.product[Profile](OtherName)
 
       for
         program   <- ZIO.fromEither(compiled)
@@ -1101,8 +1101,8 @@ object FormBindingSpec extends ZIOSpecDefault:
       val OtherRoot       = FormRoot("basket")
       val OtherItems      = OtherRoot.rows("items")
       val OtherName       = OtherItems.text("name").required(FieldIssue("Item name is required"))
-      val OtherRows       = OtherItems.product[Item](Tuple1(OtherName))
-      val OtherDefinition = OtherRoot.product[Basket](Tuple1(OtherRows))
+      val OtherRows       = OtherItems.product[Item](OtherName)
+      val OtherDefinition = OtherRoot.product[Basket](OtherRows)
       val otherInitial    = OtherDefinition.initial(
         OtherRows.initial(
           OtherRows.row(FormRowKey.from[OtherItems.type]("row_a").toOption.get)(

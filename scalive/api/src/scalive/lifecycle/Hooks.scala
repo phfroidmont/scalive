@@ -95,6 +95,45 @@ object LiveHooks:
       extends LiveHooks[Msg, Model]
 
   def empty[Msg, Model]: LiveHooks[Msg, Model] = Empty()
+
+  /** Starts declarations with one hook; equivalent to `empty.onRawEvent`. */
+  def onRawEvent[Msg, Model](
+    hook: (Model, LiveEvent, MessageContext[Msg, Model]) => Task[LiveEventHookResult[Model]]
+  ): LiveHooks[Msg, Model] = empty.onRawEvent(hook)
+
+  /** Starts declarations with one hook; equivalent to `empty.onBrowserEvent`. */
+  def onBrowserEvent[Msg, Model, A: JsonDecoder](
+    event: BrowserToServerEvent[A]
+  )(
+    handler: (Model, A, MessageContext[Msg, Model]) => Task[Model]
+  ): LiveHooks[Msg, Model] = empty.onBrowserEvent(event)(handler)
+
+  /** Starts declarations with one hook; equivalent to `empty.onEvent`. */
+  def onEvent[Msg, Model](
+    hook: (Model, Msg, MessageContext[Msg, Model]) => Task[LiveHookResult[Model]]
+  ): LiveHooks[Msg, Model] = empty.onEvent(hook)
+
+  /** Starts declarations with one hook; equivalent to `empty.onParams`. */
+  def onParams[Msg, Model](
+    hook: (Model, URL, ParamsContext[Msg, Model]) => Task[LiveHookResult[Model]]
+  ): LiveHooks[Msg, Model] = empty.onParams(hook)
+
+  /** Starts declarations with one hook; equivalent to `empty.onInfo`. */
+  def onInfo[Msg, Model](
+    hook: (Model, Msg, MessageContext[Msg, Model]) => Task[LiveHookResult[Model]]
+  ): LiveHooks[Msg, Model] = empty.onInfo(hook)
+
+  /** Starts declarations with one hook; equivalent to `empty.onAsync`. */
+  def onAsync[Msg, Model](
+    hook: (Model, LiveAsyncEvent[Msg], MessageContext[Msg, Model]) => Task[
+      LiveHookResult[Model]
+    ]
+  ): LiveHooks[Msg, Model] = empty.onAsync(hook)
+
+  /** Starts declarations with one hook; equivalent to `empty.afterRender`. */
+  def afterRender[Msg, Model](
+    hook: (Model, AfterRenderContext[Msg, Model]) => Task[Unit]
+  ): LiveHooks[Msg, Model] = empty.afterRender(hook)
 end LiveHooks
 
 /** Immutable declarations installed when a component instance starts. */
@@ -161,6 +200,39 @@ object ComponentLiveHooks:
       extends ComponentLiveHooks[Props, Msg, Model]
 
   def empty[Props, Msg, Model]: ComponentLiveHooks[Props, Msg, Model] = Empty()
+
+  /** Starts declarations with one hook; equivalent to `empty.onRawEvent`. */
+  def onRawEvent[Props, Msg, Model](
+    hook: (Props, Model, LiveEvent, ComponentMessageContext[Props, Msg, Model]) => Task[
+      LiveEventHookResult[Model]
+    ]
+  ): ComponentLiveHooks[Props, Msg, Model] = empty.onRawEvent(hook)
+
+  /** Starts declarations with one hook; equivalent to `empty.onBrowserEvent`. */
+  def onBrowserEvent[Props, Msg, Model, A: JsonDecoder](
+    event: BrowserToServerEvent[A]
+  )(
+    handler: (Props, Model, A, ComponentMessageContext[Props, Msg, Model]) => Task[Model]
+  ): ComponentLiveHooks[Props, Msg, Model] = empty.onBrowserEvent(event)(handler)
+
+  /** Starts declarations with one hook; equivalent to `empty.onEvent`. */
+  def onEvent[Props, Msg, Model](
+    hook: (Props, Model, Msg, ComponentMessageContext[Props, Msg, Model]) => Task[
+      LiveHookResult[Model]
+    ]
+  ): ComponentLiveHooks[Props, Msg, Model] = empty.onEvent(hook)
+
+  /** Starts declarations with one hook; equivalent to `empty.onAsync`. */
+  def onAsync[Props, Msg, Model](
+    hook: (Props, Model, LiveAsyncEvent[Msg], ComponentMessageContext[Props, Msg, Model]) => Task[
+      LiveHookResult[Model]
+    ]
+  ): ComponentLiveHooks[Props, Msg, Model] = empty.onAsync(hook)
+
+  /** Starts declarations with one hook; equivalent to `empty.afterRender`. */
+  def afterRender[Props, Msg, Model](
+    hook: (Props, Model, ComponentAfterRenderContext[Props, Msg, Model]) => Task[Unit]
+  ): ComponentLiveHooks[Props, Msg, Model] = empty.afterRender(hook)
 end ComponentLiveHooks
 
 trait RootHooks[Msg, Model]:

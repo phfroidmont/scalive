@@ -9,7 +9,7 @@ final class LifecycleExample extends LiveView[LifecycleExample.Msg, LifecycleExa
   import LifecycleExample.*
 
   override def hooks: LiveHooks[Msg, Model] =
-    LiveHooks.empty[Msg, Model].afterRender { (model, ctx) =>
+    LiveHooks.afterRender { (model, ctx) =>
       ZIO
         .when(ctx.connection.isInstanceOf[Connection.Connected[?]]) {
           ZIO.logDebug(s"Lifecycle example rendered with title '${model.currentTitle}'")

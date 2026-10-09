@@ -168,7 +168,7 @@ final class LoginLiveView extends LiveView.Eventless[Unit]:
           flash(LoginErrorFlash)(message =>
             div(role := "alert", cls := "docs-auth-alert", message)
           ),
-          loginForm.http(FormAction.from(AuthLabRoutes.SessionRoute))(
+          scalive.Form.http(FormAction.from(AuthLabRoutes.SessionRoute))(
             idAttr := FormId,
             cls    := "docs-auth-form",
             label(

@@ -174,6 +174,16 @@ final class FormRoot private (val path: FormPath):
     val _ = summonInline[FormPartValues[self.type, parts.type] =:= mirror.MirroredElemTypes]
     buildProduct(parts, mirror)
 
+  /** Completes a single-field product schema, such as `root.product[Note](text)`. */
+  inline def product[Domain](
+    part: FormPart[self.type, ?]
+  )(using
+    mirror: Mirror.ProductOf[Domain]
+  ): FormDefinition[self.type, Domain] =
+    val _ =
+      summonInline[FormPartValues[self.type, Tuple1[part.type]] =:= mirror.MirroredElemTypes]
+    buildProduct(Tuple1(part), mirror)
+
   private[scalive] def buildProduct[Domain](
     parts: Tuple,
     mirror: Mirror.ProductOf[Domain]
@@ -268,6 +278,16 @@ final class RepeatedGroup[Owner] private[scalive] (
   ): RepeatedRows[Owner, self.type, Row] =
     val _ = summonInline[FormPartValues[self.type, parts.type] =:= mirror.MirroredElemTypes]
     buildProduct(parts, mirror)
+
+  /** Completes a single-field row product, such as `group.product[Tag](name)`. */
+  inline def product[Row](
+    part: FormField[self.type, ?, ?]
+  )(using
+    mirror: Mirror.ProductOf[Row]
+  ): RepeatedRows[Owner, self.type, Row] =
+    val _ =
+      summonInline[FormPartValues[self.type, Tuple1[part.type]] =:= mirror.MirroredElemTypes]
+    buildProduct(Tuple1(part), mirror)
 
   private[scalive] def buildProduct[Row](
     parts: Tuple,

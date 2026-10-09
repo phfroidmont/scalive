@@ -255,8 +255,8 @@ object FormDefinitionApiSpec extends ZIOSpecDefault:
         val root = FormRoot("application")
         val group = root.rows("rows")
         val name = group.text("name")
-        val rowSchema = group.product[Row](Tuple1(name))
-        val definition = root.product[Application](Tuple1(rowSchema))
+        val rowSchema = group.product[Row](name)
+        val definition = root.product[Application](rowSchema)
 
         def render(form: Signal[definition.Form]): HtmlElement[Nothing] =
           div(
@@ -631,8 +631,8 @@ object FormDefinitionApiSpec extends ZIOSpecDefault:
         final case class Value(name: String)
         val root = FormRoot("value")
         val name = root.text("name")
-        val first = root.product[Value](Tuple1(name))
-        val second = root.product[Value](Tuple1(name))
+        val first = root.product[Value](name)
+        val second = root.product[Value](name)
         first.fromValues(second.initial(name.initial("Ada")).values)
       """)
       val differentDefinitionSubmitter = scala.compiletime.testing.typeCheckErrors("""
@@ -642,8 +642,8 @@ object FormDefinitionApiSpec extends ZIOSpecDefault:
           case Save extends Intent("save")
         val root = FormRoot("value")
         val name = root.text("name")
-        val first = root.product[Value](Tuple1(name))
-        val second = root.product[Value](Tuple1(name))
+        val first = root.product[Value](name)
+        val second = root.product[Value](name)
         val submitter = first.submitter(Intent.values)(_.wireValue)
         second.onSubmit(submitter)((_, _) => ())
       """)
@@ -667,11 +667,47 @@ object FormDefinitionApiSpec extends ZIOSpecDefault:
         ))
       """)
 
+      val singleFieldCompile = scala.compiletime.testing.typeChecks("""
+        import scalive.*
+        final case class Note(text: String)
+        final case class Tag(name: String)
+        final case class Tags(values: Vector[Tag])
+        val noteRoot = FormRoot("note")
+        val note = noteRoot.product[Note](noteRoot.text("text"))
+        val tagsRoot = FormRoot("tags")
+        val group = tagsRoot.rows("values")
+        val rows = group.product[Tag](group.text("name"))
+        val tags = tagsRoot.product[Tags](rows)
+      """)
+      val singleFieldWrongType = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        final case class Count(value: Int)
+        val root = FormRoot("count")
+        root.product[Count](root.text("value"))
+      """)
+      val singleFieldWrongArity = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        final case class Pair(left: String, right: String)
+        val root = FormRoot("pair")
+        root.product[Pair](root.text("left"))
+      """)
+      val singleFieldWrongOwner = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        final case class Note(text: String)
+        val left = FormRoot("left")
+        val right = FormRoot("right")
+        left.product[Note](right.text("text"))
+      """)
+
       assertTrue(
         sixFieldsCompile,
         twentyThreeFieldsCompile,
+        singleFieldCompile,
         wrongOrder.nonEmpty,
         wrongOwner.nonEmpty,
+        singleFieldWrongType.nonEmpty,
+        singleFieldWrongArity.nonEmpty,
+        singleFieldWrongOwner.nonEmpty,
         differentDefinitionValues.nonEmpty,
         differentDefinitionSubmitter.nonEmpty
       )

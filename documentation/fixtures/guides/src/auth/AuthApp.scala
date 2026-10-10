@@ -19,11 +19,11 @@ object AuthApp:
   // docs:end auth-protected-routes
 
   def serve(
-    security: LiveSecurity,
+    config: ZioHttpConfig,
     authHttpRoutes: Routes[AuthService & LiveConnections[PublicSessionId], Nothing]
   ): Task[Unit] =
     val application = Live.router(protectedRoutes)
-    val routes      = ZioHttp.routes(application, security) ++ authHttpRoutes
+    val routes      = ZioHttp.routes(application, config) ++ authHttpRoutes
     // docs:start auth-provide-local
     Server
       .serve(routes)

@@ -148,8 +148,8 @@ final private[docs] class DocumentationApplication private (
       AuthLab.protectedSession
     ) ++ fragments
     val application = router((homeRoute +: supplementalRoutes)*)
-    val liveRoutes  = traceStore.fold(ZioHttp.routes(application, security))(store =>
-      ZioHttp.routes(application, security, DocumentationRuntimeObserverFactory(store))
+    val liveRoutes  = traceStore.fold(ZioHttp.routes(application, security.config))(store =>
+      ZioHttp.routes(application, security.config, DocumentationRuntimeObserverFactory(store))
     )
     liveRoutes ++
       AuthHttpRoutes(security).routes ++

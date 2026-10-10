@@ -14,7 +14,7 @@ object Main extends ZIOAppDefault:
     def save(note: Note): Task[Unit] = ZIO.unit
 
   // docs:start guards-load
-  private def serve(security: LiveSecurity): Task[Unit] =
+  private def serve(config: ZioHttpConfig): Task[Unit] =
     for
       clientAssets <- LiveViewClientAssets.load()
       appAssets    <- StaticAssets.load(StaticAssetConfig.classpath("public", Seq("app.js")))
@@ -24,7 +24,7 @@ object Main extends ZIOAppDefault:
                       (live / "notes") -> NoteLiveView(notes)
                     )
       routes =
-        ZioHttp.routes(application, security) ++
+        ZioHttp.routes(application, config) ++
           clientAssets.routes ++
           appAssets.routes ++
           guardAssets.routes
@@ -43,5 +43,5 @@ object Main extends ZIOAppDefault:
         )
       )
       .mapError(error => new IllegalArgumentException(error.toString))
-      .flatMap(config => serve(LiveSecurity(config)))
+      .flatMap(serve)
 end Main

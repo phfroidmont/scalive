@@ -23,7 +23,12 @@ final case class CookiePolicy(secure: Boolean):
   def expire(name: String): Cookie.Response =
     make(name, "", maxAge = Some(zio.Duration.Zero))
 
-/** Shared signing and cookie policy for Live transport and ordinary HTTP handlers. */
+/** CSRF, flash, and cookie helpers for ordinary HTTP handlers.
+  *
+  * Build it from the same [[ZioHttpConfig]] that is passed to `ZioHttp.routes`, so handlers and
+  * Live routes sign and check the same values. See [Share security with HTTP
+  * handlers](https://scalive.dev/guides/configuration#share-security-with-http-handlers).
+  */
 final class LiveSecurity private (val config: ZioHttpConfig):
   val cookies: CookiePolicy = CookiePolicy(config.secureCookie)
   val csrf: CsrfProtection  = CsrfProtection(config)

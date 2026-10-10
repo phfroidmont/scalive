@@ -9502,14 +9502,6 @@
         {
           "id" : "def:scalive.ZioHttp.routes:194a84756d2e018e",
           "signature" : "def routes[R](application: LiveApplication[R], config: ZioHttpConfig, observer: LifecycleObserver): zio.http.Routes[R, Nothing]"
-        },
-        {
-          "id" : "def:scalive.ZioHttp.routes:64cae137ee1a0c72",
-          "signature" : "def routes[R](application: LiveApplication[R], security: LiveSecurity, observer: LifecycleObserver): zio.http.Routes[R, Nothing]"
-        },
-        {
-          "id" : "def:scalive.ZioHttp.routes:e6d94d06af310e98",
-          "signature" : "def routes[R](application: LiveApplication[R], security: LiveSecurity): zio.http.Routes[R, Nothing]"
         }
       ]
     },

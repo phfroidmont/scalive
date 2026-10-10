@@ -1712,7 +1712,7 @@ end LiveSessionBuilder
 
 /** All routes and layouts of a Scalive application, built by `Live.router(...)`.
   *
-  * Serve it with `ZioHttp.routes(application, security)`, which validates the routes when called.
+  * Serve it with `ZioHttp.routes(application, config)`, which validates the routes when called.
   *
   * @tparam R
   *   the services the routes need from the server's environment

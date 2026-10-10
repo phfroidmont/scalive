@@ -30,14 +30,11 @@ object Main extends ZIOAppDefault:
                       )
                     )
                   ).mapError(error => new IllegalArgumentException(error.toString))
-      security    = LiveSecurity(config)
       application = Live.router
                       .withRootLayout(RootLayout(clientAssets, assets))(
                         Routes.home -> CounterLiveView()
                       )
-      liveRoutes = ZioHttp.routes(application, security)
-      routes     = liveRoutes ++ clientAssets.routes ++ assets.routes
+      routes = ZioHttp.routes(application, config) ++ clientAssets.routes ++ assets.routes
       _ <- Server.serve(routes).provide(Server.defaultWithPort(port))
     yield ()
-end Main
 // docs:end quick-start-main

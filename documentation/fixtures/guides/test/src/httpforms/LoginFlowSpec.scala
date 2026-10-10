@@ -17,7 +17,7 @@ object LoginFlowSpec extends ZIOSpecDefault:
     allowedWebSocketOrigins = Set(WebSocketOrigin.http("localhost"))
   ).fold(error => throw IllegalArgumentException(error.toString), identity)
 
-  private val routes = LoginApp.routes(LiveSecurity(config))
+  private val routes = LoginApp.routes(config)
 
   private val sessions: ULayer[Sessions] = ZLayer.succeed(
     new Sessions:

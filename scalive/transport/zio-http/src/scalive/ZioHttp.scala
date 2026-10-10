@@ -123,8 +123,8 @@ object ZioHttp:
   /** Builds the ZIO HTTP routes that serve `application`: one GET route per page and the LiveView
     * WebSocket.
     *
-    * This form takes the configuration directly. Prefer the [[LiveSecurity]] form when ordinary
-    * HTTP handlers also need CSRF protection. Throws [[AssemblyException]] when the application is
+    * Ordinary HTTP handlers that need the same CSRF, flash, or cookie policy build a
+    * [[LiveSecurity]] from the same `config`. Throws [[AssemblyException]] when the application is
     * invalid, for example when two named live sessions share a name.
     */
   def routes[R](application: LiveApplication[R], config: ZioHttpConfig): Routes[R, Nothing] =
@@ -165,35 +165,6 @@ object ZioHttp:
       observerFactory
     )
     Routes.fromIterable(getRoutes :+ socketRoute)
-
-  /** Builds the ZIO HTTP routes that serve `application`: one GET route per page and the LiveView
-    * WebSocket.
-    *
-    * `security` is the value shared with ordinary HTTP handlers, as in the [quick
-    * start](https://scalive.dev/learn/quick-start). Throws [[AssemblyException]] when the
-    * application is invalid, for example when two named live sessions share a name.
-    */
-  def routes[R](application: LiveApplication[R], security: LiveSecurity): Routes[R, Nothing] =
-    routes(application, security.config)
-
-  /** Builds the ZIO HTTP routes that serve `application`: one GET route per page and the LiveView
-    * WebSocket.
-    *
-    * This form also reports structured lifecycle events to `observer`.
-    */
-  def routes[R](
-    application: LiveApplication[R],
-    security: LiveSecurity,
-    observer: LifecycleObserver
-  ): Routes[R, Nothing] =
-    routes(application, security.config, observer)
-
-  private[scalive] def routes[R](
-    application: LiveApplication[R],
-    security: LiveSecurity,
-    observerFactory: RuntimeObserverFactory
-  ): Routes[R, Nothing] =
-    routes(application, security.config, LifecycleObserver.none, observerFactory)
 
   private[scalive] def validate[R](application: LiveApplication[R]): Vector[CompiledRoute[R]] =
     val sessionNames = application.routes.collect { case session: LiveSession[?] => session.name }

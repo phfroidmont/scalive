@@ -29,7 +29,6 @@ object Main extends ZIOAppDefault:
                       )
                     )
                   ).mapError(error => new IllegalArgumentException(error.toString))
-      security    = LiveSecurity(config)
       application = Live.router
                       .withRootLayout(RootLayout(clientAssets, assets))(
                         Routes.home -> CounterLiveView(),
@@ -48,8 +47,7 @@ object Main extends ZIOAppDefault:
                         Routes.search -> SearchLiveView()
                         // docs:end learn-search-registration
                       )
-      liveRoutes = ZioHttp.routes(application, security)
-      routes     = liveRoutes ++ clientAssets.routes ++ assets.routes
+      routes = ZioHttp.routes(application, config) ++ clientAssets.routes ++ assets.routes
       // docs:start learn-thermostat-provide
       _ <- Server.serve(routes).provide(Server.defaultWithPort(port), Thermostat.simulated)
     // docs:end learn-thermostat-provide

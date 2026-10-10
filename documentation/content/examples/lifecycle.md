@@ -40,5 +40,5 @@ message, and derives a page title from its model.
 
 - [Lifecycle, state ownership, and reconnects](../learn/lifecycle-and-connection-behavior.md#two-independent-mounts)
   explains the two mounts.
-- [Lifecycle feedback and page state](../guides/flash-title-and-lifecycle-ux.md#render-keyed-flash)
+- [Flash messages, page titles, and connection status](../guides/flash-titles-and-connection-status.md#render-keyed-flash)
   covers flash, titles, and connection feedback.

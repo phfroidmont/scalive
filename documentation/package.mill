@@ -200,6 +200,7 @@ object `package` extends Module:
   /** Compiled recipes embedded in guides with `@:sourceRegion`. */
   object guideFixtures extends build.ScalaCommon:
     def moduleDeps = Seq(build.scalive, quickStartFixture)
+    def mvnDeps = Seq(mvn"dev.zio::zio-metrics-connectors-prometheus:2.5.8")
 
     override def moduleDir = super.moduleDir / os.up / "fixtures" / "guides"
 

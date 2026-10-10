@@ -55,7 +55,16 @@ final class DocumentLiveView(documents: Documents)
       ),
       // docs:end feedback-connection
       h1(model.map(_.title)),
-      button(typ := "button", on.click(Msg.Save), "Save")
+      // docs:start feedback-offline-control
+      button(
+        typ      := "button",
+        disabled := true,
+        connection.onConnect(JS.removeAttribute("disabled")),
+        connection.onDisconnect(JS.setAttribute("disabled" -> "")),
+        on.click(Msg.Save),
+        "Save"
+      )
+      // docs:end feedback-offline-control
     )
 end DocumentLiveView
 

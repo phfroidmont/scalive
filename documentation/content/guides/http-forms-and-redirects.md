@@ -16,8 +16,10 @@ sibling ZIO HTTP routes.
 
 Use an ordinary browser form when submission should have normal HTTP semantics:
 changing cookies, crossing an authentication boundary, downloading a response,
-leaving LiveView, or applying Post/Redirect/Get. Keep purely interactive
-validation and in-page updates as Live events.
+leaving LiveView, or applying Post/Redirect/Get. Post/Redirect/Get means the
+`POST` handler answers with a redirect rather than a page, so the browser lands
+on a `GET` and reloading the result does not submit the form again. Keep purely
+interactive validation and in-page updates as Live events.
 
 Define the target as a ZIO HTTP `RoutePattern`. This guide uses one login
 form, two Live pages, and two POST routes:
@@ -214,5 +216,5 @@ low-level decoder details.
 
 - Use [Authentication and sessions](authentication.md) for a complete login, cookie, protected mount, and logout workflow.
 - Return to [Typed forms and validation](typed-forms-and-validation.md#continue-through-input) to define reusable schemas and Live feedback.
-- Use [Lifecycle feedback and page state](flash-title-and-lifecycle-ux.md) for flash behavior during Live navigation.
+- Use [Flash messages, page titles, and connection status](flash-titles-and-connection-status.md) for flash behavior during Live navigation.
 - Continue to [Testing](testing.md#submit-ordinary-forms) to cover CSRF, body bounds, validation mapping, trigger-action, cookies, and redirects.

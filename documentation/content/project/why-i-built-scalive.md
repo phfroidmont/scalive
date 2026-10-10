@@ -1,7 +1,7 @@
 {%
 title = "Why I built Scalive"
 description = "The path from building a production Scala.js application with Laminar to bringing Phoenix LiveView's server-driven model to Scala."
-order = 1
+order = 2
 section = project
 %}
 

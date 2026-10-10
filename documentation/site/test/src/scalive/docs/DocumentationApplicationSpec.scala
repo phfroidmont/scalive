@@ -345,7 +345,8 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         guideGroups == Vector(
           "Orientation" -> Vector("/guides/phoenix-live-view-orientation"),
           "Setup and foundations" -> Vector(
-            "/guides/static-assets-and-client-setup"
+            "/guides/static-assets-and-client-setup",
+            "/guides/configuration"
           ),
           "Interfaces and input" -> Vector(
             "/guides/html-dsl-and-event-bindings",
@@ -374,7 +375,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
             "/guides/subscriptions",
             "/guides/connected-resources",
             "/guides/lifecycle-hooks",
-            "/guides/flash-title-and-lifecycle-ux"
+            "/guides/flash-titles-and-connection-status"
           ),
           "Browser integration" -> Vector(
             "/guides/browser-integration",
@@ -385,8 +386,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
             "/guides/connected-test-reference",
             "/guides/troubleshooting"
           ),
-          "Assets and operations" -> Vector(
-            "/guides/configuration",
+          "Operations" -> Vector(
             "/guides/lifecycle-observability",
             "/guides/deployment"
           )
@@ -400,10 +400,10 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
       ) && assertTrue(
         projectLinks.map(_.text()) == Vector(
           "Overview",
+          "Phoenix LiveView compatibility",
           "Why I built Scalive",
           "Designing dynamic HTML",
-          "Runtime architecture",
-          "Phoenix LiveView compatibility"
+          "Runtime architecture"
         ),
         projectDocument
           .select(

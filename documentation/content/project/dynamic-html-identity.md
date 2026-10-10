@@ -1,7 +1,7 @@
 {%
 title = "Designing dynamic HTML"
 description = "The API design journey from the first dynamic-value prototype to Scalive's current signal-backed view API."
-order = 2
+order = 3
 section = project
 %}
 

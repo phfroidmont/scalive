@@ -70,7 +70,7 @@ trait Navigation extends MountNavigation:
   *
   * Render one kind with `flash(kind)(message => ...)`. Use flash for brief feedback such as a save
   * result, and keep state that must outlive the page in the model or a service. See
-  * [flash](https://scalive.dev/guides/flash-title-and-lifecycle-ux#render-keyed-flash).
+  * [flash](https://scalive.dev/guides/flash-titles-and-connection-status#render-keyed-flash).
   */
 trait Flash:
   /** Sets the message for `kind`, replacing any previous one. */

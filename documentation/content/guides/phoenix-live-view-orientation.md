@@ -1,6 +1,6 @@
 {%
 title = "Phoenix LiveView concepts in Scalive"
-description = "Map Phoenix LiveView concepts to Scalive's typed Scala API without requiring Elixir experience."
+description = "Find the Scalive equivalent of the Phoenix LiveView concepts, callbacks, and functions you already use."
 order = 1
 section = guides
 group = "Orientation"
@@ -8,19 +8,21 @@ group = "Orientation"
 
 ## Before you start {#prerequisites}
 
-No Elixir or Phoenix experience is required. If Scalive is also new to you, the
-[quick start](../learn/quick-start.md) provides a runnable application shape.
+This page is for readers who know Phoenix LiveView. It maps the concepts,
+callbacks, and functions you already use to their Scalive equivalents. Scalive
+itself does not require Elixir or Phoenix experience; if both are new to you,
+start with the [quick start](../learn/quick-start.md) instead.
 
 ## Start with the programming model {#start-with-the-programming-model}
 
-Phoenix LiveView is a server-side programming model for interactive web pages.
-The server owns page state, renders HTML, receives browser events, and sends
-incremental updates over a persistent connection. The browser keeps the DOM in
-sync and runs JavaScript only where browser-specific behavior is needed.
+Scalive keeps Phoenix LiveView's programming model. The server owns page state,
+renders HTML, receives browser events, and sends incremental updates over a
+persistent connection. The browser runs the same Phoenix LiveView JavaScript
+client, keeps the DOM in sync, and runs application JavaScript only where
+browser-specific behavior is needed.
 
-Scalive brings that model to Scala 3 and ZIO. It is an independent
-implementation, not Phoenix running on the JVM and not a line-for-line port of
-Phoenix's Elixir API. You do not need to know Elixir to use Scalive.
+Scalive is an independent implementation for Scala 3 and ZIO, not Phoenix
+running on the JVM and not a line-for-line port of Phoenix's Elixir API.
 
 Scalive is also alpha software and does not claim complete Phoenix LiveView
 parity. Read [Project status](../project/index.md#project-status) before choosing
@@ -33,7 +35,7 @@ it for an application.
 | LiveView | @:apiSymbol(trait:scalive.LiveView)`LiveView[Msg, Model]`@:@ | A server-owned interactive page with a typed model and typed messages. |
 | Socket assigns | `Model` and `Signal[Model]` | Immutable application state passed to lifecycle methods and exposed read-only to the signal-backed view graph. |
 | `mount` | @:apiSymbol(def:scalive.LiveView.mount)`mount`@:@ | Creates the initial model for the HTTP render and again for the connected live process. |
-| `handle_event` and other callbacks | @:apiSymbol(def:scalive.LiveView.handleMessage)`handleMessage`@:@ | Handles values from the view's `Msg` type and returns the next model in `Task`. |
+| `handle_event`, `handle_info`, and `handle_async` | @:apiSymbol(def:scalive.LiveView.handleMessage)`handleMessage`@:@ | Handles every value of the view's `Msg` type, whether it comes from the browser, a subscription, or finished async work, and returns the next model in `Task`. |
 | HEEx template | @:apiSymbol(def:scalive.LiveView.view)`view`@:@, @:apiSymbol(class:scalive.HtmlElement)`HtmlElement[Msg]`@:@, and Scala HTML builders | Constructs typed HTML from signals and Scala values. |
 | `phx-*` event binding | Typed bindings such as @:apiSymbol(lazy-val:scalive.on.click)`on.click(message)`@:@ | Connects browser interactions to values accepted by the LiveView's message type. |
 | Diff and DOM patch | Scalive tree diff and the Phoenix LiveView JavaScript client | Sends changed render data to the browser instead of replacing the whole document. |
@@ -102,10 +104,26 @@ enum or sealed hierarchy, and return a new model from
 @:apiSymbol(def:scalive.LiveView.handleMessage)`handleMessage`@:@.
 
 Effects use ZIO through `Task`; they are not encoded as Phoenix callback
-tuples. Subscriptions, async work, navigation, flash, uploads, and component
-updates use typed context capabilities or dedicated Scalive values. Consult the
-[API reference](../api/index.md#packages) for the API that exists in the current
-revision rather than translating an Elixir call by name.
+tuples. Functions that take a `socket` in Phoenix become methods on the context
+passed to `mount`, `handleMessage`, or `handleParams`, such as `ctx.flash` or
+`ctx.nav`. Async work, subscriptions, and pushed events need a connected
+lifecycle, so `mount` reaches them by matching `ctx.connection`, as described
+in [the two mount phases](#understand-the-two-mount-phases).
+
+| Phoenix LiveView | Scalive | Read |
+| --- | --- | --- |
+| `handle_params` | @:apiSymbol(def:scalive.LiveView.Routed.handleParams)`handleParams`@:@ on a @:apiSymbol(trait:scalive.LiveView.Routed)`LiveView.Routed`@:@ | [Mount and react to parameters](routes-and-navigation.md#mount-and-react-to-parameters) |
+| `handle_info` with `Phoenix.PubSub.subscribe` | A `ZStream` from an application service, started with @:apiSymbol(def:scalive.Subscriptions.start)`subscriptions.start`@:@; each value arrives in `handleMessage` | [Subscriptions](subscriptions.md#start-a-subscription-when-the-page-connects) |
+| `assign_async` and `start_async` | @:apiSymbol(def:scalive.Async.start)`async.start`@:@ with an @:apiSymbol(opaque-type:scalive.AsyncKey)`AsyncKey`@:@; keep the result in an @:apiSymbol(enum:scalive.AsyncValue)`AsyncValue`@:@ in the model | [Asynchronous work](async-work.md#start-work-when-the-page-connects) |
+| `stream`, `stream_insert`, and `stream_delete` | A @:apiSymbol(type-alias:scalive.LiveStream)`LiveStream`@:@ in the model, created with @:apiSymbol(def:scalive.Streams.create)`streams.create`@:@ and changed with @:apiSymbol(def:scalive.Streams.insert)`streams.insert`@:@ and @:apiSymbol(def:scalive.Streams.delete)`streams.delete`@:@ | [Streams and collection updates](streams-and-collection-updates.md#create-the-stream-during-mount) |
+| `allow_upload`, `live_file_input`, and `consume_uploaded_entries` | @:apiSymbol(def:scalive.Uploads.allow)`uploads.allow`@:@, @:apiSymbol(def:scalive.liveFileInput)`liveFileInput`@:@, and @:apiSymbol(def:scalive.Uploads.consumeCompleted)`uploads.consumeCompleted`@:@ | [File uploads](uploads-and-consumption.md#complete-a-bounded-in-memory-upload) |
+| `push_event` | @:apiSymbol(def:scalive.Client.push)`client.push`@:@ with a typed @:apiSymbol(opaque-type:scalive.ServerToBrowserEvent)`ServerToBrowserEvent`@:@ | [Push typed server events](browser-integration.md#push-typed-server-events) |
+| `put_flash` | @:apiSymbol(def:scalive.Flash.put)`flash.put`@:@ with a @:apiSymbol(opaque-type:scalive.FlashKind)`FlashKind`@:@, rendered with @:apiSymbol(object:scalive.flash)`flash(kind)`@:@ | [Render keyed flash](flash-titles-and-connection-status.md#render-keyed-flash) |
+| `push_patch`, `push_navigate`, and `redirect` | @:apiSymbol(def:scalive.Navigation.pushPatch)`nav.pushPatch`@:@, @:apiSymbol(def:scalive.MountNavigation.pushNavigate)`nav.pushNavigate`@:@, and @:apiSymbol(def:scalive.MountNavigation.redirect)`nav.redirect`@:@, with a destination built from a route's `location` | [Choose patch or navigate](routes-and-navigation.md#choose-patch-or-navigate) |
+| `Phoenix.LiveViewTest` with `live` and `render_click` | @:apiSymbol(package:scalive.testing)`scalive.testing`@:@ with @:apiSymbol(def:scalive.testing.ConnectedRender.join)`ConnectedRender.join`@:@ and @:apiSymbol(def:scalive.testing.ConnectedView.clickButton)`clickButton`@:@ | [Testing LiveViews](testing.md#cover-connected-behavior) |
+
+Check the [API reference](../api/index.md#packages) for anything this table
+does not cover, rather than translating an Elixir call by name.
 
 ## Keep browser code at the edge {#keep-browser-code-at-the-edge}
 

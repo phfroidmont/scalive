@@ -139,6 +139,17 @@ class DomDefsGenerator(baseOutputDirectoryPath: String):
           "Defines the obsolete `scoped` attribute for a `<style>` element.",
           "Current browsers do not implement scoped-style behavior; use ordinary CSS scoping instead."
         ))
+      // MDN documents these attributes only on their element pages; the generic attribute URLs return 404.
+      case "action" =>
+        attr.copy(
+          commentLines = linkedComments,
+          docUrls = List("https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/form#action")
+        )
+      case "alt" =>
+        attr.copy(
+          commentLines = linkedComments,
+          docUrls = List("https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/img#alt")
+        )
       case _ => attr.copy(commentLines = linkedComments)
 
   private def scaliveTagComments(tag: TagDef): TagDef =

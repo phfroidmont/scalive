@@ -1,6 +1,6 @@
 {%
-title = "Lifecycle feedback and page state"
-description = "Communicate lifecycle state through flash, document titles, connection feedback, and post-render observation."
+title = "Flash messages, page titles, and connection status"
+description = "Show flash messages, derive the document title from the model, tell visitors when the page is offline, and keep after-render effects observational."
 order = 44
 section = guides
 group = "Async and lifecycle"
@@ -65,10 +65,24 @@ LiveSocket connects, the client hides it and reveals the connected state; it
 reverses those attributes if the transport drops. Include text or another
 non-color cue so the state remains understandable without color perception.
 
-Controls that need the server should not imply that an offline click succeeded.
-Scalive's documentation shell freezes embedded examples while disconnected;
-applications can use the same connection bindings with JS commands to disable
-or explain unavailable interaction.
+### Disable controls while offline {#disable-controls-while-offline}
+
+A control that needs the server should not look usable while the page is
+offline. Render it disabled, then let the connection bindings run
+@:apiSymbol(val:scalive.JS)`JS`@:@ commands that enable it once the page
+connects and disable it again if the connection drops:
+
+@:sourceRegion(documentation/fixtures/guides/src/feedback/DocumentLiveView.scala, feedback-offline-control)
+
+The button stays disabled in the static HTML and until the first connection,
+so an early click cannot be lost. The client applies the bindings again after
+each reconnect, and attributes changed by `JS` commands survive later server
+patches.
+
+Put connection bindings in the root LiveView. When the connection drops, the
+client tears down [nested LiveViews](nested-liveviews.md) before it runs the
+disconnected commands, so bindings inside a nested LiveView do not react to the
+outage.
 
 ## Keep after-render effects observational {#keep-after-render-effects-observational}
 

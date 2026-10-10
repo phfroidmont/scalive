@@ -5,30 +5,6 @@ order = 0
 section = project
 %}
 
-## Why Scalive exists {#why-scalive-exists}
-
-Scalive grew out of building and maintaining a production Scala.js application,
-then searching for a simpler boundary between browser and server. Read
-[why I built Scalive](why-i-built-scalive.md#choosing-a-stack) for the personal
-and technical journey behind the project.
-
-## Follow the render design {#follow-the-render-design}
-
-Deciding how typed HTML should identify dynamic values was Scalive's central API
-design problem. [Designing dynamic HTML](dynamic-html-identity.md#the-question)
-explores the competing approaches, what each one made easy or difficult, and why
-Scalive ultimately returned to explicit staging with a deliberately restricted
-`Signal` type.
-
-## Understand the runtime {#understand-the-runtime}
-
-The [runtime architecture](runtime-architecture.md#runtime-at-a-glance) explains
-how Scalive moves from disconnected rendering to socket bootstrap, serialized
-lifecycle turns, retained rendering, tree diffs, resource ownership, protocol
-projection, and cleanup. It introduces the concrete implementation only after
-establishing the runtime concepts; internal names are not additional supported
-application APIs.
-
 ## Project status {#project-status}
 
 Scalive is alpha software under active development. It implements substantial
@@ -71,7 +47,7 @@ states the evidence and remaining work for each tracked area.
 For a conceptual translation rather than a support matrix, read the
 [Phoenix LiveView concepts in Scalive](../guides/phoenix-live-view-orientation.md#start-with-the-programming-model).
 
-## Non-Goals {#non-goals}
+## Non-goals {#non-goals}
 
 Scalive is not intended to:
 
@@ -82,6 +58,24 @@ Scalive is not intended to:
 - guarantee that every Phoenix API has the same shape in Scalive;
 - preserve alpha APIs solely to avoid migration work; or
 - replace JavaScript for behavior that inherently depends on browser APIs.
+
+## Read the design essays {#read-the-design-essays}
+
+These essays explain why Scalive is built the way it is. You don't need them to
+build an application.
+
+- [Why I built Scalive](why-i-built-scalive.md#choosing-a-stack) follows the
+  path from maintaining a production Scala.js application to looking for a
+  simpler boundary between browser and server.
+- [Designing dynamic HTML](dynamic-html-identity.md#the-question) compares the
+  ways typed HTML could identify dynamic values, what each one made easy or
+  difficult, and why Scalive returned to explicit staging with a deliberately
+  restricted `Signal` type.
+- [Runtime architecture](runtime-architecture.md#runtime-at-a-glance) explains
+  how Scalive moves from disconnected rendering to the connected bootstrap,
+  serialized lifecycle turns, retained rendering, tree diffs, resource
+  ownership, protocol projection, and cleanup. Its internal names are not
+  application APIs.
 
 ## Report an issue {#report-an-issue}
 

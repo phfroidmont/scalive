@@ -1,7 +1,7 @@
 {%
 title = "Phoenix LiveView compatibility"
 description = "Current Scalive coverage, intentional divergences, and known gaps relative to Phoenix LiveView."
-order = 4
+order = 1
 section = project
 %}
 

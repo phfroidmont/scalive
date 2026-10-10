@@ -433,6 +433,60 @@ Left for later:
   `build.mill` files).
 - About 1,000 fallback summaries in the API reference.
 
+### Phase 6 (2026-10-10): P3 smaller fixes
+
+No public API changed. Pages and decisions:
+
+- **Phoenix orientation:** the page now says it is for Phoenix users and that
+  Scalive itself needs no Elixir experience. A second table under "Translate
+  state and effects" maps `handle_params`, `handle_info` with PubSub,
+  `assign_async` / `start_async`, streams, uploads, `push_event`, `put_flash`,
+  `push_patch` / `push_navigate` / `redirect`, and `LiveViewTest`, each with the
+  guide section to read. The `handle_event` row now says that browser events,
+  subscription values, and async results all arrive in `handleMessage`.
+- **Flash guide:** renamed to "Flash messages, page titles, and connection
+  status", and its URL to `/guides/flash-titles-and-connection-status` (was
+  `/guides/flash-title-and-lifecycle-ux`). New compiled section "Disable
+  controls while offline" (`feedback-offline-control`). Checked in Chromium
+  against a root LiveView: the button is disabled in the static HTML, enabled on
+  connect, disabled during an outage, enabled after reconnect, and stays enabled
+  across server patches. A deliberate `liveSocket.disconnect()` does not run
+  `phx-disconnected`, and nested LiveViews never run it, because the client
+  tears them down first; the guide says to keep the bindings in the root
+  LiveView. The site's lifecycle example is nested, so its "LiveSocket
+  disconnected" label never appears during an outage; the docs shell's own
+  status indicator does.
+- **Guides index:** every description now names the reader's task. Configuration
+  moved to "Setup and foundations" (order 3) next to client setup, and "Assets
+  and operations" became "Operations" (observability and deployment). The
+  layouts guide's link label for client setup now matches its title.
+- **HTTP forms:** explains Post/Redirect/Get in one sentence. Handler
+  registration was already shown by the compiled fixture.
+- **Deployment:** new "Example: nginx" section and a curl check for `101` and
+  `403`. The config was run with nginx 1.30.4 and TLS in front of the quick
+  start: the page returned 200, an allowed upgrade 101, an unlisted origin 403,
+  and without the `Upgrade` / `Connection` headers the upgrade returned 400. An
+  idle browser page stayed connected through nginx for 80 seconds, past the
+  default 60-second `proxy_read_timeout`.
+- **Lifecycle observability:** new "Export to Prometheus" section built from a
+  compiled `observability` fixture that uses
+  `zio-metrics-connectors-prometheus` 2.5.8 (ZIO 2.1.26; 2.6.0 requires Scala
+  3.9). Its test renders a Live route and reads
+  `scalive_disconnected_render_total` from `/metrics`. Only `guideFixtures`
+  gains the dependency.
+- **Project index:** status, breaking changes, compatibility scope, and
+  non-goals come first; the three essays follow in one "Read the design essays"
+  list. The Project sidebar lists compatibility before the essays. "Non-Goals"
+  became "Non-goals".
+- **External links:** `DomDefsGenerator.mill` points the generated `action` and
+  `alt` attribute docs at MDN's `form` and `img` element pages, because the
+  generic attribute URLs return 404.
+
+Left for later:
+
+- 22 `scala unverified` blocks, as listed in phase 5.
+- About 1,000 fallback summaries in the API reference.
+
 ## How this was verified
 
 - I read all 56 authored pages and every embedded example source they

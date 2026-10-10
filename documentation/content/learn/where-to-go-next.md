@@ -28,7 +28,7 @@ model. Continue by the task your application needs:
   [subscriptions](../guides/subscriptions.md),
   [connected resources](../guides/connected-resources.md),
   [lifecycle hooks](../guides/lifecycle-hooks.md), and
-  [lifecycle feedback and page state](../guides/flash-title-and-lifecycle-ux.md).
+  [flash messages, page titles, and connection status](../guides/flash-titles-and-connection-status.md).
 - **Integrate browser APIs:** [browser commands, events, and hooks](../guides/browser-integration.md).
 - **Verify and operate:** [testing](../guides/testing.md),
   [troubleshooting](../guides/troubleshooting.md),

@@ -3,7 +3,7 @@ title = "Deployment"
 description = "Build and operate a Scalive JVM application behind HTTPS and a WebSocket-capable edge."
 order = 73
 section = guides
-group = "Assets and operations"
+group = "Operations"
 %}
 
 ## Before you start {#prerequisites}
@@ -116,6 +116,47 @@ disconnected state. Scalive also has no external-path-prefix setting; an edge
 that adds a prefix must still expose page, WebSocket, and static paths exactly
 as the application renders them.
 
+### Example: nginx {#example-nginx}
+
+This nginx server terminates TLS for `app.example.com` and forwards every path,
+including the WebSocket upgrade, to an application listening on port `8080`.
+Both blocks belong in nginx's `http` context, for example in a file that the
+main configuration includes:
+
+```nginx
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+server {
+    listen 443 ssl;
+    server_name app.example.com;
+
+    ssl_certificate     /etc/ssl/app.example.com/fullchain.pem;
+    ssl_certificate_key /etc/ssl/app.example.com/privkey.pem;
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+    }
+}
+```
+
+`proxy_pass` without a path forwards the request URI and query string
+unchanged, and nginx passes the `Cookie` and `Origin` headers through by
+default. The `Upgrade` and `Connection` headers turn the WebSocket request into
+an upgrade; without them nginx sends an ordinary HTTP request and the page
+stays disconnected. The Phoenix client sends a heartbeat every 30 seconds, so
+nginx's default 60-second `proxy_read_timeout` does not close an idle page.
+
+The application's `allowedWebSocketOrigins` must contain
+`WebSocketOrigin.https("app.example.com")`, the origin the browser sees, not
+the address nginx forwards to.
+
 ## Cache static assets {#cache-static-assets}
 
 Render asset URLs and serve asset routes from the same loaded `StaticAssets`
@@ -183,7 +224,30 @@ application and edge, and avoid recording credentials or signed values.
 
 ## Verify the deployment {#verify-the-deployment}
 
-Before promoting an instance, verify its public URL end to end:
+Start with two requests against the public URL. The first sends a WebSocket
+upgrade with the page's origin and must print `101`; the second sends an
+unlisted origin and must print `403`:
+
+```bash
+for origin in https://app.example.com https://unlisted.example; do
+  curl --http1.1 -s -o /dev/null -w '%{http_code}\n' --max-time 5 \
+    -H 'Connection: Upgrade' -H 'Upgrade: websocket' \
+    -H 'Sec-WebSocket-Version: 13' \
+    -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' \
+    -H "Origin: $origin" \
+    'https://app.example.com/live/websocket?vsn=2.0.0'
+done
+```
+
+curl holds the upgraded connection open until `--max-time` expires, so the
+`101` appears after five seconds. A `101` followed by a `403` shows that the
+edge forwards upgrades and passes `Origin` through unchanged; a `400` usually
+means the edge dropped the `Upgrade` or `Connection` header. Any other status means the edge or the origin list
+needs attention; [Troubleshooting](troubleshooting.md#diagnose-websocket-connections)
+lists the common causes. Then open a page in a browser and check that it
+connects and responds.
+
+Before promoting an instance, also verify:
 
 - the WebSocket upgrade reaches `<socket-path>/websocket` with query parameters
   and cookies plus exactly one allowed browser `Origin` intact;

@@ -174,5 +174,5 @@ Its fixed context aspects demonstrate composition, not authentication:
 ## Related tasks {#related-tasks}
 
 - Group routes and derive typed context with [Live sessions and mount aspects](live-sessions-and-mount-aspects.md#prerequisites).
-- Set the page title and show connection status with [Lifecycle feedback and page state](flash-title-and-lifecycle-ux.md#prerequisites).
-- Add stylesheets and scripts to the document with [Static assets and client setup](static-assets-and-client-setup.md#render-tracked-tags).
+- Derive the page title from the model with [Flash messages, page titles, and connection status](flash-titles-and-connection-status.md#derive-the-page-title).
+- Add stylesheets and scripts to the document with [Client setup and static assets](static-assets-and-client-setup.md#render-tracked-tags).

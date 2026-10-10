@@ -1,9 +1,9 @@
 {%
 title = "Configuration"
 description = "Configure Scalive signing, token lifetime, cookies, WebSocket origins, routes, assets, lifecycle observation, and application-owned server settings."
-order = 71
+order = 3
 section = guides
-group = "Assets and operations"
+group = "Setup and foundations"
 %}
 
 ## Before you start {#prerequisites}

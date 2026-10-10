@@ -188,5 +188,5 @@ child failure, and rejoin separately; they exercise different ownership paths.
   [Connected resources](connected-resources.md), and
   [File uploads](uploads-and-consumption.md).
 - Apply root title and flash rules from
-  [Lifecycle feedback and page state](flash-title-and-lifecycle-ux.md).
+  [Flash messages, page titles, and connection status](flash-titles-and-connection-status.md).
 - Verify both phases with [Testing LiveViews](testing.md).

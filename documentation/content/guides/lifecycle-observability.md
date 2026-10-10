@@ -3,7 +3,7 @@ title = "Lifecycle observability"
 description = "Observe LiveView lifecycle outcomes safely, publish the built-in ZIO metrics, and interpret their fixed low-cardinality contract."
 order = 72
 section = guides
-group = "Assets and operations"
+group = "Operations"
 %}
 
 ## Before you start {#prerequisites}
@@ -70,16 +70,45 @@ histogram boundaries:
 @:sourceRegion(documentation/fixtures/guides/src/configuration/Configuration.scala, configuration-metrics-observer)
 
 Metric updates write synchronously to ZIO's in-memory metric registry and do no
-network or file I/O. Install and configure the application's preferred
-[ZIO Metrics connector](https://zio.dev/zio-metrics-connectors/) to export that
-registry to Prometheus or another supported monitoring backend. Connector
-dependencies, polling, and endpoint exposure remain application concerns.
+network or file I/O. A [ZIO Metrics connector](https://zio.dev/zio-metrics-connectors/)
+exports that registry to a monitoring backend. Scalive does not choose one;
+connector dependencies, polling, and endpoint exposure belong to the
+application.
 
-After enabling the connector, request one Live route and verify that
-`scalive_disconnected_render_total` increments. Connect its WebSocket and verify
-`scalive_join_total` and `scalive_mount_total`. This checks the LiveView observer,
-registry, connector, and exported endpoint as one path before dashboards or
-alerts depend on it.
+### Export to Prometheus {#export-to-prometheus}
+
+Add the Prometheus connector to the application module's `mvnDeps`:
+`mvn"dev.zio::zio-metrics-connectors-prometheus:2.5.8"`. That release is built
+on ZIO 2.1; pick the connector release that matches your application's ZIO
+version.
+
+Serve the connector's latest report as plain text:
+
+@:sourceRegion(documentation/fixtures/guides/src/observability/PrometheusMetrics.scala, observability-prometheus-route)
+
+The connector polls the metric registry on a fixed interval and keeps the
+encoded report in `PrometheusPublisher`. Build its layers once:
+
+@:sourceRegion(documentation/fixtures/guides/src/observability/PrometheusMetrics.scala, observability-prometheus-layers)
+
+Then serve the Live routes with the metrics observer next to the metrics route,
+and provide those layers to the server:
+
+@:sourceRegion(documentation/fixtures/guides/src/observability/PrometheusMetrics.scala, observability-prometheus-serve)
+
+Point a Prometheus scrape job at `/metrics`. The report can reveal traffic
+volume and failure rates, so expose that path only to the monitoring network,
+for example by blocking it at the public edge.
+
+### Check the export {#check-the-export}
+
+Request one Live route, wait for the next poll, and verify that
+`scalive_disconnected_render_total` increments at `/metrics`. Connect its
+WebSocket and verify `scalive_join_total` and `scalive_mount_total`. This checks
+the LiveView observer, registry, connector, and exported endpoint as one path
+before dashboards or alerts depend on it.
+
+### Combine observers {#combine-observers}
 
 Compose the metrics adapter with application-specific logging or tracing when
 both are needed. Observers run in composition order, and a failure in one does

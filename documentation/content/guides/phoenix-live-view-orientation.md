@@ -126,7 +126,7 @@ but Phoenix code is not Scalive code. Names, lifecycle results, route setup,
 templates, effects, and testing APIs may differ intentionally.
 
 Use the [Learn path](../learn/index.md#start-here) for current application code
-and the [API reference](../api/index.md#core-abstraction) for the current public
+and the [API reference](../api/index.md#core-types) for the current public
 surface. If a Phoenix feature is important to your application, do not infer
 support from this concept map; check the current API and raise an issue as
 described in [Project status](../project/index.md#report-an-issue).

@@ -1,7 +1,11 @@
 package scalive
 
 extension [A](items: IterableOnce[A])
-  /** Declares keyed child content using exact domain-key equality. */
+  /** Renders one element per item, identifying each row by `key`.
+    *
+    * This form renders a plain collection, such as a constant list of options. Keys are compared
+    * with `==`.
+    */
   def splitBy[Key, Msg](key: A => Key)(project: (Key, A) => HtmlElement[Msg]): Mod[Msg] =
     val entries = items.iterator.map { item =>
       val itemKey = key(item)
@@ -9,7 +13,10 @@ extension [A](items: IterableOnce[A])
     }.toVector
     Mod.Content.Keyed(entries)
 
-  /** Declares positionally keyed child content. */
+  /** Renders one element per item, identifying each row by its position.
+    *
+    * This form renders a plain collection, such as a constant list of options.
+    */
   def splitByIndex[Msg](project: (Int, A) => HtmlElement[Msg]): Mod[Msg] =
     val entries = items.iterator.zipWithIndex.map { case (item, index) =>
       Mod.Content.Keyed.Entry(index, project(index, item))
@@ -17,7 +24,13 @@ extension [A](items: IterableOnce[A])
     Mod.Content.Keyed(entries)
 
 extension [A, Items <: Iterable[A]](items: Signal[Items])
-  /** Declares retained keyed rows projected from a collection signal. */
+  /** Renders one element per item, identifying each row by `key`.
+    *
+    * This form follows a signal of the collection, as in
+    * `model.map(_.lines).splitBy(_.product)((product, line) => li(...))`. Each row is built once
+    * per key and receives a signal of its item, so adding, removing, or reordering items updates
+    * only the affected rows. See [keyed rows](https://scalive.dev/learn/rendering-and-dom-updates).
+    */
   def splitBy[Key, Msg](
     key: A => Key
   )(
@@ -25,16 +38,27 @@ extension [A, Items <: Iterable[A]](items: Signal[Items])
   ): Mod[Msg] =
     Mod.Content.SignalKeyed(items.map(values => values: Iterable[A]), key, project)
 
-  /** Declares retained rows whose identity is their current index. */
+  /** Renders one element per item, identifying each row by its position.
+    *
+    * This form follows a signal of the collection. Prefer [[splitBy]] when items have a stable key,
+    * so that inserting or removing an item does not change the rows after it.
+    */
   def splitByIndex[Msg](project: (Int, Signal[A]) => HtmlElement[Msg]): Mod[Msg] =
     Mod.Content.SignalKeyedByIndex(items.map(values => values: Iterable[A]), project)
 
 extension [A](stream: streams.LiveStream[A])
-  /** Declares streamed rows without exposing stream runtime state. */
+  /** Renders a rendered stream's items; `project` receives each item's DOM `id`.
+    *
+    * Prefer [[renderIn]], which also sets up the container.
+    */
   def stream[Msg](project: (String, A) => HtmlElement[Msg]): Mod[Msg] =
     Mod.Content.Stream(stream, project)
 
-  /** Declares a stream container whose IDs and patch mode are finalized by the renderer. */
+  /** Renders a rendered stream's items inside `container`.
+    *
+    * Scalive sets the container's `id` and `phx-update` and each item's DOM `id`. See
+    * [streams](https://scalive.dev/guides/streams-and-collection-updates).
+    */
   def renderIn[Msg](
     container: HtmlTag,
     mods: Mod[Msg]*
@@ -53,13 +77,23 @@ extension [A](stream: streams.LiveStream[A])
       container,
       Vector(idAttr := stream.name, phx.update := PhxUpdate.Stream) ++ containerMods :+ entries
     )
+end extension
 
 extension [A](stream: Signal[streams.LiveStream[A]])
-  /** Declares signal-backed streamed rows. */
+  /** Renders a rendered stream's items; `project` receives each item's DOM `id`.
+    *
+    * This form follows a signal of the stream. Prefer [[renderIn]], which also sets up the
+    * container.
+    */
   def stream[Msg](project: (String, Signal[A]) => HtmlElement[Msg]): Mod[Msg] =
     Mod.Content.SignalStream(stream, project)
 
-  /** Declares a signal-backed stream container finalized by the renderer. */
+  /** Renders a rendered stream's items inside `container`.
+    *
+    * This form follows a signal of the stream, as in
+    * `model.map(_.activity).renderIn(ul)(item => li(...))`. Scalive sets the container's `id` and
+    * `phx-update` and each item's DOM `id`.
+    */
   def renderIn[Msg](
     container: HtmlTag,
     mods: Mod[Msg]*
@@ -79,6 +113,7 @@ extension [A](stream: Signal[streams.LiveStream[A]])
       Vector(idAttr := stream.map(_.name), phx.update := PhxUpdate.Stream) ++
         containerMods :+ entries
     )
+end extension
 
 private def isAttr(mod: Mod[?], expectedName: String): Boolean = mod match
   case Mod.Attr.Static(name, _)                       => name == expectedName

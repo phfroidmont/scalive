@@ -172,9 +172,14 @@ object ApiReferencePipelineSpec extends ZIOSpecDefault:
         routedEventless.exists(_.signatures.exists(_.signature ==
           "trait Eventless[Model, Params] extends LiveView.Routed[Nothing, Model, Params]"
         )),
-        documentation.exists(_.body.count(_.isInstanceOf[Block.Paragraph]) == 2),
+        documentation.exists(_.body.count(_.isInstanceOf[Block.Paragraph]) == 3),
         documentation.exists(_.tags.map(_.subject).contains(Some("Msg"))),
-        links.exists(_.target == LinkTarget.Internal("/api/scalive/html-element", None)),
+        links.exists(_.target == LinkTarget.Internal("/api/scalive/live-view/routed", None)),
+        links.exists(_.target == LinkTarget.Internal("/learn/quick-start", None)),
+        Set("enum:scalive.Connection", "enum:scalive.AsyncValue.Ok", "class:scalive.HtmlAttrBinding")
+          .forall(id =>
+            symbols.find(_.id == id).exists(_.signatures.forall(_.documentation.nonEmpty))
+          ),
         handleMessage.exists(_.signatures.flatMap(_.documentation).exists(documentation =>
           documentation.body.count(_.isInstanceOf[Block.Paragraph]) == 2 &&
             documentation.tags.map(_.name) == Vector("param", "param", "return")

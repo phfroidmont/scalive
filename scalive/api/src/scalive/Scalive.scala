@@ -24,14 +24,35 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
     */
   lazy val inert: HtmlAttr[Boolean] = htmlAttr("inert", BooleanAsAttrPresenceEncoder)
 
-  def rawHtml(html: String): Mod[Nothing]         = Mod.Content.Text(html, raw = true)
+  /** Inserts `html` without escaping it.
+    *
+    * Never pass text that a visitor or another untrusted source can influence: it can inject
+    * scripts into the page. Text passed as a plain string is escaped instead.
+    */
+  def rawHtml(html: String): Mod[Nothing] = Mod.Content.Text(html, raw = true)
+
+  /** Inserts `html` without escaping it.
+    *
+    * Never pass text that a visitor or another untrusted source can influence: it can inject
+    * scripts into the page. Text passed as a plain string is escaped instead.
+    */
   def rawHtml(html: Signal[String]): Mod[Nothing] = Mod.Content.SignalText(html, raw = true)
 
+  /** Names one instance of a stateful component, to render it with `render(props)`.
+    *
+    * `id` identifies the instance among components of the same class; keep it stable so the
+    * instance keeps its model. Declare instances once, as in
+    * `private val ScalaVote = component(VoteComponent, "scala-vote")`.
+    */
   def component[Props, Msg, Model](
     value: LiveComponent[Props, Msg, Model],
     id: String
   ): LiveComponentInstance[Props, Msg, Model] = LiveComponentInstance(value, id)
 
+  /** Names one instance of a stateful component, to render it with `render(props)`.
+    *
+    * This form names a component that emits outputs; render it with `render(props, onOutput)`.
+    */
   def component[Props, Msg, Model, Output](
     value: LiveComponent.WithOutput[Props, Msg, Model, Output],
     id: String
@@ -140,15 +161,30 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
       HtmlTag(container)(wrapper.result())
     )
 
+  /** Renders flash messages set with `ctx.flash`. */
   object flash:
+    /** Renders the message for `kind` with `project`, and nothing while there is none. */
     def apply(kind: FlashKind)(project: String => HtmlElement[Nothing]): Mod[Nothing] =
       Mod.Content.Flash(kind, project)
 
+    /** Clears flash when the element is clicked, without a message to the LiveView.
+      *
+      * This form clears every message.
+      */
     lazy val clearOnClick: Mod.Attr[Nothing] = phx.click := "lv:clear-flash"
 
+    /** Clears flash when the element is clicked, without a message to the LiveView.
+      *
+      * This form clears only the message for `kind`.
+      */
     def clearOnClick(kind: FlashKind): Vector[Mod.Attr[Nothing]] =
       Vector(clearOnClick, phx.value("key") := kind.value)
 
+  /** Renders the document `<title>` in a root layout, so the LiveView's `pageTitle` can change it.
+    *
+    * Pass the `pageTitle` the root layout receives. `default` applies while the page has no title,
+    * and `prefix` and `suffix` surround every title.
+    */
   def liveTitle(
     pageTitle: Option[String],
     default: String,
@@ -163,6 +199,10 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
       s"$prefix$title$suffix"
     )
 
+  /** Renders the document `<title>` in a root layout, so the LiveView's `pageTitle` can change it.
+    *
+    * This form follows a signal of the title.
+    */
   def liveTitle(
     pageTitle: Signal[Option[String]],
     default: String,
@@ -176,6 +216,10 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
       pageTitle.map(value => s"$prefix${value.filter(_.trim.nonEmpty).getOrElse(default)}$suffix")
     )
 
+  /** Renders the document `<title>` in a root layout, so the LiveView's `pageTitle` can change it.
+    *
+    * This form follows a signal of the title.
+    */
   def liveTitle(pageTitle: Signal[Option[String]], default: String): HtmlElement[Nothing] =
     liveTitle(pageTitle, default, "", "")
 
@@ -197,40 +241,101 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
       require(!message.isBlank, "navigation guard message must not be blank")
       guardMessage.optional(dirty.map(Option.when(_)(message)))
 
+  /** Links that navigate or patch without reloading the page.
+    *
+    * They render an ordinary `href`, so they also work before JavaScript connects and when opened
+    * in a new tab. Build destinations with a route's `location`. See [patch or
+    * navigate](https://scalive.dev/guides/routes-and-navigation#choose-patch-or-navigate).
+    */
   object link:
     private def liveDestination(value: String): String =
       NavigationDestination.live(value).fold(throw _, identity)
 
+    /** Renders a link that mounts the LiveView at `to` and adds a browser history entry. */
     def pushNavigate[Msg](to: LiveLocation, mods: Mod[Msg]*): HtmlElement[Msg] =
       pushNavigateUnsafe(to.href, mods*)
+
+    /** Renders a link that mounts the LiveView at `to` and adds a browser history entry.
+      *
+      * This form follows a signal of the destination.
+      */
     def pushNavigate[Msg](to: Signal[LiveLocation], mods: Mod[Msg]*): HtmlElement[Msg] =
       pushNavigateUnsafe(to.map(_.href), mods*)
+
+    /** Like `pushNavigate`, for a raw URL that the route types do not check. */
     def pushNavigateUnsafe[Msg](to: String, mods: Mod[Msg]*): HtmlElement[Msg] =
       a(href := liveDestination(to), phx.link := "redirect", phx.linkState := "push", mods)
+
+    /** Like `pushNavigate`, for a raw URL that the route types do not check.
+      *
+      * This form follows a signal of the destination.
+      */
     def pushNavigateUnsafe[Msg](to: Signal[String], mods: Mod[Msg]*): HtmlElement[Msg] =
       a(href := to.map(liveDestination), phx.link := "redirect", phx.linkState := "push", mods)
+
+    /** Renders a link that mounts the LiveView at `to`, replacing the current history entry. */
     def replaceNavigate[Msg](to: LiveLocation, mods: Mod[Msg]*): HtmlElement[Msg] =
       replaceNavigateUnsafe(to.href, mods*)
+
+    /** Renders a link that mounts the LiveView at `to`, replacing the current history entry.
+      *
+      * This form follows a signal of the destination.
+      */
     def replaceNavigate[Msg](to: Signal[LiveLocation], mods: Mod[Msg]*): HtmlElement[Msg] =
       replaceNavigateUnsafe(to.map(_.href), mods*)
+
+    /** Like `replaceNavigate`, for a raw URL that the route types do not check. */
     def replaceNavigateUnsafe[Msg](to: String, mods: Mod[Msg]*): HtmlElement[Msg] =
       a(href := liveDestination(to), phx.link := "redirect", phx.linkState := "replace", mods)
+
+    /** Like `replaceNavigate`, for a raw URL that the route types do not check.
+      *
+      * This form follows a signal of the destination.
+      */
     def replaceNavigateUnsafe[Msg](to: Signal[String], mods: Mod[Msg]*): HtmlElement[Msg] =
       a(href := to.map(liveDestination), phx.link := "redirect", phx.linkState := "replace", mods)
+
+    /** Renders a link that patches this LiveView's URL to `to` and adds a history entry. */
     def pushPatch[Msg](to: LiveLocation, mods: Mod[Msg]*): HtmlElement[Msg] =
       pushPatchUnsafe(to.href, mods*)
+
+    /** Renders a link that patches this LiveView's URL to `to` and adds a history entry.
+      *
+      * This form follows a signal of the destination.
+      */
     def pushPatch[Msg](to: Signal[LiveLocation], mods: Mod[Msg]*): HtmlElement[Msg] =
       pushPatchUnsafe(to.map(_.href), mods*)
+
+    /** Like `pushPatch`, for a raw URL that the route types do not check. */
     def pushPatchUnsafe[Msg](to: String, mods: Mod[Msg]*): HtmlElement[Msg] =
       a(href := liveDestination(to), phx.link := "patch", phx.linkState := "push", mods)
+
+    /** Like `pushPatch`, for a raw URL that the route types do not check.
+      *
+      * This form follows a signal of the destination.
+      */
     def pushPatchUnsafe[Msg](to: Signal[String], mods: Mod[Msg]*): HtmlElement[Msg] =
       a(href := to.map(liveDestination), phx.link := "patch", phx.linkState := "push", mods)
+
+    /** Renders a link that patches this LiveView's URL to `to`, replacing the current entry. */
     def replacePatch[Msg](to: LiveLocation, mods: Mod[Msg]*): HtmlElement[Msg] =
       replacePatchUnsafe(to.href, mods*)
+
+    /** Renders a link that patches this LiveView's URL to `to`, replacing the current entry.
+      *
+      * This form follows a signal of the destination.
+      */
     def replacePatch[Msg](to: Signal[LiveLocation], mods: Mod[Msg]*): HtmlElement[Msg] =
       replacePatchUnsafe(to.map(_.href), mods*)
+
+    /** Like `replacePatch`, for a raw URL that the route types do not check. */
     def replacePatchUnsafe[Msg](to: String, mods: Mod[Msg]*): HtmlElement[Msg] =
       a(href := liveDestination(to), phx.link := "patch", phx.linkState := "replace", mods)
+
+    /** Like `replacePatch`, for a raw URL that the route types do not check.
+      *
+      * This form follows a signal of the destination.
+      */
     def replacePatchUnsafe[Msg](to: Signal[String], mods: Mod[Msg]*): HtmlElement[Msg] =
       a(href := to.map(liveDestination), phx.link := "patch", phx.linkState := "replace", mods)
   end link
@@ -295,43 +400,86 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
   /** Typed Phoenix LiveView event bindings.
     *
     * Members render `phx-*` attributes and dispatch typed messages or JavaScript commands. They are
-    * not native inline HTML event attributes such as `onclick` or `onchange`.
+    * not native inline HTML event attributes such as `onclick` or `onchange`. Give a binding a
+    * message, a signal of a message, or a `JS` command, as in `button(on.click(Msg.Save), "Save")`.
+    * See [event bindings](https://scalive.dev/guides/html-dsl-and-event-bindings#choose-a-binding).
     */
   object on:
     private def binding(name: String)    = HtmlAttrBinding(s"phx-$name")
     private def keyBinding(name: String) = KeyHtmlAttrBinding(s"phx-$name")
 
-    lazy val click          = binding("click")
-    lazy val clickAway      = binding("click-away")
-    lazy val blur           = binding("blur")
-    lazy val focus          = binding("focus")
-    lazy val windowBlur     = binding("window-blur")
-    lazy val windowFocus    = binding("window-focus")
-    lazy val keyDown        = keyBinding("keydown")
-    lazy val keyUp          = keyBinding("keyup")
-    lazy val windowKeyDown  = keyBinding("window-keydown")
-    lazy val windowKeyUp    = keyBinding("window-keyup")
-    lazy val viewportTop    = binding("viewport-top")
+    /** Binds a click on the element or inside it (`phx-click`). */
+    lazy val click = binding("click")
+
+    /** Binds a click that starts outside the element while it is visible (`phx-click-away`). */
+    lazy val clickAway = binding("click-away")
+
+    /** Binds the element losing focus (`phx-blur`). */
+    lazy val blur = binding("blur")
+
+    /** Binds the element gaining focus (`phx-focus`). */
+    lazy val focus = binding("focus")
+
+    /** Binds the browser window losing focus (`phx-window-blur`). */
+    lazy val windowBlur = binding("window-blur")
+
+    /** Binds the browser window gaining focus (`phx-window-focus`). */
+    lazy val windowFocus = binding("window-focus")
+
+    /** Binds a key press while the element has focus (`phx-keydown`). Filter keys with `key`. */
+    lazy val keyDown = keyBinding("keydown")
+
+    /** Binds a key release while the element has focus (`phx-keyup`). Filter keys with `key`. */
+    lazy val keyUp = keyBinding("keyup")
+
+    /** Binds a key press anywhere in the window (`phx-window-keydown`). Filter keys with `key`. */
+    lazy val windowKeyDown = keyBinding("window-keydown")
+
+    /** Binds a key release anywhere in the window (`phx-window-keyup`). Filter keys with `key`. */
+    lazy val windowKeyUp = keyBinding("window-keyup")
+
+    /** Binds the element's first child reaching the top of the viewport while the visitor scrolls
+      * up (`phx-viewport-top`). The element needs a stable `id`.
+      */
+    lazy val viewportTop = binding("viewport-top")
+
+    /** Binds the element's last child reaching the bottom of the viewport while the visitor scrolls
+      * down (`phx-viewport-bottom`), as for infinite scrolling. The element needs a stable `id`.
+      */
     lazy val viewportBottom = binding("viewport-bottom")
 
     /** Creates a `phx-change` LiveView binding.
       *
       * Phoenix drives this binding from browser `input` and `change` events; it is not the native
-      * `onchange` attribute.
+      * `onchange` attribute. For typed forms, prefer `FormDefinition.onChange`.
       */
-    lazy val change                          = binding("change")
+    lazy val change = binding("change")
+
+    /** Binds a form submission (`phx-submit`). For typed forms, prefer `FormDefinition.onSubmit`.
+      */
     lazy val submit                          = binding("submit")
     private[scalive] lazy val recover        = binding("auto-recover")
     private[scalive] lazy val uploadProgress = binding("progress")
+  end on
 
+  /** Bindings and helpers that follow the LiveView's connection to the server. */
   object connection:
-    lazy val onConnect                                  = HtmlAttrBinding("phx-connected")
-    lazy val onDisconnect                               = HtmlAttrBinding("phx-disconnected")
+    /** Runs a `JS` command each time the LiveView joins, including after a reconnect. */
+    lazy val onConnect = HtmlAttrBinding("phx-connected")
+
+    /** Runs a `JS` command shortly after the LiveView loses its connection. */
+    lazy val onDisconnect = HtmlAttrBinding("phx-disconnected")
+
+    /** Shows the element only while the LiveView is connected. */
     lazy val visibleWhenConnected: Vector[Mod[Nothing]] = Vector(
       hidden := true,
       onConnect(JS.removeAttribute("hidden")),
       onDisconnect(JS.setAttribute("hidden" -> ""))
     )
+
+    /** Shows the element only while the LiveView is not connected, including before it first
+      * connects.
+      */
     lazy val visibleWhenDisconnected: Vector[Mod[Nothing]] = Vector(
       hidden := false,
       onConnect(JS.setAttribute("hidden" -> "")),

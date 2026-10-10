@@ -226,7 +226,7 @@ object DocumentationMarkdownSpec extends ZIOSpecDefault:
           symbols.flatMap(_.signatures).forall(signature => text.contains(signature.signature)),
           overloaded.signatures.forall(signature => overloadedText.contains(signature.signature)),
           sources.forall(text.contains),
-          text.contains("A LiveView is mounted independently"),
+          text.contains("Scalive mounts a LiveView once"),
           text.contains("**Parameters"),
           text.contains(
             "[Companion: object LiveView](https://docs.example.test/api/scalive/live-view/companion.md)"

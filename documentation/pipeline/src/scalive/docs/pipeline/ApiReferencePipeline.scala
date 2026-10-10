@@ -419,11 +419,14 @@ object ApiReferencePipeline:
     ): Option[TastyDocumentationRecord] =
       position(symbol).flatMap { position =>
         documentationByPosition.get(position).flatMap { records =>
-          val named = records.filter(record => sourceName(record.name) == sourceName(symbol))
-          named match
-            case Vector(single)         => Some(single)
-            case _ if records.size == 1 => records.headOption
-            case _                      => None
+          // TASTy can record one definition under several symbols, such as an enum class and its
+          // companion module. They share the position, name, and comment, so any one documents it.
+          val named     = records.filter(record => sourceName(record.name) == sourceName(symbol))
+          val unanimous =
+            named.map(record => (record.comment, record.exported)).distinct.sizeIs == 1
+          if unanimous then named.headOption
+          else if records.sizeIs == 1 then records.headOption
+          else None
         }
       }
 

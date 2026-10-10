@@ -25,7 +25,12 @@ final private[docs] class DocumentationExamplesLiveView(
     extends LiveView.Routed.Eventless[DocumentationExamplesModel, DocumentationExamplesParams]:
   private val ariaCurrent = htmlAttr("aria-current", StringAsIsEncoder)
   private val categories  = ExampleCategory.values.toVector
-  private val topics      = (application.bundle.examples.flatMap(_.descriptor.topics) ++
+  private val pageOrders  =
+    application.bundle.pages.map(page => page.route -> page.metadata.order).toMap
+  private val allExamples = application.bundle.examples.sortBy(example =>
+    pageOrders.getOrElse(s"/examples/${example.descriptor.id}", Int.MaxValue)
+  )
+  private val topics = (application.bundle.examples.flatMap(_.descriptor.topics) ++
     LabCatalog.entries.flatMap(_.topics))
     .groupBy(ExampleTopic.key)
     .toVector.collect {
@@ -52,7 +57,7 @@ final private[docs] class DocumentationExamplesLiveView(
 
   override def view(model: Signal[DocumentationExamplesModel]): HtmlElement[Nothing] =
     val params      = model.map(_.params)
-    val examples    = params.map(value => application.bundle.examples.filter(matches(_, value)))
+    val examples    = params.map(value => allExamples.filter(matches(_, value)))
     val labs        = params.map(value => LabCatalog.entries.filter(matches(_, value)))
     val resultCount = examples.combineWithFn(labs)((examples, labs) => examples.size + labs.size)
     articleTag(

@@ -131,7 +131,10 @@ end BindingPayload
 
 /** Builder for typed server events and declarative browser commands.
   *
-  * Obtain bindings from `on`, `connection`, `dom`, or the relevant feature helper.
+  * Obtain bindings from `on`, `connection`, `dom`, or the relevant feature helper. Configure rate
+  * limits first, then complete the binding with a message, as in
+  * `on.keyUp.debounce(300.millis).withValue(Msg.Search(_))`. See [event
+  * bindings](https://scalive.dev/guides/html-dsl-and-event-bindings#choose-a-binding).
   */
 class HtmlAttrBinding private[scalive] (
   val name: String,
@@ -150,14 +153,29 @@ class HtmlAttrBinding private[scalive] (
     require(duration.length >= 0, s"$name duration must not be negative")
     Mod.Attr.Static(name, duration.toMillis.toString)
 
+  /** Sends the latest event once no new event has arrived for `duration`.
+    *
+    * A pending event is sent immediately when the element loses focus. The limit applies to every
+    * binding on the element. For a form's change events, put `phx.debounce` on the control instead.
+    */
   def debounce(duration: FiniteDuration): HtmlAttrBinding =
     append(durationAttr("phx-debounce", duration))
 
+  /** Waits until the element loses focus, then sends the latest event. */
   def debounceOnBlur: HtmlAttrBinding = append(Mod.Attr.Static("phx-debounce", "blur"))
 
+  /** Sends the first event immediately, then ignores further events until `duration` has passed.
+    *
+    * The limit applies to every binding on the element.
+    */
   def throttle(duration: FiniteDuration): HtmlAttrBinding =
     append(durationAttr("phx-throttle", duration))
 
+  /** Sends `message` to a stateful component instead of the LiveView.
+    *
+    * This form addresses the instance by its component class and stable ID, as returned by
+    * `component`.
+    */
   def to[Props, Msg, Model](
     instance: LiveComponentInstance[Props, Msg, Model]
   )(
@@ -165,6 +183,10 @@ class HtmlAttrBinding private[scalive] (
   ): Mod.Attr[Nothing] =
     configured(Mod.Attr.RoutedBinding(name, _ => ComponentDispatch.Instance(instance, message)))
 
+  /** Sends `message` to a stateful component instead of the LiveView.
+    *
+    * This form addresses an instance of a component that emits outputs.
+    */
   def to[Props, Msg, Model, Output](
     instance: LiveComponentOutputInstance[Props, Msg, Model, Output]
   )(
@@ -174,9 +196,18 @@ class HtmlAttrBinding private[scalive] (
       Mod.Attr.RoutedBinding(name, _ => ComponentDispatch.OutputInstance(instance, message))
     )
 
+  /** Sends `message` to a stateful component instead of the LiveView.
+    *
+    * Inside a component's `view`, pass its `self`, as in `on.click.to(self)(Msg.Vote)`, together
+    * with `phx.target(self)`.
+    */
   def to[Msg](ref: ComponentRef[Msg])(message: Msg): Mod.Attr[Msg] =
     configured(Mod.Attr.ComponentBinding(name, ref, _ => message))
 
+  /** Sends `message` to the component of class `component` that the browser targets.
+    *
+    * This fixes only the message type. Add `phx.target` to choose the instance.
+    */
   def toComponent[Props, Msg, Model](
     component: LiveComponent[Props, Msg, Model]
   )(
@@ -184,18 +215,40 @@ class HtmlAttrBinding private[scalive] (
   ): Mod.Attr[Nothing] =
     configured(Mod.Attr.RoutedBinding(name, _ => ComponentDispatch.Definition(component, message)))
 
+  /** Completes the binding with what happens when the event fires.
+    *
+    * This form runs a client-side `JS` command, which may push a typed message itself.
+    */
   def apply[Msg](command: JSCommand[Msg]): Mod.Attr[Msg] =
     configured(Mod.Attr.JsBinding(name, command))
 
+  /** Completes the binding with what happens when the event fires.
+    *
+    * This form runs the `JS` command that the signal currently holds.
+    */
   @targetName("applySignalCommand")
   def apply[Msg](command: Signal[JSCommand[Msg]]): Mod.Attr[Msg] =
     configured(Mod.Attr.SignalJsBinding(name, command))
 
+  /** Completes the binding with what happens when the event fires.
+    *
+    * This form sends a constant message, as in `on.click(Msg.Save)`.
+    */
   def apply[Msg](message: Msg): Mod.Attr[Msg] = apply(_ => message)
 
+  /** Completes the binding with what happens when the event fires.
+    *
+    * This form sends the message that the signal currently holds, as in
+    * `on.click(line.map(line => Msg.Remove(line.product)))` for one row of a list.
+    */
   def apply[Msg](message: Signal[Msg]): Mod.Attr[Msg] =
     configured(Mod.Attr.SignalBinding(name, message, (value, _) => value))
 
+  /** Completes the binding with what happens when the event fires.
+    *
+    * This form builds the message from the signal's current value and the event's payload. Payload
+    * values come from the browser; validate them before use.
+    */
   def apply[A, Msg](
     current: Signal[A]
   )(
@@ -203,15 +256,33 @@ class HtmlAttrBinding private[scalive] (
   ): Mod.Attr[Msg] =
     configured(Mod.Attr.SignalBinding(name, current, (value, payload) => f(value, payload.params)))
 
+  /** Completes the binding with what happens when the event fires.
+    *
+    * This form builds the message from the event's payload, such as the `key` of a key event.
+    * Payload values come from the browser; validate them before use.
+    */
   def apply[Msg](f: Map[String, String] => Msg): Mod.Attr[Msg] =
     configured(Mod.Attr.Binding(name, payload => f(payload.params)))
 
+  /** Builds the message from the form fields the event carries.
+    *
+    * This form passes the raw, untrusted field values. Prefer `FormDefinition.onChange` and
+    * `onSubmit`, which decode them into a typed form.
+    */
   def form[Msg](f: FormData => Msg): Mod.Attr[Msg] =
     configured(Mod.Attr.FormBinding(name, f))
 
+  /** Builds the message from the form fields the event carries.
+    *
+    * This form decodes the fields with `codec`.
+    */
   def form[A, Msg](codec: FormCodec[A])(f: RawFormEvent[A] => Msg): Mod.Attr[Msg] =
     configured(Mod.Attr.FormEventBinding(name, codec, f))
 
+  /** Builds the message from the form fields the event carries.
+    *
+    * This form decodes the fields into `definition`'s typed event, like `definition.onChange`.
+    */
   def form[Owner, Domain, Msg](
     definition: FormDefinition[Owner, Domain]
   )(
@@ -232,12 +303,26 @@ class HtmlAttrBinding private[scalive] (
   ): Mod.Attr[Msg] =
     configured(Mod.Attr.TypedFormEventBinding(name, decode, f))
 
+  /** Builds the message from the event's `value`, or `None` when the payload has none.
+    *
+    * An unchecked checkbox or radio button sends no `value`.
+    */
   def withValueOption[Msg](f: Option[String] => Msg): Mod.Attr[Msg] =
     apply(values => f(values.get("value")))
 
+  /** Builds the message from the event's `value`, such as a control's current text.
+    *
+    * Supplies an empty string when the payload has no `value`; use [[withValueOption]] when that
+    * case matters.
+    */
   def withValue[Msg](f: String => Msg): Mod.Attr[Msg] =
     withValueOption(value => f(value.getOrElse("")))
 
+  /** Builds the message from the event's `value` read as a boolean, or `None` when it is missing.
+    *
+    * `on`, `yes`, and `true` read as `true`; `off`, `no`, and `false` as `false`; anything else as
+    * `None`.
+    */
   def withBoolValueOption[Msg](f: Option[Boolean] => Msg): Mod.Attr[Msg] =
     withValueOption(value =>
       f(value.flatMap {
@@ -247,10 +332,15 @@ class HtmlAttrBinding private[scalive] (
       })
     )
 
+  /** Builds the message from the event's `value` read as a boolean, as for a checkbox.
+    *
+    * `on`, `yes`, and `true` read as `true`; anything else, including a missing value, as `false`.
+    */
   def withBoolValue[Msg](f: Boolean => Msg): Mod.Attr[Msg] =
     withBoolValueOption(value => f(value.getOrElse(false)))
 end HtmlAttrBinding
 
+/** A key event binding, which can also filter the keys it reacts to with [[key]]. */
 final class KeyHtmlAttrBinding private[scalive] (
   name: String,
   override protected val companionAttrs: Vector[Mod.Attr[Nothing]] = Vector.empty)
@@ -261,16 +351,27 @@ final class KeyHtmlAttrBinding private[scalive] (
   override protected def append(attr: Mod.Attr[Nothing]): KeyHtmlAttrBinding =
     recreate(companionAttrs :+ attr)
 
+  /** Like [[HtmlAttrBinding.debounce]], keeping the key filter available. */
   override def debounce(duration: FiniteDuration): KeyHtmlAttrBinding =
     append(durationAttr("phx-debounce", duration))
 
+  /** Like [[HtmlAttrBinding.debounceOnBlur]], keeping the key filter available. */
   override def debounceOnBlur: KeyHtmlAttrBinding =
     append(Mod.Attr.Static("phx-debounce", "blur"))
 
+  /** Like [[HtmlAttrBinding.throttle]], keeping the key filter available.
+    *
+    * On a key-down binding, a press of a different key is sent immediately.
+    */
   override def throttle(duration: FiniteDuration): KeyHtmlAttrBinding =
     append(durationAttr("phx-throttle", duration))
 
+  /** Reacts only to `value`, as in `on.windowKeyDown.key(Key.Escape)(Msg.Close)`.
+    *
+    * The filter applies to every key binding on the element.
+    */
   def key(value: Key): KeyHtmlAttrBinding = append(Mod.Attr.Static("phx-key", value.value))
+end KeyHtmlAttrBinding
 
 /** A typed declarative HTML modifier. */
 sealed trait Mod[+Msg]

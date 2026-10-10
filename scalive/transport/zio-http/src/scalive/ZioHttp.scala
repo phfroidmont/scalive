@@ -20,6 +20,9 @@ import scalive.upload.*
 
 /** ZIO HTTP assembly for root LiveView routes. */
 object ZioHttp:
+  /** Thrown by [[routes]] when an application cannot be served, for example because two named live
+    * sessions share a name.
+    */
   final class AssemblyException(message: String) extends IllegalArgumentException(message)
   final private case class ConnectedMountRejected(failure: LiveMountFailure)
       extends Exception(
@@ -117,11 +120,21 @@ object ZioHttp:
   ): Option[A] =
     states.get(topic).filter(state => joinRef == generation(state))
 
-  /** Assembles the HTTP and websocket routes after synchronously validating the catalog. */
+  /** Builds the ZIO HTTP routes that serve `application`: one GET route per page and the LiveView
+    * WebSocket.
+    *
+    * This form takes the configuration directly. Prefer the [[LiveSecurity]] form when ordinary
+    * HTTP handlers also need CSRF protection. Throws [[AssemblyException]] when the application is
+    * invalid, for example when two named live sessions share a name.
+    */
   def routes[R](application: LiveApplication[R], config: ZioHttpConfig): Routes[R, Nothing] =
     routes(application, config, LifecycleObserver.none)
 
-  /** Assembles routes and reports structured lifecycle events to `observer`. */
+  /** Builds the ZIO HTTP routes that serve `application`: one GET route per page and the LiveView
+    * WebSocket.
+    *
+    * This form also reports structured lifecycle events to `observer`.
+    */
   def routes[R](
     application: LiveApplication[R],
     config: ZioHttpConfig,
@@ -153,11 +166,21 @@ object ZioHttp:
     )
     Routes.fromIterable(getRoutes :+ socketRoute)
 
-  /** Assembles routes with the security value shared by Live and ordinary HTTP handlers. */
+  /** Builds the ZIO HTTP routes that serve `application`: one GET route per page and the LiveView
+    * WebSocket.
+    *
+    * `security` is the value shared with ordinary HTTP handlers, as in the [quick
+    * start](https://scalive.dev/learn/quick-start). Throws [[AssemblyException]] when the
+    * application is invalid, for example when two named live sessions share a name.
+    */
   def routes[R](application: LiveApplication[R], security: LiveSecurity): Routes[R, Nothing] =
     routes(application, security.config)
 
-  /** Assembles routes with shared security and structured lifecycle observation. */
+  /** Builds the ZIO HTTP routes that serve `application`: one GET route per page and the LiveView
+    * WebSocket.
+    *
+    * This form also reports structured lifecycle events to `observer`.
+    */
   def routes[R](
     application: LiveApplication[R],
     security: LiveSecurity,

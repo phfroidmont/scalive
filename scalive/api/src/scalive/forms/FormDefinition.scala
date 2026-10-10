@@ -57,6 +57,10 @@ final private[scalive] case class FormProjection[Owner, Schema](
   * Start with [[FormRoot.product]], then use [[initial]] for server values or [[event]] for an
   * untrusted browser payload. The path-dependent aliases keep forms, events, snapshots, and
   * workflows tied to this exact definition instance.
+  *
+  * In a LiveView, keep the current `Form` in the model, bind the `<form>` element with [[onChange]]
+  * and [[onSubmit]], and store each event's form in the model. See [typed
+  * forms](https://scalive.dev/guides/typed-forms-and-validation).
   */
 final class FormDefinition[Owner, Domain] private[scalive] (
   val root: FormPath,
@@ -127,15 +131,28 @@ final class FormDefinition[Owner, Domain] private[scalive] (
   def event(data: FormData, kind: FormEventKind): Event =
     event(data, kind, RawFormEvent.Meta.empty)
 
-  /** Revalidates this definition's values with pristine interaction. */
+  /** Rebuilds and revalidates a form from values of this definition.
+    *
+    * This form starts with pristine interaction, so no errors are shown yet.
+    */
   def fromValues(values: Values): Form =
     rebuild(values, FormInteraction.pristine, Vector.empty)
 
-  /** Revalidates values while preserving an existing interaction state. */
+  /** Rebuilds and revalidates a form from values of this definition.
+    *
+    * This form preserves an existing interaction state, such as which fields show errors.
+    */
   def fromValues(values: Values, interaction: FormInteraction[Owner]): Form =
     rebuild(values, interaction, Vector.empty)
 
-  /** Handles LiveView `phx-change` and recovery as typed definition-owned events. */
+  /** Sends a typed event each time the visitor edits the form (`phx-change`).
+    *
+    * Put it on the `<form>` element. The event's `form` holds the edited values, with errors
+    * visible for the fields the visitor has used; store it in the model so the view shows them. The
+    * same message also handles the browser's recovery of a form after a reconnect. See [change and
+    * submit
+    * events](https://scalive.dev/guides/typed-forms-and-validation#handle-change-and-submit-events).
+    */
   def onChange[Msg](f: Event => Msg): Mod.Attr[Msg] =
     Mod.Attr.Group(
       Vector(
@@ -144,7 +161,11 @@ final class FormDefinition[Owner, Domain] private[scalive] (
       )
     )
 
-  /** Handles LiveView `phx-change` and recovery with separate typed callbacks. */
+  /** Sends a typed event each time the visitor edits the form (`phx-change`).
+    *
+    * This form sends `recovered` instead of `changed` when the browser restores the form after a
+    * reconnect.
+    */
   def onChange[Msg](
     changed: Event => Msg,
     recovered: Event => Msg
@@ -156,11 +177,18 @@ final class FormDefinition[Owner, Domain] private[scalive] (
       )
     )
 
-  /** Handles submit events; submitted forms expose all validation errors. */
+  /** Sends a typed event when the visitor submits the form (`phx-submit`).
+    *
+    * Put it on the `<form>` element. The event's form shows every validation error; when it is
+    * valid, its decoded value is ready to save.
+    */
   def onSubmit[Msg](f: Event => Msg): Mod.Attr[Msg] =
     on.submit.form(this)(f)
 
-  /** Handles submit events and decodes one action from this definition's submitter contract. */
+  /** Sends a typed event when the visitor submits the form (`phx-submit`).
+    *
+    * This form also decodes which of the `submitter`'s buttons submitted the form.
+    */
   def onSubmit[Action <: Enum, Msg](
     submitter: Submitter[Action]
   )(
@@ -169,7 +197,10 @@ final class FormDefinition[Owner, Domain] private[scalive] (
     require(submitter.definition eq this, "form submitter belongs to another definition")
     on.submit.form(this)(event => f(event, submitter.decode(event.data)))
 
-  /** Declares finite submit actions under a generated, collision-free browser field name. */
+  /** Declares the submit buttons of this form, one per `Action`, such as Save and Publish.
+    *
+    * This form names the browser field automatically.
+    */
   def submitter[Action <: Enum](
     actions: IterableOnce[Action]
   )(
@@ -177,7 +208,10 @@ final class FormDefinition[Owner, Domain] private[scalive] (
   ): Submitter[Action] =
     createSubmitter(actions, FormSubmitter.defaultName(root), wireValue)
 
-  /** Declares finite submit actions under a checked custom browser field name. */
+  /** Declares the submit buttons of this form, one per `Action`, such as Save and Publish.
+    *
+    * This form uses `wireName` as the browser field name, which must not collide with a field.
+    */
   def submitter[Action <: Enum](
     actions: IterableOnce[Action],
     wireName: String
@@ -204,11 +238,17 @@ final class FormDefinition[Owner, Domain] private[scalive] (
   def withLimits(value: FormLimits): FormDefinition[Owner, Domain] =
     new FormDefinition(root, owner, parts, construct, value)
 
-  /** Creates a product-level error at this definition's root address. */
+  /** Creates validation errors to return from [[emap]] or to add to a form.
+    *
+    * This form attaches the error to the whole form rather than one field.
+    */
   def errors(issue: FieldIssue): FormErrors[Owner] =
     FormErrors.one(rootAddress, issue)
 
-  /** Creates an error for a static field declared by this definition. */
+  /** Creates validation errors to return from [[emap]] or to add to a form.
+    *
+    * This form attaches the error to `field`, which must belong to this definition.
+    */
   def errors[Input, Value](
     field: FormField[Owner, Input, Value],
     issue: FieldIssue
@@ -216,7 +256,10 @@ final class FormDefinition[Owner, Domain] private[scalive] (
     require(owns(field), "error field is not declared by this definition")
     FormErrors.one(field.address, issue)
 
-  /** Creates an error for a repeated group declared by this definition. */
+  /** Creates validation errors to return from [[emap]] or to add to a form.
+    *
+    * This form attaches the error to a repeated group of rows declared by this definition.
+    */
   def errors[Group, Row](
     rows: RepeatedRows[Owner, Group, Row],
     issue: FieldIssue

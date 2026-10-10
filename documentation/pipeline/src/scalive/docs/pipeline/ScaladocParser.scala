@@ -15,6 +15,7 @@ private[pipeline] object ScaladocParser:
   private val WikiLinkPrefix         = "scalive-api-ref:"
   private val RawLessThanPlaceholder = "SCALIVEDOCRAWLESSTHANX"
   private val AllowedExternalSchemes = Set("http", "https", "mailto")
+  private val DocumentationHost      = "scalive.dev"
   private val RawHtml                =
     "(?i)<(?!https?://|mailto:)(?:!--|\\?|![a-z\\[]|/?[a-z][a-z0-9:-]*(?=[\\s/>]|$))".r
   private val SubjectTags = Set(
@@ -349,10 +350,21 @@ private[pipeline] object ScaladocParser:
 
   private def allowedExternal(url: String): Either[Vector[String], LinkTarget] =
     scheme(url).left.map(Vector(_)).flatMap {
-      case Some(value) if AllowedExternalSchemes(value) => Right(LinkTarget.External(url))
-      case Some(value)                                  =>
+      case Some(value) if AllowedExternalSchemes(value) =>
+        Right(documentationRoute(url).getOrElse(LinkTarget.External(url)))
+      case Some(value) =>
         Left(Vector(s"External Scaladoc link scheme '$value' is not allowed: '$url'."))
       case None => Left(Vector(s"Scaladoc link must use an allowed absolute URI: '$url'."))
+    }
+
+  /** Scaladoc links to guides use absolute site URLs, so they also work in an IDE. The site renders
+    * them as internal links and checks that their routes and anchors exist.
+    */
+  private def documentationRoute(url: String): Option[LinkTarget] =
+    val uri = URI.create(url)
+    Option.when(uri.getScheme == "https" && uri.getHost == DocumentationHost) {
+      val path = Option(uri.getPath).getOrElse("").stripSuffix("/")
+      LinkTarget.Internal(if path.isEmpty then "/" else path, Option(uri.getFragment))
     }
 
   private def scheme(value: String): Either[String, Option[String]] =

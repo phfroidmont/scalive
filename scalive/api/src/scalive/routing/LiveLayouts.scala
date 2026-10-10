@@ -26,6 +26,8 @@ final case class LiveRootLayoutContext[+A, +Ctx](
   * request, and URL are signals, so the layout follows live patches and navigation without being
   * rebuilt. Because `view` accepts content of any message type, the layout cannot send messages of
   * its own; use links, nested LiveViews, or browser hooks for interactive chrome.
+  *
+  * See the [layouts guide](https://scalive.dev/guides/layouts).
   */
 trait LiveLayout[-A, -Ctx]:
   def view[Msg](content: HtmlElement[Msg], context: LiveLayoutContext[A, Ctx]): HtmlElement[Msg]
@@ -74,6 +76,8 @@ object LiveLayout:
   *
   * Scalive calls `view` only for the first HTTP response. Live updates patch the LiveView inside
   * the document and never re-render the document itself, so its inputs are plain values.
+  *
+  * See the [layouts guide](https://scalive.dev/guides/layouts).
   */
 trait LiveRootLayout[-A, -Ctx]:
 

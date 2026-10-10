@@ -124,7 +124,9 @@ sealed trait FormInitial[Owner]
 /** Declares a root-level form schema namespace.
   *
   * Keep the returned root as a stable value: its singleton type owns fields, initial assignments,
-  * and the definition produced by [[product]].
+  * and the definition produced by [[product]]. A form starts as `FormRoot("profile")`, declares
+  * fields such as `Root.text("name")`, and ends with `Root.product[Profile](...)`. See [define a
+  * rooted form](https://scalive.dev/guides/typed-forms-and-validation#define-a-rooted-form).
   */
 final class FormRoot private (val path: FormPath):
   self =>
@@ -165,7 +167,11 @@ final class FormRoot private (val path: FormPath):
   def rows(relative: String): RepeatedGroup[self.type] =
     new RepeatedGroup(this, fullPath(relative))
 
-  /** Completes a product schema, checking at compile time that part values match `Domain`. */
+  /** Completes the form's definition, decoding its fields into the case class `Domain`.
+    *
+    * Pass the fields in the order of `Domain`'s fields, as in
+    * `Root.product[Profile]((Name, Email))`. The compiler checks that their value types match.
+    */
   inline def product[Domain](
     parts: Tuple
   )(using
@@ -174,7 +180,10 @@ final class FormRoot private (val path: FormPath):
     val _ = summonInline[FormPartValues[self.type, parts.type] =:= mirror.MirroredElemTypes]
     buildProduct(parts, mirror)
 
-  /** Completes a single-field product schema, such as `root.product[Note](text)`. */
+  /** Completes the form's definition, decoding its fields into the case class `Domain`.
+    *
+    * This form takes the single field of a one-field case class, as in `Root.product[Note](Text)`.
+    */
   inline def product[Domain](
     part: FormPart[self.type, ?]
   )(using
@@ -270,7 +279,10 @@ final class RepeatedGroup[Owner] private[scalive] (
   def texts(relative: String): Field[Vector[String], Vector[String]] =
     field(relative, FieldInput.texts)
 
-  /** Completes the row product and contributes a `Vector[Row]` to the root product. */
+  /** Completes the row schema, which contributes a `Vector[Row]` to the root product.
+    *
+    * Pass the row fields in the order of `Row`'s fields; the compiler checks their value types.
+    */
   inline def product[Row](
     parts: Tuple
   )(using
@@ -279,7 +291,10 @@ final class RepeatedGroup[Owner] private[scalive] (
     val _ = summonInline[FormPartValues[self.type, parts.type] =:= mirror.MirroredElemTypes]
     buildProduct(parts, mirror)
 
-  /** Completes a single-field row product, such as `group.product[Tag](name)`. */
+  /** Completes the row schema, which contributes a `Vector[Row]` to the root product.
+    *
+    * This form takes the single field of a one-field row, as in `group.product[Tag](name)`.
+    */
   inline def product[Row](
     part: FormField[self.type, ?, ?]
   )(using

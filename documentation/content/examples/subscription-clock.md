@@ -1,19 +1,39 @@
 {%
 title = "Managed clock subscription"
 description = "An instance-scoped subscription key starts, replaces, cancels, and resets a managed clock stream."
-order = 9
+order = 12
 section = examples
 %}
 
-Start the clock at one tick per second, then replace it with a faster stream
-without managing a fiber yourself. Cancel stops delivery while retaining the
-visible tick history. Reset both cancels the stream and restores the initial
-model.
+A LiveView that receives a message from a clock stream on every tick. Scalive
+runs the stream for the LiveView and stops it when asked or when the page
+closes, without a fiber to manage.
 
-Each embedded instance derives its @:apiSymbol(opaque-type:scalive.SubscriptionKey)`SubscriptionKey`@:@
-from its documentation instance ID. The key names one resource inside its
-owning LiveView; it is not application state or a global subscription name.
+## Try It {#try-it}
+
+1. Click **Start every second**. **Mode** shows "Every second", and **Ticks
+   received** counts up once a second.
+2. Click **Replace with fast clock**. **Mode** shows "Four times per second",
+   and the count speeds up without starting over.
+3. Click **Cancel clock**. **Mode** shows "Stopped", and the count stays where
+   it was.
 
 @:example(subscription-clock)
 
-Related guidance: [own long-lived streams with subscriptions](../guides/subscriptions.md#own-long-lived-streams-with-subscriptions).
+## How It Works {#how-it-works}
+
+- `ctx.subscriptions.start(ClockSubscription, ...)(ticks(1.second))` runs the
+  stream under a key. **Start every second** is disabled while the clock runs,
+  because starting a registered key again is an error.
+- `ctx.subscriptions.replace` swaps the stream under the same key, and
+  `ctx.subscriptions.cancel` stops it. The model's `mode` follows each change,
+  so the buttons describe the registered state.
+- Each tick arrives in `handleMessage` as `Msg.Tick`. `Lossless` delivery
+  counts every tick.
+- The key is derived from the embedded instance's ID. It names one stream
+  inside this LiveView; it is not a global subscription name.
+
+## Related Guides {#related-guides}
+
+- [Subscriptions](../guides/subscriptions.md#own-long-lived-streams-with-subscriptions)
+  explains keys, replacement, and delivery policies.

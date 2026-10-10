@@ -1700,6 +1700,22 @@ details[open] > summary .docs-disclosure-marker,
   margin-block: 1rem;
 }
 
+.docs-prose:not(.docs-home) .docs-list {
+  padding-inline-start: 1.5rem;
+}
+
+.docs-prose:not(.docs-home) ul.docs-list {
+  list-style: disc;
+}
+
+.docs-prose:not(.docs-home) ol.docs-list {
+  list-style: decimal;
+}
+
+.docs-prose:not(.docs-home) .docs-list > li > p {
+  margin-block: 0.4rem;
+}
+
 .docs-content blockquote,
 .docs-prose blockquote,
 .docs-callout {
@@ -4633,6 +4649,10 @@ details[open] > summary .docs-disclosure-marker,
 .docs-example-rendered {
   border-top: 1px solid var(--docs-border);
   background: var(--docs-surface-raised);
+}
+
+.docs-example > :first-child {
+  border-top: 0;
 }
 
 .docs-example-rendered > header {

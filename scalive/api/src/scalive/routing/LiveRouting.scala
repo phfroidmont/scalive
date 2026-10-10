@@ -235,7 +235,19 @@ sealed trait LiveRouteFragment[-R]:
     supplies: SessionCtx <:< Input
   ): Vector[LiveRouteFragment[R & RS] { type Input = Any }]
 
-/** Common operations for an ordinary (non-routed) LiveView route. */
+/** Declares a LiveView route: its path, how its LiveView is built, and the layouts around it.
+  *
+  * Start from `live`, add path segments with `/`, and finish with `->` for a LiveView that needs
+  * nothing, [[from]] for one built from a service, or [[context]] for one built from the context of
+  * a named live session. Call [[query]] or [[params]] first when the LiveView reads URL parameters;
+  * it then extends [[LiveView.Routed LiveView.Routed]]. Keep the declaration in a named value to
+  * build links to it with [[location]].
+  *
+  * See the [routes guide](https://scalive.dev/guides/routes-and-navigation).
+  *
+  * @tparam A
+  *   the values decoded from the path, `Unit` when it has none
+  */
 class LiveRouteBuilder[A] private[scalive] (
   private[scalive] val pathCodec: PathCodec[A],
   private val layouts: Vector[LiveLayout[A, Any]] = Vector.empty,
@@ -244,6 +256,12 @@ class LiveRouteBuilder[A] private[scalive] (
   private val connectedResourceInitializers: LiveConnectedResourceInitializers[Any] =
     LiveConnectedResourceInitializers.empty):
 
+  /** Appends path segments, as in `live / "projects" / PathCodec.string("project")`.
+    *
+    * A literal string matches itself; a codec such as `PathCodec.int("id")` decodes one segment and
+    * adds its value to the route's path values. Layouts, guards, and connected resources installed
+    * before `/` keep applying to the longer path.
+    */
   def /[B](that: PathCodec[B])(using combiner: Combiner[A, B]): LiveRouteSeed[combiner.Out] =
     val previousParams: combiner.Out => A = out => combiner.separate(out)._1
     LiveRouteSeed(
@@ -269,19 +287,37 @@ class LiveRouteBuilder[A] private[scalive] (
       connectedResourceInitializers.andThen(LiveConnectedResourceInitializers(initialize))
     )
 
+  /** Builds a link or navigation destination for this route.
+    *
+    * Pass the path values, as in `Routes.project.location("scalive")`. Throws
+    * [[LiveLocation.EncodingException]] when a value cannot be encoded; use [[locationEither]] to
+    * handle that case.
+    */
   def location(value: A): LiveLocation =
     locationEither(value).fold(error => throw new LiveLocation.EncodingException(error), identity)
 
+  /** Builds a link or navigation destination for this route, or returns why encoding failed. */
   def locationEither(value: A): Either[LiveLocation.EncodeError, LiveLocation] =
     LiveLocation.encode(pathCodec, LiveParamsCodec.Encoded(value, zio.http.QueryParams.empty))
 
+  /** Builds a link or navigation destination for this route.
+    *
+    * This form applies to a path without values, as in `Routes.home.location`.
+    */
   @targetName("unitLocation")
   def location(using ev: A =:= Unit): LiveLocation = location(ev.flip(()))
 
+  /** Builds a link or navigation destination for this route, or returns why encoding failed. */
   @targetName("unitLocationEither")
   def locationEither(using ev: A =:= Unit): Either[LiveLocation.EncodeError, LiveLocation] =
     locationEither(ev.flip(()))
 
+  /** Adds query parameters, after which the route registers a [[LiveView.Routed LiveView.Routed]].
+    *
+    * The LiveView receives the path values and the decoded query together as its parameters. This
+    * form takes a ZIO HTTP query codec; `query[Int]("page")` names one parameter, and
+    * `query[Filters]` derives several from a schema.
+    */
   def query[Query](
     codec: QueryCodec[Query]
   )(using
@@ -296,6 +332,11 @@ class LiveRouteBuilder[A] private[scalive] (
       connectedResourceInitializers
     )
 
+  /** Adds query parameters, after which the route registers a [[LiveView.Routed LiveView.Routed]].
+    *
+    * The LiveView receives the path values and the decoded query together as its parameters. This
+    * form adds one required parameter, as in `query[Int]("page")`.
+    */
   def query[Query: Schema](
     name: String
   )(using
@@ -303,6 +344,11 @@ class LiveRouteBuilder[A] private[scalive] (
   ): LiveEncodableRouteParamsBuilder[A, combiner.Out] =
     query(HttpCodec.query[Query](name))
 
+  /** Adds an optional query parameter, after which the route registers a
+    * [[LiveView.Routed LiveView.Routed]].
+    *
+    * The parameter decodes to `None` when it is absent, as in `queryOptional[String]("q")`.
+    */
   def queryOptional[Query: Schema](
     name: String
   )(using
@@ -310,12 +356,22 @@ class LiveRouteBuilder[A] private[scalive] (
   ): LiveEncodableRouteParamsBuilder[A, combiner.Out] =
     query(HttpCodec.query[Query](name).optional)
 
+  /** Adds query parameters, after which the route registers a [[LiveView.Routed LiveView.Routed]].
+    *
+    * The LiveView receives the path values and the decoded query together as its parameters. This
+    * form derives the parameters from the fields of `Query`'s schema.
+    */
   def query[Query: Schema](
     using
     combiner: Combiner[A, Query]
   ): LiveEncodableRouteParamsBuilder[A, combiner.Out] =
     query(HttpCodec.query[Query])
 
+  /** Passes the route's values to a [[LiveView.Routed LiveView.Routed]] as its parameters.
+    *
+    * Without an argument, the parameters are the path values. Pass a [[LiveParamsCodec]] to decode
+    * them into another type that can still build links.
+    */
   def params: LiveEncodableRouteParamsBuilder[A, A] =
     LiveEncodableRouteParamsBuilder(
       pathCodec,
@@ -326,6 +382,11 @@ class LiveRouteBuilder[A] private[scalive] (
       connectedResourceInitializers
     )
 
+  /** Passes the route's values to a [[LiveView.Routed LiveView.Routed]] as its parameters.
+    *
+    * Without an argument, the parameters are the path values. Pass a [[LiveParamsCodec]] to decode
+    * them into another type that can still build links.
+    */
   def params[Params](
     codec: LiveParamsCodec[A, Params]
   ): LiveEncodableRouteParamsBuilder[A, Params] =
@@ -338,6 +399,10 @@ class LiveRouteBuilder[A] private[scalive] (
       connectedResourceInitializers
     )
 
+  /** Decodes the route's parameters with a decoder that cannot build links.
+    *
+    * Prefer [[params]] with a codec. The resulting route has no `location`.
+    */
   def paramsDecodeOnly[Params](
     decoder: LiveParamsDecoder[A, Params]
   ): LiveRouteParamsBuilder[A, Params] =
@@ -369,6 +434,12 @@ class LiveRouteBuilder[A] private[scalive] (
       connectedResourceInitializers
     )
 
+  /** Wraps this route's LiveView in `layout`.
+    *
+    * Route layouts sit inside router and session layouts and nest in installation order. Install
+    * them before [[params]] or [[query]]. See the [layouts
+    * guide](https://scalive.dev/guides/layouts#give-one-route-its-own-layout).
+    */
   def withLayout(layout: LiveLayout[A, Any]): LiveRouteBuilder[A] =
     LiveRouteBuilder(
       pathCodec,
@@ -378,6 +449,8 @@ class LiveRouteBuilder[A] private[scalive] (
       connectedResourceInitializers
     )
 
+  /** Renders this route's document with `layout`, replacing the session's or router's root layout.
+    */
   def withRootLayout(layout: LiveRootLayout[A, Any]): LiveRouteBuilder[A] =
     LiveRouteBuilder(
       pathCodec,
@@ -401,24 +474,51 @@ class LiveRouteBuilder[A] private[scalive] (
       connectedResourceInitializers.contramap((_: Result) => ())
     )
 
+  /** Registers the LiveView this route mounts.
+    *
+    * `view` is evaluated for the disconnected render and again for each connected mount. Prefer
+    * `->`, which reads better in a router.
+    */
   def apply[Msg, Model](view: => LiveView[Msg, Model]): LiveRoute[Any, A] { type Input = Any } =
     ordinary((_, _) => view)
 
+  /** Registers the LiveView this route mounts.
+    *
+    * `factory` receives the HTTP request of the disconnected render. For a connected mount it
+    * receives a GET request for the page's path and query, without the browser's headers or
+    * cookies; read those in a session mount aspect instead.
+    */
   def apply[Msg, Model](
     factory: Request => LiveView[Msg, Model]
   ): LiveRoute[Any, A] { type Input = Any } =
     ordinary((_, request) => factory(request))
 
+  /** Registers a LiveView built from the context of the named live session around this route.
+    *
+    * `factory` receives the context, as in
+    * `.context((user: CurrentUser) => AccountLiveView(user))`. The route compiles only inside a
+    * session whose mount aspects produce that context. See [live
+    * sessions](https://scalive.dev/guides/live-sessions-and-mount-aspects).
+    */
   def context[Ctx, Msg, Model](
     factory: Ctx => LiveView[Msg, Model]
   ): LiveRoute[Any, A] { type Input = Ctx } =
     context((_, _, context) => factory(context))
 
+  /** Registers a LiveView built from the context of the named live session around this route.
+    *
+    * `factory` also receives one service from the application environment, which the route adds to
+    * the application's requirements.
+    */
   def context[Ctx, R: Tag, Msg, Model](
     factory: (Ctx, R) => LiveView[Msg, Model]
   ): LiveRoute[R, A] { type Input = Ctx } =
     context((_, _, context, service) => factory(context, service))
 
+  /** Registers a LiveView built from the context of the named live session around this route.
+    *
+    * `factory` also receives the path values and the request.
+    */
   def context[Ctx, Msg, Model](
     factory: (A, Request, Ctx) => LiveView[Msg, Model]
   ): LiveRoute[Any, A] { type Input = Ctx } =
@@ -434,6 +534,11 @@ class LiveRouteBuilder[A] private[scalive] (
       )
     )
 
+  /** Registers a LiveView built from the context of the named live session around this route.
+    *
+    * `factory` also receives the path values, the request, and one service from the application
+    * environment.
+    */
   def context[Ctx, R: Tag, Msg, Model](
     factory: (A, Request, Ctx, R) => LiveView[Msg, Model]
   ): LiveRoute[R, A] { type Input = Ctx } =
@@ -451,21 +556,30 @@ class LiveRouteBuilder[A] private[scalive] (
       )
     )
 
+  /** Registers the LiveView this route mounts, as in `live / "counter" -> CounterLiveView()`.
+    *
+    * `view` is evaluated for the disconnected render and again for each connected mount. Use
+    * [[from]] when the LiveView needs a service.
+    */
   infix def ->[Msg, Model](
     view: => LiveView[Msg, Model]
   ): LiveRoute[Any, A] { type Input = Any } = apply(view)
 
-  /** Builds each lifecycle's LiveView from one service in the application environment.
+  /** Registers a LiveView built from one service in the application environment.
     *
     * The route adds `R` to the application's environment requirement, so the server must provide
-    * it. Scalive calls the factory for the disconnected render and for each connected mount.
+    * it. Scalive calls the factory for the disconnected render and for each connected mount. To use
+    * several services, group them in one. See the [services
+    * guide](https://scalive.dev/guides/services-and-zlayer-injection).
     */
   def from[R: Tag, Msg, Model](
     factory: R => LiveView[Msg, Model]
   ): LiveRoute[R, A] { type Input = Any } =
     from((_: A, _: Request, service: R) => factory(service))
 
-  /** Builds each lifecycle's LiveView from path values, the request, and one environment service.
+  /** Registers a LiveView built from one service in the application environment.
+    *
+    * `factory` also receives the path values and the request.
     */
   def from[R: Tag, Msg, Model](
     factory: (A, Request, R) => LiveView[Msg, Model]
@@ -537,6 +651,7 @@ final class LiveRouteMountAspectBuilder[R, A, Need, Ctx] private[scalive] (
       connectedResourceInitializers.andThen(LiveConnectedResourceInitializers(initialize))
     )
 
+  /** Runs another mount aspect after the previous ones and adds its output to the context. */
   def withMountAspect[R1, Out, Result](
     aspect: LiveRouteMountAspect[R1, A, Ctx, Out]
   )(using append: ContextAppend.Aux[Ctx, Out, Result]
@@ -570,6 +685,7 @@ final class LiveRouteMountAspectBuilder[R, A, Need, Ctx] private[scalive] (
       connectedResourceInitializers
     )
 
+  /** Wraps this route's LiveView in a layout that can read the aspects' context. */
   def withLayout(layout: LiveLayout[A, Ctx]): LiveRouteMountAspectBuilder[R, A, Need, Ctx] =
     LiveRouteMountAspectBuilder(
       pathCodec,
@@ -580,7 +696,9 @@ final class LiveRouteMountAspectBuilder[R, A, Need, Ctx] private[scalive] (
       connectedResourceInitializers
     )
 
-  /** Appends a layout, selecting its input from the context available at this declaration. The pure
+  /** Wraps this route's LiveView in a layout that can read the aspects' context.
+    *
+    * This form selects the layout's input from the context available at this declaration. The pure
     * selector adapts only the layout; later aspects preserve this context selection.
     */
   def withLayout[LayoutContext](
@@ -588,6 +706,7 @@ final class LiveRouteMountAspectBuilder[R, A, Need, Ctx] private[scalive] (
     select: Ctx => LayoutContext
   ): LiveRouteMountAspectBuilder[R, A, Need, Ctx] = withLayout(layout.forContext(select))
 
+  /** Renders this route's document with a root layout that can read the aspects' context. */
   def withRootLayout(
     layout: LiveRootLayout[A, Ctx]
   ): LiveRouteMountAspectBuilder[R, A, Need, Ctx] =
@@ -600,14 +719,19 @@ final class LiveRouteMountAspectBuilder[R, A, Need, Ctx] private[scalive] (
       connectedResourceInitializers
     )
 
-  /** Replaces the route root, selecting its input from this declaration's context. Key and render
-    * select independently, so the selector must be pure and deterministic.
+  /** Renders this route's document with a root layout that can read the aspects' context.
+    *
+    * This form selects the layout's input from this declaration's context. Key and view select
+    * independently, so the selector must be pure and deterministic.
     */
   def withRootLayout[LayoutContext](
     layout: LiveRootLayout[A, LayoutContext],
     select: Ctx => LayoutContext
   ): LiveRouteMountAspectBuilder[R, A, Need, Ctx] = withRootLayout(layout.forContext(select))
 
+  /** Passes the route's values to a [[LiveView.Routed LiveView.Routed]] as its parameters, like
+    * [[LiveRouteBuilder.params]].
+    */
   def params[Params](
     codec: LiveParamsCodec[A, Params]
   ): LiveRouteMountAspectParamsBuilder[R, A, Need, Ctx, Params] =
@@ -621,9 +745,15 @@ final class LiveRouteMountAspectBuilder[R, A, Need, Ctx] private[scalive] (
       connectedResourceInitializers
     )
 
+  /** Passes the route's values to a [[LiveView.Routed LiveView.Routed]] as its parameters, like
+    * [[LiveRouteBuilder.params]].
+    */
   def params: LiveRouteMountAspectParamsBuilder[R, A, Need, Ctx, A] =
     params(LiveParamsCodec.path[A])
 
+  /** Adds query parameters, after which the route registers a [[LiveView.Routed LiveView.Routed]],
+    * like [[LiveRouteBuilder.query]].
+    */
   def query[Query](
     codec: QueryCodec[Query]
   )(using
@@ -631,6 +761,9 @@ final class LiveRouteMountAspectBuilder[R, A, Need, Ctx] private[scalive] (
   ): LiveRouteMountAspectParamsBuilder[R, A, Need, Ctx, combiner.Out] =
     params(LiveParamsCodec.fromQuery(codec))
 
+  /** Adds query parameters, after which the route registers a [[LiveView.Routed LiveView.Routed]],
+    * like [[LiveRouteBuilder.query]].
+    */
   def query[Query: Schema](
     name: String
   )(using
@@ -638,6 +771,9 @@ final class LiveRouteMountAspectBuilder[R, A, Need, Ctx] private[scalive] (
   ): LiveRouteMountAspectParamsBuilder[R, A, Need, Ctx, combiner.Out] =
     query(HttpCodec.query[Query](name))
 
+  /** Adds an optional query parameter, after which the route registers a
+    * [[LiveView.Routed LiveView.Routed]].
+    */
   def queryOptional[Query: Schema](
     name: String
   )(using
@@ -645,20 +781,37 @@ final class LiveRouteMountAspectBuilder[R, A, Need, Ctx] private[scalive] (
   ): LiveRouteMountAspectParamsBuilder[R, A, Need, Ctx, combiner.Out] =
     query(HttpCodec.query[Query](name).optional)
 
+  /** Adds query parameters, after which the route registers a [[LiveView.Routed LiveView.Routed]],
+    * like [[LiveRouteBuilder.query]].
+    */
   def query[Query: Schema](
     using
     combiner: Combiner[A, Query]
   ): LiveRouteMountAspectParamsBuilder[R, A, Need, Ctx, combiner.Out] =
     query(HttpCodec.query[Query])
 
+  /** Registers the LiveView this route mounts after its mount aspects succeed.
+    *
+    * `view` is evaluated for the disconnected render and again for each connected mount. Use
+    * [[context]] when the LiveView reads the aspects' context.
+    */
   def apply[Msg, Model](view: => LiveView[Msg, Model]): LiveRoute[R, A] { type Input = Need } =
     context((_, _, _) => view)
 
+  /** Registers a LiveView built from the context produced by this route's mount aspects.
+    *
+    * `factory` receives the context, as in `.context((access: ProjectAccess) => ...)`.
+    */
   def context[Msg, Model](
     factory: Ctx => LiveView[Msg, Model]
   ): LiveRoute[R, A] { type Input = Need } =
     context((_, _, context) => factory(context))
 
+  /** Registers a LiveView built from the context produced by this route's mount aspects.
+    *
+    * `factory` also receives one service from the application environment, which the route adds to
+    * the application's requirements.
+    */
   def context[R1: Tag, Msg, Model](
     factory: (Ctx, R1) => LiveView[Msg, Model]
   ): LiveRoute[R & R1, A] { type Input = Need } =
@@ -666,6 +819,10 @@ final class LiveRouteMountAspectBuilder[R, A, Need, Ctx] private[scalive] (
       factory(context, service)
     )
 
+  /** Registers a LiveView built from the context produced by this route's mount aspects.
+    *
+    * `factory` also receives the path values and the request.
+    */
   def context[Msg, Model](
     factory: (A, Request, Ctx) => LiveView[Msg, Model]
   ): LiveRoute[R, A] { type Input = Need } =
@@ -681,6 +838,11 @@ final class LiveRouteMountAspectBuilder[R, A, Need, Ctx] private[scalive] (
       )
     )
 
+  /** Registers a LiveView built from the context produced by this route's mount aspects.
+    *
+    * `factory` also receives the path values, the request, and one service from the application
+    * environment.
+    */
   def context[R1: Tag, Msg, Model](
     factory: (A, Request, Ctx, R1) => LiveView[Msg, Model]
   ): LiveRoute[R & R1, A] { type Input = Need } =
@@ -760,22 +922,42 @@ final class LiveRouteMountAspectParamsBuilder[R, A, Need, Ctx, Params] private[s
       connectedResourceInitializers
     )
 
+  /** Builds a link or navigation destination for this route from its parameters.
+    *
+    * Throws [[LiveLocation.EncodingException]] when a value cannot be encoded; use
+    * [[locationEither]] to handle that case.
+    */
   def location(params: Params): LiveLocation =
     locationEither(params).fold(error => throw new LiveLocation.EncodingException(error), identity)
 
+  /** Builds a link or navigation destination for this route, or returns why encoding failed. */
   def locationEither(params: Params): Either[LiveLocation.EncodeError, LiveLocation] =
     paramsCodec.encode(params).flatMap(LiveLocation.encode(pathCodec, _))
 
+  /** Registers the routed LiveView this route mounts after its mount aspects succeed.
+    *
+    * `view` is evaluated for the disconnected render and again for each connected mount. Use
+    * [[context]] when the LiveView reads the aspects' context.
+    */
   def apply[Msg, Model](
     view: => LiveView.Routed[Msg, Model, Params]
   ): LiveRoute[R, A] { type Input = Need } =
     context((_, _, _) => view)
 
+  /** Registers a routed LiveView built from the context produced by this route's mount aspects.
+    *
+    * `factory` receives the context.
+    */
   def context[Msg, Model](
     factory: Ctx => LiveView.Routed[Msg, Model, Params]
   ): LiveRoute[R, A] { type Input = Need } =
     context((_, _, context) => factory(context))
 
+  /** Registers a routed LiveView built from the context produced by this route's mount aspects.
+    *
+    * `factory` also receives one service from the application environment, which the route adds to
+    * the application's requirements.
+    */
   def context[R1: Tag, Msg, Model](
     factory: (Ctx, R1) => LiveView.Routed[Msg, Model, Params]
   ): LiveRoute[R & R1, A] { type Input = Need } =
@@ -783,6 +965,10 @@ final class LiveRouteMountAspectParamsBuilder[R, A, Need, Ctx, Params] private[s
       factory(context, service)
     )
 
+  /** Registers a routed LiveView built from the context produced by this route's mount aspects.
+    *
+    * `factory` also receives the path values and the request.
+    */
   def context[Msg, Model](
     factory: (A, Request, Ctx) => LiveView.Routed[Msg, Model, Params]
   ): LiveRoute[R, A] { type Input = Need } =
@@ -799,6 +985,11 @@ final class LiveRouteMountAspectParamsBuilder[R, A, Need, Ctx, Params] private[s
       )
     )
 
+  /** Registers a routed LiveView built from the context produced by this route's mount aspects.
+    *
+    * `factory` also receives the path values, the request, and one service from the application
+    * environment.
+    */
   def context[R1: Tag, Msg, Model](
     factory: (A, Request, Ctx, R1) => LiveView.Routed[Msg, Model, Params]
   ): LiveRoute[R & R1, A] { type Input = Need } =
@@ -868,7 +1059,13 @@ object LiveRouteSeed:
       connectedResourceInitializers
     )
 
-/** A route whose path and query values are decoded for a sibling [[LiveView.Routed]]. */
+/** Declares a route whose decoded path and query values are the parameters of a
+  * [[LiveView.Routed LiveView.Routed]].
+  *
+  * `query`, `queryOptional`, and `params` on [[LiveRouteBuilder]] return this builder. Finish it
+  * like an ordinary route, with `->`, [[from]], or [[context]]. See the [routes
+  * guide](https://scalive.dev/guides/routes-and-navigation#mount-and-react-to-parameters).
+  */
 class LiveRouteParamsBuilder[A, Params] private[scalive] (
   protected val pathCodec: PathCodec[A],
   protected val paramsCodec: LiveParamsDecoder[A, Params],
@@ -890,6 +1087,11 @@ class LiveRouteParamsBuilder[A, Params] private[scalive] (
       connectedResourceInitializers.andThen(LiveConnectedResourceInitializers(initialize))
     )
 
+  /** Converts the decoded parameters with a function that cannot be reversed.
+    *
+    * The resulting route can no longer build links with `location`. Prefer
+    * [[LiveEncodableRouteParamsBuilder.mapParams]] when the conversion can be reversed.
+    */
   def mapParamsDecodeOnly[Params2](
     decodeParams: Params => Params2
   ): LiveRouteParamsBuilder[A, Params2] =
@@ -922,25 +1124,53 @@ class LiveRouteParamsBuilder[A, Params] private[scalive] (
       connectedResourceInitializers
     )
 
+  /** Registers the routed LiveView this route mounts.
+    *
+    * `view` is evaluated for the disconnected render and again for each connected mount. Prefer
+    * `->`, which reads better in a router.
+    */
   def apply[Msg, Model](
     view: => LiveView.Routed[Msg, Model, Params]
   ): LiveRoute[Any, A] { type Input = Any } =
     routed((_, _) => view)
 
+  /** Registers the routed LiveView this route mounts.
+    *
+    * `factory` receives the HTTP request of the disconnected render. For a connected mount it
+    * receives a GET request for the page's path and query, without the browser's headers or
+    * cookies.
+    */
   def apply[Msg, Model](
     factory: Request => LiveView.Routed[Msg, Model, Params]
   ): LiveRoute[Any, A] { type Input = Any } = routed((_, request) => factory(request))
 
+  /** Registers a routed LiveView built from the context of the named live session around this
+    * route.
+    *
+    * `factory` receives the context. The route compiles only inside a session whose mount aspects
+    * produce that context.
+    */
   def context[Ctx, Msg, Model](
     factory: Ctx => LiveView.Routed[Msg, Model, Params]
   ): LiveRoute[Any, A] { type Input = Ctx } =
     context((_, _, context) => factory(context))
 
+  /** Registers a routed LiveView built from the context of the named live session around this
+    * route.
+    *
+    * `factory` also receives one service from the application environment, which the route adds to
+    * the application's requirements.
+    */
   def context[Ctx, R: Tag, Msg, Model](
     factory: (Ctx, R) => LiveView.Routed[Msg, Model, Params]
   ): LiveRoute[R, A] { type Input = Ctx } =
     context((_, _, context, service) => factory(context, service))
 
+  /** Registers a routed LiveView built from the context of the named live session around this
+    * route.
+    *
+    * `factory` also receives the path values and the request.
+    */
   def context[Ctx, Msg, Model](
     factory: (A, Request, Ctx) => LiveView.Routed[Msg, Model, Params]
   ): LiveRoute[Any, A] { type Input = Ctx } =
@@ -957,6 +1187,12 @@ class LiveRouteParamsBuilder[A, Params] private[scalive] (
       )
     )
 
+  /** Registers a routed LiveView built from the context of the named live session around this
+    * route.
+    *
+    * `factory` also receives the path values, the request, and one service from the application
+    * environment.
+    */
   def context[Ctx, R: Tag, Msg, Model](
     factory: (A, Request, Ctx, R) => LiveView.Routed[Msg, Model, Params]
   ): LiveRoute[R, A] { type Input = Ctx } =
@@ -975,23 +1211,30 @@ class LiveRouteParamsBuilder[A, Params] private[scalive] (
       )
     )
 
+  /** Registers the routed LiveView this route mounts, as in `Routes.search -> SearchLiveView()`.
+    *
+    * `view` is evaluated for the disconnected render and again for each connected mount. Use
+    * [[from]] when the LiveView needs a service.
+    */
   infix def ->[Msg, Model](
     view: => LiveView.Routed[Msg, Model, Params]
   ): LiveRoute[Any, A] { type Input = Any } =
     apply(view)
 
-  /** Builds each lifecycle's routed LiveView from one service in the application environment.
+  /** Registers a routed LiveView built from one service in the application environment.
     *
     * The route adds `R` to the application's environment requirement, so the server must provide
-    * it. Scalive calls the factory for the disconnected render and for each connected mount.
+    * it. Scalive calls the factory for the disconnected render and for each connected mount. See
+    * the [services guide](https://scalive.dev/guides/services-and-zlayer-injection).
     */
   def from[R: Tag, Msg, Model](
     factory: R => LiveView.Routed[Msg, Model, Params]
   ): LiveRoute[R, A] { type Input = Any } =
     from((_: A, _: Request, service: R) => factory(service))
 
-  /** Builds each lifecycle's routed LiveView from path values, the request, and one environment
-    * service.
+  /** Registers a routed LiveView built from one service in the application environment.
+    *
+    * `factory` also receives the path values and the request.
     */
   def from[R: Tag, Msg, Model](
     factory: (A, Request, R) => LiveView.Routed[Msg, Model, Params]
@@ -1044,6 +1287,8 @@ object LiveRouteParamsBuilder:
       connectedResourceInitializers
     )
 
+/** A [[LiveRouteParamsBuilder]] that can also encode its parameters into links with [[location]].
+  */
 final class LiveEncodableRouteParamsBuilder[A, Params] private[scalive] (
   pathCodec: PathCodec[A],
   val codec: LiveParamsCodec[A, Params],
@@ -1092,6 +1337,11 @@ final class LiveEncodableRouteParamsBuilder[A, Params] private[scalive] (
       connectedResourceInitializers
     )
 
+  /** Converts the decoded parameters into a domain type, keeping the route able to build links.
+    *
+    * `decodeParams` runs on each decoded URL and `encodeParams` on each [[location]] call, so they
+    * must be inverses.
+    */
   def mapParams[Params2](
     decodeParams: Params => Params2
   )(
@@ -1106,9 +1356,16 @@ final class LiveEncodableRouteParamsBuilder[A, Params] private[scalive] (
       connectedResourceInitializers
     )
 
+  /** Builds a link or navigation destination for this route from its parameters.
+    *
+    * Pass the parameters the LiveView receives, as in `Routes.search.location(Some("LiveView"))`.
+    * Throws [[LiveLocation.EncodingException]] when a value cannot be encoded; use
+    * [[locationEither]] to handle that case.
+    */
   def location(params: Params): LiveLocation =
     locationEither(params).fold(error => throw new LiveLocation.EncodingException(error), identity)
 
+  /** Builds a link or navigation destination for this route, or returns why encoding failed. */
   def locationEither(params: Params): Either[LiveLocation.EncodeError, LiveLocation] =
     codec.encode(params).flatMap(LiveLocation.encode(pathCodec, _))
 end LiveEncodableRouteParamsBuilder
@@ -1153,6 +1410,19 @@ object LiveSession:
     routes: Vector[LiveRouteFragment[R] { type Input = Any }]
   ): LiveSession[R] = new LiveSession(name, routes)
 
+/** Declares a named live session: a group of routes that share navigation, layouts, and mount
+  * policy.
+  *
+  * Create one with `Live.session(name)`, add mount aspects, layouts, and guards, then pass the
+  * routes, as in `Live.session("account").withMountAspect(currentUser)(Routes.account...)`. Live
+  * navigation stays inside a session; navigating to a route outside it loads a new document. See
+  * [live sessions](https://scalive.dev/guides/live-sessions-and-mount-aspects).
+  *
+  * @tparam R
+  *   the services the session's mount aspects need
+  * @tparam Ctx
+  *   the context the session's mount aspects produce for its routes
+  */
 final class LiveSessionBuilder[R, Ctx] private[scalive] (
   val name: String,
   private val pipeline: LiveSessionMountPipeline[R, Any, Ctx],
@@ -1173,6 +1443,12 @@ final class LiveSessionBuilder[R, Ctx] private[scalive] (
       rootLayout
     )
 
+  /** Runs `aspect` before every route in this session mounts and adds its output to the context.
+    *
+    * The aspect reads the HTTP request during the disconnected render and signs its claims into the
+    * page, so the connected mount can rebuild the context without the browser's cookies. See [mount
+    * aspects](https://scalive.dev/guides/live-sessions-and-mount-aspects).
+    */
   def withMountAspect[R1, Claims, Out, Result](
     aspect: LiveSessionMountAspect[R1, Ctx, Claims, Out]
   )(using append: ContextAppend.Aux[Ctx, Out, Result]
@@ -1208,6 +1484,11 @@ final class LiveSessionBuilder[R, Ctx] private[scalive] (
       rootLayout.map(_.forContext(append.left))
     )
 
+  /** Wraps every route in this session in a layout.
+    *
+    * Session layouts sit inside the router's layout and around route layouts, and nest in
+    * installation order.
+    */
   def withLayout(value: LiveLayout[Any, Ctx]): LiveSessionBuilder[R, Ctx] =
     LiveSessionBuilder(
       name,
@@ -1218,7 +1499,9 @@ final class LiveSessionBuilder[R, Ctx] private[scalive] (
       rootLayout
     )
 
-  /** Appends a layout, selecting its input from the context available at this declaration. The pure
+  /** Wraps every route in this session in a layout.
+    *
+    * This form selects the layout's input from the context available at this declaration. The pure
     * selector adapts only the layout; later aspects preserve this context selection.
     */
   def withLayout[LayoutContext](
@@ -1226,6 +1509,7 @@ final class LiveSessionBuilder[R, Ctx] private[scalive] (
     select: Ctx => LayoutContext
   ): LiveSessionBuilder[R, Ctx] = withLayout(layout.forContext(select))
 
+  /** Renders the document of every route in this session, replacing the router's root layout. */
   def withRootLayout(value: LiveRootLayout[Any, Ctx]): LiveSessionBuilder[R, Ctx] =
     LiveSessionBuilder(
       name,
@@ -1236,8 +1520,10 @@ final class LiveSessionBuilder[R, Ctx] private[scalive] (
       Some(value)
     )
 
-  /** Replaces the session root, selecting its input from this declaration's context. Key and render
-    * select independently, so the selector must be pure and deterministic.
+  /** Renders the document of every route in this session, replacing the router's root layout.
+    *
+    * This form selects the layout's input from this declaration's context. Key and view select
+    * independently, so the selector must be pure and deterministic.
     */
   def withRootLayout[LayoutContext](
     layout: LiveRootLayout[Any, LayoutContext],
@@ -1264,6 +1550,11 @@ final class LiveSessionBuilder[R, Ctx] private[scalive] (
       rootLayout
     )
 
+  /** Puts `routes` in this session and returns it for the router.
+    *
+    * A route registered with `context` compiles only when this session produces the context it
+    * reads.
+    */
   def apply[R1](routes: (LiveRouteFragment[R1] { type Input >: Ctx })*): LiveSession[R & R1] =
     val attached = routes.toVector.flatMap { route =>
       route.attachSession(
@@ -1419,7 +1710,13 @@ object LiveSessionBuilder:
       )
 end LiveSessionBuilder
 
-/** A complete declarative application; transport and runtime interpretation live elsewhere. */
+/** All routes and layouts of a Scalive application, built by `Live.router(...)`.
+  *
+  * Serve it with `ZioHttp.routes(application, security)`, which validates the routes when called.
+  *
+  * @tparam R
+  *   the services the routes need from the server's environment
+  */
 final class LiveApplication[-R] private[scalive] (
   val routes: Vector[LiveRouteFragment[R]],
   val socketPath: PathCodec[Unit],
@@ -1434,17 +1731,38 @@ object LiveApplication:
     rootLayout: LiveRootLayout[Any, Any]
   ): LiveApplication[R] = new LiveApplication(routes, socketPath, layout, rootLayout)
 
+/** Collects an application's routes into a [[LiveApplication]]. Start from `Live.router`. */
 final class LiveRouter private[scalive] (
   private val socketPath: PathCodec[Unit],
   private val layout: Option[LiveLayout[Any, Any]],
   private val rootLayout: LiveRootLayout[Any, Any]):
-  def withSocketPath(value: PathCodec[Unit]): LiveRouter  = LiveRouter(value, layout, rootLayout)
+
+  /** Serves the LiveView WebSocket at `value` instead of `/live`.
+    *
+    * The browser's `LiveSocket` must connect to the same path.
+    */
+  def withSocketPath(value: PathCodec[Unit]): LiveRouter = LiveRouter(value, layout, rootLayout)
+
+  /** Wraps every route in `value`, outside session and route layouts. The router keeps one layout.
+    */
   def withLayout(value: LiveLayout[Any, Any]): LiveRouter =
     LiveRouter(socketPath, Some(value), rootLayout)
+
+  /** Renders every route's document with `value`, unless a session or route installs its own.
+    *
+    * Without one, the response contains only the LiveView, with no document or client scripts
+    * around it.
+    */
   def withRootLayout(value: LiveRootLayout[Any, Any]): LiveRouter =
     LiveRouter(socketPath, layout, value)
+
+  /** Builds the application from routes and named live sessions.
+    *
+    * Routes that read session context must be inside the [[LiveSessionBuilder]] that produces it.
+    */
   def apply[R](routes: (LiveRouteFragment[R] { type Input = Any })*): LiveApplication[R] =
     LiveApplication(routes.toVector, socketPath, layout, rootLayout)
+end LiveRouter
 
 object LiveRouter:
   private[scalive] def apply(
@@ -1453,9 +1771,23 @@ object LiveRouter:
     rootLayout: LiveRootLayout[Any, Any]
   ): LiveRouter = new LiveRouter(socketPath, layout, rootLayout)
 
+/** Entry points for declaring a Scalive application. */
 object Live:
+  /** Starts an application, as in
+    * `Live.router.withRootLayout(RootLayout())(live -> HomeLiveView())`.
+    *
+    * Pass the result to `ZioHttp.routes` to serve it. See the [quick
+    * start](https://scalive.dev/learn/quick-start).
+    */
   val router: LiveRouter = LiveRouter(PathCodec.empty / "live", None, LiveRootLayout.identity)
+
+  /** Starts a route from a ZIO HTTP path codec. Most routes start from `live` instead. */
   def route[A](pathCodec: PathCodec[A]): LiveRouteSeed[A] = LiveRouteSeed(pathCodec)
+
+  /** Starts a named live session, a group of routes that share navigation and mount policy.
+    *
+    * Names must be unique within the application.
+    */
   def session(name: String): LiveSessionBuilder[Any, Any] =
     LiveSessionBuilder(
       name,
@@ -1466,4 +1798,9 @@ object Live:
       None
     )
 
+/** The root path `/`, from which routes are declared, as in
+  * `live / "counter" -> CounterLiveView()`.
+  *
+  * See the [routes guide](https://scalive.dev/guides/routes-and-navigation).
+  */
 val live: LiveRouteSeed[Unit] = LiveRouteSeed(PathCodec.empty)

@@ -273,6 +273,82 @@ Verification: `mill __.test`, `mill documentation.check`, and
 runtime change is the `render` to `view` rename, and the e2e app's routes all
 share one root layout, so the new default key changes no navigation.
 
+### Phase 4 (2026-10-10): findings 13 and 17
+
+API decision: each route builder now has one way to say each thing. Removed
+`from((path, request, context) => view)` from `LiveRouteMountAspectBuilder` and
+`LiveRouteMountAspectParamsBuilder`, `apply((path, request, context) => view)`
+from both, and the `apply((path, request, context) => view)` overload of
+`LiveRouteBuilder`. Each duplicated a `context` overload. Builders now offer
+`->` (or `apply`) for a LiveView that needs nothing, `from` for one built from a
+service, and `context` for one built from session or mount-aspect context. Eight
+test call sites, in `ZioHttpSpec` and `RoutedConstructionSpec`, moved to
+`context`.
+
+Scaladoc (finding 13):
+
+- **Pipeline bug.** TASTy records some definitions under several symbols at one
+  position, such as an enum and its companion. The extractor then found no
+  unique record and dropped the comment, so `Connection`, `AsyncValue`,
+  `LiveAsyncResult`, `HtmlAttrBinding`, and other documented types showed the
+  fallback summary. Records that agree on comment and export now count as one.
+- **Overloads.** A symbol's summary is the first paragraph its overloads share;
+  when they differ, the reference falls back. Overloads of the documented
+  members now share a first paragraph and put the differences in the second.
+- **Guide links.** Scaladoc links to `https://scalive.dev/...` keep working in
+  an IDE. The pipeline turns them into internal links, and the site checks
+  their routes and anchors like page links.
+- **Documented:** `LiveView` (all members, `Routed`, `Eventless`), the mount,
+  message, and params contexts, `Connection`, `RootMountConnected`, `Async`,
+  `Subscriptions`, `Navigation`, `MountNavigation`, `Flash`, `Client`,
+  `ComponentUpdates`, `AsyncValue`, `LiveAsyncResult`, `LiveComponent`, the
+  route, session, and router builders, `Live`, `live`, `LiveApplication`,
+  `ZioHttp.routes`, `Signal`, `splitBy`, `renderIn`, `on`, `connection`,
+  `HtmlAttrBinding`, `link`, `flash`, `liveTitle`, `component`, `rawHtml`,
+  `FormDefinition`'s bindings, `FormRoot.product`, and `ConnectedRender.join`.
+  Core types link to a guide.
+- Fallback summaries fell from 1,328 of 2,203 symbols to 998 of 2,201.
+  Most that remain are in `LifecycleObserver` events, hook traits, `Mod`
+  cases, raw `phx` attributes, and advanced form types.
+- **API overview.** `api/index.md` names the real UI controls (**Filter
+  packages and types**, **Find a member**), links each package, mentions the
+  connected test client, maps tasks to the core types, and moves lifecycle
+  resources and observability out of Forms. `#core-abstraction` became
+  `#core-types`.
+
+Example catalog (finding 17):
+
+- Every example has a unique `order`, grouped like the catalog and from simple
+  to advanced within each group. The catalog lists cards in that order, and
+  **User input** now precedes **Async and effects**, matching the Learn path.
+- Example pages render the live result first and the complete source after it;
+  long sources collapse to a preview.
+- Every page follows one format: what it shows, **Try It** (steps with the
+  expected result), the live result and source, **How It Works** (the key
+  lines, in prose), and **Related Guides**. The key lines follow the source
+  because the example directive renders both together.
+- Text upload: the page describes the manual upload, the button reads **Upload
+  and summarize** (was "Summarize completed file") and **Uploading...** while
+  in flight, and the empty-submit notice asks for a valid file.
+- Component subscriptions: the steps only ask for a reproducible removal; the
+  quick-reinsertion case is explained instead.
+- Navigation: the page says that its links leave the page and how Back
+  behaves.
+- Prose lists had no bullets, numbers, or indentation on any page, because the
+  CSS reset removes list styles. Rendered Markdown lists now carry a
+  `docs-list` class with markers; the homepage keeps its own list styling.
+
+Left for later phases:
+
+- Findings 18–20, including sentence-case headings, "durable" in the activity
+  stream's labels, and the catalog's "Durable state" category description.
+- The remaining fallback summaries listed above.
+- 35 `scala unverified` blocks.
+
+Verification: `mill __.test`, `mill documentation.check`, and
+`npm run test:xray` pass. `./scripts/e2e-run-upstream.sh` was not run: the API
+change removes overloads, and no runtime behavior changed.
+
 ## How this was verified
 
 - I read all 56 authored pages and every embedded example source they

@@ -1,19 +1,43 @@
 {%
 title = "Summarize-and-discard text upload"
 description = "One bounded text file becomes aggregate facts while its consumed bytes are immediately discarded."
-order = 110
+order = 9
 section = examples
 %}
 
-Choose one small `.txt` or `.md` file and submit it after the upload completes.
-The LiveView validates strict UTF-8 text, retains only byte, line, and word counts,
-and immediately releases the consumed bytes. It does not persist or render the
-file contents.
+A form that uploads one small text file, counts its bytes, lines, and words,
+and immediately discards the file. It never stores or renders the file's
+contents.
 
-The limits make an in-memory destination appropriate for this lesson. Larger or
-attacker-controlled files need a streaming hosted writer or a direct external
-destination instead.
+## Try It {#try-it}
+
+1. Under **Text file**, choose a `.txt` or `.md` file of at most 64 KiB. The
+   file appears at 0%: choosing a file does not upload it yet.
+2. Click **Upload and summarize**. The browser uploads the file, then the
+   server summarizes it: a card shows its size, lines, and words, and the
+   status reads "Summary created. The uploaded bytes were discarded."
+3. Choose a file of another type, or one larger than 64 KiB. An error such as
+   "Choose a .txt or .md file." appears, and the file cannot be uploaded.
+4. Click **Reset upload** to clear the file and every summary.
 
 @:example(text-upload)
 
-Related guidance: [accept, consume, and release uploads safely](../guides/uploads-and-consumption.md#choose-a-destination-and-set-hard-limits).
+## How It Works {#how-it-works}
+
+- `LiveUploadDef.inMemory` allows one `.txt` or `.md` file of at most 64 KiB.
+  The server checks a chosen file's type and size before the browser sends any
+  bytes.
+- The upload is manual, as by default: submitting the form uploads the file and
+  then sends the submit message.
+- `ctx.uploads.consumeCompleted` hands the completed bytes to the summary
+  function once, then releases them. Invalid UTF-8 is rejected with a message
+  instead of a summary.
+
+These limits make an in-memory destination appropriate for this example.
+Larger or attacker-controlled files need a streaming writer or an external
+destination instead.
+
+## Related Guides {#related-guides}
+
+- [File uploads](../guides/uploads-and-consumption.md#choose-a-destination-and-set-hard-limits)
+  covers destinations, limits, and consumption.

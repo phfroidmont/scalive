@@ -1,12 +1,20 @@
 package scalive
 
-/** A read-only value sampled by the render engine. */
+/** A value that changes over time, such as the model inside [[LiveView.view]].
+  *
+  * Scalive builds a view once per lifecycle and re-reads its signals whenever the model changes,
+  * updating only the parts of the page whose values changed. Derive values with [[map]], combine
+  * signals with [[Signal.combineWith]], and render conditional content with `when`, `option`, and
+  * `choose` instead of reading the value directly. See
+  * [rendering](https://scalive.dev/learn/rendering-and-dom-updates).
+  */
 sealed trait Signal[+A]:
   private[scalive] def expression: Signal.Expression[A]
 
-  /** Derives a signal with a pure transformation. */
+  /** Derives a signal with a pure transformation, as in `model.map(_.count.toString)`. */
   final def map[B](f: A => B): Signal[B] = Signal.Expression.Mapped(this, f)
 
+/** Combines signals and renders content that depends on them. */
 object Signal:
   /** Type-directed shallow tuple conversion used by [[combineWith]].
     *
@@ -126,11 +134,17 @@ object Signal:
     def when[Msg](content: => HtmlElement[Msg]): Mod[Msg] =
       Mod.Content.SignalChoice(condition, Vector(true -> content))
 
-    /** Renders `whenTrue` or `whenFalse`, following the condition. Both branches are built once. */
+    /** Renders the branch that matches the current value, switching as the value changes.
+      *
+      * This form renders `whenTrue` or `whenFalse`. Both branches are built once.
+      */
     def choose[Msg](whenTrue: => HtmlElement[Msg], whenFalse: => HtmlElement[Msg]): Mod[Msg] =
       Mod.Content.SignalChoice(condition, Vector(true -> whenTrue, false -> whenFalse))
 
-    /** Applies `whenTrue` or `whenFalse` modifiers, such as attributes, following the condition. */
+    /** Applies the modifiers that match the current value, such as attributes.
+      *
+      * This form applies `whenTrue` or `whenFalse`.
+      */
     def chooseMod[Msg](whenTrue: => Mod[Msg], whenFalse: => Mod[Msg]): Mod[Msg] =
       Mod.Content.SignalModChoice(condition, Vector(true -> whenTrue, false -> whenFalse))
 
@@ -144,11 +158,18 @@ object Signal:
       Mod.Content.SignalOption(value, project)
 
   extension [A](value: Signal[A])
-    /** Renders the branch whose key equals the current value, or nothing when none matches. */
+    /** Renders the branch that matches the current value, switching as the value changes.
+      *
+      * This form renders the branch whose key equals the value, or nothing when none matches, as in
+      * `tab.choose(Tab.Details -> details, Tab.History -> history)`.
+      */
     def choose[Msg](branches: (A, HtmlElement[Msg])*): Mod[Msg] =
       Mod.Content.SignalChoice(value, branches.toVector)
 
-    /** Applies the modifiers whose key equals the current value, or none when none matches. */
+    /** Applies the modifiers that match the current value, such as attributes.
+      *
+      * This form applies the modifiers whose key equals the value, or none when none matches.
+      */
     def chooseMod[Msg](branches: (A, Mod[Msg])*): Mod[Msg] =
       Mod.Content.SignalModChoice(value, branches.toVector)
 end Signal

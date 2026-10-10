@@ -2,7 +2,7 @@ package scalive.docs
 
 import zio.test.*
 
-import scalive.docs.model.{Block, Inline, LinkTarget, Section}
+import scalive.docs.model.{ApiDocumentation, Block, Inline, LinkTarget, Section}
 
 object DocumentationApplicationValidationSpec extends ZIOSpecDefault:
   private def bundle = GeneratedDocumentation.load(getClass.getClassLoader)
@@ -61,6 +61,33 @@ object DocumentationApplicationValidationSpec extends ZIOSpecDefault:
       assertTrue(
         result.left.exists(_.contains("/learn")),
         result.left.exists(_.contains("/api/scalive/live-view#missing-anchor"))
+      )
+    },
+    test("rejects Scaladoc links to unknown documentation routes") {
+      val brokenLink = ApiDocumentation(
+        Vector(Block.Paragraph(Vector(
+          Inline.Link(
+            Vector(Inline.Text("Missing guide")),
+            LinkTarget.Internal("/guides/missing", None),
+            None
+          )
+        ))),
+        Vector.empty
+      )
+      val result = bundle.flatMap { value =>
+        val symbols = value.apiReference.symbols.map { symbol =>
+          if symbol.id == "trait:scalive.LiveView" then
+            symbol.copy(signatures = symbol.signatures.map(_.copy(documentation = Some(brokenLink))))
+          else symbol
+        }
+        DocumentationApplication.from(
+          value.copy(apiReference = value.apiReference.copy(symbols = symbols))
+        )
+      }
+      assertTrue(
+        result.left.exists(
+          _.contains("trait:scalive.LiveView: unknown internal route '/guides/missing'")
+        )
       )
     },
     test("requires one authored homepage at the root route") {

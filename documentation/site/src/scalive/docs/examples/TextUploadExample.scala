@@ -78,8 +78,8 @@ final class TextUploadExample extends LiveView[TextUploadExample.Msg, TextUpload
           cls := "docs-upload-actions",
           button(
             typ := "submit",
-            submission.replaceTextWith("Summarizing..."),
-            "Summarize completed file"
+            submission.replaceTextWith("Uploading..."),
+            "Upload and summarize"
           ),
           button(typ := "button", on.click(Msg.Reset), "Reset upload")
         )
@@ -129,8 +129,7 @@ final class TextUploadExample extends LiveView[TextUploadExample.Msg, TextUpload
         val rejected  = results.count(_.isLeft)
         val notice    =
           if rejected > 0 then Some("The file was discarded because it was not valid UTF-8 text.")
-          else if summaries.isEmpty then
-            Some("Finish uploading a valid file before summarizing it.")
+          else if summaries.isEmpty then Some("Choose a valid .txt or .md file before summarizing.")
           else Some("Summary created. The uploaded bytes were discarded.")
         model.copy(upload = upload, summaries = model.summaries ++ summaries, notice = notice)
       }

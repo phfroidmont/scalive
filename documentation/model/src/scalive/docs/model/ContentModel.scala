@@ -120,15 +120,15 @@ enum ExampleCategory(val label: String, val description: String) derives JsonCod
         "State and rendering",
         "Durable state, efficient DOM updates, lifecycle, and components."
       )
-  case AsyncAndEffects
-      extends ExampleCategory(
-        "Async and effects",
-        "Managed work, subscriptions, connected resources, cancellation, and injected services."
-      )
   case UserInput
       extends ExampleCategory(
         "User input",
         "Typed forms, validation, uploads, and resource ownership."
+      )
+  case AsyncAndEffects
+      extends ExampleCategory(
+        "Async and effects",
+        "Managed work, subscriptions, connected resources, cancellation, and injected services."
       )
   case BrowserAndNavigation
       extends ExampleCategory(

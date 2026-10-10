@@ -276,7 +276,20 @@ private[docs] object DocumentationApplication:
         case _ => Vector.empty
       }
     }
-    Either.cond(errors.isEmpty, (), errors.distinct.sorted.mkString(" "))
+    val apiErrors = bundle.apiReference.symbols.flatMap { symbol =>
+      val blocks = symbol.signatures.flatMap(_.documentation).flatMap { documentation =>
+        documentation.body ++ documentation.tags.flatMap(_.content)
+      }
+      collectReferences(blocks).flatMap {
+        case ContentReference.Route(route, _) if !routes(route) =>
+          Vector(s"${symbol.id}: unknown internal route '$route'.")
+        case ContentReference.Route(route, Some(fragment)) if !anchors(route)(fragment) =>
+          Vector(s"${symbol.id}: unknown internal anchor '$route#$fragment'.")
+        case _ => Vector.empty
+      }
+    }
+    val allErrors = errors ++ apiErrors
+    Either.cond(allErrors.isEmpty, (), allErrors.distinct.sorted.mkString(" "))
   end validateReferences
 
   private def validateExamples(bundle: DocumentationBundle): Either[String, Unit] =

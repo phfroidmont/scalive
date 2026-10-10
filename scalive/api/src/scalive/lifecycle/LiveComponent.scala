@@ -2,19 +2,66 @@ package scalive
 
 import zio.{Task, ZIO}
 
+/** A reusable piece of a page with its own model and messages, rendered inside a [[LiveView]].
+  *
+  * The owner renders it with `component(MyComponent, "id").render(props)`. Each stable ID is a
+  * separate instance with its own model; the instance mounts when it is first rendered and is
+  * removed when the owner stops rendering it. Use plain functions for markup that needs no state of
+  * its own. See the [components guide](https://scalive.dev/guides/components-and-communication).
+  *
+  * @tparam Props
+  *   values supplied by the owner on each render
+  * @tparam Msg
+  *   messages handled by this component
+  * @tparam Model
+  *   state owned by one instance
+  */
 trait LiveComponent[Props, Msg, Model]:
-  type MountContext       = scalive.ComponentMountContext[Props, Msg, Model]
-  type UpdateContext      = scalive.ComponentUpdateContext[Props, Msg, Model]
-  type MessageContext     = scalive.ComponentMessageContext[Props, Msg, Model]
+  /** The capabilities passed to [[mount]]. */
+  type MountContext = scalive.ComponentMountContext[Props, Msg, Model]
+
+  /** The capabilities passed to [[update]]. */
+  type UpdateContext = scalive.ComponentUpdateContext[Props, Msg, Model]
+
+  /** The capabilities passed to [[handleMessage]]. */
+  type MessageContext = scalive.ComponentMessageContext[Props, Msg, Model]
+
+  /** The capabilities passed to after-render hooks. */
   type AfterRenderContext = scalive.ComponentAfterRenderContext[Props, Msg, Model]
 
+  /** Static lifecycle hooks shared by every instance of this component. Defaults to none. */
   def hooks: ComponentLiveHooks[Props, Msg, Model] = ComponentLiveHooks.empty
+
+  /** Builds the model of a new instance from its first props.
+    *
+    * It runs in both the disconnected render and the connected lifecycle; match `ctx.connection` to
+    * start async work or subscriptions.
+    */
   def mount(props: Props, ctx: MountContext): Task[Model]
+
+  /** Receives new props for a mounted instance and returns its next model.
+    *
+    * Scalive calls it when the owner renders changed props or calls `ctx.components.sendUpdate`.
+    * Defaults to keeping the model; preserve it unless the props deliberately reset the component.
+    */
   def update(props: Props, model: Model, ctx: UpdateContext): Task[Model] = ZIO.succeed(model)
+
+  /** Handles a message sent to this instance and returns its next model.
+    *
+    * Bindings target the component with `phx.target(self)` and `on.click.to(self)(msg)`. A failed
+    * effect crashes the owning LiveView's lifecycle, so recover expected failures into the model.
+    */
   def handleMessage(props: Props, model: Model, ctx: MessageContext): Msg => Task[Model]
+
+  /** Describes the component's HTML, like [[LiveView.view]].
+    *
+    * `self` identifies this instance as the target of its own bindings.
+    */
   def view(props: Signal[Props], model: Signal[Model], self: ComponentRef[Msg]): HtmlElement[Msg]
+end LiveComponent
 
 object LiveComponent:
+  /** A component that renders no bindings that send it messages. */
   trait Eventless[Props, Model] extends LiveComponent[Props, Nothing, Model]:
     final def handleMessage(
       props: Props,
@@ -22,11 +69,17 @@ object LiveComponent:
       ctx: MessageContext
     ): Nothing => Task[Model] = _ => ZIO.succeed(model)
 
+  /** A component that reports domain events of type `Output0` to its owner.
+    *
+    * The owner maps each output to one of its own messages when it renders the component, as in
+    * `component(Vote, "scala").render(props, output => Msg.Voted(output))`.
+    */
   trait WithOutput[Props, Msg, Model, Output0] extends LiveComponent[Props, Msg, Model]:
     final private[scalive] val outputChannel: ComponentOutputChannel[Output0] =
       ComponentOutputChannel()
 
     extension (ctx: MessageContext)
+      /** Sends `output` to the owner, which handles it after this component's turn renders. */
       final def emit(output: Output0): Task[Unit] = ctx.emit(outputChannel, output)
 
   object WithOutput:
@@ -42,6 +95,7 @@ object LiveComponent:
 
   type PropsOf[C] = C match
     case LiveComponent[props, msg, model] => props
+end LiveComponent
 
 /** Protocol-neutral declaration consumed by the HTML renderer. */
 sealed trait ComponentSpec[+OwnerMsg]

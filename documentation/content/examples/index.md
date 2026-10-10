@@ -5,8 +5,9 @@ order = 0
 section = examples
 %}
 
-Find a runnable example by API or concept. Each example has executable source,
-isolated state, reset behavior, and an optional runtime trace.
+Find a runnable example by API or concept. Each example page lists steps to
+try, runs the example, explains its key lines, and shows its complete source.
+Examples within each group go from simple to advanced.
 
 For Forms, progress from the [typed profile form](profile-form.md), through
 [stable repeated contact rows](repeated-contacts-form.md), to the

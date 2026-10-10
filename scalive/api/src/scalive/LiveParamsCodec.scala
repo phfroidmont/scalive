@@ -13,7 +13,7 @@ import zio.schema.Schema
   * @tparam PathParams
   *   the values decoded by the route's path codec
   * @tparam Params
-  *   the parameters supplied to [[LiveView.Routed]]
+  *   the parameters supplied to [[LiveView.Routed LiveView.Routed]]
   */
 trait LiveParamsDecoder[PathParams, Params]:
   /** Decodes parameters for the current URL.
@@ -53,9 +53,9 @@ end LiveParamsDecoder
 
 /** Bidirectionally maps route path/query values and typed routed parameters.
   *
-  * Decoding supplies `Params` to [[LiveView.Routed]]. Encoding produces the path and query values
-  * used to construct a checked [[LiveLocation]], so codecs should obey a round-trip law for every
-  * parameter value accepted by the application.
+  * Decoding supplies `Params` to [[LiveView.Routed LiveView.Routed]]. Encoding produces the path
+  * and query values used to construct a checked [[LiveLocation]], so codecs should obey a
+  * round-trip law for every parameter value accepted by the application.
   *
   * @tparam PathParams
   *   the values decoded and encoded by the route's path codec

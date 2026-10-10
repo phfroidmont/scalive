@@ -469,11 +469,11 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         firstMember.select(".docs-code-block, [data-code-copy]").isEmpty,
         liveViewTrait
           .text().contains(
-            "A LiveView is mounted independently for the disconnected HTTP render"
+            "Scalive mounts a LiveView once for the disconnected HTTP render"
           ),
         !liveViewTrait.select(".docs-api-documentation code").isEmpty,
         !liveViewTrait.select(".docs-api-tag-section").isEmpty,
-        liveViewTrait.select("a[href='/api/scalive/html-element']").text() == "HtmlElement",
+        liveViewTrait.select("a[href='/learn/quick-start']").text() == "quick start",
         document.select(".docs-api-companion-reference a").attr("href") ==
           "/api/scalive/live-view/companion",
         companionDocument.select(".docs-api-companion-reference a").attr("href") ==
@@ -505,7 +505,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         reference.select(".docs-api-reference-signature .type-name").text().contains("LiveView"),
         reference
           .select(".docs-api-reference-summary").text().contains(
-            "Defines a server-rendered view with typed messages and model state."
+            "Defines a server-rendered page with typed messages and model state."
           ),
         reference.select("[data-api-symbol]").isEmpty
       )

@@ -17,6 +17,8 @@ import scalive.protocol.phoenix.*
 
 /** Joins LiveViews through production route admission and connection supervision without starting a
   * network server.
+  *
+  * See [testing LiveViews](https://scalive.dev/guides/testing).
   */
 object ConnectedRender:
   private val DefaultConfig = ZioHttpConfig(
@@ -26,9 +28,12 @@ object ConnectedRender:
     allowedWebSocketOrigins = Set(WebSocketOrigin.https("scalive.test"))
   ).fold(error => throw IllegalStateException(error.toString), identity)
 
-  /** Finalizes and joins one LiveView at the root route.
+  /** Renders a page, then connects to it as a browser would, and returns the connected view.
     *
-    * The returned view preserves the LiveView's message type for [[ConnectedView.send]].
+    * This form mounts one LiveView at the root route, as in
+    * `ConnectedRender.join(CounterLiveView())`. The returned view keeps the LiveView's message type
+    * for [[ConnectedView.send]]. Run it inside `ZIO.scoped`, which closes the connection. See [your
+    * first test](https://scalive.dev/learn/testing-your-liveview).
     */
   def join[Msg, Model](liveView: LiveView[Msg, Model]): RIO[Scope, ConnectedView[Msg]] =
     join(
@@ -37,9 +42,12 @@ object ConnectedRender:
       Request.get(URL.root)
     ).map(_.asInstanceOf[ConnectedView[Msg]])
 
-  /** Executes the disconnected route, validates its bootstrap credentials, and starts its connected
-    * lifecycle through the production Phoenix transport session. Connect parameters are untrusted
-    * client JSON; the harness replaces `_mounts` with its own progressing join counter.
+  /** Renders a page, then connects to it as a browser would, and returns the connected view.
+    *
+    * This form executes `request` against a whole application, validates its bootstrap credentials,
+    * and starts its connected lifecycle through the production Phoenix transport session. Fails
+    * when the disconnected render or the join fails. Connect parameters are untrusted client JSON;
+    * the harness replaces `_mounts` with its own progressing join counter.
     */
   def join[R](
     application: LiveApplication[R],

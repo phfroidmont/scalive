@@ -87,6 +87,24 @@ object ScaladocParserSpec extends ZIOSpecDefault:
         unsafeLink.isLeft
       )
     },
+    test("turns documentation site links into internal routes") {
+      val result = ScaladocParser.parse(
+        "/** See [async work](https://scalive.dev/guides/async-work#start) and " +
+          "[[https://example.com/docs other docs]]. */",
+        "site",
+        _ => None
+      )
+      val targets = result.toOption.toVector.flatMap(_.body).flatMap {
+        case Block.Paragraph(content) => content.collect { case link: Inline.Link => link.target }
+        case _                        => Vector.empty
+      }
+      assertTrue(
+        targets == Vector(
+          LinkTarget.Internal("/guides/async-work", Some("start")),
+          LinkTarget.External("https://example.com/docs")
+        )
+      )
+    },
     test("restores HTML tags in inline and fenced code") {
       val inline = ScaladocParser.parse("/** Renders a `<link>` and `<script>`. */", "html", _ => None)
       val fenced = ScaladocParser.parse(

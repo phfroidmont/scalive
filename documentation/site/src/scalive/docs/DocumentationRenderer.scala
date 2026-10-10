@@ -229,9 +229,10 @@ final private[docs] class DocumentationRenderer(
     case Block.Code(language, text, tokens, sourceRegion, fragment) =>
       codeBlock(language, text, tokens, sourceRegion, caption = Option.when(fragment)("Fragment"))
     case Block.BulletList(items) =>
-      ul(items.map(item => li(item.content.map(renderBlock(pageRoute)))))
+      ul(cls := "docs-list", items.map(item => li(item.content.map(renderBlock(pageRoute)))))
     case Block.OrderedList(start, items) =>
       ol(
+        cls                                                  := "docs-list",
         htmlAttr("start", scalive.codecs.IntAsStringEncoder) := start,
         items.map(item => li(item.content.map(renderBlock(pageRoute))))
       )
@@ -666,16 +667,6 @@ final private[docs] class DocumentationRenderer(
       dataAttr("example-topic")      := observedTopic,
       dataAttr("trace-viewer-child") := traceViewerId,
       dataAttr("trace-viewer-topic") := traceViewerTopic,
-      definition.sources.map(source =>
-        codeBlock(
-          source.language,
-          source.text,
-          source.tokens,
-          Some(source.region),
-          caption = Some(source.label)
-        )
-      ),
-      definition.compilationFailures.map(renderCompilationFailure),
       div(
         cls := "docs-example-rendered",
         headerTag(
@@ -703,7 +694,17 @@ final private[docs] class DocumentationRenderer(
           registered,
           store
         )
-      }
+      },
+      definition.sources.map(source =>
+        codeBlock(
+          source.language,
+          source.text,
+          source.tokens,
+          Some(source.region),
+          caption = Some(source.label)
+        )
+      ),
+      definition.compilationFailures.map(renderCompilationFailure)
     )
   end renderExample
 

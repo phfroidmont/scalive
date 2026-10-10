@@ -8,9 +8,7 @@ final class RootLayout(
   appAssets: StaticAssets,
   guardAssets: NavigationGuardAssets)
     extends LiveRootLayout[Any, Any]:
-  def key(ctx: LiveRootLayoutContext[Any, Any]): String = "application-root"
-
-  def render[Msg](
+  def view[Msg](
     content: HtmlElement[Msg],
     pageTitle: Option[String],
     ctx: LiveRootLayoutContext[Any, Any]

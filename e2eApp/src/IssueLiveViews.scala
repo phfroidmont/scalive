@@ -318,8 +318,8 @@ class Issue3047LiveView(pageName: String) extends LiveView[Unit, Unit]:
     span(idAttr := "page", s"Page $pageName")
 
 object Issue3047LiveView:
-  val Layout: LiveLayout[Any, Any] = LiveLayout[Any, Any]([Msg] =>
-    (content: HtmlElement[Msg], _: LiveLayoutContext[Any, Any]) =>
+  object Layout extends LiveLayout[Any, Any]:
+    def view[Msg](content: HtmlElement[Msg], ctx: LiveLayoutContext[Any, Any]): HtmlElement[Msg] =
       div(
         div(
           link.pushNavigate(E2ERoutes.issue3047A.location, "Page A"),
@@ -328,7 +328,6 @@ object Issue3047LiveView:
         content,
         liveView("test", Issue3047LiveView.Sticky(), sticky = true)
       )
-  )
 
   class Sticky extends LiveView[Reset.type, Model]:
     def mount(ctx: MountContext) =

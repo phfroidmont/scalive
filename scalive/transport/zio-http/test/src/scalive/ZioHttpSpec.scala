@@ -1271,21 +1271,29 @@ object ZioHttpSpec extends ZIOSpecDefault:
       object View extends LiveView.Eventless[Unit]:
         def mount(ctx: MountContext) = ZIO.unit
         def view(model: Signal[Unit]) = div(idAttr := "view")
-      val appLayout = LiveLayout[Any, Any]([Msg] => (content, _) =>
-        sectionTag(idAttr := "application", content)
-      )
-      val routeLayout = LiveLayout[Unit, Any]([Msg] => (content, _) =>
-        mainTag(idAttr := "route", content)
-      )
-      val routeRoot = LiveRootLayout[Unit, Any]("route-root")([Msg] => (content, _, _) =>
-        htmlRootTag(headTag(titleTag("custom")), bodyTag(content))
-      )
+      object AppLayout extends LiveLayout[Any, Any]:
+        def view[Msg](content: HtmlElement[Msg], context: LiveLayoutContext[Any, Any]) =
+          sectionTag(idAttr := "application", content)
+      object RouteLayout extends LiveLayout[Unit, Any]:
+        def view[Msg](content: HtmlElement[Msg], context: LiveLayoutContext[Unit, Any]) =
+          mainTag(idAttr := "route", content)
+      object RouteRoot extends LiveRootLayout[Unit, Any]:
+        override def key(context: LiveRootLayoutContext[Unit, Any]) = "route-root"
+        def view[Msg](
+          content: HtmlElement[Msg],
+          title: Option[String],
+          context: LiveRootLayoutContext[Unit, Any]
+        ) = htmlRootTag(headTag(titleTag("custom")), bodyTag(content))
+      object ApplicationRoot extends LiveRootLayout[Any, Any]:
+        def view[Msg](
+          content: HtmlElement[Msg],
+          title: Option[String],
+          context: LiveRootLayoutContext[Any, Any]
+        ) = htmlRootTag(bodyTag(content))
       val application = scalive.Live.router
-        .withLayout(appLayout)
-        .withRootLayout(LiveRootLayout[Any, Any]("application-root")([Msg] =>
-          (content, _, _) => htmlRootTag(bodyTag(content))
-        ))(
-          scalive.live.withLayout(routeLayout).withRootLayout(routeRoot)(View)
+        .withLayout(AppLayout)
+        .withRootLayout(ApplicationRoot)(
+          scalive.live.withLayout(RouteLayout).withRootLayout(RouteRoot)(View)
         )
 
       for
@@ -1801,6 +1809,21 @@ object ZioHttpSpec extends ZIOSpecDefault:
         def mount(ctx: MountContext)                                               = ZIO.unit
         def handleMessage(model: Unit, ctx: MessageContext): Nothing => Task[Unit] = identity
         def view(model: Signal[Unit]) = div("slash-page")
+      object OrganizationLayout extends LiveLayout[Int, Any]:
+        def view[Msg](content: HtmlElement[Msg], context: LiveLayoutContext[Int, Any]) =
+          mainTag(
+            idAttr := "preserved-layout",
+            context.params.map(id => s"organization:$id"),
+            content
+          )
+      object OrganizationRoot extends LiveRootLayout[Int, Any]:
+        override def key(context: LiveRootLayoutContext[Int, Any]) =
+          s"organization:${context.params}"
+        def view[Msg](
+          content: HtmlElement[Msg],
+          title: Option[String],
+          context: LiveRootLayoutContext[Int, Any]
+        ) = htmlRootTag(bodyTag(dataAttr("organization") := context.params.toString, content))
       val builder = (scalive.live / "organizations" / PathCodec.int("id"))
         .guardConnectedTurns(_ => ZIO.succeed(guards.incrementAndGet()).unit)
         .withConnectedResources((_, resources) =>
@@ -1809,22 +1832,8 @@ object ZioHttpSpec extends ZIOSpecDefault:
               ZIO.succeed(released.incrementAndGet()).unit
             ).unit
         )
-        .withLayout(
-          LiveLayout[Int, Any]([Msg] =>
-            (content, context) =>
-              mainTag(
-                idAttr := "preserved-layout",
-                context.params.map(id => s"organization:$id"),
-                content
-              )
-          )
-        )
-        .withRootLayout(
-          LiveRootLayout.dynamic[Int, Any](context => s"organization:${context.params}")([Msg] =>
-            (content, _, context) =>
-              htmlRootTag(bodyTag(dataAttr("organization") := context.params.toString, content))
-          )
-        )
+        .withLayout(OrganizationLayout)
+        .withRootLayout(OrganizationRoot)
       val application = scalive.Live.router((builder / "retained" / PathCodec.string("name"))(view))
 
       withServer(application) { port =>

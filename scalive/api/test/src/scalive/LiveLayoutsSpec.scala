@@ -11,11 +11,10 @@ object LiveLayoutsSpec extends ZIOSpecDefault:
         case Clicked
 
       var received: Option[LiveLayoutContext[Int, String]] = None
-      val layout                                           = LiveLayout[Int, String]([Msg] =>
-        (content, context) =>
+      val layout = new LiveLayout[Int, String]:
+        def view[Msg](content: HtmlElement[Msg], context: LiveLayoutContext[Int, String]) =
           received = Some(context)
           content
-      )
       val adapted                        = layout.forContext[OuterContext](_.layoutContext)
       val params                         = Signal.source[Int](new Object)
       val request                        = Signal.source[Request](new Object)
@@ -43,14 +42,18 @@ object LiveLayoutsSpec extends ZIOSpecDefault:
       var keyContext: Option[LiveRootLayoutContext[Int, String]] = None
       var renderInput: Option[(Option[String], LiveRootLayoutContext[Int, String])] = None
 
-      val root = LiveRootLayout.dynamic[Int, String](context =>
-        keyContext = Some(context)
-        s"root:${context.context}"
-      )([Msg] =>
-        (content, title, context) =>
+      val root = new LiveRootLayout[Int, String]:
+        override def key(context: LiveRootLayoutContext[Int, String]) =
+          keyContext = Some(context)
+          s"root:${context.context}"
+
+        def view[Msg](
+          content: HtmlElement[Msg],
+          title: Option[String],
+          context: LiveRootLayoutContext[Int, String]
+        ) =
           renderInput = Some((title, context))
           content
-      )
       val adapted = root.forContext[OuterContext] { context =>
         projectedInputs :+= context
         context.layoutContext
@@ -63,7 +66,7 @@ object LiveLayoutsSpec extends ZIOSpecDefault:
       val title        = Some("Page title")
 
       val key                            = adapted.key(context)
-      val rendered: HtmlElement[Message] = adapted.render(content, title, context)
+      val rendered: HtmlElement[Message] = adapted.view(content, title, context)
       val renderedInput                  = renderInput.get
       val keyedInput                     = keyContext.get
 
@@ -82,13 +85,37 @@ object LiveLayoutsSpec extends ZIOSpecDefault:
         renderedInput._2.context == "selected"
       )
     },
+    test("root layouts are identified by their class unless they override the key") {
+      final class FirstRoot extends LiveRootLayout[Any, String]:
+        def view[Msg](
+          content: HtmlElement[Msg],
+          title: Option[String],
+          context: LiveRootLayoutContext[Any, String]
+        ) = content
+      final class SecondRoot extends LiveRootLayout[Any, String]:
+        def view[Msg](
+          content: HtmlElement[Msg],
+          title: Option[String],
+          context: LiveRootLayoutContext[Any, String]
+        ) = content
+      final case class Selected(language: String)
+
+      val context = LiveRootLayoutContext((), Request.get(URL.root), URL.root, "en")
+
+      assertTrue(
+        FirstRoot().key(context) == FirstRoot().key(context),
+        FirstRoot().key(context) != SecondRoot().key(context),
+        FirstRoot().forContext[Selected](_.language).key(context.copy(context = Selected("en"))) ==
+          FirstRoot().key(context),
+        LiveRootLayout.identity.key(context) == "scalive:identity-root"
+      )
+    },
     test("context adapters support identity and composition") {
       var received = ""
-      val layout   = LiveLayout[Any, String]([Msg] =>
-        (content, context) =>
+      val layout   = new LiveLayout[Any, String]:
+        def view[Msg](content: HtmlElement[Msg], context: LiveLayoutContext[Any, String]) =
           received = context.context
           content
-      )
       val composed = layout
         .forContext[Int](_.toString)
         .forContext[Boolean](value => if value then 1 else 0)

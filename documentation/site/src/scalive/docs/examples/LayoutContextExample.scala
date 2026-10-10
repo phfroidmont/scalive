@@ -15,41 +15,56 @@ object LayoutContextExample:
     override def pageTitle(model: String): Option[String] = Some(title)
     def view(model: Signal[String])                       = div(idAttr := "page", model)
 
-  val documentLayout = LiveLayout[Any, DocumentContext]([Msg] =>
-    (content, context) =>
+  object DocumentLayout extends LiveLayout[Any, DocumentContext]:
+    def view[Msg](
+      content: HtmlElement[Msg],
+      ctx: LiveLayoutContext[Any, DocumentContext]
+    ): HtmlElement[Msg] =
       sectionTag(
-        idAttr                  := s"document-${context.context.language}",
-        dataAttr("params")      := context.params.map(_.toString),
-        dataAttr("request-url") := context.request.map(_.url.encode),
-        dataAttr("current-url") := context.currentUrl.map(_.encode),
+        idAttr                  := s"document-${ctx.context.language}",
+        dataAttr("params")      := ctx.params.map(_.toString),
+        dataAttr("request-url") := ctx.request.map(_.url.encode),
+        dataAttr("current-url") := ctx.currentUrl.map(_.encode),
         content
       )
-  )
-  val documentRoot = LiveRootLayout.dynamic[Any, DocumentContext](context =>
-    s"document:${context.context.language}"
-  )([Msg] =>
-    (content, pageTitle, context) =>
+
+  // docs:start document-root-key
+  object DocumentRoot extends LiveRootLayout[Any, DocumentContext]:
+    override def key(ctx: LiveRootLayoutContext[Any, DocumentContext]): String =
+      s"document:${ctx.context.language}"
+
+    def view[Msg](
+      content: HtmlElement[Msg],
+      pageTitle: Option[String],
+      ctx: LiveRootLayoutContext[Any, DocumentContext]
+    ): HtmlElement[Msg] =
       htmlRootTag(
-        lang := context.context.language,
+        lang := ctx.context.language,
         headTag(titleTag(pageTitle.getOrElse("Scalive"))),
         bodyTag(
-          dataAttr("params")      := context.params.toString,
-          dataAttr("request-url") := context.request.url.encode,
-          dataAttr("current-url") := context.currentUrl.encode,
+          dataAttr("params")      := ctx.params.toString,
+          dataAttr("request-url") := ctx.request.url.encode,
+          dataAttr("current-url") := ctx.currentUrl.encode,
           content
         )
       )
-  )
-  val applicationLayout =
-    LiveLayout[Any, Any]([Msg] => (content, _) => mainTag(idAttr := "application", content))
-  val applicationRoot = LiveRootLayout[Any, Any]("application-root")([Msg] =>
-    (content, pageTitle, _) =>
+  // docs:end document-root-key
+
+  object ApplicationLayout extends LiveLayout[Any, Any]:
+    def view[Msg](content: HtmlElement[Msg], ctx: LiveLayoutContext[Any, Any]): HtmlElement[Msg] =
+      mainTag(idAttr := "application", content)
+
+  object ApplicationRoot extends LiveRootLayout[Any, Any]:
+    def view[Msg](
+      content: HtmlElement[Msg],
+      pageTitle: Option[String],
+      ctx: LiveRootLayoutContext[Any, Any]
+    ): HtmlElement[Msg] =
       htmlRootTag(
         lang := "en",
         headTag(titleTag(pageTitle.getOrElse("Scalive"))),
         bodyTag(content)
       )
-  )
 
   val publicContext = LiveSessionMountAspect.fromRequest[Any, String, PublicContext](
     _ => ZIO.succeed("fr" -> PublicContext(DocumentContext("fr"))),
@@ -75,26 +90,26 @@ object LayoutContextExample:
   val publicSession = scalive.Live
     .session("public")
     .withMountAspect(publicContext)
-    .withLayout(documentLayout.forContext[PublicContext](_.document))
-    .withRootLayout(documentRoot.forContext[PublicContext](_.document))(publicRoute)
+    .withLayout(DocumentLayout.forContext[PublicContext](_.document))
+    .withRootLayout(DocumentRoot.forContext[PublicContext](_.document))(publicRoute)
 
   val accountBuilder = scalive.Live
     .session("account")
     .withMountAspect(accountContext)
-    .withLayout(documentLayout, _.document)
-    .withRootLayout(documentRoot, _.document)
+    .withLayout(DocumentLayout, _.document)
+    .withRootLayout(DocumentRoot, _.document)
     .withMountAspect(accountAudit)
   val accountRoute = (scalive.live / "account").context { (context: (AccountContext, String)) =>
     EventlessPage(s"account-${context._1.document.language}-${context._2}", "Account title")
   }
   val accountOverride = (scalive.live / "account" / "variant")
     .withMountAspect(accountVariant)
-    .withLayout(documentLayout, _._2)
-    .withRootLayout(documentRoot, _._2)(EventlessPage("account-variant", "Variant title"))
+    .withLayout(DocumentLayout, _._2)
+    .withRootLayout(DocumentRoot, _._2)(EventlessPage("account-variant", "Variant title"))
 
   val application = scalive.Live.router
-    .withLayout(applicationLayout)
-    .withRootLayout(applicationRoot)(
+    .withLayout(ApplicationLayout)
+    .withRootLayout(ApplicationRoot)(
       defaultRoute,
       publicSession,
       accountBuilder(accountRoute, accountOverride)

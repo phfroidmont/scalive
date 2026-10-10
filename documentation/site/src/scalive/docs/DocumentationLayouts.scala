@@ -12,9 +12,7 @@ final private[docs] class DocumentationRootLayout(
   origin: PublicOrigin)
     extends LiveRootLayout[Any, Any]:
 
-  def key(ctx: LiveRootLayoutContext[Any, Any]): String = "documentation-root"
-
-  def render[Msg](
+  def view[Msg](
     content: HtmlElement[Msg],
     pageTitle: Option[String],
     ctx: LiveRootLayoutContext[Any, Any]
@@ -53,7 +51,7 @@ final private[docs] class DocumentationRootLayout(
       ),
       bodyTag(content)
     )
-  end render
+  end view
 end DocumentationRootLayout
 
 final private[docs] class DocumentationLayout(

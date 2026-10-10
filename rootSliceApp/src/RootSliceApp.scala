@@ -50,46 +50,34 @@ object RootSliceApp extends ZIOAppDefault:
   private val issue3686B = live / "issues" / "3686" / "b"
   private val issue3686C = live / "issues" / "3686" / "c"
 
-  private def rootOne(
+  final private class RootLayout(
+    bodyId: String,
     navigationGuardAssets: NavigationGuardAssets,
-    liveViewClientAssets: LiveViewClientAssets
-  ) =
-    LiveRootLayout[Any, Any]("root-one")([Msg] =>
-      (content, _, _) =>
-        htmlRootTag(
-          headTag(
-            navigationGuardAssets.script,
-            liveViewClientAssets.phoenixScript,
-            liveViewClientAssets.liveViewScript,
-            scriptTag(src := "/app.js", defer := true)
-          ),
-          bodyTag(idAttr := "root-one", content)
-        )
-    )
+    liveViewClientAssets: LiveViewClientAssets)
+      extends LiveRootLayout[Any, Any]:
+    override def key(ctx: LiveRootLayoutContext[Any, Any]): String = bodyId
 
-  private def rootTwo(
-    navigationGuardAssets: NavigationGuardAssets,
-    liveViewClientAssets: LiveViewClientAssets
-  ) =
-    LiveRootLayout[Any, Any]("root-two")([Msg] =>
-      (content, _, _) =>
-        htmlRootTag(
-          headTag(
-            navigationGuardAssets.script,
-            liveViewClientAssets.phoenixScript,
-            liveViewClientAssets.liveViewScript,
-            scriptTag(src := "/app.js", defer := true)
-          ),
-          bodyTag(idAttr := "root-two", content)
-        )
-    )
+    def view[Msg](
+      content: HtmlElement[Msg],
+      pageTitle: Option[String],
+      ctx: LiveRootLayoutContext[Any, Any]
+    ): HtmlElement[Msg] =
+      htmlRootTag(
+        headTag(
+          navigationGuardAssets.script,
+          liveViewClientAssets.phoenixScript,
+          liveViewClientAssets.liveViewScript,
+          scriptTag(src := "/app.js", defer := true)
+        ),
+        bodyTag(idAttr := bodyId, content)
+      )
 
   private def application(
     navigationGuardAssets: NavigationGuardAssets,
     liveViewClientAssets: LiveViewClientAssets
   ) =
-    val firstRoot            = rootOne(navigationGuardAssets, liveViewClientAssets)
-    val secondRoot           = rootTwo(navigationGuardAssets, liveViewClientAssets)
+    val firstRoot            = RootLayout("root-one", navigationGuardAssets, liveViewClientAssets)
+    val secondRoot           = RootLayout("root-two", navigationGuardAssets, liveViewClientAssets)
     val authorizeNavigationB = LiveRouteMountAspect.fromRequest[Any, Unit, String](request =>
       ZIO.succeed(request.url.path.encode)
     )

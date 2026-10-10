@@ -2,16 +2,14 @@ import scalive.*
 
 final class E2ERootLayout(assets: StaticAssets, navigationGuardAssets: NavigationGuardAssets)
     extends LiveRootLayout[Any, Any]:
-  def key(ctx: LiveRootLayoutContext[Any, Any]): String = "e2e-root"
-
   def apply[Msg](content: HtmlElement[Msg]): HtmlElement[Msg] =
-    render(
+    view(
       content,
       None,
       LiveRootLayoutContext((), zio.http.Request.get(zio.http.URL.root), zio.http.URL.root, ())
     )
 
-  def render[Msg](
+  def view[Msg](
     content: HtmlElement[Msg],
     pageTitle: Option[String],
     ctx: LiveRootLayoutContext[Any, Any]

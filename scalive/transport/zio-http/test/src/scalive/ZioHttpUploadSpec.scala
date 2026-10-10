@@ -1026,9 +1026,14 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
               ZIO.fail(LiveRouteMountFailure.forbidden("context rejected"))
             else ZIO.unit
           )
-          val rootLayout = LiveRootLayout.dynamic[Any, String](context =>
-            if rejectedAt == "root-layout" then context.context else "stable-root"
-          )([Msg] => (content, _, _) => htmlRootTag(bodyTag(content)))
+          val rootLayout = new LiveRootLayout[Any, String]:
+            override def key(context: LiveRootLayoutContext[Any, String]) =
+              if rejectedAt == "root-layout" then context.context else "stable-root"
+            def view[Msg](
+              content: HtmlElement[Msg],
+              title: Option[String],
+              context: LiveRootLayoutContext[Any, String]
+            ) = htmlRootTag(bodyTag(content))
           object View extends LiveView.Eventless[Unit]:
             def mount(ctx: MountContext)  = ZIO.unit
             def view(model: Signal[Unit]) = div("root-layout")

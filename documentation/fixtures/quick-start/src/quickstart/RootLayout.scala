@@ -5,9 +5,7 @@ import scalive.*
 
 final class RootLayout(clientAssets: LiveViewClientAssets, assets: StaticAssets)
     extends LiveRootLayout[Any, Any]:
-  def key(ctx: LiveRootLayoutContext[Any, Any]): String = "quick-start-root"
-
-  def render[Msg](
+  def view[Msg](
     content: HtmlElement[Msg],
     pageTitle: Option[String],
     ctx: LiveRootLayoutContext[Any, Any]

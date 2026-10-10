@@ -510,7 +510,7 @@ object ZioHttp:
             val rootView = (input: Signal[(Model, URL)]) =>
               val content = rootContainer(lifecycle.view(input), rootAttrs)
               val rooted  =
-                selectedRootLayout.render(content, lifecycle.pageTitle(model), rootContext)
+                selectedRootLayout.view(content, lifecycle.pageTitle(model), rootContext)
               injectCsrf(rooted, issuedCsrf.token)
             renderElement(
               rootView,

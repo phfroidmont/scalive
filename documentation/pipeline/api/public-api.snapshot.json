@@ -6066,18 +6066,6 @@
       ]
     },
     {
-      "id" : "def:scalive.LiveLayout.apply",
-      "ownerId" : "object:scalive.LiveLayout",
-      "qualifiedName" : "scalive.LiveLayout.apply",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.LiveLayout.apply:3ee9f256c3b82f09",
-          "signature" : "def apply[A, Ctx](render: (PolyFunction { def apply[Msg](x$1: HtmlElement[Msg], x$2: LiveLayoutContext[A, Ctx])HtmlElement[Msg] })): LiveLayout[A, Ctx]"
-        }
-      ]
-    },
-    {
       "id" : "def:scalive.LiveLayout.forContext",
       "ownerId" : "trait:scalive.LiveLayout",
       "qualifiedName" : "scalive.LiveLayout.forContext",
@@ -6338,30 +6326,6 @@
       ]
     },
     {
-      "id" : "def:scalive.LiveRootLayout.apply",
-      "ownerId" : "object:scalive.LiveRootLayout",
-      "qualifiedName" : "scalive.LiveRootLayout.apply",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.LiveRootLayout.apply:578f1539fd30b5ee",
-          "signature" : "def apply[A, Ctx](rootKey: String)(renderRoot: (PolyFunction { def apply[Msg](x$1: HtmlElement[Msg], x$2: Option[String], x$3: LiveRootLayoutContext[A, Ctx])HtmlElement[Msg] })): LiveRootLayout[A, Ctx]"
-        }
-      ]
-    },
-    {
-      "id" : "def:scalive.LiveRootLayout.dynamic",
-      "ownerId" : "object:scalive.LiveRootLayout",
-      "qualifiedName" : "scalive.LiveRootLayout.dynamic",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.LiveRootLayout.dynamic:38d70e1ba4adfcd0",
-          "signature" : "def dynamic[A, Ctx](rootKey: LiveRootLayoutContext[A, Ctx] => String)(renderRoot: (PolyFunction { def apply[Msg](x$1: HtmlElement[Msg], x$2: Option[String], x$3: LiveRootLayoutContext[A, Ctx])HtmlElement[Msg] })): LiveRootLayout[A, Ctx]"
-        }
-      ]
-    },
-    {
       "id" : "def:scalive.LiveRootLayout.forContext",
       "ownerId" : "trait:scalive.LiveRootLayout",
       "qualifiedName" : "scalive.LiveRootLayout.forContext",
@@ -6386,14 +6350,14 @@
       ]
     },
     {
-      "id" : "def:scalive.LiveRootLayout.render",
+      "id" : "def:scalive.LiveRootLayout.view",
       "ownerId" : "trait:scalive.LiveRootLayout",
-      "qualifiedName" : "scalive.LiveRootLayout.render",
+      "qualifiedName" : "scalive.LiveRootLayout.view",
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.LiveRootLayout.render:41ee52e677c62292",
-          "signature" : "def render[Msg](content: HtmlElement[Msg], pageTitle: Option[String], context: LiveRootLayoutContext[A, Ctx]): HtmlElement[Msg]"
+          "id" : "def:scalive.LiveRootLayout.view:13bb0afdc414709a",
+          "signature" : "def view[Msg](content: HtmlElement[Msg], pageTitle: Option[String], context: LiveRootLayoutContext[A, Ctx]): HtmlElement[Msg]"
         }
       ]
     },

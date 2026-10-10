@@ -87,7 +87,7 @@ object RoutedConstructionSpec extends ZIOSpecDefault:
           def mount(ctx: MountContext) = ZIO.succeed("mounted")
           def view(model: Signal[String]) = div(model)
 
-        val layout = LiveLayout[Unit, String]([Msg] => (content, _) => content)
+        val layout = new LiveLayout[Unit, String] { def view[Msg](content: HtmlElement[Msg], context: LiveLayoutContext[Unit, String]) = content }
         val route: LiveRoute[Any, Unit] =
           live
             .withMountAspect(aspect)
@@ -227,9 +227,9 @@ object RoutedConstructionSpec extends ZIOSpecDefault:
           if request.params == () then ZIO.succeed("user")
           else ZIO.fail(LiveRouteMountFailure.notFound)
         )
-        val layout = LiveLayout[Unit, String]([Msg] => (content, context) =>
-          if context.context.nonEmpty then content else content
-        )
+        val layout = new LiveLayout[Unit, String]:
+          def view[Msg](content: HtmlElement[Msg], context: LiveLayoutContext[Unit, String]) =
+            if context.context.nonEmpty then content else content
 
         val routedOne: LiveRoute[Any, Unit] { type Input = String } =
           live.params.context(RoutedFactory.currentUser)
@@ -329,10 +329,10 @@ object RoutedConstructionSpec extends ZIOSpecDefault:
           def mount(ctx: MountContext) = ZIO.unit
           def view(model: Signal[Unit]) = div()
 
-        val layout = LiveLayout[Any, String]([Msg] => (content, _) => content)
-        val root = LiveRootLayout[Any, String]("authenticated")([Msg] =>
-          (content, _, _) => content
-        )
+        val layout = new LiveLayout[Any, String] { def view[Msg](content: HtmlElement[Msg], context: LiveLayoutContext[Any, String]) = content }
+        val root = new LiveRootLayout[Any, String]:
+          def view[Msg](content: HtmlElement[Msg], title: Option[String], context: LiveRootLayoutContext[Any, String]) =
+            content
         val session = Live.session("authenticated")
           .withAdmission(authentication)(identity)
           .withLayout(layout, _.name)
@@ -655,8 +655,11 @@ object RoutedConstructionSpec extends ZIOSpecDefault:
         import zio.*
         import zio.http.codec.PathCodec
 
-        val layout = LiveLayout[Int, Any]([Msg] => (content, _) => content)
-        val root = LiveRootLayout.dynamic[Int, Any](_.params.toString)([Msg] => (content, _, _) => content)
+        val layout = new LiveLayout[Int, Any] { def view[Msg](content: HtmlElement[Msg], context: LiveLayoutContext[Int, Any]) = content }
+        val root = new LiveRootLayout[Int, Any]:
+          override def key(context: LiveRootLayoutContext[Int, Any]) = context.params.toString
+          def view[Msg](content: HtmlElement[Msg], title: Option[String], context: LiveRootLayoutContext[Int, Any]) =
+            content
         val prefix = (live / "items" / PathCodec.int("id"))
           .guardConnectedTurns(_ => ZIO.unit)
           .withLayout(layout)
@@ -721,9 +724,9 @@ object RoutedConstructionSpec extends ZIOSpecDefault:
       val errors = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*
 
-        val layout = LiveLayout[Unit, Unit]([Msg] =>
-          (content, _) => div(on.click("wrong message"), content)
-        )
+        object Layout extends LiveLayout[Unit, Unit]:
+          def view[Msg](content: HtmlElement[Msg], context: LiveLayoutContext[Unit, Unit]): HtmlElement[Msg] =
+            div(on.click("wrong message"), content)
       """)
 
       assertTrue(errors.nonEmpty)
@@ -735,13 +738,13 @@ object RoutedConstructionSpec extends ZIOSpecDefault:
         final case class RouteContext(name: String)
         final case class SessionContext(name: String)
 
-        val layout = LiveLayout[Any, String]([Msg] => (content, _) => content)
+        val layout = new LiveLayout[Any, String] { def view[Msg](content: HtmlElement[Msg], context: LiveLayoutContext[Any, String]) = content }
         val routeLayout: LiveLayout[String, RouteContext] =
           layout.forContext(_.name)
         val sessionLayout: LiveLayout[Int, SessionContext] =
           layout.forContext(_.name)
 
-        val root = LiveRootLayout[Any, String]("root")([Msg] => (content, _, _) => content)
+        val root = new LiveRootLayout[Any, String] { def view[Msg](content: HtmlElement[Msg], title: Option[String], context: LiveRootLayoutContext[Any, String]) = content }
         val routeRoot: LiveRootLayout[String, RouteContext] =
           root.forContext(_.name)
         val sessionRoot: LiveRootLayout[Int, SessionContext] =
@@ -763,8 +766,8 @@ object RoutedConstructionSpec extends ZIOSpecDefault:
       val root = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*
         object Root extends LiveRootLayout[Any, String]:
-          def key(context: LiveRootLayoutContext[Any, String]) = context.context
-          def render[Msg](content: HtmlElement[Msg], title: Option[String], context: LiveRootLayoutContext[Any, String]) = content
+          override def key(context: LiveRootLayoutContext[Any, String]) = context.context
+          def view[Msg](content: HtmlElement[Msg], title: Option[String], context: LiveRootLayoutContext[Any, String]) = content
           override def forContext[C](select: C => String): LiveRootLayout[Any, C] = LiveRootLayout.identity
       """)
 
@@ -776,12 +779,12 @@ object RoutedConstructionSpec extends ZIOSpecDefault:
     test("layout context adapters reject selectors with the wrong input or result") {
       val wrongInput = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*
-        val layout = LiveLayout[Any, String]([Msg] => (content, _) => content)
+        val layout = new LiveLayout[Any, String] { def view[Msg](content: HtmlElement[Msg], context: LiveLayoutContext[Any, String]) = content }
         val invalid = layout.forContext[Int](_.name)
       """)
       val wrongResult = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*
-        val root = LiveRootLayout[Any, String]("root")([Msg] => (content, _, _) => content)
+        val root = new LiveRootLayout[Any, String] { def view[Msg](content: HtmlElement[Msg], title: Option[String], context: LiveRootLayoutContext[Any, String]) = content }
         val invalid = root.forContext[Int](_ + 1)
       """)
 
@@ -793,7 +796,7 @@ object RoutedConstructionSpec extends ZIOSpecDefault:
         import zio.*
 
         val aspect = LiveRouteMountAspect.fromRequest[Any, Unit, String](_ => ZIO.succeed("ctx"))
-        val layout = LiveLayout[Unit, Int]([Msg] => (content, _) => content)
+        val layout = new LiveLayout[Unit, Int] { def view[Msg](content: HtmlElement[Msg], context: LiveLayoutContext[Unit, Int]) = content }
         val invalid = live.withMountAspect(aspect).withLayout(layout, (value: Boolean) => 1)
       """)
       val wrongResult = scala.compiletime.testing.typeCheckErrors("""
@@ -804,7 +807,7 @@ object RoutedConstructionSpec extends ZIOSpecDefault:
           _ => ZIO.succeed("claim" -> "ctx"),
           (_, _) => ZIO.succeed("ctx")
         )
-        val root = LiveRootLayout[Any, Int]("root")([Msg] => (content, _, _) => content)
+        val root = new LiveRootLayout[Any, Int] { def view[Msg](content: HtmlElement[Msg], title: Option[String], context: LiveRootLayoutContext[Any, Int]) = content }
         val invalid = Live.session("main").withMountAspect(aspect).withRootLayout(root, identity)
       """)
 
@@ -813,12 +816,12 @@ object RoutedConstructionSpec extends ZIOSpecDefault:
     test("context-free route and router builders do not expose selector overloads") {
       val routeErrors = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*
-        val layout = LiveLayout[Any, Any]([Msg] => (content, _) => content)
+        val layout = new LiveLayout[Any, Any] { def view[Msg](content: HtmlElement[Msg], context: LiveLayoutContext[Any, Any]) = content }
         val invalid = live.withLayout(layout, identity)
       """)
       val routerErrors = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*
-        val root = LiveRootLayout[Any, Any]("root")([Msg] => (content, _, _) => content)
+        val root = new LiveRootLayout[Any, Any] { def view[Msg](content: HtmlElement[Msg], title: Option[String], context: LiveRootLayoutContext[Any, Any]) = content }
         val invalid = Live.router.withRootLayout(root, identity)
       """)
 
@@ -847,8 +850,8 @@ object RoutedConstructionSpec extends ZIOSpecDefault:
             if request.params == () then ZIO.succeed(input.length)
             else ZIO.fail(LiveRouteMountFailure.notFound)
         )
-        val layout = LiveLayout[Unit, Int]([Msg] => (content, _) => content)
-        val root = LiveRootLayout[Unit, Int]("route")([Msg] => (content, _, _) => content)
+        val layout = new LiveLayout[Unit, Int] { def view[Msg](content: HtmlElement[Msg], context: LiveLayoutContext[Unit, Int]) = content }
+        val root = new LiveRootLayout[Unit, Int] { def view[Msg](content: HtmlElement[Msg], title: Option[String], context: LiveRootLayoutContext[Unit, Int]) = content }
 
         object View extends LiveView.Eventless[Combined]:
           def mount(ctx: MountContext) = ZIO.succeed(Combined("", 0))
@@ -879,7 +882,7 @@ object RoutedConstructionSpec extends ZIOSpecDefault:
           def mount(ctx: MountContext) = ZIO.succeed("mounted")
           def view(model: Signal[String]) = div(model)
 
-        val root = LiveRootLayout[Any, String]("main")([Msg] => (content, _, _) => content)
+        val root = new LiveRootLayout[Any, String] { def view[Msg](content: HtmlElement[Msg], title: Option[String], context: LiveRootLayoutContext[Any, String]) = content }
         val session: LiveSession[Any] = Live.session("main")
           .withMountAspect(sessionAspect)(
             live.apply((_, _, context: String) => View)
@@ -939,10 +942,10 @@ object RoutedConstructionSpec extends ZIOSpecDefault:
           (_, first) => ZIO.succeed(1 -> first.length),
           (_, _, first) => ZIO.succeed(first.length)
         )
-        val layout = LiveLayout[Any, Int]([Msg] => (content, context) =>
-          if context.context > 0 then content else content
-        )
-        val root = LiveRootLayout[Any, Int]("session")([Msg] => (content, _, _) => content)
+        val layout = new LiveLayout[Any, Int]:
+          def view[Msg](content: HtmlElement[Msg], context: LiveLayoutContext[Any, Int]) =
+            if context.context > 0 then content else content
+        val root = new LiveRootLayout[Any, Int] { def view[Msg](content: HtmlElement[Msg], title: Option[String], context: LiveRootLayoutContext[Any, Int]) = content }
 
         object View extends LiveView.Eventless[Unit]:
           def mount(ctx: MountContext) = ZIO.succeed(())

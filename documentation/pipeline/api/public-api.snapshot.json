@@ -6392,10 +6392,6 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.LiveRouteBuilder.apply:18c913ef52fca513",
-          "signature" : "def apply: [Ctx, Msg, Model](factory: (A, zio.http.Request, Ctx) => LiveView[Msg, Model])(LiveRoute[Any, A] { type Input = Ctx })"
-        },
-        {
           "id" : "def:scalive.LiveRouteBuilder.apply:4276a13e4bd3d3eb",
           "signature" : "def apply: [Msg, Model](factory: zio.http.Request => LiveView[Msg, Model])(LiveRoute[Any, A] { type Input = Any })"
         },
@@ -6652,10 +6648,6 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.LiveRouteMountAspectBuilder.apply:48f00f157c59858f",
-          "signature" : "def apply: [Msg, Model](factory: (A, zio.http.Request, Ctx) => LiveView[Msg, Model])(LiveRoute[R, A] { type Input = Need })"
-        },
-        {
           "id" : "def:scalive.LiveRouteMountAspectBuilder.apply:bd6158989e154a15",
           "signature" : "def apply: [Msg, Model](view: => LiveView[Msg, Model])(LiveRoute[R, A] { type Input = Need })"
         }
@@ -6682,18 +6674,6 @@
         {
           "id" : "def:scalive.LiveRouteMountAspectBuilder.context:f5aede2a296cb09d",
           "signature" : "def context: [Msg, Model](factory: (A, zio.http.Request, Ctx) => LiveView[Msg, Model])(LiveRoute[R, A] { type Input = Need })"
-        }
-      ]
-    },
-    {
-      "id" : "def:scalive.LiveRouteMountAspectBuilder.from",
-      "ownerId" : "class:scalive.LiveRouteMountAspectBuilder",
-      "qualifiedName" : "scalive.LiveRouteMountAspectBuilder.from",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.LiveRouteMountAspectBuilder.from:0ec1390e87a1f7f2",
-          "signature" : "def from: [Msg, Model](factory: (A, zio.http.Request, Ctx) => LiveView[Msg, Model])(LiveRoute[R, A] { type Input = Need })"
         }
       ]
     },
@@ -6820,10 +6800,6 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.LiveRouteMountAspectParamsBuilder.apply:28d080070b26d038",
-          "signature" : "def apply: [Msg, Model](factory: (A, zio.http.Request, Ctx) => LiveView.Routed[Msg, Model, Params])(LiveRoute[R, A] { type Input = Need })"
-        },
-        {
           "id" : "def:scalive.LiveRouteMountAspectParamsBuilder.apply:3e87a927b5ea13e0",
           "signature" : "def apply: [Msg, Model](view: => LiveView.Routed[Msg, Model, Params])(LiveRoute[R, A] { type Input = Need })"
         }
@@ -6850,18 +6826,6 @@
         {
           "id" : "def:scalive.LiveRouteMountAspectParamsBuilder.context:da7111770353bf2c",
           "signature" : "def context: [Msg, Model](factory: (A, zio.http.Request, Ctx) => LiveView.Routed[Msg, Model, Params])(LiveRoute[R, A] { type Input = Need })"
-        }
-      ]
-    },
-    {
-      "id" : "def:scalive.LiveRouteMountAspectParamsBuilder.from",
-      "ownerId" : "class:scalive.LiveRouteMountAspectParamsBuilder",
-      "qualifiedName" : "scalive.LiveRouteMountAspectParamsBuilder.from",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.LiveRouteMountAspectParamsBuilder.from:2491285aa1a23199",
-          "signature" : "def from: [Msg, Model](factory: (A, zio.http.Request, Ctx) => LiveView.Routed[Msg, Model, Params])(LiveRoute[R, A] { type Input = Need })"
         }
       ]
     },

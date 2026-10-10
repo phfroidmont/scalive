@@ -91,7 +91,7 @@ object RoutedConstructionSpec extends ZIOSpecDefault:
         val route: LiveRoute[Any, Unit] =
           live
             .withMountAspect(aspect)
-            .withLayout(layout)((_, _, context: String) => View)
+            .withLayout(layout).context((_, _, context: String) => View)
       """)
 
       assertTrue(errors.isEmpty)
@@ -862,7 +862,7 @@ object RoutedConstructionSpec extends ZIOSpecDefault:
           .withLayout(layout, _.length)
           .withRootLayout(root, _.length)
           .withMountAspect(second)
-          .apply((_, _, context: Combined) => View)
+          .context((_, _, context: Combined) => View)
       """)
 
       assertTrue(errors.isEmpty)
@@ -885,12 +885,12 @@ object RoutedConstructionSpec extends ZIOSpecDefault:
         val root = new LiveRootLayout[Any, String] { def view[Msg](content: HtmlElement[Msg], title: Option[String], context: LiveRootLayoutContext[Any, String]) = content }
         val session: LiveSession[Any] = Live.session("main")
           .withMountAspect(sessionAspect)(
-            live.apply((_, _, context: String) => View)
+            live.context((_, _, context: String) => View)
           )
 
         val sessionWithRoot: LiveSession[Any] = Live.session("main-root")
           .withMountAspect(sessionAspect)
-          .withRootLayout(root)(live.apply((_, _, context: String) => View))
+          .withRootLayout(root)(live.context((_, _, context: String) => View))
       """)
 
       assertTrue(errors.isEmpty)
@@ -920,7 +920,7 @@ object RoutedConstructionSpec extends ZIOSpecDefault:
 
         val route = live
           .withMountAspect(routeAspect)
-          .apply((_, _, context: (String, Int)) => View)
+          .context((_, _, context: (String, Int)) => View)
 
         val session: LiveSession[SessionEnvironment & RouteEnvironment] = Live.session("main")
           .withMountAspect(sessionAspect)(route)
@@ -975,7 +975,7 @@ object RoutedConstructionSpec extends ZIOSpecDefault:
           def mount(ctx: MountContext) = ZIO.succeed(0)
           def view(model: Signal[Int]) = div()
 
-        val route = live.apply((_, _, context: Int) => View)
+        val route = live.context((_, _, context: Int) => View)
         val session = Live.session("main").withMountAspect(sessionAspect)(route)
       """)
 

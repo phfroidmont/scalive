@@ -409,22 +409,6 @@ class LiveRouteBuilder[A] private[scalive] (
   ): LiveRoute[Any, A] { type Input = Any } =
     ordinary((_, request) => factory(request))
 
-  @targetName("contextFactory")
-  def apply[Ctx, Msg, Model](
-    factory: (A, Request, Ctx) => LiveView[Msg, Model]
-  ): LiveRoute[Any, A] { type Input = Ctx } =
-    LiveRoute(
-      LiveRouteDefinition.Ordinary(
-        pathCodec,
-        LiveRouteContext.Required(),
-        factory,
-        connectedTurnGuards.contramap((_: Ctx) => ()),
-        connectedResourceInitializers.contramap((_: Ctx) => ()),
-        layouts.map(_.forContext((_: Ctx) => ())),
-        rootLayout.map(_.forContext((_: Ctx) => ()))
-      )
-    )
-
   def context[Ctx, Msg, Model](
     factory: Ctx => LiveView[Msg, Model]
   ): LiveRoute[Any, A] { type Input = Ctx } =
@@ -438,7 +422,17 @@ class LiveRouteBuilder[A] private[scalive] (
   def context[Ctx, Msg, Model](
     factory: (A, Request, Ctx) => LiveView[Msg, Model]
   ): LiveRoute[Any, A] { type Input = Ctx } =
-    apply(factory)
+    LiveRoute(
+      LiveRouteDefinition.Ordinary(
+        pathCodec,
+        LiveRouteContext.Required(),
+        factory,
+        connectedTurnGuards.contramap((_: Ctx) => ()),
+        connectedResourceInitializers.contramap((_: Ctx) => ()),
+        layouts.map(_.forContext((_: Ctx) => ())),
+        rootLayout.map(_.forContext((_: Ctx) => ()))
+      )
+    )
 
   def context[Ctx, R: Tag, Msg, Model](
     factory: (A, Request, Ctx, R) => LiveView[Msg, Model]
@@ -658,11 +652,7 @@ final class LiveRouteMountAspectBuilder[R, A, Need, Ctx] private[scalive] (
     query(HttpCodec.query[Query])
 
   def apply[Msg, Model](view: => LiveView[Msg, Model]): LiveRoute[R, A] { type Input = Need } =
-    from((_, _, _) => view)
-
-  def apply[Msg, Model](
-    factory: (A, Request, Ctx) => LiveView[Msg, Model]
-  ): LiveRoute[R, A] { type Input = Need } = from(factory)
+    context((_, _, _) => view)
 
   def context[Msg, Model](
     factory: Ctx => LiveView[Msg, Model]
@@ -679,7 +669,17 @@ final class LiveRouteMountAspectBuilder[R, A, Need, Ctx] private[scalive] (
   def context[Msg, Model](
     factory: (A, Request, Ctx) => LiveView[Msg, Model]
   ): LiveRoute[R, A] { type Input = Need } =
-    from(factory)
+    LiveRoute(
+      LiveRouteDefinition.Ordinary(
+        pathCodec,
+        LiveRouteContext.Mounted(pipeline),
+        factory,
+        connectedTurnGuards,
+        connectedResourceInitializers,
+        layouts,
+        rootLayout
+      )
+    )
 
   def context[R1: Tag, Msg, Model](
     factory: (A, Request, Ctx, R1) => LiveView[Msg, Model]
@@ -693,21 +693,6 @@ final class LiveRouteMountAspectBuilder[R, A, Need, Ctx] private[scalive] (
         connectedResourceInitializers.contramap((_: (Ctx, R1))._1),
         layouts.map(_.forContext((_: (Ctx, R1))._1)),
         rootLayout.map(_.forContext((_: (Ctx, R1))._1))
-      )
-    )
-
-  def from[Msg, Model](
-    factory: (A, Request, Ctx) => LiveView[Msg, Model]
-  ): LiveRoute[R, A] { type Input = Need } =
-    LiveRoute(
-      LiveRouteDefinition.Ordinary(
-        pathCodec,
-        LiveRouteContext.Mounted(pipeline),
-        factory,
-        connectedTurnGuards,
-        connectedResourceInitializers,
-        layouts,
-        rootLayout
       )
     )
 end LiveRouteMountAspectBuilder
@@ -784,11 +769,7 @@ final class LiveRouteMountAspectParamsBuilder[R, A, Need, Ctx, Params] private[s
   def apply[Msg, Model](
     view: => LiveView.Routed[Msg, Model, Params]
   ): LiveRoute[R, A] { type Input = Need } =
-    from((_, _, _) => view)
-
-  def apply[Msg, Model](
-    factory: (A, Request, Ctx) => LiveView.Routed[Msg, Model, Params]
-  ): LiveRoute[R, A] { type Input = Need } = from(factory)
+    context((_, _, _) => view)
 
   def context[Msg, Model](
     factory: Ctx => LiveView.Routed[Msg, Model, Params]
@@ -805,7 +786,18 @@ final class LiveRouteMountAspectParamsBuilder[R, A, Need, Ctx, Params] private[s
   def context[Msg, Model](
     factory: (A, Request, Ctx) => LiveView.Routed[Msg, Model, Params]
   ): LiveRoute[R, A] { type Input = Need } =
-    from(factory)
+    LiveRoute(
+      LiveRouteDefinition.Routed(
+        pathCodec,
+        LiveRouteContext.Mounted(pipeline),
+        factory,
+        paramsCodec,
+        connectedTurnGuards,
+        connectedResourceInitializers,
+        layouts,
+        rootLayout
+      )
+    )
 
   def context[R1: Tag, Msg, Model](
     factory: (A, Request, Ctx, R1) => LiveView.Routed[Msg, Model, Params]
@@ -820,22 +812,6 @@ final class LiveRouteMountAspectParamsBuilder[R, A, Need, Ctx, Params] private[s
         connectedResourceInitializers.contramap((_: (Ctx, R1))._1),
         layouts.map(_.forContext((_: (Ctx, R1))._1)),
         rootLayout.map(_.forContext((_: (Ctx, R1))._1))
-      )
-    )
-
-  def from[Msg, Model](
-    factory: (A, Request, Ctx) => LiveView.Routed[Msg, Model, Params]
-  ): LiveRoute[R, A] { type Input = Need } =
-    LiveRoute(
-      LiveRouteDefinition.Routed(
-        pathCodec,
-        LiveRouteContext.Mounted(pipeline),
-        factory,
-        paramsCodec,
-        connectedTurnGuards,
-        connectedResourceInitializers,
-        layouts,
-        rootLayout
       )
     )
 end LiveRouteMountAspectParamsBuilder

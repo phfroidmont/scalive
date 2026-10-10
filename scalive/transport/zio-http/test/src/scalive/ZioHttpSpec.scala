@@ -1227,7 +1227,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
       object View extends LiveView.Eventless[Unit]:
         def mount(ctx: MountContext) = ZIO.succeed { events += "mount" }
         def view(model: Signal[Unit]) = div()
-      val route = scalive.live.withMountAspect(routeAspect) {
+      val route = scalive.live.withMountAspect(routeAspect).context {
         (_, _, _: (String, String)) =>
           events += "factory"
           View
@@ -1883,7 +1883,8 @@ object ZioHttpSpec extends ZIOSpecDefault:
         .withMountAspect(routeAspect)
         .guardConnectedTurns((context: (String, String)) =>
           ZIO.succeed(events += s"route-guard:${context._2}").unit
-        ) { (_, _, context: (String, String)) =>
+        )
+        .context { (_, _, context: (String, String)) =>
           events += s"factory:${context._1}:${context._2}"
           new LiveView[Nothing, Unit]:
             override val hooks = LiveHooks.empty[Nothing, Unit]

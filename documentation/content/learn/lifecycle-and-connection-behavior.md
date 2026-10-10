@@ -99,7 +99,7 @@ Use this checklist:
 - Make `mount` safe to run repeatedly.
 - Match `ctx.connection` and run socket-only work only in the
   `Connection.Connected(capabilities)` branch.
-- Use [lifecycle-managed APIs](../guides/async-work-and-subscriptions.md#choose-the-resource-by-shape)
+- Use [lifecycle-managed APIs](../guides/async-work.md#choose-the-resource-by-shape)
   for async work, subscriptions, and non-message acquisition and finalization.
 - Make repeated external mount effects idempotent where necessary.
 

@@ -261,7 +261,7 @@ fresh destruction with brief dormancy in the
   sticky navigation, and crash isolation.
 - Build component forms with [Typed forms and validation](typed-forms-and-validation.md).
 - Add component-owned files with [File uploads](uploads-and-consumption.md).
-- Manage finite component work with
-  [Asynchronous work, subscriptions, and connected resources](async-work-and-subscriptions.md).
+- Manage component work with [Asynchronous work](async-work.md) and
+  [Subscriptions](subscriptions.md).
 - Compose client effects with
   [Browser commands, events, and hooks](browser-integration.md).

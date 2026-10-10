@@ -1,7 +1,7 @@
 {%
 title = "File uploads"
 description = "Accept bounded files, choose a hosted or external destination, report progress, and transfer resource ownership deliberately."
-order = 13
+order = 17
 section = guides
 group = "Interfaces and input"
 %}
@@ -261,6 +261,6 @@ represented only by their byte length, never their contents.
 ## Related Tasks {#related-tasks}
 
 - Use [Typed forms and validation](typed-forms-and-validation.md) for metadata submitted with an upload.
-- Use [Asynchronous work, subscriptions, and connected resources](async-work-and-subscriptions.md) when scanning or post-processing should continue as lifecycle-owned work.
+- Use [Asynchronous work](async-work.md) when scanning or post-processing should continue as lifecycle-owned work.
 - Use [Testing](testing.md) to exercise selection limits, cancellation, cleanup, retries, and invalid content.
 - Use [Troubleshooting](troubleshooting.md) when the browser hook, socket path, or static assets prevent transfer.

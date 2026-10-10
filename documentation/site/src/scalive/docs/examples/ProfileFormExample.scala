@@ -14,6 +14,7 @@ final class ProfileFormExample extends LiveView[ProfileFormExample.Msg, ProfileF
   def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.Validate(event) =>
       ZIO.succeed(model.copy(form = event.form, previewed = None, saved = None))
+    // docs:start profile-form-submit-handler
     case Msg.Submit(event, intent) =>
       intent match
         case Right(Profile.Intent.Preview) =>
@@ -22,6 +23,7 @@ final class ProfileFormExample extends LiveView[ProfileFormExample.Msg, ProfileF
           ZIO.succeed(model.copy(form = event.form, previewed = None, saved = event.valueOption))
         case Left(_) =>
           ZIO.succeed(model.copy(form = event.form, previewed = None, saved = None))
+    // docs:end profile-form-submit-handler
     case Msg.Reset =>
       ZIO.succeed(Model(Profile.Definition.initial()))
 
@@ -53,7 +55,9 @@ final class ProfileFormExample extends LiveView[ProfileFormExample.Msg, ProfileF
         dataAttr("profile-form") := "",
         idAttr                   := "profile-form",
         Profile.Definition.onChange(Msg.Validate(_)),
+        // docs:start profile-form-submit-binding
         Profile.Definition.onSubmit(Profile.Submitter)(Msg.Submit.apply),
+        // docs:end profile-form-submit-binding
         field(
           label(forId := nameField.id, "Name"),
           nameField.text(
@@ -88,6 +92,7 @@ final class ProfileFormExample extends LiveView[ProfileFormExample.Msg, ProfileF
             dataAttr("field-error") := "biography"
           )
         ),
+        // docs:start profile-form-submit-buttons
         div(
           cls := "docs-profile-actions",
           Profile.Submitter.button(Profile.Intent.Preview)("Preview profile"),
@@ -97,6 +102,7 @@ final class ProfileFormExample extends LiveView[ProfileFormExample.Msg, ProfileF
           ),
           button(typ := "button", on.click(Msg.Reset), "Reset form")
         )
+        // docs:end profile-form-submit-buttons
       )
     )
   end view
@@ -133,11 +139,13 @@ object ProfileFormExample:
 
     val Definition = Root.product[Profile]((Name, Email, Biography))
 
+    // docs:start profile-form-submitter
     enum Intent(val wireValue: String):
       case Preview extends Intent("preview")
       case Save    extends Intent("save")
 
     val Submitter = Definition.submitter(Intent.values)(_.wireValue)
+    // docs:end profile-form-submitter
 
     private val EmailPattern = """^[^\s@]+@[^\s@]+\.[^\s@]+$""".r
   end Profile

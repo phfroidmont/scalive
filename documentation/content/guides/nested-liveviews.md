@@ -175,7 +175,9 @@ child failure, and rejoin separately; they exercise different ownership paths.
 - Review [Routes, parameters, and navigation](routes-and-navigation.md) before a
   child initiates page navigation.
 - Design managed resources with
-  [Asynchronous work, subscriptions, and connected resources](async-work-and-subscriptions.md) and
+  [Asynchronous work](async-work.md),
+  [Subscriptions](subscriptions.md),
+  [Connected resources](connected-resources.md), and
   [File uploads](uploads-and-consumption.md).
 - Apply root title and flash rules from
   [Lifecycle feedback and page state](flash-title-and-lifecycle-ux.md).

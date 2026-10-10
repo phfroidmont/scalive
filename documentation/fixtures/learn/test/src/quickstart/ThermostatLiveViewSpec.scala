@@ -16,6 +16,7 @@ object ThermostatLiveViewSpec extends ZIOSpecDefault:
   def spec = suite("ThermostatLiveView")(
     test("shows the reading after connecting and refreshes on request") {
       ZIO.scoped {
+        // docs:start testing-await-html
         for
           current <- Ref.make(20.0)
           view    <- ConnectedRender.join(ThermostatLiveView(fixedSensor(current)))
@@ -24,6 +25,7 @@ object ThermostatLiveViewSpec extends ZIOSpecDefault:
           _       <- view.clickButton("Refresh")
           _       <- view.awaitHtml("refreshed reading", 5.seconds)(_.contains("21.5 °C"))
         yield assertCompletes
+        // docs:end testing-await-html
       }
     },
     test("tells the visitor when the sensor does not answer") {

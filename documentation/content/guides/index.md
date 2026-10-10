@@ -29,9 +29,17 @@ expects so you can also enter directly from search or the API reference.
 - [HTML and event bindings](html-dsl-and-event-bindings.md) builds typed
   trees, composes token-list attributes, binds messages, keys repeated content,
   and uses portal and focus-management helpers.
-- [Typed forms and validation](typed-forms-and-validation.md) decodes rooted
-  browser input into domain values with recovery, stable repeated rows,
-  path-specific feedback, and revision-bound save coordination.
+- [Typed forms and validation](typed-forms-and-validation.md) defines a form,
+  validates it as the visitor types, and decodes a valid submission into a
+  domain value.
+- [Form controls](form-controls.md) renders textareas, selects, checkboxes,
+  custom inputs, and several submit buttons.
+- [Form feedback and recovery](form-feedback-and-recovery.md) chooses when
+  errors appear and restores a form after a reconnect.
+- [Repeated form rows](repeated-form-rows.md) lets visitors add, remove, and
+  reorder groups of fields.
+- [Saving forms](saving-forms.md) tracks unsaved changes and saves in the
+  background.
 - [Ordinary HTTP forms and redirects](http-forms-and-redirects.md) combines
   checked actions, bounded CSRF-protected decoding, trigger-action handoff, and
   HTTP-to-Live flash.
@@ -42,13 +50,15 @@ expects so you can also enter directly from search or the API reference.
 
 - [Routes, parameters, and navigation](routes-and-navigation.md) decodes typed
   URL state and chooses checked patch, navigation, replace, and redirect behavior.
-- [Layouts, live sessions, and mount aspects](layouts-sessions-and-mount-aspects.md)
-  composes document shells, route groups, and typed pre-mount policy.
+- [Layouts](layouts.md) renders the HTML document and wraps pages in shared
+  navigation.
+- [Live sessions and mount aspects](live-sessions-and-mount-aspects.md) groups
+  routes and derives typed context, such as the current user, before mount.
 - [Services and dependency injection](services-and-zlayer-injection.md)
   constructor-injects application capabilities while keeping socket state
   connection-local.
 - [Authentication and sessions](authentication.md) combines ordinary HTTP login
-  and reset with opaque sessions and protected LiveView mounts.
+  and logout with opaque sessions and protected LiveView mounts.
 
 ### State And Components {#state-and-components}
 
@@ -61,9 +71,12 @@ expects so you can also enter directly from search or the API reference.
 
 ### Async And Lifecycle {#async-and-lifecycle}
 
-- [Asynchronous work, subscriptions, and connected resources](async-work-and-subscriptions.md)
-  owns finite tasks, long-lived message streams, and other acquired resources
-  with lifecycle cleanup.
+- [Asynchronous work](async-work.md) runs a finite task, such as a slow query,
+  and renders its loading, failure, and cancelled states.
+- [Subscriptions](subscriptions.md) runs a stream of messages, such as a timer
+  or an event feed, while a page or component stays connected.
+- [Connected resources](connected-resources.md) acquires a registration or
+  handle when a page connects and releases it when the page closes.
 - [Lifecycle hooks](lifecycle-hooks.md) guards complete connected turns and
   applies ordered static or dynamic policy to individual lifecycle stages.
 - [Lifecycle feedback and page state](flash-title-and-lifecycle-ux.md) owns flash,
@@ -78,8 +91,10 @@ expects so you can also enter directly from search or the API reference.
 
 ### Testing And Troubleshooting {#testing-and-troubleshooting}
 
-- [Testing LiveViews](testing.md) covers public disconnected and connected
-  server-side tests, then identifies behavior that requires a real browser.
+- [Testing LiveViews](testing.md) tests interactions, forms, routes, and the
+  first HTML response, then identifies behavior that requires a real browser.
+- [Connected test reference](connected-test-reference.md) lists the exact
+  contracts of the test helpers, reconnect admission, and origin checks.
 - [Troubleshooting](troubleshooting.md) diagnoses startup, asset, socket, CSRF,
   crash, and reconnect failures.
 

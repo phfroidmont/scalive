@@ -132,9 +132,9 @@ does not rerun the route aspect. If patched parameters can select another
 protected resource, reauthorize in `handleParams` and at the sensitive operation,
 or use navigation so the destination reruns route admission.
 
-See the canonical [session-versus-route comparison](layouts-sessions-and-mount-aspects.md#choose-the-right-boundary)
-and [route-context pipeline](layouts-sessions-and-mount-aspects.md#derive-route-context).
-The [combined example](layouts-sessions-and-mount-aspects.md#combine-session-and-route-context)
+See the canonical [session-versus-route comparison](live-sessions-and-mount-aspects.md#choose-the-right-boundary)
+and [route-context pipeline](live-sessions-and-mount-aspects.md#derive-route-context).
+The [combined example](live-sessions-and-mount-aspects.md#combine-session-and-route-context)
 shows typed destination parameters consuming admitted `CurrentUser` context.
 
 For resource registration rather than authorization or context loading, use
@@ -143,7 +143,7 @@ run after all admission/context checks and before connected page mount, with
 session callbacks before route callbacks and declaration order within each level.
 They are additive, do not change context or the page model, and fail through
 `Task` as mount failures, not controlled authorization rejections. See
-[route and session resources](async-work-and-subscriptions.md#route-and-session-resources).
+[route and session resources](connected-resources.md#route-and-session-resources).
 
 ## Build Locations From Route Declarations {#build-locations-from-route-declarations}
 
@@ -246,7 +246,7 @@ falls back to an ordinary HTTP request at an incompatible boundary.
 
 ## Related Tasks {#related-tasks}
 
-- Group compatible routes with [Layouts, live sessions, and mount aspects](layouts-sessions-and-mount-aspects.md#choose-the-right-boundary).
+- Group compatible routes with [Live sessions and mount aspects](live-sessions-and-mount-aspects.md#choose-the-right-boundary).
 - Protect route groups with [Authentication and sessions](authentication.md#bind-admission-to-physical-connections).
 - Confirm before browser-initiated navigation with [Guard unsaved changes](navigation-guards.md#prerequisites).
 - Test parameter decoding, routed joins, and navigation with

@@ -17,13 +17,16 @@ model. Continue by the task your application needs:
   [file uploads](../guides/uploads-and-consumption.md).
 - **Structure and protect pages:** [routes and navigation](../guides/routes-and-navigation.md),
   [navigation guards](../guides/navigation-guards.md),
-  [layouts and live sessions](../guides/layouts-sessions-and-mount-aspects.md),
+  [layouts](../guides/layouts.md),
+  [live sessions](../guides/live-sessions-and-mount-aspects.md),
   [services and dependency injection](../guides/services-and-zlayer-injection.md),
   and [authentication and sessions](../guides/authentication.md).
 - **Own local and collection state:** [stateful components](../guides/components-and-communication.md),
   [nested LiveViews](../guides/nested-liveviews.md), and
   [streams](../guides/streams-and-collection-updates.md).
-- **Manage lifecycle behavior:** [asynchronous work, subscriptions, and connected resources](../guides/async-work-and-subscriptions.md),
+- **Manage lifecycle behavior:** [asynchronous work](../guides/async-work.md),
+  [subscriptions](../guides/subscriptions.md),
+  [connected resources](../guides/connected-resources.md),
   [lifecycle hooks](../guides/lifecycle-hooks.md), and
   [lifecycle feedback and page state](../guides/flash-title-and-lifecycle-ux.md).
 - **Integrate browser APIs:** [browser commands, events, and hooks](../guides/browser-integration.md).

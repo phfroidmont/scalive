@@ -1,6 +1,6 @@
 {%
 title = "Client setup and static assets"
-description = "Load ordinary versioned trees or manifest-defined final paths, render tracked links, and connect the Phoenix LiveView client."
+description = "Load the packaged Phoenix LiveView client, connect LiveSocket, serve versioned application assets, and use deployment manifests."
 order = 2
 section = guides
 group = "Setup and foundations"
@@ -9,99 +9,192 @@ group = "Setup and foundations"
 ## Before You Start {#prerequisites}
 
 Start with a Scalive application whose routed page renders a complete root
-layout. The [Quick start](../learn/quick-start.md) uses the browser clients
-packaged in the Scalive artifact and requires no separate JavaScript build.
-Applications that import browser packages or produce a richer output tree can
-instead use the custom bundle path below.
+layout, such as the one in the [Quick start](../learn/quick-start.md). The quick
+start already loads the Phoenix and LiveView browser clients packaged in the
+Scalive artifact, connects `LiveSocket` from `app.js`, and serves `app.js` with
+`StaticAssets`. It needs no separate JavaScript build.
 
-## Choose An Asset Model {#choose-an-asset-model}
-
-Choose one model for application-owned assets before wiring their loading. The
-packaged Phoenix clients use their own fixed classpath graph independently of
-this choice:
-
-| Model | Path and cache ownership | Choose it when |
-| --- | --- | --- |
-| Ordinary classpath or directory tree | Scalive owns one asset-set version namespace and its cache policy. | The build can preserve relative paths and package or deploy the complete output tree. |
-| Deployment manifest | The external build owns exact final paths and the cache policy for each file. | The build already emits content-addressed names, generated files, chunks, or other outputs whose final paths must be preserved. |
-
-Use the ordinary versioned tree unless the external build must define final
-public paths or per-file cache policies. Generated or chunked output works with
-either model: preserve the complete relative tree for the ordinary model, or
-inventory every output in a deployment manifest.
+This guide explains the contracts behind those steps. It then covers what the
+quick start leaves out: larger asset trees, assets outside the classpath,
+tracked tags, a custom client bundle, connect metadata, and deployment
+manifests. If the application imports browser packages, use the
+[custom client bundle](#build-the-client-bundle) instead of the packaged
+clients.
 
 ## Load The Packaged Clients {#load-the-packaged-clients}
 
-Load @:apiSymbol(class:scalive.LiveViewClientAssets)`LiveViewClientAssets`@:@ at
-startup and add its routes alongside the Live and application-asset routes:
+Use the packaged clients when the application has no JavaScript build of its
+own. Load @:apiSymbol(class:scalive.LiveViewClientAssets)`LiveViewClientAssets`@:@
+at startup and add its routes next to the Live and application-asset routes, as
+the [quick start's `Main`](../learn/quick-start.md#start-the-server) does:
 
-```scala unverified
-for
-  clientAssets <- LiveViewClientAssets.load()
-  assets       <- StaticAssets.load(
-                    StaticAssetConfig.classpath("public", Seq("app.js"))
-                  )
-  application   = Live.router.withRootLayout(RootLayout(clientAssets, assets))(
-                    Routes.home -> HomeLiveView()
-                  )
-  liveRoutes    = ZioHttp.routes(application, security)
-  routes        = liveRoutes ++ clientAssets.routes ++ assets.routes
-  _            <- Server.serve(routes)
-yield ()
+```scala fragment
+clientAssets <- LiveViewClientAssets.load()
+// ...
+routes = liveRoutes ++ clientAssets.routes ++ assets.routes
 ```
 
+Then render the client scripts in the root layout's `<head>`, before the
+application bootstrap:
+
+@:sourceRegion(documentation/fixtures/quick-start/src/quickstart/RootLayout.scala, quick-start-root-layout)
+
+@:apiSymbol(def:scalive.LiveViewClientAssets.phoenixScript)`phoenixScript`@:@ and
+@:apiSymbol(def:scalive.LiveViewClientAssets.liveViewScript)`liveViewScript`@:@
+are deferred, tracked, same-origin scripts. Deferred classic scripts execute in
+document order, so `app.js` can use the `Phoenix` and `LiveView` globals.
+
 The fixed graph contains upstream Phoenix `1.8.9` and Phoenix LiveView `1.2.10`
-browser-global builds. It defaults to `/_scalive/live-view`; pass another
-`zio.http.Path` to
+browser-global builds. It is served below `/_scalive/live-view` by default. Pass
+another `zio.http.Path` to
 @:apiSymbol(def:scalive.LiveViewClientAssets.load)`LiveViewClientAssets.load`@:@
 when that mount conflicts with application routing. Do not share a mount between
 independently loaded asset graphs because each graph owns its complete route
 prefix.
 
-Render the dependencies before the application bootstrap:
-
-```scala unverified
-headTag(
-  clientAssets.phoenixScript,
-  clientAssets.liveViewScript,
-  assets.trackedScript("app.js", defer := true)
-)
-```
-
-@:apiSymbol(def:scalive.LiveViewClientAssets.phoenixScript)`phoenixScript`@:@ and
-@:apiSymbol(def:scalive.LiveViewClientAssets.liveViewScript)`liveViewScript`@:@
-are deferred, tracked, same-origin scripts. Deferred classic scripts execute in
-document order, so the application can use the `Phoenix` and `LiveView` globals.
-Do not render these packaged client scripts when the application bundle already
-contains the npm clients.
+Do not render these scripts when the application bundle already contains the
+npm clients. The [custom client bundle](#build-the-client-bundle) section
+explains why.
 
 ## Connect LiveSocket {#connect-live-socket}
 
-Create the plain application bootstrap loaded after the packaged clients:
+The application bootstrap creates `LiveSocket` and connects it. The quick
+start's `app.js` is a complete bootstrap for the packaged clients:
 
-```js
-const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribute("content")
-const params = csrfToken ? { _csrf_token: csrfToken } : {}
+@:sourceRegion(documentation/fixtures/quick-start/resources/public/app.js, quick-start-browser)
 
-const liveSocket = new LiveView.LiveSocket("/live", Phoenix.Socket, { params })
-liveSocket.connect()
+@:apiSymbol(val:scalive.Live.router)`Live.router`@:@ uses `/live` as its current
+default socket path. Scalive injects the `csrf-token` meta element into the root
+layout's `<head>` and associates it with the CSRF cookie. Return that value as
+`_csrf_token`; do not create or hard-code a token in JavaScript.
 
-window.liveSocket = liveSocket
-```
-
-@:apiSymbol(val:scalive.Live.router)`Live.router`@:@ uses `/live` as its current default socket path. Scalive injects
-the `csrf-token` meta element into the root layout's `<head>` and associates it
-with the CSRF cookie. Return that value as `_csrf_token`; do not create or
-hard-code a token in JavaScript.
+Pass options such as `hooks`, `uploaders`, or connection tuning in the final
+`LiveSocket` options object before calling `connect()`. To send your own values
+to mount, add them to `params` as shown in
+[Read connect metadata](#read-connect-metadata). Exposing the socket on `window`
+is optional and useful only for browser-console debugging.
 
 The browser adds the WebSocket `Origin` header automatically from the page's
 HTTP or HTTPS origin. Do not add it to `params` or attempt to set it from
 JavaScript. Instead, list that page origin in the server's
 [WebSocket allowlist](configuration.md#current-configuration-contract).
 
-Pass options such as `hooks`, `uploaders`, or connection tuning in the final
-`LiveSocket` options object before calling `connect()`. Exposing the socket on
-`window` is optional and useful only for browser-console debugging.
+## Load A Classpath Tree {#load-classpath-assets}
+
+Load application assets from the classpath when the build packages them with
+the application. The quick start loads a single `app.js` this way. For a larger
+output, list every file below the classpath prefix:
+
+```scala fragment
+assets <- StaticAssets.load(
+  StaticAssetConfig.classpath(
+    resourcePrefix = "public",
+    assets = Seq("app.css", "app.js")
+  )
+)
+```
+
+The @:apiSymbol(def:scalive.StaticAssetConfig.classpath)`StaticAssetConfig.classpath`@:@
+source requires an explicit asset list. Include every file in the output tree,
+not only the top-level script and stylesheet, so relative imports and URLs
+remain available.
+@:apiSymbol(def:scalive.StaticAssets.load)`StaticAssets.load`@:@ reads every
+configured asset and fails when one is missing. The default mount path is
+`/static`, and original unversioned URLs are disabled by default.
+
+## Load A Directory Tree {#load-a-directory}
+
+Use @:apiSymbol(def:scalive.StaticAssetConfig.directory)`StaticAssetConfig.directory`@:@
+when assets are deployed outside the application classpath:
+
+```scala fragment
+import java.nio.file.Paths
+
+assets <- StaticAssets.load(
+  StaticAssetConfig.directory(
+    root = Paths.get("/srv/my-app/public"),
+    assets = Some(Seq("app.css", "app.js"))
+  )
+)
+```
+
+Set `assets = None` to discover all regular files recursively below the root.
+Supplying a list limits the loaded tree to those relative paths. Configured
+paths must be normalized relative paths; empty segments, `.`, `..`, and
+backslashes are rejected, and symlinks cannot escape the configured root. The
+mount path and originals defaults match the classpath tree.
+
+## Understand Versioned Paths {#serve-versioned-paths}
+
+Classpath and directory trees serve every file below one version namespace, so
+render URLs from the loaded `StaticAssets` value rather than hard-coding them.
+
+Loading a tree computes one SHA-256 version for the complete asset set.
+Filenames and relative directories remain unchanged beneath that namespace:
+@:apiSymbol(def:scalive.StaticAssets.path)`StaticAssets.path("app.js")`@:@
+returns a URL such as `/static/<asset-set-digest>/app.js`. A tree entry such as
+`chunks/editor.js` is served at `/static/<asset-set-digest>/chunks/editor.js`.
+Relative JavaScript imports, worker URLs, CSS URLs, fonts, and source maps
+therefore resolve within the same versioned namespace without rewriting file
+contents or inserting a digest into each filename.
+
+Versioned responses default to `public`, a one-year `max-age`, and `immutable`.
+Their digests are pinned when assets load. An in-place file mutation makes its
+immutable URL return `404` until the assets are loaded again. Original paths
+return `404` by default; set `serveOriginals = true` only when unversioned
+access is required. Originals serve current bytes with a current `ETag` and
+`no-cache`.
+
+## Add Routes And Resolve Paths {#add-static-routes-and-resolve-paths}
+
+Add @:apiSymbol(val:scalive.StaticAssets.routes)`StaticAssets.routes`@:@ to the
+server routes, as the quick start's `Main` does with
+`liveRoutes ++ clientAssets.routes ++ assets.routes`. The routes serve `GET` and
+`HEAD` below the configured mount path, and query strings do not affect lookup.
+
+In a classpath or directory tree, `path` resolves a tree-relative name below the
+asset-set version namespace. With a
+[deployment manifest](#load-a-deployment-manifest), it resolves a logical alias
+to its manifest-defined final path.
+
+Use @:apiSymbol(def:scalive.StaticAssets.pathOption)`pathOption`@:@ when an
+optional asset may be absent.
+@:apiSymbol(def:scalive.StaticAssets.path)`path`@:@ and
+@:apiSymbol(def:scalive.StaticAssets.entry)`entry`@:@ throw for a name outside
+the loaded asset description. The entry's `cachePolicy` describes its versioned
+path or manifest-defined final path, not an optional revalidating original.
+
+@:apiSymbol(class:scalive.StaticAssetCache)`StaticAssetCache`@:@ exposes the
+`immutable` and `revalidating` header policies. Replace it through
+`config.copy(cache = ...)` when the application requires different headers.
+
+## Render Tracked Tags {#render-tracked-tags}
+
+Render the application's top-level script and stylesheet in the root layout's
+`<head>`. The quick start's root layout renders `app.js` this way; a stylesheet
+uses the matching helper:
+
+```scala fragment
+headTag(
+  metaTag(charset := "utf-8"),
+  assets.trackedStylesheet("app.css"),
+  assets.trackedScript("app.js", defer := true, typ := "text/javascript")
+)
+```
+
+The tracked helpers
+@:apiSymbol(def:scalive.StaticAssets.trackedStylesheet)`StaticAssets.trackedStylesheet`@:@
+and @:apiSymbol(def:scalive.StaticAssets.trackedScript)`StaticAssets.trackedScript`@:@
+use the versioned or manifest-defined final URL and add `phx-track-static`. The
+untracked @:apiSymbol(def:scalive.StaticAssets.stylesheet)`stylesheet`@:@ and
+@:apiSymbol(def:scalive.StaticAssets.script)`script`@:@ helpers still use those
+URLs but omit that Phoenix marker.
+
+Keep the top-level script and stylesheet selection explicit in the root layout;
+inventory entries do not automatically become tags. Use tracked helpers for
+application bundles whose change should be visible to the LiveView client. A
+connected view reads the tracking result through
+[`staticChanged`](#read-connect-metadata).
 
 ## Build A Custom Client Bundle {#build-the-client-bundle}
 
@@ -126,7 +219,8 @@ the same supported Phoenix packages and bundle an application entry point:
 }
 ```
 
-The custom entry point imports and configures the clients explicitly:
+The entry point imports and configures the clients explicitly instead of using
+the `Phoenix` and `LiveView` globals:
 
 ```js
 import { Socket } from "phoenix"
@@ -170,83 +264,85 @@ def resources = Task {
 }
 ```
 
-This portable task requires Node.js and npm at build time but not at runtime.
-Keeping the whole output tree preserves chunks, workers, CSS, fonts, source maps,
-and relative references. Adjust the build tool integration when the application
-does not use Mill, while preserving the same complete resource tree.
+Load the result as a [classpath tree](#load-classpath-assets) that lists every
+output file. When the build also writes a deployment manifest, load that
+instead; see [Choose an asset model](#choose-an-asset-model).
 
 When this bundle imports `phoenix` and `phoenix_live_view`, load and route only
 the application assets. Do not also load, route, or render
 `LiveViewClientAssets`, which would download and evaluate a second copy of both
-clients. The [quick start](../learn/quick-start.md#create-the-project) shows the
-packaged-client path instead.
+clients.
 
-## Load An Ordinary Classpath Tree {#load-classpath-assets}
+This portable task requires Node.js and npm at build time but not at runtime.
+Keeping the whole output tree preserves chunks, workers, CSS, fonts, source
+maps, and relative references. Adjust the build tool integration when the
+application does not use Mill, while preserving the same complete resource tree.
 
-For packaged applications using the ordinary versioned tree, load the exact
-resources that the build placed below a classpath prefix:
+## Read Connect Metadata {#read-connect-metadata}
 
-```scala unverified
-assets <- StaticAssets.load(
-  StaticAssetConfig.classpath(
-    resourcePrefix = "public",
-    assets = Seq("app.css", "app.js")
-  )
-)
+Add small browser-derived values to the `params` object when mount needs them:
+
+```js
+const params = {
+  ...(csrfToken ? { _csrf_token: csrfToken } : {}),
+  locale: document.documentElement.lang
+}
 ```
 
-The @:apiSymbol(def:scalive.StaticAssetConfig.classpath)`StaticAssetConfig.classpath`@:@ source requires an explicit
-asset list. Include every file in the output tree, not only the top-level script
-and stylesheet, so relative imports and URLs remain available.
-@:apiSymbol(def:scalive.StaticAssets.load)`StaticAssets.load`@:@ reads every configured asset and fails when one is
-missing. The default mount path is `/static`, and original unversioned URLs are
-disabled by default.
+Read them in mount. Match the connection phase, then decode and validate the
+expected shape:
 
-## Load An Ordinary Directory Tree {#load-a-directory}
+@:sourceRegion(documentation/fixtures/guides/src/assets/LocaleLiveView.scala, assets-connect-params)
 
-Use @:apiSymbol(def:scalive.StaticAssetConfig.directory)`StaticAssetConfig.directory`@:@ when assets are deployed
-outside the application classpath but still use the ordinary versioned tree:
+Connected capabilities implement
+@:apiSymbol(trait:scalive.ConnectedMetadata)`ConnectedMetadata`@:@ and expose
+@:apiSymbol(def:scalive.ConnectedMetadata.connectParams)`connectParams`@:@ as
+`Map[String, zio.json.ast.Json]`. No connected metadata exists during
+disconnected HTTP rendering, so the example falls back to `None`. During the
+connected lifecycle, the map contains all browser join parameters as untrusted
+JSON. Decode only application-owned keys and use the signed session or
+server-side state for identity, authorization, and other security decisions.
+Typed server-derived connect info such as peer, headers, or user agent remains
+partial. Do not set or depend on Phoenix's internal keys such as `_mounts` and
+`_track_static`; their exact values and reconnect behavior are protocol
+metadata, not an application recovery contract.
 
-```scala unverified
-import java.nio.file.Paths
+Connected capabilities also expose
+@:apiSymbol(def:scalive.ConnectedMetadata.staticChanged)`staticChanged`@:@, the
+result of [tracked tag](#render-tracked-tags) comparison. Use it to replace
+stale connected state or to initiate a full reload. On a routed root socket
+join, it is `true` when the client's non-empty list of tracked URLs differs from
+the server-rendered list; query strings, fragments, and URL origins are ignored
+during comparison. Missing, malformed, or empty client tracking metadata yields
+`false`, and the result remains stable for that socket lifecycle. Therefore use
+it as a deployment-change hint, not proof that assets loaded successfully or as
+a security signal.
 
-assets <- StaticAssets.load(
-  StaticAssetConfig.directory(
-    root = Paths.get("/srv/my-app/public"),
-    assets = Some(Seq("app.css", "app.js"))
-  )
-)
-```
+## Choose An Asset Model {#choose-an-asset-model}
 
-Set `assets = None` to discover all regular files recursively below the root.
-Supplying a list limits the loaded tree to those relative paths. Configured
-paths must be normalized relative paths; empty segments, `.`, `..`, and
-backslashes are rejected, and symlinks cannot escape the configured root.
+Use a classpath or directory tree unless an external build must define final
+public paths or per-file cache policies. In that case, use a deployment
+manifest:
 
-## Understand Ordinary Versioned Paths {#serve-versioned-paths}
+| Model | Path and cache ownership | Choose it when |
+| --- | --- | --- |
+| Classpath or directory tree | Scalive owns one asset-set version namespace and its cache policy. | The build can preserve relative paths and package or deploy the complete output tree. |
+| Deployment manifest | The external build owns exact final paths and the cache policy for each file. | The build already emits content-addressed names, generated files, chunks, or other outputs whose final paths must be preserved. |
 
-Loading an ordinary classpath or directory tree computes one SHA-256 version for
-the complete asset set. Filenames and relative directories remain unchanged
-beneath that namespace: @:apiSymbol(def:scalive.StaticAssets.path)`StaticAssets.path("app.js")`@:@ returns a URL such as
-`/static/<asset-set-digest>/app.js`. A tree entry such as `chunks/editor.js` is
-served at `/static/<asset-set-digest>/chunks/editor.js`. Relative JavaScript
-imports, worker URLs, CSS URLs, fonts, and source maps therefore resolve within
-the same versioned namespace without rewriting file contents or inserting a
-digest into each filename.
-
-Ordinary versioned responses default to `public`, a one-year `max-age`, and
-`immutable`. Their digests are pinned when assets load. An in-place file
-mutation makes its immutable URL return `404` until the assets are loaded again.
-Original paths return `404` by default; set `serveOriginals = true` only when
-unversioned access is required. Originals serve current bytes with a current
-`ETag` and `no-cache`.
+Generated or chunked output works with either model: preserve the complete
+relative tree for a classpath or directory tree, or inventory every output in a
+deployment manifest. The packaged Phoenix clients use their own fixed classpath
+graph independently of this choice.
 
 ## Load A Deployment Manifest {#load-a-deployment-manifest}
 
-Use the deployment-manifest model when an external asset build owns exact final
-public paths and per-file cache policy:
+Load the manifest with
+@:apiSymbol(def:scalive.StaticAssetConfig.deploymentClasspath)`StaticAssetConfig.deploymentClasspath`@:@
+from a classpath prefix, or with
+@:apiSymbol(def:scalive.StaticAssetConfig.deploymentDirectory)`StaticAssetConfig.deploymentDirectory`@:@
+from a directory root:
 
-```scala unverified
+```scala fragment
 import java.nio.file.Paths
 
 assets <- StaticAssets.load(
@@ -263,10 +359,10 @@ assets <- StaticAssets.load(
 )
 ```
 
-Both constructors load a deployment manifest from either the classpath prefix or
-directory root. They default to `assets-manifest.json` and `/static`; override
-the `manifest` or `mountPath` argument when needed. Version 1 of the neutral
-schema is:
+Both constructors default to `assets-manifest.json` and `/static`; override the
+`manifest` or `mountPath` argument when needed. Routes, path lookup, and tag
+helpers work as [for trees](#add-static-routes-and-resolve-paths). Version 1 of
+the neutral schema is:
 
 ```json
 {
@@ -306,104 +402,10 @@ while `revalidate` responses use `no-cache`; both include a strong per-file
 after an in-place mutation until assets are reloaded. A `revalidate` file serves
 its current bytes with a current `ETag` at its stable final path.
 
-## Add Routes And Resolve Paths {#add-static-routes-and-resolve-paths}
-
-Both models expose the same route and lookup API. Add
-@:apiSymbol(val:scalive.StaticAssets.routes)`StaticAssets.routes`@:@ to the application routes:
-
-```scala unverified
-val routes = liveRoutes ++ assets.routes
-```
-
-The routes serve `GET` and `HEAD` below the configured mount path, and query
-strings do not affect lookup. In an ordinary versioned tree, `path` resolves a
-tree-relative name below the asset-set version namespace. With a deployment
-manifest, it resolves a logical alias to its manifest-defined final path.
-@:apiSymbol(class:scalive.StaticAssetCache)`StaticAssetCache`@:@ exposes the `immutable` and `revalidating` header
-policies; replace it through `config.copy(cache = ...)` when the application
-requires different headers.
-
-Use @:apiSymbol(def:scalive.StaticAssets.pathOption)`pathOption`@:@ when an optional asset may be absent.
-@:apiSymbol(def:scalive.StaticAssets.path)`path`@:@ and
-@:apiSymbol(def:scalive.StaticAssets.entry)`entry`@:@ throw for a name outside the loaded asset description. The
-entry's `cachePolicy` describes its ordinary versioned path or manifest-defined
-final path, not an optional revalidating original.
-
-## Render Tracked Tags {#render-tracked-tags}
-
-Pass @:apiSymbol(class:scalive.StaticAssets)`StaticAssets`@:@ to the root layout and render bundle tags in `<head>`:
-
-```scala unverified
-headTag(
-  metaTag(charset := "utf-8"),
-  assets.trackedStylesheet("app.css"),
-  assets.trackedScript("app.js", defer := true, typ := "text/javascript")
-)
-```
-
-The tracked helpers @:apiSymbol(def:scalive.StaticAssets.trackedStylesheet)`StaticAssets.trackedStylesheet`@:@ and
-@:apiSymbol(def:scalive.StaticAssets.trackedScript)`StaticAssets.trackedScript`@:@ use the ordinary versioned or
-manifest-defined final URL and add `phx-track-static`. The untracked
-@:apiSymbol(def:scalive.StaticAssets.stylesheet)`stylesheet`@:@ and
-@:apiSymbol(def:scalive.StaticAssets.script)`script`@:@ helpers still use
-those URLs but omit that Phoenix marker. Keep the top-level script and
-stylesheet selection explicit in the root layout; inventory entries do not
-automatically become tags. Use tracked helpers for application bundles whose
-change should be visible to the LiveView client.
-
-Connected capabilities expose
-@:apiSymbol(def:scalive.ConnectedMetadata.staticChanged)`staticChanged`@:@ for
-reacting to that tracking result, commonly by replacing stale connected state
-or initiating a full reload. No connected metadata exists during disconnected
-rendering. On a routed root socket join, it is `true` when the client's
-non-empty list of tracked URLs differs from the server-rendered list; query
-strings, fragments, and URL origins are ignored during comparison. Missing,
-malformed, or empty client tracking metadata yields `false`, and the result
-remains stable for that socket lifecycle. Therefore use it as a
-deployment-change hint, not proof that assets loaded successfully or as a
-security signal.
-
-The complete root layout and startup wiring are available in the
-[quick start](../learn/quick-start.md#add-routes-and-layout).
-
-## Read Connect Metadata {#read-connect-metadata}
-
-Add small browser-derived values to the `params` object when mount needs them:
-
-```js
-const params = {
-  ...(csrfToken ? { _csrf_token: csrfToken } : {}),
-  locale: document.documentElement.lang
-}
-```
-
-Connected capabilities implement
-@:apiSymbol(trait:scalive.ConnectedMetadata)`ConnectedMetadata`@:@ and expose
-@:apiSymbol(def:scalive.ConnectedMetadata.connectParams)`connectParams`@:@ as
-`Map[String, zio.json.ast.Json]`. Match the phase, then decode and validate the
-expected shape:
-
-```scala unverified
-val locale = ctx.connection match
-  case Connection.Connected(capabilities) =>
-    capabilities.connectParams.get("locale").collect {
-      case Json.Str(value) => value
-    }
-  case Connection.Disconnected => None
-```
-
-The map is empty during disconnected HTTP rendering and contains all browser
-join parameters as untrusted JSON during the connected lifecycle. Decode only
-application-owned keys and use the signed session or server-side state for
-identity, authorization, and other security decisions. Typed server-derived
-connect info such as peer, headers, or user agent remains partial. Do not set or
-depend on Phoenix's internal keys such as `_mounts` and `_track_static`; their
-exact values and reconnect behavior are protocol metadata, not an application
-recovery contract.
-
 ## Related Tasks {#related-tasks}
 
-- Place bundle tags in the document shell with [Layouts, live sessions, and mount aspects](layouts-sessions-and-mount-aspects.md#prerequisites).
+- Place bundle tags in the document shell with [Layouts](layouts.md#install-root-and-ordinary-layouts).
 - Load the optional confirmation runtime with [Guard unsaved changes](navigation-guards.md#prerequisites).
+- Cache static assets behind a CDN or edge with [Deployment](deployment.md#cache-static-assets).
 - Diagnose a page that renders but never connects in [Troubleshooting](troubleshooting.md#diagnose-missing-assets).
 - Verify the real client connection with [Testing LiveViews](testing.md#test-in-a-browser).

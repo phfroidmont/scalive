@@ -38,7 +38,7 @@ mount, and leaving releases once even when the transport subsequently closes.
 initializers run before route initializers, in declaration order at each level.
 They still own resources per connected root lifecycle, not per named session,
 application session, or shared WebSocket. See the
-[initializer contract](../guides/async-work-and-subscriptions.md#route-and-session-resources)
+[initializer contract](../guides/connected-resources.md#route-and-session-resources)
 for failures, context projection, and remount behavior.
 
-Related guidance: [acquire other connected resources](../guides/async-work-and-subscriptions.md#connected-resources).
+Related guidance: [acquire other connected resources](../guides/connected-resources.md#connected-resources).

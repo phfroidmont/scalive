@@ -16,4 +16,4 @@ owning LiveView; it is not application state or a global subscription name.
 
 @:example(subscription-clock)
 
-Related guidance: [own long-lived streams with subscriptions](../guides/async-work-and-subscriptions.md#own-long-lived-streams-with-subscriptions).
+Related guidance: [own long-lived streams with subscriptions](../guides/subscriptions.md#own-long-lived-streams-with-subscriptions).

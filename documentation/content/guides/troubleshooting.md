@@ -1,7 +1,7 @@
 {%
 title = "Troubleshooting"
 description = "Diagnose Scalive startup, assets, sockets, CSRF failures, and reconnect behavior without hiding current limitations."
-order = 61
+order = 62
 section = guides
 group = "Testing and troubleshooting"
 %}

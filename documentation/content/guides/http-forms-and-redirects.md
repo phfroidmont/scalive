@@ -1,7 +1,7 @@
 {%
 title = "Ordinary HTTP forms and redirects"
 description = "Render checked GET and POST actions, decode bounded CSRF-protected bodies, hand Live validation back to HTTP, and redirect flash into Live routes."
-order = 12
+order = 16
 section = guides
 group = "Interfaces and input"
 %}
@@ -215,4 +215,4 @@ low-level decoder details.
 - Use [Authentication and sessions](authentication.md) for a complete login, cookie, protected mount, and logout workflow.
 - Return to [Typed forms and validation](typed-forms-and-validation.md#continue-through-input) to define reusable schemas and Live feedback.
 - Use [Lifecycle feedback and page state](flash-title-and-lifecycle-ux.md) for flash behavior during Live navigation.
-- Continue to [Testing](testing.md#query-forms-semantically) to cover CSRF, body bounds, validation mapping, trigger-action, cookies, and redirects.
+- Continue to [Testing](testing.md#submit-ordinary-forms) to cover CSRF, body bounds, validation mapping, trigger-action, cookies, and redirects.

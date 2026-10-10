@@ -201,6 +201,78 @@ Verification: `mill __.test`, `mill documentation.check`, and
 `npm run test:xray` pass. `./scripts/e2e-run-upstream.sh` was not run, because
 no runtime behavior changed.
 
+### Phase 3 (2026-10-10): finding 15, page splits, and finding 16
+
+API decision (finding 16): layouts are declared only by implementing the
+`LiveLayout` and `LiveRootLayout` traits.
+
+- Removed `LiveLayout.apply`, `LiveRootLayout.apply`, and
+  `LiveRootLayout.dynamic`. Their polymorphic function literals and explicit
+  `[A, Ctx]` arguments were the hardest syntax in the API.
+- Renamed `LiveRootLayout.render` to `view`, so both traits have one
+  `view[Msg]` method.
+- `LiveRootLayout.key` now defaults to the class name. Routes that share a root
+  layout class share the document, which matches Phoenix comparing root layout
+  modules. Override `key` when one class renders incompatible documents, as the
+  per-language example does. The quick start no longer declares a key, and
+  explains the `[Any, Any]` and `[Msg]` type parameters instead.
+- Added Scaladoc to both traits and to `key`.
+- About 40 call sites changed, mostly tests. `rootSliceApp` now uses one
+  root-layout class with a key per body ID.
+
+Pages split (recommended information architecture):
+
+| Old page | New pages |
+| --- | --- |
+| Typed forms and validation | Typed forms and validation (define, model, change, submit, render, reset, then variants); Form controls; Form feedback and recovery; Repeated form rows; Saving forms |
+| Layouts, live sessions, and mount aspects | Layouts; Live sessions and mount aspects |
+| Asynchronous work, subscriptions, and connected resources | Asynchronous work; Subscriptions; Connected resources |
+| Testing LiveViews | Testing LiveViews (connected first, then forms, routed apps, navigation, disconnected, browser); Connected test reference |
+
+New URLs: `/guides/form-controls`, `/guides/form-feedback-and-recovery`,
+`/guides/repeated-form-rows`, `/guides/saving-forms`, `/guides/layouts`,
+`/guides/live-sessions-and-mount-aspects` (was
+`/guides/layouts-sessions-and-mount-aspects`), `/guides/async-work` (was
+`/guides/async-work-and-subscriptions`), `/guides/subscriptions`,
+`/guides/connected-resources`, and `/guides/connected-test-reference`. The
+README links none of them.
+
+Restructured in place (finding 15): lifecycle hooks (decision table, then
+static hooks; guards, raw events, and after-render under "Advanced topics"),
+authentication (log in → session → protect pages → revalidate → log out →
+shared service, then admission, fanout, and checklist; "log out" replaces
+"reset" outside code names and the lab's UI label), HTML and event bindings,
+and client setup (packaged clients → `LiveSocket` → application assets →
+custom bundle → connect metadata → asset models and manifests last).
+
+The HTML guide also covers finding 12: a binding table with one row per family
+and a compiled search page that uses a debounced `keyUp`, a filtered window key
+binding, `clickAway`, and `viewportBottom`. The blur-debounce example is gone.
+Viewport bindings, `connection.onConnect` / `onDisconnect`, `throttle`, and
+`debounceOnBlur` are described from the Phoenix LiveView 1.2.10 client source;
+Scalive has no end-to-end test for them yet.
+
+New compiled fixtures in `documentation/fixtures/guides/src`: `layouts`,
+`sessions`, `hooks`, `auth`, `assets`, and `bindings`, with tests for layouts
+and sessions (including a followed live navigation, used by the testing guide).
+New regions in the site examples cover the typed submitter, the
+repeated-contacts row operations, and the per-language root layout. Every page
+touched in this phase is free of `unverified` blocks except the Mill `bundle`
+task in client setup. `rg '```scala unverified' documentation/content` now
+reports 35 blocks.
+
+Left for later phases:
+
+- Mount-aspect `from` still duplicates `apply` and `context`.
+- Finding 17 (example catalog), including `examples/text-upload.md`.
+- Sentence-case headings (finding 19): the new pages keep Title Case to match
+  the rest of the site.
+
+Verification: `mill __.test`, `mill documentation.check`, and
+`npm run test:xray` pass. `./scripts/e2e-run-upstream.sh` was not run: the
+runtime change is the `render` to `view` rename, and the e2e app's routes all
+share one root layout, so the new default key changes no navigation.
+
 ## How this was verified
 
 - I read all 56 authored pages and every embedded example source they

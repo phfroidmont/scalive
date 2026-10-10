@@ -350,12 +350,17 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
           "Interfaces and input" -> Vector(
             "/guides/html-dsl-and-event-bindings",
             "/guides/typed-forms-and-validation",
+            "/guides/form-controls",
+            "/guides/form-feedback-and-recovery",
+            "/guides/repeated-form-rows",
+            "/guides/saving-forms",
             "/guides/http-forms-and-redirects",
             "/guides/uploads-and-consumption"
           ),
           "Routing and application structure" -> Vector(
             "/guides/routes-and-navigation",
-            "/guides/layouts-sessions-and-mount-aspects",
+            "/guides/layouts",
+            "/guides/live-sessions-and-mount-aspects",
             "/guides/services-and-zlayer-injection",
             "/guides/authentication"
           ),
@@ -365,7 +370,9 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
             "/guides/streams-and-collection-updates"
           ),
           "Async and lifecycle" -> Vector(
-            "/guides/async-work-and-subscriptions",
+            "/guides/async-work",
+            "/guides/subscriptions",
+            "/guides/connected-resources",
             "/guides/lifecycle-hooks",
             "/guides/flash-title-and-lifecycle-ux"
           ),
@@ -375,6 +382,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
           ),
           "Testing and troubleshooting" -> Vector(
             "/guides/testing",
+            "/guides/connected-test-reference",
             "/guides/troubleshooting"
           ),
           "Assets and operations" -> Vector(

@@ -16,4 +16,4 @@ pattern wraps database queries, service calls, or other finite `Task` values.
 
 @:example(async-report)
 
-Related guidance: [model finite background work explicitly](../guides/async-work-and-subscriptions.md#model-finite-work-with-asyncvalue).
+Related guidance: [model finite background work explicitly](../guides/async-work.md#model-finite-work-with-asyncvalue).

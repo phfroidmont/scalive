@@ -32,4 +32,4 @@ ordinary edits from edits made while a submission is in flight.
 
 @:example(form-save-workflow)
 
-Related guidance: [coordinate dirty state and saving](../guides/typed-forms-and-validation.md#coordinate-form-workflow).
+Related guidance: [coordinate dirty state and saving](../guides/saving-forms.md#coordinate-form-workflow).

@@ -110,10 +110,16 @@ Create `app/src/quickstart/RootLayout.scala`:
 
 @:sourceRegion(documentation/fixtures/quick-start/src/quickstart/RootLayout.scala, quick-start-root-layout)
 
-The root layout renders the complete document. Its `<head>` gives Scalive a
-place for the CSRF meta element and loads Phoenix first, Phoenix LiveView second,
-and the application bootstrap last. Keep this order because `app.js` uses both
-client globals.
+The root layout renders the complete document around every page. `content` is
+the page, and `pageTitle` is its title. The `[Any, Any]` type parameters say
+that this layout reads no route parameters and no mount context, and `[Msg]`
+lets it wrap pages with any message type.
+
+Its `<head>` gives Scalive a place for the CSRF meta element and loads Phoenix
+first, Phoenix LiveView second, and the application bootstrap last. Keep this
+order because `app.js` uses both client globals. The
+[layouts guide](../guides/layouts.md#install-root-and-ordinary-layouts) covers
+shared navigation and per-route layouts.
 
 ## Start The Server {#start-the-server}
 

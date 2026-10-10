@@ -1,7 +1,7 @@
 {%
 title = "Lifecycle feedback and page state"
 description = "Communicate lifecycle state through flash, document titles, connection feedback, and post-render observation."
-order = 42
+order = 44
 section = guides
 group = "Async and lifecycle"
 %}
@@ -98,6 +98,6 @@ For the full lifecycle sequence and reconnect model, read
 
 ## Related Tasks {#related-tasks}
 
-- Install the title-owning document shell with [Layouts, live sessions, and mount aspects](layouts-sessions-and-mount-aspects.md#install-root-and-ordinary-layouts).
-- Deliver delayed UI state through [Asynchronous work, subscriptions, and connected resources](async-work-and-subscriptions.md#prerequisites).
+- Install the title-owning document shell with [Layouts](layouts.md#install-root-and-ordinary-layouts).
+- Deliver delayed UI state through [Asynchronous work](async-work.md#prerequisites).
 - Verify title and reconnect behavior with [Testing LiveViews](testing.md#test-in-a-browser).

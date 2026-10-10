@@ -129,7 +129,8 @@ connected.subscriptions.start(Changes, SubscriptionDelivery.Lossless)(
 )
 ```
 
-The [async guide](../guides/async-work-and-subscriptions.md) covers
-cancellation, replacing a stream, and work owned by components. Next,
+The [asynchronous work](../guides/async-work.md) and
+[subscriptions](../guides/subscriptions.md) guides cover cancellation,
+replacing a stream, and work owned by components. Next,
 [URL state and navigation](url-state-and-navigation.md) keeps page state in the
 address bar.

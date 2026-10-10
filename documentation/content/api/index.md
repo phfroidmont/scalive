@@ -51,7 +51,7 @@ for bounded CSRF-validated POST bodies.
 Lifecycle capabilities include
 @:apiSymbol(trait:scalive.ConnectedResources)`ConnectedResources`@:@ for
 non-message acquisition and finalization during connected mount. The
-[lifecycle-owned work guide](../guides/async-work-and-subscriptions.md#choose-the-resource-by-shape)
+[lifecycle-owned work guide](../guides/async-work.md#choose-the-resource-by-shape)
 compares it with managed async tasks and subscriptions.
 
 Route-wide operational capabilities include

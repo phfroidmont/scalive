@@ -65,13 +65,15 @@ final class AuthHttpRoutes(security: LiveSecurity):
     AuthLabRoutes.ResetRoute   -> handler((request: Request) => reset(request))
   )
 
+  // docs:start authentication-login-decoder
   private val loginDecoder =
     HttpFormDecoder.urlEncodedValue(LoginForm.Definition, FormMaxBytes, security.csrf)
+  // docs:end authentication-login-decoder
 
   private val resetDecoder =
     HttpFormDecoder.urlEncoded(FormCodec.formData, FormMaxBytes, security.csrf)
 
-  // docs:start authentication-http-actions
+  // docs:start authentication-login-action
   private def login(request: Request): URIO[AuthService, Response] =
     loginDecoder.respond(
       request,
@@ -88,7 +90,9 @@ final class AuthHttpRoutes(security: LiveSecurity):
         case LoginDecision.RateLimited => rateLimitedResponse
       }
     }
+  // docs:end authentication-login-action
 
+  // docs:start authentication-logout-action
   private def reset(
     request: Request
   ): URIO[AuthService & LiveConnections[PublicSessionId], Response] =
@@ -112,7 +116,7 @@ final class AuthHttpRoutes(security: LiveSecurity):
           )
       )
     }
-  // docs:end authentication-http-actions
+  // docs:end authentication-logout-action
 
   private def visitor(request: Request): VisitorToken =
     VisitorToken(request.cookie(CsrfProtection.CookieName).fold("missing")(_.content))

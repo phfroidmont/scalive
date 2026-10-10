@@ -1,7 +1,7 @@
 {%
 title = "Lifecycle hooks"
-description = "Guard complete connected turns or intercept individual root and component lifecycle stages with ordered policy and lifecycle-owned cleanup."
-order = 41
+description = "Intercept root and component lifecycle stages with ordered hooks, guard complete connected turns, and keep cleanup with the lifecycle."
+order = 43
 section = guides
 group = "Async and lifecycle"
 %}
@@ -11,26 +11,78 @@ group = "Async and lifecycle"
 Start with a `LiveView` or `LiveComponent` whose ordinary messages already
 reach `handleMessage` and update the rendered model.
 
-## Use Hooks For Cross-Cutting Lifecycle Policy {#choose-hooks}
-
-Use a hook when application behavior must wrap a lifecycle stage across several
-messages: authorization, protocol interception, or observation that requires
-stage-specific application context. Keep normal domain transitions in
-`handleMessage`, route changes in `handleParams`, and one-off browser payloads in
-typed event bindings or `onBrowserEvent`. A hook should not become a second,
-hidden message handler.
-
-Use @:apiSymbol(trait:scalive.LifecycleObserver)`LifecycleObserver`@:@ instead
-for route-wide operational events and metrics. An observer receives structured
-classifications, cannot alter an operation, and is isolated from lifecycle
-failure. [Lifecycle observability](lifecycle-observability.md#choose-the-observation-boundary)
-defines that boundary.
-
 In the examples, lifecycle callbacks return `Task[A]`, and `ZIO.succeed(value)`
-creates an effect that succeeds with `value`. Operators
-such as `.as(value)` run an effect and replace its successful result.
+creates an effect that succeeds with `value`. Operators such as `.as(value)` run
+an effect and replace its successful result.
 
-Scalive provides these stages:
+## Choose A Hook, Guard, Or Observer {#choose-hooks}
+
+Pick the tool that matches what you want to do:
+
+| You want to | Use | Declare it on |
+| --- | --- | --- |
+| Change the model in response to one message | `handleMessage` | The view or component |
+| Apply one policy at a lifecycle stage across many messages: authorization, protocol interception, or logging that needs the model and message | A lifecycle hook | `hooks` on the view or component, or `ctx.hooks` |
+| Check one policy before every connected application turn of a route or session, ahead of all hooks and handlers | A connected-turn guard | A route or live-session builder |
+| Record route-wide operational events and metrics without changing the lifecycle | A `LifecycleObserver` | Route assembly with `ZioHttp.routes` |
+
+Keep normal domain transitions in `handleMessage`, route changes in
+`handleParams`, and one-off browser payloads in typed event bindings or
+`onBrowserEvent`. A hook should not become a second, hidden message handler.
+
+An @:apiSymbol(trait:scalive.LifecycleObserver)`LifecycleObserver`@:@ receives
+structured classifications, cannot alter an operation, and is isolated from
+lifecycle failure. [Lifecycle observability](lifecycle-observability.md#choose-the-observation-boundary)
+defines that boundary. Connected-turn guards are a routing feature;
+[Guard every connected application turn](#connected-turn-guards) covers them
+after the hook sections.
+
+## Declare Static Root Hooks {#static-root-hooks}
+
+To run code at one lifecycle stage for every message a view receives, override
+`LiveView.hooks`. This view logs each browser message and each server message
+before its handler runs:
+
+@:sourceRegion(documentation/fixtures/guides/src/hooks/BoardLiveViews.scala, hooks-static-root)
+
+Start from `LiveHooks.empty[Msg, Model]` and chain one call per hook. Each hook
+here returns `LiveHookResult.cont(model)` so processing continues;
+[Continue, halt, and reply](#continue-halt-reply) covers the alternatives.
+Fluent calls append hooks, so hooks in the same stage run in declaration order
+and each continued model becomes the next hook's input.
+
+For a single hook, the @:apiSymbol(object:scalive.LiveHooks)`LiveHooks`@:@
+companion has one shortcut per stage, such as `LiveHooks.onEvent { ... }` or
+`LiveHooks.afterRender { ... }`. A shortcut takes its types from the declared
+`hooks` type.
+
+Static root hooks are installed before both the disconnected HTTP lifecycle and
+the connected socket lifecycle. Those lifecycles have independent models and
+hook registries; dynamic changes made during disconnected rendering do not
+carry into the socket.
+
+## Declare Static Component Hooks {#static-component-hooks}
+
+To run code at one stage for every message a component instance receives,
+override `LiveComponent.hooks` with
+@:apiSymbol(trait:scalive.ComponentLiveHooks)`ComponentLiveHooks`@:@.
+Component hooks also receive the current props:
+
+@:sourceRegion(documentation/fixtures/guides/src/hooks/CardComponent.scala, hooks-static-component)
+
+Chaining and single-stage shortcuts work as they do for root hooks. Scalive
+installs the declarations separately for every `(component class, logical id)`
+instance. The registry survives rerenders of that instance and is discarded
+when the instance is removed. Rendering the same component class later with the
+same ID creates a new instance and a new registry. Static component hooks run
+before dynamic hooks for the same component stage.
+
+## Pick A Stage {#hook-stages}
+
+Each hook runs at one stage, so pick the stage by when the hook must run. Static
+declarations add an `on` prefix to the stage name, such as `onRawEvent` for
+`rawEvent`; `afterRender` keeps its name. Dynamic hooks use
+`ctx.hooks.<stage>`.
 
 | Owner | Stage | Runs before or after |
 | --- | --- | --- |
@@ -50,43 +102,94 @@ Scalive provides these stages:
 Components do not have `params` or `info` stages. Root and component hook
 registries are separate even when the stage names match.
 
-## Guard Every Connected Application Turn {#connected-turn-guards}
+## Continue, Halt, And Reply {#continue-halt-reply}
 
-Use
+To stop a message before its handler runs, return a halt result. This typed
+event hook consumes messages the current user may not send:
+
+@:sourceRegion(documentation/fixtures/guides/src/hooks/BoardLiveViews.scala, hooks-halt-event)
+
+`canSend` is the application's rule for which messages a user may send. Typed
+`event`, `params`, `info`, and `async` hooks return `LiveHookResult`:
+
+- `cont(model)` passes that model to the next hook and then the normal callback.
+- `halt(model)` stops later hooks, skips the normal callback, and renders that model.
+
+Typed event hooks cannot reply to a JavaScript caller. Raw event hooks return
+`LiveEventHookResult` instead, whose `haltReply(model, json)` can return JSON in
+the browser event acknowledgement; see
+[Intercept raw events sparingly](#raw-event-interception).
+
+Named `browserEvent` handlers are a distinct stage: they return `Task[Model]`
+and consume a matching, successfully decoded browser event without a
+continue/halt result.
+
+A failed hook effect is different from `Halt`: failure aborts the active
+lifecycle, prevents later hooks and the normal callback, and does not provide a
+controlled model transition. Use `halt` to refuse a message, and let the effect
+fail only on errors.
+
+## Attach And Detach Dynamic Hooks {#dynamic-hooks}
+
+To install a hook for only part of a lifecycle, attach it with
+`ctx.hooks.<stage>.attach(id)` and remove it with `detach(id)`. This view audits
+messages from mount until the user stops auditing:
+
+@:sourceRegion(documentation/fixtures/guides/src/hooks/BoardLiveViews.scala, hooks-dynamic-root)
+
+Root mount, params, message, and after-render contexts expose `ctx.hooks`.
+Static hooks run first; dynamic hooks follow in successful attachment order.
+
+A component context works the same way on only that component instance, and its
+hooks receive the current props. This card refuses edits while its props are
+read-only:
+
+@:sourceRegion(documentation/fixtures/guides/src/hooks/CardComponent.scala, hooks-dynamic-component)
+
+`edits` says whether a message changes the card. Detach the hook with
+`ctx.hooks.event.detach("read-only-policy")` from a component update, message,
+or after-render context when the policy no longer applies.
+
+An ID must be unique among dynamic hooks in the same stage and owner. Attaching
+a duplicate fails with `IllegalArgumentException`. The same text may identify a
+hook in another stage or component instance because those registries are
+independent. Detaching an absent ID succeeds, and dynamic detach cannot remove a
+static hook.
+
+Dispatch uses a snapshot of one stage's registry. Attaching or detaching while
+hooks are running changes the next dispatch, not the one already in progress.
+This also means an after-render hook that detaches itself still completes its
+current invocation.
+
+## Advanced Topics {#advanced-topics}
+
+The sections below cover policy that runs outside hooks, protocol-level event
+interception, the limits of after-render hooks, and ownership of what hooks
+start.
+
+### Guard Every Connected Application Turn {#connected-turn-guards}
+
+To run one policy check before all connected application work, rather than at
+one hook stage, declare
 @:apiSymbol(def:scalive.LiveRouteMountAspectBuilder.guardConnectedTurns)`guardConnectedTurns`@:@
-at a routing boundary when policy must run before all connected application
-work, rather than at only one hook stage. Declare a route guard after the mount
-aspects that produce its context. Succeed to continue; fail through the typed
-control channel to stop the turn:
+on a route builder, after the mount aspects that produce its context. Succeed to
+continue; fail through the typed control channel to stop the turn:
 
-```scala unverified
-val accountRoute = (live / "account")
-  .withMountAspect(loadAccountAccess)
-  .guardConnectedTurns((access: AccountAccess) =>
-    access.isActive.flatMap {
-      case true  => ZIO.unit
-      case false =>
-        ZIO.fail(LiveConnectedTurnFailure.reload("account access changed"))
-    }
-  )(
-    AccountLiveView()
-  )
-```
+@:sourceRegion(documentation/fixtures/guides/src/hooks/AccountRoutes.scala, hooks-route-guard)
 
-A named session can likewise declare guards after admission:
+`loadAccountAccess` is a route mount aspect that produces `AccountAccess`, and
+`isActive` reads the current account state on every turn.
 
-```scala unverified
-val authenticated = Live
-  .session("authenticated")
-  .withAdmission(authenticatedAdmission)(_.sessionId)
-  .guardConnectedTurns((session: ConnectedSession) => session.revalidate)(
-    accountRoute
-  )
-```
+A named session declares
+@:apiSymbol(def:scalive.LiveSessionBuilder.Admitted.guardConnectedTurns)`guardConnectedTurns`@:@
+after admission. The authentication lab revalidates the signed-in user this way:
+
+@:sourceRegion(documentation/site/src/scalive/docs/auth/AuthLab.scala, authentication-protected-session)
 
 The callback returns `IO[LiveConnectedTurnFailure, Unit]`, using
 @:apiSymbol(enum:scalive.LiveConnectedTurnFailure)`LiveConnectedTurnFailure`@:@
-as its typed control channel. `ZIO.unit` means **Continue** and `ZIO.fail(...)`
+as its typed control channel. It cannot require a ZIO environment, so read
+services through its context. `ZIO.unit` means **Continue** and `ZIO.fail(...)`
 selects one of these controlled outcomes:
 
 - `LiveConnectedTurnFailure.halt`;
@@ -125,159 +228,19 @@ across Scalive's complete connected application-turn boundary. They complement
 Scalive lifecycle hooks; this is a behavioral relationship, not a claim that
 the callback APIs or every phase map one-to-one with upstream.
 
-## Declare Static Root Hooks {#static-root-hooks}
+### Intercept Raw Events Sparingly {#raw-event-interception}
 
-Override `LiveView.hooks` for hooks that always belong to the view. Fluent calls
-append hooks, so hooks in the same stage run in declaration order and each
-continued model becomes the next hook's input:
+Use a raw event hook only for policy that must act before decoding or that needs
+protocol-level metadata. This hook rejects two named JavaScript events from a
+user who cannot edit, and replies with an error the JavaScript caller can read:
 
-```scala unverified
-override def hooks: LiveHooks[Msg, Model] =
-  LiveHooks
-    .empty[Msg, Model]
-    .onEvent { (model, msg, _) =>
-      ZIO.logDebug(s"message=$msg")
-        .as(LiveHookResult.cont(model))
-    }
-    .onInfo { (model, msg, _) =>
-      ZIO.logDebug(s"server message=$msg")
-        .as(LiveHookResult.cont(model))
-    }
-```
+@:sourceRegion(documentation/fixtures/guides/src/hooks/BoardLiveViews.scala, hooks-raw-event)
 
-Static root hooks are installed before both the disconnected HTTP lifecycle and
-the connected socket lifecycle. Those lifecycles have independent models and
-hook registries; dynamic changes made during disconnected rendering do not
-carry into the socket.
-
-## Declare Static Component Hooks {#static-component-hooks}
-
-Override `LiveComponent.hooks` with `ComponentLiveHooks`. Component hooks also
-receive the current props and are installed separately for every `(component
-class, logical id)` instance:
-
-```scala unverified
-override def hooks: ComponentLiveHooks[Props, Msg, Model] =
-  ComponentLiveHooks
-    .empty[Props, Msg, Model]
-    .onEvent { (props, model, msg, _) =>
-      authorize(props.user, msg)
-        .as(LiveHookResult.cont(model))
-    }
-    .afterRender { (props, model, _) =>
-      recordComponentRender(props.id, model)
-    }
-```
-
-Static component hooks run before dynamic hooks for the same component stage.
-The registry survives rerenders of that instance and is discarded when the
-instance is removed. Rendering the same component class later with the same ID
-creates a new instance and a new registry.
-
-## Continue, Halt, And Reply {#continue-halt-reply}
-
-Typed `event`, `params`, `info`, and `async` hooks use `LiveHookResult`:
-
-- `cont(model)` passes that model to the next hook and then the normal callback.
-- `halt(model)` stops later hooks, skips the normal callback, and renders that model.
-- Typed event hooks cannot reply. Raw event hooks instead use
-  `LiveEventHookResult`, whose `haltReply(model, json)` can return JSON in the
-  browser event acknowledgement.
-
-For example, a typed root event hook can consume a forbidden action before the
-normal handler, but cannot reply to a JavaScript caller:
-
-```scala unverified
-override def hooks: LiveHooks[Msg, Model] =
-  LiveHooks.empty[Msg, Model].onEvent { (model, msg, _) =>
-    if allowed(model.user, msg) then
-      ZIO.succeed(LiveHookResult.cont(model))
-    else
-      ZIO.succeed(LiveHookResult.halt(model))
-  }
-```
-
-Named `browserEvent` handlers are a distinct stage: they return `Task[Model]`
-and consume a matching, successfully decoded browser event without a
-continue/halt result. A failed hook effect is different from `Halt`: failure
-aborts the active lifecycle, prevents later hooks and the normal callback, and
-does not provide a controlled model transition.
-
-## Attach And Detach Dynamic Hooks {#dynamic-hooks}
-
-Use `ctx.hooks.<stage>.attach(id)` when a hook is conditional for the current
-lifecycle. Static hooks run first; dynamic hooks follow in successful attachment
-order:
-
-```scala unverified
-private val AuditHookId = "audit-events"
-
-def mount(ctx: MountContext): Task[Model] =
-  ctx.hooks.event
-    .attach(AuditHookId) { (model, msg, _) =>
-      audit(msg).as(LiveHookResult.cont(model))
-    }
-    .as(Model.initial)
-
-def handleMessage(model: Model, ctx: MessageContext): Msg => Task[Model] =
-  case Msg.StopAuditing =>
-    ctx.hooks.event.detach(AuditHookId).as(model)
-  case msg =>
-    update(model, msg)
-```
-
-An ID must be unique among dynamic hooks in the same stage and owner. Attaching
-a duplicate fails with `IllegalArgumentException`. The same text may identify a
-hook in another stage or component instance because those registries are
-independent. Detaching an absent ID succeeds, and dynamic detach cannot remove a
-static hook.
-
-Dispatch uses a snapshot of one stage's registry. Attaching or detaching while
-hooks are running changes the next dispatch, not the one already in progress.
-This also means an after-render hook that detaches itself still completes its
-current invocation.
-
-Inside a component lifecycle context, the same shape operates on only that
-component instance and includes current props:
-
-```scala unverified
-def mount(props: Props, ctx: MountContext): Task[Model] =
-  ctx.hooks.event
-    .attach("read-only-policy") { (currentProps, model, msg, _) =>
-      if currentProps.readOnly && mutatesState(msg) then
-        ZIO.succeed(LiveHookResult.halt(model))
-      else
-        ZIO.succeed(LiveHookResult.cont(model))
-    }
-    .as(Model.initial(props))
-```
-
-Detach it through `ctx.hooks.event.detach("read-only-policy")` from a component
-update, message, or after-render context when the policy no longer applies.
-
-## Advanced: Intercept Raw Events Sparingly {#raw-event-interception}
-
-`onRawEvent` and `ctx.hooks.rawEvent.attach` receive `LiveEvent` before ordinary
-typed handling. Its `kind`, `bindingId`, unmodified JSON `value`, normalized
-string `params`, optional component `cid`, and optional JSON `meta` expose the
-wire envelope:
-
-```scala unverified
-import zio.json.ast.Json
-
-override def hooks: LiveHooks[Msg, Model] =
-  LiveHooks.empty[Msg, Model].onRawEvent { (model, event, _) =>
-    if blockedBindingIds.contains(event.bindingId) then
-      ZIO.succeed(
-        LiveEventHookResult.haltReply(
-          model,
-          Json.Obj("error" -> Json.Str("forbidden"))
-        )
-      )
-    else
-      ZIO.succeed(LiveEventHookResult.cont(model))
-  }
-```
+`Json` is `zio.json.ast.Json`. `onRawEvent` and `ctx.hooks.rawEvent.attach`
+receive a `LiveEvent` before ordinary typed handling. Its `kind`, `bindingId`,
+unmodified JSON `value`, normalized string `params`, optional component `cid`,
+and optional JSON `meta` expose the wire envelope. For an event pushed from
+JavaScript, `bindingId` is the event name.
 
 A root raw hook sees root- and component-targeted envelopes, so inspect
 `event.cid` when target ownership matters. If it continues, Scalive performs
@@ -286,41 +249,41 @@ before its typed event hooks. Halting at the root prevents all later root and
 component event processing.
 
 Prefer `onEvent` once a rendered binding has produced a typed `Msg`. Prefer the
-distinct `onBrowserEvent(BrowserToServerEvent[A])` stage for a named JavaScript
-event because it matches the event name, decodes with `JsonDecoder[A]`, consumes
-matching payloads, and rejects malformed matching payloads. Both roots and
-components provide this stage. Raw interception is for policy that must act
-before decoding or for protocol-level metadata.
+distinct `onBrowserEvent(BrowserToServerEvent[A])` stage for a single named
+JavaScript event because it matches the event name, decodes with
+`JsonDecoder[A]`, consumes matching payloads, and rejects malformed matching
+payloads. Both roots and components provide this stage.
 
-## Keep After-Render Hooks Observational {#after-render-limits}
+### Keep After-Render Hooks Observational {#after-render-limits}
+
+To act once a render completes, for example to push the rendered state to the
+browser, add an `afterRender` hook. The root `AfterRenderContext` exposes a
+phase-aware connection and dynamic root hooks. The connected capabilities
+expose `client`; obtaining it by matching the connection makes disconnected use
+impossible:
+
+@:sourceRegion(documentation/fixtures/guides/src/feedback/DocumentLiveView.scala, feedback-after-render)
+
+`RenderedEvent` is a `ServerToBrowserEvent[Rendered]`. The example uses the
+single-stage `LiveHooks.afterRender` shortcut from
+[Declare static root hooks](#static-root-hooks).
 
 After-render hooks run in registration order, but every hook receives the same
 rendered model; they return `Task[Unit]`, cannot thread a replacement model,
 cannot halt, and cannot change the tree already rendered. A failure prevents
 later after-render hooks and aborts the render.
 
-Root `AfterRenderContext` exposes a phase-aware connection and dynamic root
-hooks. The connected capabilities expose `client`; obtaining it by matching the
-connection makes disconnected use impossible:
-
-@:sourceRegion(documentation/fixtures/guides/src/feedback/DocumentLiveView.scala, feedback-after-render)
-
-`RenderedEvent` is a `ServerToBrowserEvent[Rendered]`. `LiveHooks.afterRender`
-starts the declarations with one stage; its types come from the declared
-`hooks` type. To declare several stages, start from `LiveHooks.empty[Msg, Model]`
-and chain them, as in [Declare static root hooks](#static-root-hooks).
-
 Component `ComponentAfterRenderContext` is intentionally narrower: it exposes
 lifecycle metadata and that instance's dynamic hooks, but no client operations,
 navigation, output emission, async work, uploads, or streams. Move state changes
 and resource starts into mount, update, or normal message handling.
 
-## Keep Ownership And Cleanup Local {#ownership-cleanup}
+### Keep Ownership And Cleanup Local {#ownership-cleanup}
 
-Dynamic root hooks live until detached or until their disconnected or connected
-root lifecycle ends. Dynamic component hooks live until detached or until that
-exact component instance is removed. There is no separate hook teardown
-callback: lifecycle and component removal discard their registries.
+Hooks need no teardown callback: lifecycle end and component removal discard
+their registries. Dynamic root hooks live until detached or until their
+disconnected or connected root lifecycle ends. Dynamic component hooks live
+until detached or until that exact component instance is removed.
 
 Hook-managed external resources still need an owner. Prefer `ctx.async`,
 `ctx.subscriptions`, connected resources, uploads, and streams where available
@@ -334,6 +297,7 @@ hook when its policy no longer applies.
 ## Related Tasks {#related-tasks}
 
 - Apply guards to session revocation with [Authentication and sessions](authentication.md#revalidate-connected-turns).
+- Record lifecycle events and metrics with [Lifecycle observability](lifecycle-observability.md).
 - Use [Browser commands, events, and hooks](browser-integration.md) for JavaScript hooks and typed browser payloads.
-- Own tasks, streams, and other acquired resources with [Asynchronous work, subscriptions, and connected resources](async-work-and-subscriptions.md).
+- Own tasks, streams, and other acquired resources with [Asynchronous work](async-work.md), [Subscriptions](subscriptions.md), and [Connected resources](connected-resources.md).
 - Handle component identity, updates, and outputs with [Stateful components and communication](components-and-communication.md).

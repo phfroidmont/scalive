@@ -1,7 +1,7 @@
 {%
 title = "Services and dependency injection"
 description = "Pass application services to LiveViews through their constructors, register service-backed routes with from, and provide the services when the server starts."
-order = 22
+order = 23
 section = guides
 group = "Routing and application structure"
 %}
@@ -163,5 +163,5 @@ Try the embedded preview, or open the real service-backed route from the
 ## Related Tasks {#related-tasks}
 
 - Share an authentication store between HTTP and Live routes in [Authentication and sessions](authentication.md#provide-one-shared-authentication-service).
-- Move finite, streaming, or acquired work under lifecycle ownership with [Asynchronous work, subscriptions, and connected resources](async-work-and-subscriptions.md#prerequisites).
+- Move finite, streaming, or acquired work under lifecycle ownership with [Asynchronous work](async-work.md#prerequisites).
 - Test LiveViews at each boundary in [Testing LiveViews](testing.md#prerequisites).

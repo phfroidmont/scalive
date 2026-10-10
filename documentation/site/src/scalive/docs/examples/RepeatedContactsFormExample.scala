@@ -17,6 +17,7 @@ final class RepeatedContactsFormExample
       ZIO.succeed(model.copy(form = event.form, saved = None))
     case Msg.Save(event) =>
       ZIO.succeed(model.copy(form = event.form, saved = event.valueOption))
+    // docs:start repeated-contacts-add-remove
     case Msg.Add =>
       if model.form.rows(Contacts.Rows).size >= MaximumContacts then ZIO.succeed(model)
       else
@@ -38,6 +39,8 @@ final class RepeatedContactsFormExample
         if rows.exists(_.key == key) then model.form.removed(Contacts.Rows, key)
         else model.form
       ZIO.succeed(model.copy(form = updated, saved = None))
+    // docs:end repeated-contacts-add-remove
+    // docs:start repeated-contacts-move-up
     case Msg.MoveUp(key) =>
       val rows  = model.form.rows(Contacts.Rows)
       val index = rows.indexWhere(_.key == key)
@@ -45,6 +48,7 @@ final class RepeatedContactsFormExample
         if index > 0 then model.form.movedBefore(Contacts.Rows, key, rows(index - 1).key)
         else model.form
       ZIO.succeed(model.copy(form = moved, saved = None))
+    // docs:end repeated-contacts-move-up
     case Msg.MoveDown(key) =>
       val rows  = model.form.rows(Contacts.Rows)
       val index = rows.indexWhere(_.key == key)
@@ -103,6 +107,7 @@ final class RepeatedContactsFormExample
                 dataAttr("contact-error") := "email"
               )
             ),
+            // docs:start repeated-contacts-row-actions
             div(
               cls := "docs-contact-row-actions",
               button(
@@ -129,6 +134,7 @@ final class RepeatedContactsFormExample
                 "Remove"
               )
             )
+            // docs:end repeated-contacts-row-actions
           )
         },
         div(
@@ -182,6 +188,7 @@ object RepeatedContactsFormExample:
     val Rows       = Group.product[Contact]((Name, Email))
     val Definition = Root.product[ContactBook](Rows)
 
+    // docs:start repeated-contacts-keys
     def key(number: Long): Group.Key =
       keyFromValue(s"contact-$number")
 
@@ -191,6 +198,7 @@ object RepeatedContactsFormExample:
           error => throw new IllegalArgumentException(error.code),
           identity
         )
+    // docs:end repeated-contacts-keys
 
   private val messages = Map(
     "contact.name.required"  -> "Name is required.",
@@ -209,6 +217,7 @@ object RepeatedContactsFormExample:
     nextKey: Long,
     saved: Option[ContactBook] = None)
 
+  // docs:start repeated-contacts-initial
   object Model:
     def initial: Model =
       Model(
@@ -226,6 +235,7 @@ object RepeatedContactsFormExample:
         ),
         nextKey = 3
       )
+  // docs:end repeated-contacts-initial
 
   enum Msg:
     case Validate(event: Contacts.Definition.Event)

@@ -11,4 +11,4 @@ row, submit valid contacts, then reset to restore the original keyed rows.
 
 @:example(repeated-contacts-form)
 
-Related guidance: [model repeated rows](../guides/typed-forms-and-validation.md#model-repeated-rows).
+Related guidance: [model repeated rows](../guides/repeated-form-rows.md#model-repeated-rows).

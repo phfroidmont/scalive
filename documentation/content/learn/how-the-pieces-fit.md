@@ -102,7 +102,9 @@ Keep these boundaries as the application expands:
 
 - Add route values before wiring new LiveViews into the router.
 - Use a @:apiSymbol(trait:scalive.LiveLayout)`LiveLayout`@:@ for shared markup
-  inside the document; reserve `LiveRootLayout` for the complete shell.
+  inside the document; reserve `LiveRootLayout` for the complete shell. The
+  [layouts guide](../guides/layouts.md#wrap-pages-in-shared-navigation) adds a
+  navigation bar.
 - Build ZIO layers at startup for services required by routed LiveViews.
 - Add browser packages and hooks only for browser-side behavior.
 - Keep durable state in services or storage rather than a LiveView model.

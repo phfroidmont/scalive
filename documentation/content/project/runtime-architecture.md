@@ -5,7 +5,7 @@ order = 3
 section = project
 %}
 
-## Runtime At A Glance {#runtime-at-a-glance}
+## Runtime at a glance {#runtime-at-a-glance}
 
 Scalive is a server-owned UI runtime. A `LiveView[Msg, Model]` keeps its model in
 the JVM, handles typed inputs, renders a structured HTML tree, and sends
@@ -42,7 +42,7 @@ For the application-facing programming model, start with
 the runtime structures that make the model work. Internal names describe the
 current implementation, not additional supported application APIs.
 
-## Runtime Layers {#runtime-layers}
+## Runtime layers {#runtime-layers}
 
 The runtime separates application semantics, lifecycle ownership, rendering,
 wire protocol, and transport. That prevents Phoenix frame shapes or ZIO HTTP
@@ -71,7 +71,7 @@ connection layer, Phoenix projection, a serialized physical writer, and finally
 the browser. The kernel does not know whether a delta will be encoded as a
 Phoenix payload, and the render engine does not know about WebSockets.
 
-## Two Independent Lifetimes {#two-independent-lifetimes}
+## Two independent lifetimes {#two-independent-lifetimes}
 
 A routed page executes once to produce useful HTML and again when the browser
 establishes a live connection. These executions may use the same route and
@@ -79,7 +79,7 @@ session inputs, but they do not share a model, render program, or resource scope
 
 @:diagram(runtime-ownership)
 
-### Disconnected HTTP Render {#disconnected-http-render}
+### Disconnected HTTP render {#disconnected-http-render}
 
 `Live.router(...)` produces a `LiveApplication`: a declarative set of typed
 routes, live sessions, layouts, mount aspects, and a socket path.
@@ -101,7 +101,7 @@ prepared-resource scopes, and the temporary model is no longer retained. The
 rendered DOM, CSRF cookie and metadata, and signed bootstrap data remain with the
 browser.
 
-### Connected Bootstrap {#connected-bootstrap}
+### Connected bootstrap {#connected-bootstrap}
 
 The browser's Phoenix `LiveSocket` opens the configured WebSocket endpoint and
 sends a join. The socket route owns one physical writer, one
@@ -124,7 +124,7 @@ State that must survive this boundary or a later reconnect belongs in signed
 inputs, an injected service, or durable storage. A connected model itself is
 in-memory and scoped to one lifecycle.
 
-## One Connected Lifecycle {#connected-lifecycle}
+## One connected lifecycle {#connected-lifecycle}
 
 A physical WebSocket may carry a root LiveView and multiple nested LiveViews.
 The `ConnectionSupervisor` owns that topic topology and the scopes of all joined
@@ -173,7 +173,7 @@ This is the same turn model whether the original input came from the browser or
 from server-side work. The initiator changes, but state ownership and commit
 rules do not.
 
-## Retained Rendering {#retained-rendering}
+## Retained rendering {#retained-rendering}
 
 `LiveView.view` describes a view graph rather than rendering a fresh HTML string
 for every message. `RenderProgram.compile` invokes it once for a disconnected
@@ -199,7 +199,7 @@ replacement, component, or stream changes. The result is a semantic
 `RenderDelta`; Phoenix statics, dynamics, component CIDs, and stream references
 do not appear until protocol encoding.
 
-## Commit Is The State Boundary {#commit-boundary}
+## Commit is the state boundary {#commit-boundary}
 
 The `SessionKernel` is the sole owner of lifecycle state. Revision N remains the
 committed state while a handler, render evaluation, resource preparation, and
@@ -226,7 +226,7 @@ This is framework-state atomicity, not database transactionality. A service
 call, database write, or other external effect completed by an application
 handler is not rolled back if later rendering or publication fails.
 
-## Components And Nested LiveViews {#children}
+## Components and nested LiveViews {#children}
 
 Components and nested LiveViews both render inside a page, but they have
 different ownership and concurrency models.
@@ -251,7 +251,7 @@ lifecycle, and epoch identities. The registration becomes joinable only after
 the parent commit. Non-retained descendants are retired with their parent;
 sticky descendants may detach and later attach to an eligible root.
 
-## Bounded Work And Ordered Output {#bounded-work}
+## Bounded work and ordered output {#bounded-work}
 
 The runtime does not rely on unbounded work queues. `ConnectionConfig` defines
 positive capacities for root ingress, kernel mailboxes, continuations, outbound
@@ -277,7 +277,7 @@ queue, and applies a timeout. Only the matching URL acknowledgement resumes
 parameter handling. This prevents both stale acknowledgements and a full normal
 mailbox from deadlocking navigation.
 
-## Scoped Resources And Cleanup {#scoped-resources}
+## Scoped resources and cleanup {#scoped-resources}
 
 Runtime ownership follows nested scopes rather than global registries:
 
@@ -304,7 +304,7 @@ failure does not prevent the remaining owners from being released.
 A disconnect therefore ends the connected model and its lifecycle-owned work.
 A later join mounts a new lifecycle rather than recovering the old model object.
 
-## Failure And Observation {#failure-and-observation}
+## Failure and observation {#failure-and-observation}
 
 Failures are handled according to which side of commit they occur on:
 
@@ -323,7 +323,7 @@ Correlation carries connection, lifecycle, epoch, command, turn, revision,
 navigation, and resource identities where they apply. Observation follows the
 same boundaries as ownership; it does not participate in transition decisions.
 
-## The Protocol Edge {#protocol-edge}
+## The protocol edge {#protocol-edge}
 
 `PhoenixProtocol` strictly parses Phoenix channel envelopes and converts joins,
 events, forms, patches, leaves, heartbeats, and upload operations into connection

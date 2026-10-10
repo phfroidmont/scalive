@@ -5,7 +5,7 @@ order = 4
 section = learn
 %}
 
-## Define The Form {#define-the-form}
+## Define the form {#define-the-form}
 
 A form starts as a definition of its fields and the value they decode to. This
 lesson builds a sign-up form with a name and an email address. Create
@@ -24,7 +24,7 @@ valid.
 The definition is plain data. It does not know about any LiveView, so tests and
 other pages can use it too.
 
-## Keep The Form In The Model {#keep-the-form-in-the-model}
+## Keep the form in the model {#keep-the-form-in-the-model}
 
 The LiveView keeps the form's current state in its model, next to what happened
 last:
@@ -37,7 +37,7 @@ sends when the form changes or is submitted. `mount` starts from an empty form:
 
 @:sourceRegion(documentation/fixtures/learn/src/quickstart/SignupLiveView.scala, learn-signup-mount)
 
-## Validate As The Visitor Types {#validate-as-the-visitor-types}
+## Validate as the visitor types {#validate-as-the-visitor-types}
 
 `Signup.Definition.onChange(Msg.Changed(_))` in the view sends `Msg.Changed`
 each time an input changes. The event already contains the updated, validated
@@ -48,7 +48,7 @@ form, so the handler only stores it:
 Storing `event.form` is what keeps the inputs and their errors in step with the
 browser. Without it, the next render would show the previous form.
 
-## Handle The Submission {#handle-the-submission}
+## Handle the submission {#handle-the-submission}
 
 `Signup.Definition.onSubmit(Msg.Submitted(_))` sends `Msg.Submitted` when the
 visitor submits. `event.form.result` is `Right(signup)` when every field is
@@ -64,7 +64,7 @@ A real application would save the sign-up through a service before resetting
 the form. [Loading data and live updates](loading-data-and-live-updates.md)
 shows how a LiveView gets a service.
 
-## Render Fields And Errors {#render-fields-and-errors}
+## Render fields and errors {#render-fields-and-errors}
 
 The view reads each field from a signal of the form:
 
@@ -79,7 +79,7 @@ renders the field's visible errors, one per issue.
 An error becomes visible once the visitor has used its field or submitted the
 form. This keeps a fresh form from opening covered in "Enter your name."
 
-## Try It {#try-it}
+## Try it {#try-it}
 
 The complete `app/src/quickstart/SignupLiveView.scala`:
 

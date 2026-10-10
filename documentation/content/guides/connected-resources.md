@@ -6,7 +6,7 @@ section = guides
 group = "Async and lifecycle"
 %}
 
-## Before You Start {#prerequisites}
+## Before you start {#prerequisites}
 
 Some work needs cleanup when the page closes but never sends the LiveView a
 message: a presence registration, an observer, or an external handle. This
@@ -15,7 +15,7 @@ guide attaches such a resource to the connected LiveView lifecycle. Use
 [subscriptions](subscriptions.md#prerequisites) instead when the work produces
 messages, or when it must be replaced or cancelled while the page stays open.
 
-## Acquire A Resource In The Connected Mount {#connected-resources}
+## Acquire a resource in the connected mount {#connected-resources}
 
 The @:apiSymbol(trait:scalive.ConnectedResources)`ConnectedResources`@:@
 capability is exposed through the connected mount branch as
@@ -36,7 +36,7 @@ below. Do not retain it in the model, a service, or a callback for later
 acquisition; use a keyed managed API or an explicitly scoped service when
 ownership changes after mount.
 
-## Know When The Finalizer Runs {#know-when-the-finalizer-runs}
+## Know when the finalizer runs {#know-when-the-finalizer-runs}
 
 The acquisition `Task[A]` may fail normally. Once it succeeds, Scalive registers
 the finalizer before returning the value. That finalizer runs exactly once when
@@ -57,7 +57,7 @@ Cleanup starts after the server observes lifecycle termination. External
 presence and locks still need leases or expiry for node failure and undetected
 network partitions.
 
-## Know Who Owns The Resource {#know-who-owns-the-resource}
+## Know who owns the resource {#know-who-owns-the-resource}
 
 The owner is the connected LiveView lifecycle, not an application session ID.
 Two tabs using the same login session acquire independent resources, and closing
@@ -66,7 +66,7 @@ one WebSocket also have independent lifecycles; closing the socket releases all
 of them. Put genuinely session-shared resources in an injected service with
 explicit reference counting or leases.
 
-## Initialize At Route Or Session Boundaries {#route-and-session-resources}
+## Initialize at route or session boundaries {#route-and-session-resources}
 
 Use `withConnectedResources` on a route or named live-session builder when an
 acquired resource is only a lifecycle side effect, such as a registration or
@@ -109,14 +109,14 @@ rolls back successful acquisitions through their registered finalizers; later
 initializers do not run after a failure. Keep acquisition and finalization short
 and bounded, just as for direct mount acquisition.
 
-The owner is one **connected root lifecycle**, not the physical socket, the named
+The owner is one **connected root lifecycle**, not the WebSocket connection, the named
 live-session group, or a logical application session. A fresh reconnect or route
 navigation runs the applicable initializers again for the new root. Patches and
 ordinary messages do not rerun them, and nested LiveViews do not inherit these
 route/session initializers. Nested views can still acquire their own resources
 directly during connected mount.
 
-## Study The Complete Example {#study-the-complete-examples}
+## Study the complete example {#study-the-complete-examples}
 
 The connected registration example shows the acquired handle in its initial
 model, updates ordinary model state without reacquiring, and releases the exact
@@ -128,7 +128,7 @@ Run the [connected lifecycle registration](../examples/connected-resource.md)
 alongside the documentation site's diagnostic views to watch acquisition and
 release.
 
-## Related Tasks {#related-tasks}
+## Related tasks {#related-tasks}
 
 - Run one finite task with [Asynchronous work](async-work.md#prerequisites).
 - Emit messages over time with [Subscriptions](subscriptions.md#prerequisites).

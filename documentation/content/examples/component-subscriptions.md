@@ -10,7 +10,7 @@ same @:apiSymbol(opaque-type:scalive.SubscriptionKey)`SubscriptionKey`@:@. Each
 registration belongs to its exact component instance, so the instances never
 interfere.
 
-## Try It {#try-it}
+## Try it {#try-it}
 
 1. Watch both tickers. They count up once a second from the moment the page
    connects.
@@ -24,7 +24,7 @@ interfere.
 
 @:example(component-subscriptions)
 
-## How It Works {#how-it-works}
+## How it works {#how-it-works}
 
 - The component's `mount` starts its stream from the `Connection.Connected`
   branch, so each instance subscribes as soon as it mounts in a connected page.
@@ -40,7 +40,7 @@ interfere.
   ordinary update leaves the mount-started stream alone, which avoids a
   duplicate `start`.
 
-## Related Guides {#related-guides}
+## Related guides {#related-guides}
 
 - [Subscriptions](../guides/subscriptions.md#component-subscriptions) explains
   component-owned streams and dormancy.

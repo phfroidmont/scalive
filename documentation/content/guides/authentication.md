@@ -6,7 +6,7 @@ section = guides
 group = "Routing and application structure"
 %}
 
-## Before You Start {#prerequisites}
+## Before you start {#prerequisites}
 
 Start with an [ordinary HTTP route](http-forms-and-redirects.md) that can validate
 a form, set a cookie, and redirect, plus a
@@ -16,11 +16,11 @@ authentication service;
 [service layers](services-and-zlayer-injection.md#provide-services-at-startup)
 are one way to provide that capability.
 
-## Separate HTTP Login From Live Authorization {#separate-http-login-from-live-authorization}
+## Separate HTTP login from Live authorization {#separate-http-login-from-live-authorization}
 
 Use ordinary HTTP to submit credentials, change cookies, and redirect. Use a
 session mount aspect to authorize each LiveView mount. Passwords then never
-travel through socket events, and the browser applies its normal cookie and
+travel through WebSocket events, and the browser applies its normal cookie and
 redirect rules. Cookies and original HTTP headers belong in ordinary HTTP
 handlers or session mount aspects, not in route mount aspects.
 
@@ -46,7 +46,7 @@ The lab uses fixed credentials and stores no account changes. Its route is
 intentionally excluded from the public content index because it is a standalone
 HTTP and LiveView lab rather than a documentation page.
 
-## Log In Over Ordinary HTTP {#keep-credentials-in-ordinary-http}
+## Log in over ordinary HTTP {#keep-credentials-in-ordinary-http}
 
 Render the login page with @:apiSymbol(def:scalive.Form.http)`Form.http`@:@ so
 the browser posts credentials as an ordinary form. In the ZIO HTTP handler,
@@ -82,7 +82,7 @@ minute. Attempt records and sessions both have configured capacity bounds. A
 production application should choose a policy suitable for its threat model and
 deployment topology rather than copying these demonstration values.
 
-## Store Opaque, Bounded Sessions {#store-opaque-bounded-sessions}
+## Store opaque, bounded sessions {#store-opaque-bounded-sessions}
 
 On a successful login, the service creates a session and the handler stores its
 token in a cookie. Keep that token opaque:
@@ -105,7 +105,7 @@ The in-memory store is process-local and suitable only for this single-instance
 lab. A production service normally persists sessions in a bounded shared store
 when multiple application instances must accept the same cookie.
 
-## Authenticate Both Mount Phases {#authenticate-both-mount-phases}
+## Authenticate both mount phases {#authenticate-both-mount-phases}
 
 To protect live pages, check the session in both mounts. A LiveView mounts once
 for the HTTP response and again when the browser connects
@@ -121,7 +121,7 @@ returns minimal `AuthClaims` plus a separate `ConnectedAuth`. A missing or
 unknown cookie redirects to the login page. During connected mount, `resume`
 loads the session record again from the public session ID in the claims and
 rebuilds `ConnectedAuth`. A session revoked or expired between the two mounts
-therefore cannot mount the socket; the connected callback redirects to login
+therefore cannot complete the connected mount; the connected callback redirects to login
 instead.
 
 `ConnectedAuth` holds immutable `CurrentUser` construction data and a
@@ -162,7 +162,7 @@ reauthorize any patched resource identity in `handleParams` or navigate instead.
 See [Derive fresh context for every route mount](live-sessions-and-mount-aspects.md#derive-route-context)
 for the complete timing and failure semantics.
 
-## Revalidate Connected Turns {#revalidate-connected-turns}
+## Revalidate connected turns {#revalidate-connected-turns}
 
 The mount aspect runs only when a lifecycle starts. To recheck the session
 before later connected work, such as events and server messages, declare
@@ -195,7 +195,7 @@ cost, and cache only when the staleness is acceptable for the policy. A failure
 reason supplied to `reload(reason)` or `disconnect(reason)` is server-side
 diagnostic context, not a message sent to the browser.
 
-## Log Out Through A CSRF-Protected POST {#revoke-through-a-csrf-protected-reset}
+## Log out through a CSRF-protected POST {#revoke-through-a-csrf-protected-reset}
 
 Logout changes server state, so it must be a CSRF-protected `POST`, never a
 `GET`. The lab's **Sign out and reset lab** button submits another ordinary
@@ -210,7 +210,7 @@ request leaves the cookie in place.
 
 The handler first revokes the server-side session record and then calls
 `LiveConnections.disconnect(publicSessionId)`. Keep this order: reversing it
-could let a reconnecting socket resume the session before revocation takes
+could let a reconnecting client resume the session before revocation takes
 effect.
 
 `disconnect` promptly closes every tab connected to this node with that
@@ -231,7 +231,7 @@ each lifecycle independently; a resource shared by the logical session instead
 belongs in a service with explicit leases or reference counting. See
 [Connected resources](connected-resources.md#connected-resources).
 
-## Provide One Shared Authentication Service {#provide-one-shared-authentication-service}
+## Provide one shared authentication service {#provide-one-shared-authentication-service}
 
 The HTTP login and logout handlers and the protected Live routes must use the
 same `AuthService` instance; otherwise the mount aspect cannot find sessions
@@ -242,8 +242,8 @@ requirement. For one backend instance, provide each layer once at
 
 @:sourceRegion(documentation/fixtures/guides/src/auth/AuthApp.scala, auth-provide-local)
 
-Here `routes` combines `ZioHttp.routes(application, security)` with the login
-and logout routes, as the lab does with `AuthHttpRoutes(security).routes`.
+Here `routes` combines `ZioHttp.routes(application, config)` with the login and
+logout routes, as the lab does with `AuthHttpRoutes(security).routes`.
 
 `Accounts.live` provides the second parameter of the
 [profile route's factory](#authenticate-both-mount-phases),
@@ -263,7 +263,7 @@ This completes the login-to-logout flow. The remaining sections explain the
 admission contract behind logout disconnects, deployments with several backend
 instances, and what to change before production.
 
-## Bind Admission To Physical Connections {#bind-admission-to-physical-connections}
+## Bind admission to physical connections {#bind-admission-to-physical-connections}
 
 Read this section to choose between `withAdmission` and `withMountAspect`, or
 to understand how logout closes every open tab.
@@ -291,7 +291,7 @@ authentication truth. See the
 [canonical combined pipeline](live-sessions-and-mount-aspects.md#combine-session-and-route-context)
 for the generic and accumulated context shapes.
 
-## Fan Out Disconnects Across Nodes {#fan-out-disconnects-across-nodes}
+## Fan out disconnects across nodes {#fan-out-disconnects-across-nodes}
 
 With multiple backend instances, a logout handled by one node must also close
 tabs connected to the others. Supply a
@@ -319,7 +319,7 @@ late. Revocation in the shared session store still rejects new mounts. Stricter
 guarantees require an outbox or replay, leases, periodic revalidation, or
 authorization on each sensitive operation.
 
-## Production Checklist {#production-checklist}
+## Production checklist {#production-checklist}
 
 Before adapting this lab for real users:
 
@@ -337,7 +337,7 @@ Before adapting this lab for real users:
 
 The lab is teaching code, not a production identity system.
 
-## Related Tasks {#related-tasks}
+## Related tasks {#related-tasks}
 
 - Review phase-safe claims in [Live sessions and mount aspects](live-sessions-and-mount-aspects.md#treat-mount-phases-independently).
 - Choose admission or a plain session aspect in [Bind admission to physical connections](#bind-admission-to-physical-connections).

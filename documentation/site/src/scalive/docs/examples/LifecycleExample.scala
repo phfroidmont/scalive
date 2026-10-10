@@ -46,7 +46,8 @@ final class LifecycleExample extends LiveView[LifecycleExample.Msg, LifecycleExa
           strong(
             dataAttr("mount-phase") := "",
             model.map(model =>
-              if model.connectedMount then "Connected socket mount" else "Disconnected HTTP mount"
+              if model.connectedMount then "Connected WebSocket mount"
+              else "Disconnected HTTP mount"
             )
           )
         ),

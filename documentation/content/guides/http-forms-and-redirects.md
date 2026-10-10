@@ -6,13 +6,13 @@ section = guides
 group = "Interfaces and input"
 %}
 
-## Before You Start {#prerequisites}
+## Before you start {#prerequisites}
 
 Start with a typed form or ordinary HTML controls, a GET or POST `RoutePattern`
 that can receive them, and one validated `ZioHttpConfig` shared by the Live and
 sibling ZIO HTTP routes.
 
-## Choose Ordinary HTTP Deliberately {#choose-ordinary-http-deliberately}
+## Choose ordinary HTTP deliberately {#choose-ordinary-http-deliberately}
 
 Use an ordinary browser form when submission should have normal HTTP semantics:
 changing cookies, crossing an authentication boundary, downloading a response,
@@ -40,7 +40,7 @@ encoded or external URL. It performs no route, origin, or path validation and
 never requests Scalive CSRF injection, even for POST. Prefer checked actions for
 application routes.
 
-## Render A Reusable HTTP Form {#render-a-reusable-http-form}
+## Render a reusable HTTP form {#render-a-reusable-http-form}
 
 Render the form with @:apiSymbol(def:scalive.Form.http)`Form.http`@:@. When the
 form does not depend on the model, as on this login page, build a plain form
@@ -68,10 +68,10 @@ so it is intended for checked POST handlers, not GET query decoding. Decode and
 bound GET query parameters at the route boundary with the query API chosen by
 your application.
 
-## Share Security And Inject CSRF {#share-security-and-inject-csrf}
+## Share security and inject CSRF {#share-security-and-inject-csrf}
 
-Create one validated transport config and `LiveSecurity` value, as the quick
-start's `Main` does, and share it between the Live routes and the HTTP routes:
+Build the HTTP routes' `LiveSecurity` from the same validated config that serves
+the Live routes:
 
 @:sourceRegion(documentation/fixtures/guides/src/httpforms/LoginHttpRoutes.scala, http-forms-assembly)
 
@@ -86,7 +86,7 @@ validate CSRF for state-changing requests. Set `secureCookie = true`
 when the browser-facing origin uses HTTPS; Scalive does not infer that from
 forwarding headers.
 
-## Decode A Bounded POST Body {#decode-a-bounded-post-body}
+## Decode a bounded POST body {#decode-a-bounded-post-body}
 
 Build one reusable decoder from the same typed definition used by the form, and
 register the handlers as ordinary ZIO HTTP routes:
@@ -114,7 +114,7 @@ target secure. Keep those checks in the route handler and service layer. Choose
 a route-specific bound; the maximum applies to the encoded body, not decoded
 string sizes or downstream work.
 
-## Map Decoder Errors To Responses {#map-decoder-errors-to-responses}
+## Map decoder errors to responses {#map-decoder-errors-to-responses}
 
 ZIO HTTP handlers commonly return `UIO[Response]`, an effect with no typed
 failure, or a wider `ZIO[R, E, Response]` when services and failures remain in
@@ -154,7 +154,7 @@ and typed failures from either response callback remain in that effect; they are
 not decoder rejections and do not cause another `onRejected` invocation. Map
 application failures to HTTP responses at the appropriate application boundary.
 
-## Validate Live, Then Trigger HTTP {#validate-live-then-trigger-http}
+## Validate Live, then trigger HTTP {#validate-live-then-trigger-http}
 
 Sometimes a form should provide Live validation first, then perform an ordinary
 POST only after the typed value is valid. Keep that transition explicit in the
@@ -178,7 +178,7 @@ invalid events or when returning to editable state. The trigger requires the
 ordinary `action` and `method` supplied by `Form.http`; it is never added
 automatically.
 
-## Redirect HTTP Flash Into A Live Route {#redirect-http-flash-into-a-live-route}
+## Redirect HTTP flash into a Live route {#redirect-http-flash-into-a-live-route}
 
 For a failed POST followed by a Live page, issue a 303 with a signed flash
 cookie through the shared security value, as `invalidLogin` does above:
@@ -210,7 +210,7 @@ Use fixed, user-safe messages in authentication flows. Log diagnostic context
 separately so redirects do not disclose whether an account exists or expose
 low-level decoder details.
 
-## Related Tasks {#related-tasks}
+## Related tasks {#related-tasks}
 
 - Use [Authentication and sessions](authentication.md) for a complete login, cookie, protected mount, and logout workflow.
 - Return to [Typed forms and validation](typed-forms-and-validation.md#continue-through-input) to define reusable schemas and Live feedback.

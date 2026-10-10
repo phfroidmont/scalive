@@ -6,13 +6,13 @@ section = guides
 group = "Async and lifecycle"
 %}
 
-## Before You Start {#prerequisites}
+## Before you start {#prerequisites}
 
 Start with a connected `LiveView` whose messages already produce explicit model
 transitions and rendered states. [Loading data and live updates](../learn/loading-data-and-live-updates.md)
 introduces this page's API with a complete example.
 
-## Choose The Resource By Shape {#choose-the-resource-by-shape}
+## Choose the resource by shape {#choose-the-resource-by-shape}
 
 Scalive gives each connected LiveView and component three kinds of
 lifecycle-owned work:
@@ -43,7 +43,7 @@ connected-lifecycle scope for other resources.
 
 @:@
 
-## Start Work When The Page Connects {#start-work-when-the-page-connects}
+## Start work when the page connects {#start-work-when-the-page-connects}
 
 Most pages load slow data in `mount`, once the browser has connected. Match
 @:apiSymbol(def:scalive.LifecycleContext.connection)`ctx.connection`@:@ and start
@@ -61,7 +61,7 @@ work again. The second statement starts a
 After mount, message handlers reach the same capability through
 @:apiSymbol(def:scalive.MessageContext.async)`ctx.async`@:@.
 
-## Run Finite Work With A Typed Key {#run-finite-work-with-a-typed-key}
+## Run finite work with a typed key {#run-finite-work-with-a-typed-key}
 
 An @:apiSymbol(opaque-type:scalive.AsyncKey)`AsyncKey[A]`@:@ names one task and fixes
 its result type, as in `AsyncKey[Double]("reading")`. Derive keys from stable
@@ -85,7 +85,7 @@ delivered. This makes replacement suitable for refreshes and changing queries:
 start the newest request under the same key instead of assigning request IDs
 and filtering old results yourself.
 
-## Model Finite Work With AsyncValue {#model-finite-work-with-asyncvalue}
+## Model finite work with AsyncValue {#model-finite-work-with-asyncvalue}
 
 @:apiSymbol(enum:scalive.AsyncValue)`AsyncValue[A]`@:@ is an optional application
 model for rendering work across messages. It distinguishes empty, loading,
@@ -109,7 +109,7 @@ failures into stable, actionable copy and log diagnostic context separately.
 The report example displays a fixed failure explanation while the documentation
 site's diagnostic state viewer records only the state label.
 
-## Cancel Explicitly When It Is User-Visible {#cancel-explicitly-when-it-is-user-visible}
+## Cancel explicitly when it is user-visible {#cancel-explicitly-when-it-is-user-visible}
 
 @:apiSymbol(def:scalive.Async.cancel)`ctx.async.cancel`@:@ interrupts active work.
 If the key exists, Scalive invokes the original mapper with
@@ -118,7 +118,7 @@ path when cancellation itself belongs in the UI:
 
 @:sourceRegion(documentation/site/src/scalive/docs/examples/AsyncReportExample.scala, async-report-cancel)
 
-Cancelling an absent key is a no-op. Replacement, component removal, and socket
+Cancelling an absent key is a no-op. Replacement, component removal, and lifecycle
 shutdown also interrupt work, but intentionally do not deliver cancellation
 messages: their owner is obsolete or disappearing.
 
@@ -127,7 +127,7 @@ returns to `AsyncValue.Empty`; it then ignores the cancellation completion only
 when the model is already empty. A reset that should display “cancelled” can
 instead reuse the normal cancel path.
 
-## Keep Ownership Local {#keep-ownership-local}
+## Keep ownership local {#keep-ownership-local}
 
 Keys are runtime identities, not persistence keys. Keep them stable within one
 owner and unique among that owner's tasks. Exact component instances and nested
@@ -149,7 +149,7 @@ survive navigation or reconnect. `AsyncValue` and task registrations are
 lifecycle state. On page exit, Scalive interrupts the task; on remount,
 initialize the model from its real source of truth.
 
-## Study The Complete Example {#study-the-complete-examples}
+## Study the complete example {#study-the-complete-examples}
 
 The report implementation shows typed results, retained values, deterministic
 failure, stale-completion suppression, explicit cancellation, retry, and reset:
@@ -160,7 +160,7 @@ Run the [managed async report](../examples/async-report.md) alongside the
 documentation site's diagnostic views to correlate messages, model transitions,
 and final DOM changes.
 
-## Related Tasks {#related-tasks}
+## Related tasks {#related-tasks}
 
 - Emit many messages over time with [Subscriptions](subscriptions.md#prerequisites).
 - Release a registration or handle when the page closes with [Connected resources](connected-resources.md#prerequisites).

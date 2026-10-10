@@ -6,7 +6,7 @@ section = guides
 group = "Async and lifecycle"
 %}
 
-## Before You Start {#prerequisites}
+## Before you start {#prerequisites}
 
 Start with a connected `LiveView` whose messages already produce explicit model
 transitions. [Loading data and live updates](../learn/loading-data-and-live-updates.md)
@@ -19,7 +19,7 @@ stops it when its owner closes. A `ZStream[R, E, A]` emits zero or more `A`
 values over time; the subscription's stream needs no environment and cannot
 fail.
 
-## Start A Subscription When The Page Connects {#start-a-subscription-when-the-page-connects}
+## Start a subscription when the page connects {#start-a-subscription-when-the-page-connects}
 
 Most pages subscribe in `mount`, once the browser has connected, and stay
 subscribed while the page is open. Match
@@ -50,7 +50,7 @@ current.
 After mount, message handlers reach the same capability through
 @:apiSymbol(def:scalive.MessageContext.subscriptions)`ctx.subscriptions`@:@.
 
-## Own Long-Lived Streams With Subscriptions {#own-long-lived-streams-with-subscriptions}
+## Own long-lived streams with subscriptions {#own-long-lived-streams-with-subscriptions}
 
 A @:apiSymbol(opaque-type:scalive.SubscriptionKey)`SubscriptionKey`@:@ identifies one
 registered stream in its root LiveView or exact component owner. The stream must
@@ -67,7 +67,7 @@ guards `start` with its model so the button and server transition agree:
 
 @:sourceRegion(documentation/site/src/scalive/docs/examples/SubscriptionClockExample.scala, subscription-clock-start)
 
-## Replace Or Cancel A Subscription {#replace-or-cancel-a-subscription}
+## Replace or cancel a subscription {#replace-or-cancel-a-subscription}
 
 @:apiSymbol(def:scalive.Subscriptions.replace)`replace`@:@ starts or swaps the
 stream under a key. Replacing the registration interrupts the old stream and
@@ -83,7 +83,7 @@ the rendered controls describe the registered state:
 
 @:sourceRegion(documentation/site/src/scalive/docs/examples/SubscriptionClockExample.scala, subscription-clock-cancel)
 
-## Choose A Delivery Policy {#choose-a-delivery-policy}
+## Choose a delivery policy {#choose-a-delivery-policy}
 
 The required @:apiSymbol(enum:scalive.SubscriptionDelivery)`SubscriptionDelivery`@:@
 argument controls backpressure at the LiveView mailbox. `Lossless` delivers
@@ -103,7 +103,7 @@ handles inside `ZStream.scoped` or `ZStream.unwrapScoped`; do not acquire a hand
 first and capture it in a stream value. Replacement and component revival rerun
 the stored stream, so a captured handle may already have been released.
 
-## Own A Stream In A Component {#component-subscriptions}
+## Own a stream in a component {#component-subscriptions}
 
 Components expose the same `Subscriptions[Msg]` capability through
 @:apiSymbol(def:scalive.ComponentConnected.subscriptions)`connected.subscriptions`@:@
@@ -135,7 +135,7 @@ Scalive removes the registration; rendering the same class and logical ID later
 mounts a fresh component and may register a fresh stream. Root subscriptions
 are unaffected by component dormancy.
 
-## Keep Ownership Local {#keep-ownership-local}
+## Keep ownership local {#keep-ownership-local}
 
 Keys are runtime identities, not persistence keys. Keep them stable within one
 owner and unique among that owner's subscriptions. Deriving root keys from
@@ -143,7 +143,7 @@ instance identity makes ownership visible in traces and prevents collisions when
 code moves into a shared owner. On page exit, Scalive stops every registered
 stream; on remount, start them again from the page's real source of truth.
 
-## Study The Complete Examples {#study-the-complete-examples}
+## Study the complete examples {#study-the-complete-examples}
 
 The clock implementation shows start, replacement, cancellation, reset, and an
 instance-scoped subscription key:
@@ -161,7 +161,7 @@ Run the [managed clock subscription](../examples/subscription-clock.md) and
 alongside the documentation site's diagnostic views to correlate messages, model
 transitions, and final DOM changes.
 
-## Related Tasks {#related-tasks}
+## Related tasks {#related-tasks}
 
 - Run one finite task with [Asynchronous work](async-work.md#prerequisites).
 - Apply emitted collection changes with [Streams and collection updates](streams-and-collection-updates.md#prerequisites).

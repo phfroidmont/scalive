@@ -6,7 +6,7 @@ section = guides
 group = "Interfaces and input"
 %}
 
-## Before You Start {#prerequisites}
+## Before you start {#prerequisites}
 
 Start with a LiveView that can retain immutable values in its model and handle
 form change, submit, and upload progress messages. Every upload mode needs the
@@ -14,7 +14,7 @@ working browser connection from
 [Client setup and static assets](static-assets-and-client-setup.md). An external
 upload additionally needs the custom uploader registration shown below.
 
-## Complete A Bounded In-Memory Upload {#complete-a-bounded-in-memory-upload}
+## Complete a bounded in-memory upload {#complete-a-bounded-in-memory-upload}
 
 Use this small-file path first:
 
@@ -33,7 +33,7 @@ starts automatically:
 `inMemory` buffers every byte in server heap and returns `Chunk[Byte]`, so keep
 the limits strict and expected concurrency modest.
 
-## Allow The Upload During Every Mount {#allow-the-upload-during-every-mount}
+## Allow the upload during every mount {#allow-the-upload-during-every-mount}
 
 Keep one stable definition value and retain the returned
 @:apiSymbol(type-alias:scalive.LiveUpload)`LiveUpload[Result]`@:@ snapshot:
@@ -49,7 +49,7 @@ Progress, cancellation, and consumption return replacement snapshots. Store
 the returned value or refresh it through `ctx.uploads.get`; rendering an old
 value renders old protocol attributes and status.
 
-## Render Selection, Drop, And Progress Controls {#render-selection-drop-and-progress-controls}
+## Render selection, drop, and progress controls {#render-selection-drop-and-progress-controls}
 
 Use @:apiSymbol(def:scalive.liveFileInput)`liveFileInput`@:@ rather than assembling
 protocol attributes by hand. Inside `view`, `model` is a `Signal[Model]`, so
@@ -83,7 +83,7 @@ validates it. Submitting the form starts the transfer, and Phoenix sends the
 submit event after the transfer completes. Automatic transfer is covered after
 the basic path.
 
-## Consume And Transfer Ownership {#consume-and-transfer-ownership}
+## Consume and transfer ownership {#consume-and-transfer-ownership}
 
 @:apiSymbol(def:scalive.Uploads.consumeCompleted)`consumeCompleted`@:@ visits valid
 completed entries in selection order. It fails while a valid entry is still in
@@ -95,7 +95,7 @@ returned @:apiSymbol(type-alias:scalive.ConsumeDecision)`ConsumeDecision`@:@ det
 what happens next:
 
 - `Consume(value)` removes the entry and transfers responsibility for its result to application code. Destination cleanup is not called.
-- `Postpone(value)` keeps the entry and result framework-owned so a later attempt, cancellation, disallow, component removal, or socket shutdown can release it.
+- `Postpone(value)` keeps the entry and result framework-owned so a later attempt, cancellation, disallow, component removal, or lifecycle shutdown can release it.
 
 For this bounded in-memory path, process the completed bytes before returning
 `Consume`, then retain both the callback values and replacement upload snapshot:
@@ -110,7 +110,7 @@ that returned upload too:
 
 A stale or already removed entry fails with a typed upload operation error.
 
-## Compare Hosted And External Destinations {#choose-a-destination-and-set-hard-limits}
+## Compare hosted and external destinations {#choose-a-destination-and-set-hard-limits}
 
 After the bounded path works, choose the factory by where bytes should travel:
 
@@ -137,7 +137,7 @@ returns. Persist, verify, or atomically move a hosted result before returning
 `Postpone` after a retryable application failure so the runtime still owns and
 can release the destination result.
 
-## Choose Manual Or Automatic Transfer {#choose-manual-or-automatic-transfer}
+## Choose manual or automatic transfer {#choose-manual-or-automatic-transfer}
 
 The default `autoUpload = false` waits for the form submit before valid entries
 start transferring. Set `autoUpload = true` when selection should start transfer
@@ -162,7 +162,7 @@ progress operation without rolling the state update back. Use it for lightweight
 observation or orchestration, not exact byte accounting. The writer is the
 authoritative place to count hosted bytes.
 
-## Stream Through A Hosted Writer {#stream-through-a-hosted-writer}
+## Stream through a hosted writer {#stream-through-a-hosted-writer}
 
 A hosted writer owns an in-progress `State` and eventually produces a typed
 `Result`. A temporary-file writer can follow this shape:
@@ -175,7 +175,7 @@ limit and inspect or scan content in `complete` or before consumption. Chunk
 boundaries are transport details and are not content boundaries.
 
 The runtime threads only successfully returned state. `abort` releases an
-initialized state after cancellation, disallow, component removal, socket
+initialized state after cancellation, disallow, component removal, lifecycle
 shutdown, or upload failure. `discard` releases a completed result still owned
 by the runtime. If a failed `init`, `writeChunk`, or `complete` call creates a
 side effect not represented by the last successful state, that call must clean
@@ -187,7 +187,7 @@ receive a stable, non-sensitive reason. Other failures are reported as the gener
 `writer_error`; exception messages and stack traces are never exposed through the
 upload protocol.
 
-## Upload Directly To An External Service {#upload-directly-to-an-external-service}
+## Upload directly to an external service {#upload-directly-to-an-external-service}
 
 An external uploader authorizes one entry, reserves a server-side handle, and
 returns only browser-safe configuration:
@@ -239,14 +239,14 @@ the prepared result consumable. In the consume callback, query the external
 service and verify ownership, final size, media type, checksum or integrity, and
 scan status as appropriate before publishing the object and returning `Consume`.
 
-## Reset And Release Resources {#reset-and-release-resources}
+## Reset and release resources {#reset-and-release-resources}
 
 Disallowing a definition releases every result the runtime still owns. A full
 reset can then allow the stable definition again:
 
 @:sourceRegion(documentation/fixtures/guides/src/uploads/TextUploadLiveView.scala, uploads-reset)
 
-Socket shutdown and component removal also clean framework-owned resources on a
+Lifecycle shutdown and component removal also clean framework-owned resources on a
 best-effort basis. Once `Consume` transfers ownership, application retention,
 deletion, and failure compensation policies apply instead.
 
@@ -258,7 +258,7 @@ Try the [summarize-and-discard text upload](../examples/text-upload.md). Its
 diagnostic view shows lifecycle state and aggregate counts; upload chunks are
 represented only by their byte length, never their contents.
 
-## Related Tasks {#related-tasks}
+## Related tasks {#related-tasks}
 
 - Use [Typed forms and validation](typed-forms-and-validation.md) for metadata submitted with an upload.
 - Use [Asynchronous work](async-work.md) when scanning or post-processing should continue as lifecycle-owned work.

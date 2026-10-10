@@ -10,7 +10,7 @@ search route, then navigates to it. Both navigation links receive the same
 @:apiSymbol(class:scalive.LiveLocation)`LiveLocation`@:@; they differ only in
 browser history.
 
-## Try It {#try-it}
+## Try it {#try-it}
 
 1. Click **Streams**. **Typed query** shows `streams`, and **Encoded
    destination** shows `/search?q=streams`.
@@ -21,7 +21,7 @@ browser history.
 
 @:example(navigation)
 
-## How It Works {#how-it-works}
+## How it works {#how-it-works}
 
 - `SearchRouteBuilder` is the site's real route declaration,
   `(live / "search").queryOptional[String]("q")`. The example builds each
@@ -31,7 +31,7 @@ browser history.
   `href`, which work before JavaScript connects and open in a new tab. Once
   connected, they navigate live and add or replace a history entry.
 
-## Related Guides {#related-guides}
+## Related guides {#related-guides}
 
 - [Routes, parameters, and navigation](../guides/routes-and-navigation.md#build-locations-from-route-declarations)
   explains route declarations, locations, and patch or navigate.

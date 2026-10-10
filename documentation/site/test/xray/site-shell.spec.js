@@ -140,8 +140,8 @@ test("tracks the current section in the page outline", async ({ page }) => {
   await page.goto("/learn/models-and-messages")
 
   const outline = page.locator(".docs-outline")
-  const first = outline.getByRole("link", { name: "One Model, One Message Type", exact: true })
-  const last = outline.getByRole("link", { name: "Keep Messages Meaningful", exact: true })
+  const first = outline.getByRole("link", { name: "One model, one message type", exact: true })
+  const last = outline.getByRole("link", { name: "Keep messages meaningful", exact: true })
   await expect(first).toHaveAttribute("aria-current", "location")
   await expect(outline.locator('[aria-current="location"]')).toHaveCount(1)
 

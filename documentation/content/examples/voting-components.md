@@ -8,7 +8,7 @@ section = examples
 Two instances of one stateful component, each with its own vote count. Each
 instance reports its votes to the parent LiveView through a typed output.
 
-## Try It {#try-it}
+## Try it {#try-it}
 
 1. Click **Vote** twice in the **Scala language** card. Its count shows 2, the
    **ZIO ecosystem** card stays at 0, and the parent reads "scala-vote reported
@@ -20,7 +20,7 @@ instance reports its votes to the parent LiveView through a typed output.
 
 @:example(voting-components)
 
-## How It Works {#how-it-works}
+## How it works {#how-it-works}
 
 - `component(VoteComponent, "scala-vote")` names one instance. Its stable ID
   keeps its model across the parent's renders.
@@ -32,7 +32,7 @@ instance reports its votes to the parent LiveView through a typed output.
 - `ctx.components.sendUpdate` sends new props. The component's `update` keeps
   the vote count unless the props carry a new reset epoch.
 
-## Related Guides {#related-guides}
+## Related guides {#related-guides}
 
 - [Stateful components and communication](../guides/components-and-communication.md#map-component-outputs)
   covers outputs, targets, and props updates.

@@ -6,14 +6,14 @@ section = guides
 group = "Interfaces and input"
 %}
 
-## Before You Start {#prerequisites}
+## Before you start {#prerequisites}
 
 This guide extends the profile form from
 [Typed forms and validation](typed-forms-and-validation.md#render-fields-and-errors),
 which renders text and email inputs with their errors. It covers the other
 controls a form needs.
 
-## Render Richer Controls {#render-richer-controls}
+## Render richer controls {#render-richer-controls}
 
 Ask the form for a field view, then render the control you need. Field views
 provide `text`, `email`, `tel`, `date`, `search`, `password`, `hidden`,
@@ -49,7 +49,7 @@ contains the browser's current value, not the original attribute, and can
 replace the retained server value. Use a text input when arbitrary malformed
 date text must remain editable and visible.
 
-## Decode A Boolean Checkbox {#decode-a-boolean-checkbox}
+## Decode a Boolean checkbox {#decode-a-boolean-checkbox}
 
 For a Boolean field, use
 @:apiSymbol(def:scalive.FieldInput.checkbox)`FieldInput.checkbox()`@:@ to pair
@@ -78,7 +78,7 @@ false; the codec does not preserve their previous values. A checkbox-only
 value is a separate semantic rule, expressible with
 `field.validate(issue)(identity)`.
 
-## Offer Several Checkbox Choices {#offer-several-checkbox-choices}
+## Offer several checkbox choices {#offer-several-checkbox-choices}
 
 For repeated checkbox choices, use `Root.texts`, not the Boolean
 `FieldInput.checkbox` codec. A bound `FormControl` provides
@@ -122,7 +122,7 @@ inside the keyed rendering scope. Do not use changing tokens or display indexes
 as identity. Choice keys distinguish checkboxes for one repeated-value field;
 they are not form-row keys.
 
-## Route Multiple Submit Actions {#route-multiple-submit-actions}
+## Route multiple submit actions {#route-multiple-submit-actions}
 
 Use one definition-owned @:apiSymbol(class:scalive.FormSubmitter)`FormSubmitter`@:@
 when several native submit buttons send the same typed form to different
@@ -171,7 +171,7 @@ Use `Submitter.attributes(intent)` for a native submit `input`, a
 form-associated external control, or other custom markup. The runnable
 [typed profile form](../examples/profile-form.md) demonstrates both buttons.
 
-## Write A Custom Input {#write-a-custom-input}
+## Write a custom input {#write-a-custom-input}
 
 A custom `FieldInput` defines both structural decoding and the inverse used by
 typed server updates. The field view continues to render the retained raw
@@ -186,7 +186,7 @@ errors:
 
 @:sourceRegion(documentation/site/src/scalive/docs/examples/FormRecipes.scala, form-raw-codec)
 
-## Related Tasks {#related-tasks}
+## Related tasks {#related-tasks}
 
 - Choose when each control's errors appear with [Form feedback and recovery](form-feedback-and-recovery.md#choose-when-feedback-appears).
 - Repeat a group of controls with [Repeated form rows](repeated-form-rows.md#prerequisites).

@@ -8,9 +8,9 @@ section = examples
 A LiveView that shows which mount produced its model, puts and clears a flash
 message, and derives a page title from its model.
 
-## Try It {#try-it}
+## Try it {#try-it}
 
-1. Read **Mount phase**. It shows "Connected socket mount": the HTML from the
+1. Read **Mount phase**. It shows "Connected WebSocket mount": the HTML from the
    first request showed "Disconnected HTTP mount", and the connected mount
    built a new model.
 2. Click **Show notification**. "Your notification is ready." appears. Click
@@ -23,7 +23,7 @@ message, and derives a page title from its model.
 
 @:example(lifecycle)
 
-## How It Works {#how-it-works}
+## How it works {#how-it-works}
 
 - `mount` stores `ctx.connection.isConnected`, so each mount records its own
   phase.
@@ -36,7 +36,7 @@ message, and derives a page title from its model.
 - The after-render hook logs each connected render. It observes the render and
   cannot change the model.
 
-## Related Guides {#related-guides}
+## Related guides {#related-guides}
 
 - [Lifecycle, state ownership, and reconnects](../learn/lifecycle-and-connection-behavior.md#two-independent-mounts)
   explains the two mounts.

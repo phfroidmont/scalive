@@ -6,13 +6,13 @@ section = guides
 group = "Testing and troubleshooting"
 %}
 
-## Before You Start {#prerequisites}
+## Before you start {#prerequisites}
 
 This page is the reference for `scalive.testing`. Read
 [Testing LiveViews](testing.md#prerequisites) first; it shows the common tests
 and when to use each boundary.
 
-## What The Connected Harness Runs {#connected-harness-boundaries}
+## What the connected harness runs {#connected-harness-boundaries}
 
 `ConnectedRender.join` and `ConnectedRender.open` perform the disconnected HTTP
 render, validate the page's signed bootstrap credentials, and start the
@@ -33,7 +33,7 @@ client, patch a real document, run hooks, manage focus, schedule browser
 reconnect attempts, or prove browser history behavior. Keep those claims at the
 browser boundary.
 
-## Connected Actions {#connected-actions}
+## Connected actions {#connected-actions}
 
 `click`, `clickButton`, `changeForm`, and `submitForm` resolve bindings from the
 latest committed HTML and wait for the correlated lifecycle output.
@@ -68,7 +68,7 @@ overwrites any supplied value, starts it at `0`, and advances it for each root
 reconnect or followed navigation. Applications should not treat Phoenix-owned
 keys as a stable contract.
 
-## Wait For An HTML Condition {#wait-for-an-html-condition}
+## Wait for an HTML condition {#wait-for-an-html-condition}
 
 @:apiSymbol(def:scalive.testing.ConnectedView.awaitHtml)`awaitHtml(description, timeout)(predicate)`@:@
 returns a `Task[String]` containing the exact HTML that satisfied the
@@ -96,7 +96,7 @@ Only one waiter may consume a view's diff queue: do not run `awaitHtml` and
 correlated click, send, and form actions before waiting. Each check observes the
 latest semantic server projection, so transient states can be missed.
 
-## Inspect Retained HTML Snapshots {#inspect-retained-html-snapshots}
+## Inspect retained HTML snapshots {#inspect-retained-html-snapshots}
 
 Use @:apiSymbol(def:scalive.testing.RenderedHtml.parse)`RenderedHtml.parse(html)`@:@
 to query any retained HTML string, including `view.html`, the result of `awaitHtml`,
@@ -139,7 +139,7 @@ so selector evaluation cannot change other queries or retained results. These
 are semantic server-HTML assertions only: they do not execute JavaScript,
 simulate successful-control selection, or prove browser DOM patching.
 
-## Query Rendered Pages And Forms {#query-forms-semantically}
+## Query rendered pages and forms {#query-forms-semantically}
 
 The @:apiSymbol(class:scalive.testing.RenderedPage)`RenderedPage`@:@ returned by
 `DisconnectedRender.run` exposes the status and headers through
@@ -170,7 +170,7 @@ Use @:apiSymbol(class:scalive.FormPath)`FormPath`@:@ for generated nested names 
 @:apiSymbol(trait:scalive.FormCodec)`FormCodec`@:@. Values remain a `Vector` because repeated names, such as checkbox
 groups, are valid.
 
-## Submit Ordinary Forms {#submit-ordinary-forms}
+## Submit ordinary forms {#submit-ordinary-forms}
 
 @:apiSymbol(def:scalive.testing.RenderedForm.submit)`RenderedForm.submit`@:@
 retains duplicate field names and appends the optional submitter. GET fields
@@ -188,7 +188,7 @@ SameSite policy. Redirects remain explicit:
 @:apiSymbol(def:scalive.testing.RenderedPage.followSeeOther)`followSeeOther`@:@
 accepts only a local `303 See Other` with a `Location` header.
 
-## Test Reconnect Admission {#test-reconnect-admission}
+## Test reconnect admission {#test-reconnect-admission}
 
 @:apiSymbol(class:scalive.testing.ConnectedClient)`ConnectedClient`@:@ retains
 the page's signed bootstrap credentials, so
@@ -232,7 +232,7 @@ Join and follow failures use
 This proves server-side admission is rerun for a fresh transport. It does not
 prove when or how often a browser retries after network loss.
 
-## Test WebSocket Origin Admission {#test-websocket-origin-admission}
+## Test WebSocket origin admission {#test-websocket-origin-admission}
 
 Exercise the finished ZIO HTTP routes when the upgrade policy itself is the
 behavior under test. This boundary can prove that one configured origin produces
@@ -257,13 +257,13 @@ test("admits only a configured websocket origin") {
 ```
 
 The request origin must match the `allowedWebSocketOrigins` used to construct
-`routes`. Separately verify that missing, `null`, malformed, duplicate,
-combined, and mismatched `Origin` values receive HTTP 403 before upgrade.
-Browser automation cannot normally manufacture all of those header shapes, so
-keep them as transport or edge integration tests, along with proxy behavior.
+`routes`. Test the other rejected header shapes that
+[origin admission](configuration.md#admit-websocket-origins) lists in the same
+way. Browser automation cannot normally manufacture them, so keep them as
+transport or edge integration tests, along with proxy behavior.
 
-## Related Tasks {#related-tasks}
+## Related tasks {#related-tasks}
 
 - Start with the common tests in [Testing LiveViews](testing.md#prerequisites).
 - Bind physical connections to application sessions with [Authentication and sessions](authentication.md#bind-admission-to-physical-connections).
-- Configure allowed WebSocket origins with [Configuration](configuration.md#prerequisites).
+- Configure allowed WebSocket origins with [Configuration](configuration.md#admit-websocket-origins).

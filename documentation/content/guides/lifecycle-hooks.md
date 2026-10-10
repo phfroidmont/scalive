@@ -6,7 +6,7 @@ section = guides
 group = "Async and lifecycle"
 %}
 
-## Before You Start {#prerequisites}
+## Before you start {#prerequisites}
 
 Start with a `LiveView` or `LiveComponent` whose ordinary messages already
 reach `handleMessage` and update the rendered model.
@@ -15,7 +15,7 @@ In the examples, lifecycle callbacks return `Task[A]`, and `ZIO.succeed(value)`
 creates an effect that succeeds with `value`. Operators such as `.as(value)` run
 an effect and replace its successful result.
 
-## Choose A Hook, Guard, Or Observer {#choose-hooks}
+## Choose a hook, guard, or observer {#choose-hooks}
 
 Pick the tool that matches what you want to do:
 
@@ -37,7 +37,7 @@ defines that boundary. Connected-turn guards are a routing feature;
 [Guard every connected application turn](#connected-turn-guards) covers them
 after the hook sections.
 
-## Declare Static Root Hooks {#static-root-hooks}
+## Declare static root hooks {#static-root-hooks}
 
 To run code at one lifecycle stage for every message a view receives, override
 `LiveView.hooks`. This view logs each browser message and each server message
@@ -57,11 +57,11 @@ companion has one shortcut per stage, such as `LiveHooks.onEvent { ... }` or
 `hooks` type.
 
 Static root hooks are installed before both the disconnected HTTP lifecycle and
-the connected socket lifecycle. Those lifecycles have independent models and
-hook registries; dynamic changes made during disconnected rendering do not
-carry into the socket.
+the connected lifecycle. Those lifecycles have independent models and hook
+registries; dynamic changes made during disconnected rendering do not carry into
+the connected lifecycle.
 
-## Declare Static Component Hooks {#static-component-hooks}
+## Declare static component hooks {#static-component-hooks}
 
 To run code at one stage for every message a component instance receives,
 override `LiveComponent.hooks` with
@@ -77,7 +77,7 @@ when the instance is removed. Rendering the same component class later with the
 same ID creates a new instance and a new registry. Static component hooks run
 before dynamic hooks for the same component stage.
 
-## Pick A Stage {#hook-stages}
+## Pick a stage {#hook-stages}
 
 Each hook runs at one stage, so pick the stage by when the hook must run. Static
 declarations add an `on` prefix to the stage name, such as `onRawEvent` for
@@ -102,7 +102,7 @@ declarations add an `on` prefix to the stage name, such as `onRawEvent` for
 Components do not have `params` or `info` stages. Root and component hook
 registries are separate even when the stage names match.
 
-## Continue, Halt, And Reply {#continue-halt-reply}
+## Continue, halt, and reply {#continue-halt-reply}
 
 To stop a message before its handler runs, return a halt result. This typed
 event hook consumes messages the current user may not send:
@@ -129,7 +129,7 @@ lifecycle, prevents later hooks and the normal callback, and does not provide a
 controlled model transition. Use `halt` to refuse a message, and let the effect
 fail only on errors.
 
-## Attach And Detach Dynamic Hooks {#dynamic-hooks}
+## Attach and detach dynamic hooks {#dynamic-hooks}
 
 To install a hook for only part of a lifecycle, attach it with
 `ctx.hooks.<stage>.attach(id)` and remove it with `detach(id)`. This view audits
@@ -161,13 +161,13 @@ hooks are running changes the next dispatch, not the one already in progress.
 This also means an after-render hook that detaches itself still completes its
 current invocation.
 
-## Advanced Topics {#advanced-topics}
+## Advanced topics {#advanced-topics}
 
 The sections below cover policy that runs outside hooks, protocol-level event
 interception, the limits of after-render hooks, and ownership of what hooks
 start.
 
-### Guard Every Connected Application Turn {#connected-turn-guards}
+### Guard every connected application turn {#connected-turn-guards}
 
 To run one policy check before all connected application work, rather than at
 one hook stage, declare
@@ -200,9 +200,9 @@ selects one of these controlled outcomes:
 
 Session guards run before route guards. Within each boundary, guards run in
 declaration order. All run before hooks, handlers, and diff generation. Nested
-views inherit their parent declarations. If a nested view has guards, Scalive
-makes an otherwise sticky nested view non-sticky so reconnect or navigation
-safely remounts it under current policy.
+views inherit their parent declarations, so a nested view under guards is never
+sticky; see
+[Choose sticky navigation deliberately](nested-liveviews.md#choose-sticky-navigation).
 
 The guarded scope is exactly connected application turns: root and component
 events (including upload-progress events), params, server messages and
@@ -218,8 +218,8 @@ after-render work. The transport may still send the protocol acknowledgement
 needed to settle the incoming operation. **Reload** performs a full HTTP
 navigation to the URL governing the turn. During patch acknowledgement that is
 the pending destination; otherwise it is the lifecycle's committed URL.
-**Disconnect** closes the physical socket and therefore every lifecycle sharing
-it; the client then reconnects and mounts again. Reload and disconnect reasons
+**Disconnect** closes the WebSocket connection and therefore every lifecycle
+sharing it; the client then reconnects and mounts again. Reload and disconnect reasons
 stay on the server and are not browser-facing error text.
 
 Phoenix LiveView offers phase-specific hooks that can enforce policy at selected
@@ -228,7 +228,7 @@ across Scalive's complete connected application-turn boundary. They complement
 Scalive lifecycle hooks; this is a behavioral relationship, not a claim that
 the callback APIs or every phase map one-to-one with upstream.
 
-### Intercept Raw Events Sparingly {#raw-event-interception}
+### Intercept raw events sparingly {#raw-event-interception}
 
 Use a raw event hook only for policy that must act before decoding or that needs
 protocol-level metadata. This hook rejects two named JavaScript events from a
@@ -254,7 +254,7 @@ JavaScript event because it matches the event name, decodes with
 `JsonDecoder[A]`, consumes matching payloads, and rejects malformed matching
 payloads. Both roots and components provide this stage.
 
-### Keep After-Render Hooks Observational {#after-render-limits}
+### Keep after-render hooks observational {#after-render-limits}
 
 To act once a render completes, for example to push the rendered state to the
 browser, add an `afterRender` hook. The root `AfterRenderContext` exposes a
@@ -278,7 +278,7 @@ lifecycle metadata and that instance's dynamic hooks, but no client operations,
 navigation, output emission, async work, uploads, or streams. Move state changes
 and resource starts into mount, update, or normal message handling.
 
-### Keep Ownership And Cleanup Local {#ownership-cleanup}
+### Keep ownership and cleanup local {#ownership-cleanup}
 
 Hooks need no teardown callback: lifecycle end and component removal discard
 their registries. Dynamic root hooks live until detached or until their
@@ -294,7 +294,7 @@ scoped service rather than starting an unmanaged fiber. Use stable hook IDs
 derived from the owner when attaching shared behavior, and detach a conditional
 hook when its policy no longer applies.
 
-## Related Tasks {#related-tasks}
+## Related tasks {#related-tasks}
 
 - Apply guards to session revocation with [Authentication and sessions](authentication.md#revalidate-connected-turns).
 - Record lifecycle events and metrics with [Lifecycle observability](lifecycle-observability.md).

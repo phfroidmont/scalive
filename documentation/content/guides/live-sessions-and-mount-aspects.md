@@ -6,7 +6,7 @@ section = guides
 group = "Routing and application structure"
 %}
 
-## Before You Start {#prerequisites}
+## Before you start {#prerequisites}
 
 You need named route declarations, as in
 [Routes, parameters, and navigation](routes-and-navigation.md#name-route-declarations),
@@ -20,7 +20,7 @@ use these application types:
 
 @:sourceRegion(documentation/fixtures/guides/src/sessions/Sessions.scala, sessions-domain)
 
-## Group Routes In A Named Live Session {#group-routes-in-a-named-session}
+## Group routes in a named live session {#group-routes-in-a-named-session}
 
 A named live session groups routes that share layouts and mount policy. Live
 navigation between its routes keeps the WebSocket connection; navigation to a
@@ -36,7 +36,7 @@ Live session names must be unique in one router. A named live session is
 application structure, not a browser session or a login record; your
 application still owns login state, expiry, and revocation.
 
-## Derive Session Context Before Mount {#derive-typed-context-before-mount}
+## Derive session context before mount {#derive-typed-context-before-mount}
 
 A @:apiSymbol(class:scalive.LiveSessionMountAspect)`LiveSessionMountAspect`@:@
 runs before each mount of a route in its session. It can reject the visitor or
@@ -64,7 +64,7 @@ from left to right with `++`: each receives the preceding context and may add
 another typed value. Prefer a small domain value such as `CurrentUser` over the
 complete request or a general service container.
 
-## Derive Fresh Context For Every Route Mount {#derive-route-context}
+## Derive fresh context for every route mount {#derive-route-context}
 
 A @:apiSymbol(class:scalive.LiveRouteMountAspect)`LiveRouteMountAspect`@:@
 checks or loads something for one destination. The workspace route checks that
@@ -88,7 +88,7 @@ A live patch is different: it keeps the current LiveView mounted and calls
 protected resource, authorize it again in `handleParams` and at each sensitive
 operation, or navigate instead so the destination runs its route aspect.
 
-## Choose The Right Boundary {#choose-the-right-boundary}
+## Choose the right boundary {#choose-the-right-boundary}
 
 Use the router for application-wide structure, a named live session for one
 coherent area such as the account pages, and a route modifier for one page.
@@ -110,11 +110,11 @@ context when policy must run again before later application work.
 cleanup-owned side effects after admission; they do not decide admission or
 produce context.
 
-## Treat Mount Phases Independently {#treat-mount-phases-independently}
+## Treat mount phases independently {#treat-mount-phases-independently}
 
 The disconnected callback sees the browser's original HTTP request, including
 cookies and headers. The connected callback receives a request synthesized from
-the socket join URL; it does not retain those cookies, headers, method, or body.
+the WebSocket join URL; it does not retain those cookies, headers, method, or body.
 
 A session aspect therefore returns two values during disconnected mount:
 
@@ -131,7 +131,7 @@ state before connected mount. HTTP-only cookies and headers must be consumed at
 an ordinary HTTP boundary or by a session aspect during disconnected mount;
 route aspects intentionally cannot read them.
 
-## Combine Session And Route Context {#combine-session-and-route-context}
+## Combine session and route context {#combine-session-and-route-context}
 
 Context accumulates from left to right. In the account session, the session
 aspect produces `CurrentUser` and the route aspect adds `WorkspaceAccess`, so
@@ -159,7 +159,7 @@ close every open tab, install the session aspect with `withAdmission` instead of
 `withMountAspect`. The [authentication guide](authentication.md#bind-admission-to-physical-connections)
 shows the complete flow.
 
-## Use Failure Semantics Deliberately {#use-failure-semantics-deliberately}
+## Use failure semantics deliberately {#use-failure-semantics-deliberately}
 
 Disconnected session-aspect failures are ordinary HTTP responses. Connected
 session failures use @:apiSymbol(enum:scalive.LiveMountFailure)`LiveMountFailure`@:@:
@@ -194,7 +194,7 @@ aspect's service does, `forbidden` when the HTTP distinction is useful, and
 per-turn guards or domain authorization at the operation that reads or changes
 protected state.
 
-## Attach Connected Resource Initialization {#connected-resource-initialization}
+## Attach connected resource initialization {#connected-resource-initialization}
 
 Install `withConnectedResources` on the named live-session builder for every
 root mounted in that group, or on a route builder for one destination. It is
@@ -226,7 +226,7 @@ LiveViews. Use a service for shared session ownership. See
 for the executable example, bounded acquisition/finalization requirements, and
 when to keep acquisition directly in the page's mount.
 
-## Related Tasks {#related-tasks}
+## Related tasks {#related-tasks}
 
 - Add a complete login and logout flow with [Authentication and sessions](authentication.md#authenticate-both-mount-phases).
 - Wrap a session's pages in shared markup with [Layouts](layouts.md#know-where-each-layout-applies).

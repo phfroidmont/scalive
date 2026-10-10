@@ -6,7 +6,7 @@ section = guides
 group = "Browser integration"
 %}
 
-## Before You Start {#prerequisites}
+## Before you start {#prerequisites}
 
 Start with a form or editor whose model can say whether leaving would discard
 work. Scalive supplies its pinned Phoenix LiveView `v1.2.10` client. The
@@ -19,7 +19,7 @@ The navigation guard is an optional framework asset loaded separately from the
 application bundle. Do not add its JavaScript to the application's asset tree or
 deployment manifest; the dedicated loader serves it independently.
 
-## Load The Guard Runtime {#load-the-runtime}
+## Load the guard runtime {#load-the-runtime}
 
 Load @:apiSymbol(object:scalive.NavigationGuardAssets)`NavigationGuardAssets`@:@ at startup, pass it to the root
 layout, and add its routes alongside the application assets:
@@ -31,7 +31,7 @@ The guard runtime defaults to its own `/_scalive/assets` mount. Pass another
 application routing. The loaded value validates the packaged JavaScript at
 startup and serves it below an immutable asset-set version.
 
-## Install The Tracked Script {#install-the-script}
+## Install the tracked script {#install-the-script}
 
 Render
 @:apiSymbol(def:scalive.NavigationGuardAssets.script)`NavigationGuardAssets.script`@:@
@@ -50,7 +50,7 @@ participates in the same static-change metadata as the application bundle. The
 script is external and same-origin, so a common `script-src 'self'` policy does
 not require inline-script permission.
 
-## Render A Guard {#render-a-guard}
+## Render a guard {#render-a-guard}
 
 Derive dirty state from canonical typed form values and add
 @:apiSymbol(def:scalive.navigation.guardWhen)`navigation.guardWhen`@:@ to the
@@ -73,7 +73,7 @@ dirty. A blank message is rejected. If several guards are active, the first one
 in document order supplies the page-level message; prefer one combined guard
 when several editors belong to the same page.
 
-## Understand The Coverage {#coverage}
+## Understand the coverage {#coverage}
 
 The runtime builds on Phoenix's cancelable `phx:before-navigate` event and the
 browser's `beforeunload` event:
@@ -102,7 +102,7 @@ dialog text, require prior user interaction, and may suppress it. Mobile app
 termination may not dispatch `beforeunload` at all. Persist important drafts;
 the guard is not a durable-storage mechanism.
 
-## Account For Server Timing {#server-timing}
+## Account for server timing {#server-timing}
 
 The dirty signal is server-rendered. A browser edit must reach the LiveView,
 update the model, and apply the resulting diff before the marker becomes active.
@@ -115,7 +115,7 @@ framework does not infer dirty state from arbitrary input events because it
 cannot know the saved baseline, whether a submit succeeded, or which edits are
 safe to discard.
 
-## Related Tasks {#related-tasks}
+## Related tasks {#related-tasks}
 
 - Build the model and validation flow with [Typed forms and validation](typed-forms-and-validation.md#prerequisites).
 - Choose patch and navigation semantics with [Routes, parameters, and navigation](routes-and-navigation.md#prerequisites).

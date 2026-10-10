@@ -23,7 +23,7 @@ object LifecycleExampleSpec extends ZIOSpecDefault:
           _       <- harness.clickButton("Reset example")
           reset   <- document(harness)
         yield assertTrue(
-          initial.select("[data-mount-phase]").text() == "Connected socket mount",
+          initial.select("[data-mount-phase]").text() == "Connected WebSocket mount",
           initial.select("[data-lifecycle-title]").text() == "Lifecycle example",
           flashed.select("[data-lifecycle-flash]").text() == "Your notification is ready.",
           titled.select("[data-lifecycle-title]").text() == "Attention needed",

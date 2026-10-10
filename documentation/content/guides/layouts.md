@@ -6,7 +6,7 @@ section = guides
 group = "Routing and application structure"
 %}
 
-## Before You Start {#prerequisites}
+## Before you start {#prerequisites}
 
 Start from an application with a few named routes, such as the
 [quick start](../learn/quick-start.md) after
@@ -23,7 +23,7 @@ Scalive has two kinds of layout:
 
 Both are classes that extend a trait and implement one `view` method.
 
-## Render The Document {#install-root-and-ordinary-layouts}
+## Render the document {#install-root-and-ordinary-layouts}
 
 The quick start's root layout renders the document for every page:
 
@@ -49,7 +49,7 @@ the mount context.
 Install the root layout on the router with `withRootLayout`, as the quick
 start's `Main` does.
 
-## Wrap Every Page In Shared Navigation {#wrap-pages-in-shared-navigation}
+## Wrap every page in shared navigation {#wrap-pages-in-shared-navigation}
 
 An ordinary layout renders the markup that pages share inside `<body>`. This
 one adds a navigation bar and marks the link to the current section:
@@ -71,7 +71,7 @@ message type, so it has no message type to send. Use links, as above,
 [nested LiveViews](nested-liveviews.md#prerequisites), or
 [browser hooks](browser-integration.md#prerequisites) for interactive chrome.
 
-## Give One Route Its Own Layout {#give-one-route-its-own-layout}
+## Give one route its own layout {#give-one-route-its-own-layout}
 
 Install a layout on a route builder to wrap only that route. The registration
 above adds a header to each project page:
@@ -89,7 +89,7 @@ Install route layouts before `.params` or `.query`. When a route prefix with a
 layout is extended with `/`, the layout keeps receiving the parameters of the
 prefix it was installed on.
 
-## Know Where Each Layout Applies {#know-where-each-layout-applies}
+## Know where each layout applies {#know-where-each-layout-applies}
 
 Layouts can be installed at three levels:
 
@@ -106,7 +106,7 @@ router's. The router accepts one ordinary layout; sessions and routes accept
 several. [Live sessions and mount aspects](live-sessions-and-mount-aspects.md#group-routes-in-a-named-session)
 shows how to group routes in a named live session.
 
-## Decide When Pages Share A Document {#decide-when-pages-share-a-document}
+## Decide when pages share a document {#decide-when-pages-share-a-document}
 
 Live navigation replaces the page but keeps the document, including its
 `<head>`, scripts, and `<body>` attributes. That is only correct when the
@@ -126,7 +126,7 @@ Navigating from a French page to a German page then reloads the document,
 instead of keeping `<html lang="fr">`. Equal keys do not bypass named live
 session boundaries: navigation between sessions always loads a new document.
 
-## Reuse Layouts Across Contexts {#reuse-layouts-across-contexts}
+## Reuse layouts across contexts {#reuse-layouts-across-contexts}
 
 A layout installed on a named live session or behind a mount aspect can read the
 typed context they produce, such as the signed-in user. Declare the context
@@ -171,7 +171,7 @@ Its fixed context aspects demonstrate composition, not authentication:
 
 @:sourceRegion(documentation/site/src/scalive/docs/examples/LayoutContextExample.scala, shared-document-shell)
 
-## Related Tasks {#related-tasks}
+## Related tasks {#related-tasks}
 
 - Group routes and derive typed context with [Live sessions and mount aspects](live-sessions-and-mount-aspects.md#prerequisites).
 - Set the page title and show connection status with [Lifecycle feedback and page state](flash-title-and-lifecycle-ux.md#prerequisites).

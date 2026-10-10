@@ -6,7 +6,7 @@ section = guides
 group = "Interfaces and input"
 %}
 
-## Before You Start {#prerequisites}
+## Before you start {#prerequisites}
 
 Import `scalive.*` wherever you construct HTML. Static pages use ordinary Scala
 values, while LiveViews derive dynamic content from a model `Signal`. The DSL
@@ -15,7 +15,7 @@ language. This guide builds on
 [Rendering, bindings, and diffs](../learn/rendering-and-dom-updates.md#render-from-the-model),
 which introduces views, conditional content, and keyed lists.
 
-## Build An HTML Tree {#build-an-html-tree}
+## Build an HTML tree {#build-an-html-tree}
 
 Call tag values such as @:apiSymbol(lazy-val:scalive.div)`div`@:@,
 @:apiSymbol(lazy-val:scalive.button)`button`@:@, and @:apiSymbol(lazy-val:scalive.table)`table`@:@,
@@ -40,7 +40,7 @@ for example, @:apiSymbol(lazy-val:scalive.sectionTag)`sectionTag`@:@,
 Use @:apiSymbol(def:scalive.htmlTag)`htmlTag(name)`@:@ only when the framework does not
 provide the element you need.
 
-## Set Typed Attributes {#set-typed-attributes}
+## Set typed attributes {#set-typed-attributes}
 
 Assign attributes with @:apiSymbol(def:scalive.HtmlAttr.:=)`:=`@:@. Each @:apiSymbol(class:scalive.HtmlAttr)`HtmlAttr[V]`@:@
 accepts its declared Scala value type, either as a plain value or as a signal of
@@ -50,7 +50,7 @@ that type. `cls := "cart"` takes a `String`, and `disabled := true` takes a
 when the model changes. Boolean presence attributes are emitted when true and
 omitted when false.
 
-### Compose Token-List Attributes {#compose-token-list-attributes}
+### Compose token-list attributes {#compose-token-list-attributes}
 
 Repeat `cls` when several modifiers each add classes to one element. Some HTML
 attributes contain a space-separated token list rather than one scalar value.
@@ -82,7 +82,7 @@ semantics when one exists. Use
 @:apiSymbol(def:scalive.CompositeHtmlAttr.apply)`CompositeHtmlAttr(name)`@:@ for a
 custom attribute only when its grammar is a space-separated token list.
 
-### Use Namespaced And Custom Attributes {#use-namespaced-and-custom-attributes}
+### Use namespaced and custom attributes {#use-namespaced-and-custom-attributes}
 
 Use @:apiSymbol(def:scalive.dataAttr)`dataAttr(name)`@:@ for application `data-*` attributes and
 the @:apiSymbol(object:scalive.aria)`aria`@:@ namespace for ARIA attributes:
@@ -97,7 +97,7 @@ an explicit encoder rather than assembling rendered HTML:
 Avoid @:apiSymbol(def:scalive.rawHtml)`rawHtml`@:@ for ordinary content. It bypasses escaping and should be limited
 to HTML that the application already trusts.
 
-## Bind Events To Messages {#bind-events-to-messages}
+## Bind events to messages {#bind-events-to-messages}
 
 To react when the user acts on an element, add a binding from the
 @:apiSymbol(object:scalive.on)`on`@:@ namespace that produces the view's message
@@ -121,7 +121,7 @@ message. Prefer the explicit boundaries in
 [Browser commands, events, and hooks](browser-integration.md#choose-the-boundary)
 when behavior must run in the browser.
 
-### Choose A Binding {#choose-a-binding}
+### Choose a binding {#choose-a-binding}
 
 Each row binds one family of browser events. Every binding accepts a message, a
 `Signal` of a message, or a client-side
@@ -140,7 +140,7 @@ Each row binds one family of browser events. Every binding accepts a message, a
 | The LiveView connecting or losing its connection | @:apiSymbol(lazy-val:scalive.connection.onConnect)`connection.onConnect`@:@, @:apiSymbol(lazy-val:scalive.connection.onDisconnect)`connection.onDisconnect`@:@ | `p(connection.onDisconnect(JS.addClass("offline")))` |
 | Fewer events from any binding above | @:apiSymbol(def:scalive.HtmlAttrBinding.debounce)`debounce`@:@, @:apiSymbol(def:scalive.HtmlAttrBinding.throttle)`throttle`@:@, @:apiSymbol(def:scalive.HtmlAttrBinding.debounceOnBlur)`debounceOnBlur`@:@ | `on.keyUp.debounce(300.millis).withValue(Msg.Search(_))` |
 
-### Combine Bindings In One View {#combine-bindings-in-one-view}
+### Combine bindings in one view {#combine-bindings-in-one-view}
 
 This LiveView filters a product list as the visitor types, closes a help panel
 on an outside click or the Escape key, and shows more results when the last row
@@ -150,7 +150,7 @@ scrolls into view:
 
 The sections below explain each binding and its limits.
 
-### Read Event Values {#read-event-values}
+### Read event values {#read-event-values}
 
 Use @:apiSymbol(def:scalive.HtmlAttrBinding.withValue)`withValue`@:@ when the
 event's `value` should construct the message, as the search input does with
@@ -171,7 +171,7 @@ Every binding also has a function form that receives the whole payload as
 `on.keyDown(payload => Msg.Pressed(payload.getOrElse("key", "")))`. Payload
 values come from the browser, so validate them before use.
 
-### Limit Event Rates {#limit-event-rates}
+### Limit event rates {#limit-event-rates}
 
 To avoid sending a message for every keystroke, configure a rate limit on the
 binding before supplying the message. The search input uses
@@ -198,7 +198,7 @@ for change events, where it reads it from the control that changed. To rate-limi
 change events, put @:apiSymbol(lazy-val:scalive.phx.debounce)`phx.debounce := 300`@:@
 on the control rather than configuring the form's binding.
 
-### Filter Keys {#filter-keys}
+### Filter keys {#filter-keys}
 
 To react to one key only, call
 @:apiSymbol(def:scalive.KeyHtmlAttrBinding.key)`key(value)`@:@ on a key binding,
@@ -218,7 +218,7 @@ every key binding on that element. Do not combine a filtered `on.keyDown` with
 an unfiltered `on.keyUp` on one element. The example handles Escape with a
 window binding, which leaves the search input's key binding unfiltered.
 
-### Close On An Outside Click {#close-on-an-outside-click}
+### Close on an outside click {#close-on-an-outside-click}
 
 To close a menu or panel when the visitor clicks elsewhere, add
 @:apiSymbol(lazy-val:scalive.on.clickAway)`on.clickAway`@:@ to it. In the
@@ -238,7 +238,7 @@ A click inside [portal](#move-content-and-wrap-focus) content counts as a click
 on the portal's source element in its LiveView. A menu that contains a portal
 therefore does not close when the visitor clicks the moved content.
 
-### Load More While Scrolling {#load-more-while-scrolling}
+### Load more while scrolling {#load-more-while-scrolling}
 
 To load more rows as the visitor scrolls, add
 @:apiSymbol(lazy-val:scalive.on.viewportBottom)`on.viewportBottom`@:@ to the list
@@ -258,7 +258,7 @@ For a long or unbounded list, consider a
 [stream](streams-and-collection-updates.md#define-stable-identity-and-retention)
 with a retention limit so the browser does not keep every row.
 
-### React To Connection Changes {#react-to-connection-changes}
+### React to connection changes {#react-to-connection-changes}
 
 To change the page when the LiveView connects or loses its connection, give
 @:apiSymbol(lazy-val:scalive.connection.onConnect)`connection.onConnect`@:@ and
@@ -279,7 +279,7 @@ and
 described in
 [Render connection state declaratively](../learn/lifecycle-and-connection-behavior.md#render-connection-state-declaratively).
 
-### Bind Form Changes {#bind-form-changes}
+### Bind form changes {#bind-form-changes}
 
 To validate a form while the visitor edits it, prefer the typed form helpers
 described in
@@ -294,7 +294,7 @@ overrides the form's change binding, sends only that control, and still
 requires the control to belong to a form. A standalone input, like the search
 field above, uses a key binding instead.
 
-## Show Conditional And Repeated Content {#show-conditional-and-repeated-content}
+## Show conditional and repeated content {#show-conditional-and-repeated-content}
 
 To show content only in some states, or one element per entry of a collection,
 use the staged signal operators that
@@ -316,7 +316,7 @@ The view is built before any model value exists, so an `if` cannot inspect a
 signal. Each operator builds its branches once and switches between them as the
 model changes.
 
-### Key Repeated Content {#key-repeated-content}
+### Key repeated content {#key-repeated-content}
 
 To render one element per entry and keep each entry's identity across updates,
 use @:apiSymbol(extension:scalive.splitBy)`splitBy(key) { ... }`@:@ on a
@@ -349,7 +349,7 @@ For the diffing model, read
 For explicit ID-addressed inserts and deletes in frequently changing collections, read
 [Streams and collection updates](streams-and-collection-updates.md#choose-streams-deliberately).
 
-## Write Reusable Helpers {#write-reusable-helpers}
+## Write reusable helpers {#write-reusable-helpers}
 
 Keep reusable markup in ordinary functions. Pass a `Signal` to a helper whose
 content follows the model, and keep formatting and other calculations in plain
@@ -373,7 +373,7 @@ component-owned classes composable without requiring the helper to inspect calle
 modifiers. `Mod.flatten` is also available when a function must inspect,
 reorder, store, or insert caller modifiers before generated trailing content.
 
-## Render Static HTML {#render-static-html}
+## Render static HTML {#render-static-html}
 
 Use @:apiSymbol(def:scalive.StaticHtml.render)`StaticHtml.render`@:@ when markup does not need a
 LiveView lifecycle. It evaluates the concrete tree once and returns a ZIO effect containing the
@@ -398,7 +398,7 @@ LiveViews require lifecycle state and fail with a typed
 @:apiSymbol(type-alias:scalive.StaticHtmlError)`StaticHtmlError`@:@ instead of being silently
 discarded or mounted.
 
-## Advanced Client-Side Switches {#advanced-client-side-switches}
+## Advanced client-side switches {#advanced-client-side-switches}
 
 Two uncommon client-side switches use the typed `phx` attribute namespace directly.
 Scalive does not wrap them in form or DOM helpers because they carry no application
@@ -414,7 +414,7 @@ editable form-associated control, including a form-associated custom element, wh
 normal DOM patching should continue while it is focused. Focused controls otherwise
 preserve browser-managed state during a patch.
 
-## Move Content And Wrap Focus {#move-content-and-wrap-focus}
+## Move content and wrap focus {#move-content-and-wrap-focus}
 
 Use @:apiSymbol(def:scalive.portal)`portal`@:@ when content must remain owned by its
 LiveView but appear elsewhere in the document, such as below a root-level modal
@@ -446,7 +446,7 @@ region, not the dialog, when that region must stop receiving user input and focu
 Inert content leaves the accessibility tree and receives no default visual treatment,
 so keep the active region perceivable and visually distinguish inactive content.
 
-## Check Accessibility In The Browser {#check-accessibility-in-the-browser}
+## Check accessibility in the browser {#check-accessibility-in-the-browser}
 
 Typed attributes and focus helpers do not make a UI accessible automatically.
 For each interactive flow:
@@ -457,7 +457,7 @@ For each interactive flow:
 - expose validation, progress, and other live feedback without unexpectedly moving focus; and
 - test the patched UI with browser accessibility tooling and representative assistive technology.
 
-## Related Tasks {#related-tasks}
+## Related tasks {#related-tasks}
 
 - Give frequently changing rows targeted updates with [Streams and collection updates](streams-and-collection-updates.md#prerequisites).
 - Run client-side commands from bindings with [Browser commands, events, and hooks](browser-integration.md#compose-client-only-commands).

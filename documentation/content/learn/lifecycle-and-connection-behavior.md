@@ -5,7 +5,7 @@ order = 7
 section = learn
 %}
 
-## Treat Each Mount As Independent {#two-independent-mounts}
+## Treat each mount as independent {#two-independent-mounts}
 
 Every page so far has mounted twice: once in the disconnected HTTP request that
 produces the first HTML, and again when the browser connects. Both mounts must
@@ -23,7 +23,7 @@ Start lifecycle-owned work only from the matched
 `Connection.Connected(capabilities)` branch. When only the phase matters, such
 as to label the page, `ctx.connection.isConnected` returns it as a `Boolean`.
 
-## Follow The Handoff From HTTP To Live {#follow-the-connected-mount}
+## Follow the handoff from HTTP to the live connection {#follow-the-connected-mount}
 
 The browser keeps one document while server ownership crosses two independent
 lifecycles. Read the following sequences as one handoff: the HTTP request creates
@@ -48,7 +48,7 @@ reconciles it with the existing disconnected DOM rather than loading a second
 HTML document. This preserves a useful initial page while keeping the two server
 models and their resources independent.
 
-## Follow The Lifecycle Timeline {#follow-the-lifecycle-timeline}
+## Follow the lifecycle timeline {#follow-the-lifecycle-timeline}
 
 The complete lifecycle can now be summarized as:
 
@@ -56,18 +56,18 @@ The complete lifecycle can now be summarized as:
 | --- | --- | --- |
 | HTTP mount | Disconnected | Build a temporary model for useful initial HTML |
 | HTTP render | Disconnected | Render the response inside layouts; this model ends with the request |
-| Socket mount | Connected | Build a new model and start lifecycle-owned work |
+| Connected mount | Connected | Build a new model and start lifecycle-owned work |
 | Initial live render | Connected | Render and commit the initial connected tree |
 | Message handling | Connected | Produce a proposed model from the last committed model |
 | Render and diff | Connected | Render the proposal, compare trees, then commit after success |
-| Socket termination | Ending | Interrupt and release lifecycle-owned resources |
+| Lifecycle termination | Ending | Interrupt and release lifecycle-owned resources |
 | Rejoin | Connected | Start a new lifecycle and mount again from durable inputs |
 
 Async completions and subscription values enter the same typed message flow as
 browser events. Lifecycle capabilities such as flash, navigation, async work,
 and subscriptions belong to the context for the phase in which they are valid.
 
-## Put State In The Right Lifetime {#put-state-in-the-right-lifetime}
+## Put state in the right lifetime {#put-state-in-the-right-lifetime}
 
 | State | Owner and lifetime | Examples |
 | --- | --- | --- |
@@ -87,7 +87,7 @@ State that must survive reconnect belongs in a service or durable store. Reload
 it during mount and keep only the connected lifecycle's rendering and
 interaction state in the model.
 
-## Treat Reconnect As A New Lifecycle {#treat-reconnect-as-a-new-lifecycle}
+## Treat reconnect as a new lifecycle {#treat-reconnect-as-a-new-lifecycle}
 
 When the transport rejoins, the LiveView mounts again. Rebuild its model from
 durable inputs, restart required lifecycle-owned work, and expect the old
@@ -97,13 +97,13 @@ LiveViews to be released.
 Use this checklist:
 
 - Make `mount` safe to run repeatedly.
-- Match `ctx.connection` and run socket-only work only in the
+- Match `ctx.connection` and run connected-only work only in the
   `Connection.Connected(capabilities)` branch.
 - Use [lifecycle-managed APIs](../guides/async-work.md#choose-the-resource-by-shape)
   for async work, subscriptions, and non-message acquisition and finalization.
 - Make repeated external mount effects idempotent where necessary.
 
-## Understand Failure And Commit Boundaries {#understand-failure-and-commit-boundaries}
+## Understand failure and commit boundaries {#understand-failure-and-commit-boundaries}
 
 A handler returns a proposed model. Scalive renders that model and makes it the
 next committed model only after the transition and render path succeed. An
@@ -119,19 +119,19 @@ join. Reconnect logic must not depend on recovering the previous model object.
 Exact protocol diagnostics and operational recovery belong in the
 [troubleshooting guide](../guides/troubleshooting.md).
 
-## Render Connection State Declaratively {#render-connection-state-declaratively}
+## Render connection state declaratively {#render-connection-state-declaratively}
 
 @:apiSymbol(lazy-val:scalive.connection.visibleWhenConnected)`connection.visibleWhenConnected`@:@
 and
 @:apiSymbol(lazy-val:scalive.connection.visibleWhenDisconnected)`connection.visibleWhenDisconnected`@:@
-render browser bindings that react immediately to socket state. Use them for an
+render browser bindings that react immediately to the connection state. Use them for an
 offline label or to disable controls whose events cannot reach the server.
 
 The server does not receive a normal application message merely because the
 transport drops. Design recovery around remounting rather than an assumed
 disconnect message.
 
-## Test At The Lifecycle Boundary {#test-at-the-lifecycle-boundary}
+## Test at the lifecycle boundary {#test-at-the-lifecycle-boundary}
 
 Use a disconnected test for initial HTTP state and a connected test for typed
 server interactions and reconnects. Use a real browser when the behavior

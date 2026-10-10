@@ -118,7 +118,7 @@ enum ExampleCategory(val label: String, val description: String) derives JsonCod
   case StateAndRendering
       extends ExampleCategory(
         "State and rendering",
-        "Durable state, efficient DOM updates, lifecycle, and components."
+        "Model state, efficient DOM updates, lifecycle, and components."
       )
   case UserInput
       extends ExampleCategory(

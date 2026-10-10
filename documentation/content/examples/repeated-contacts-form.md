@@ -9,7 +9,7 @@ A form with a list of contacts. Each row has a stable key, such as
 `contact-1`, that stays with the contact when rows are added, removed, or
 reordered.
 
-## Try It {#try-it}
+## Try it {#try-it}
 
 1. Click **Move down** on the first contact. **Current order** lists
    `contact-2 — Grace Hopper` before `contact-1 — Ada Lovelace`: the keys moved
@@ -23,7 +23,7 @@ reordered.
 
 @:example(repeated-contacts-form)
 
-## How It Works {#how-it-works}
+## How it works {#how-it-works}
 
 - `Root.rows("contacts")` declares the repeated group, and
   `Group.product[Contact]((Name, Email))` declares one row.
@@ -32,7 +32,7 @@ reordered.
 - `form.added`, `form.removed`, and `form.movedBefore` change the rows of the
   current form without losing the values typed into other rows.
 
-## Related Guides {#related-guides}
+## Related guides {#related-guides}
 
 - [Repeated form rows](../guides/repeated-form-rows.md#model-repeated-rows)
   explains row keys and row operations.

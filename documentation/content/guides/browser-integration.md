@@ -6,14 +6,14 @@ section = guides
 group = "Browser integration"
 %}
 
-## Before You Start {#prerequisites}
+## Before you start {#prerequisites}
 
 Start with a `LiveView` that renders an interactive element. You can understand
 and compose `JS` command values independently; running browser hooks or exchanging
 browser events additionally requires working browser assets, CSRF, and a `LiveSocket`
 connection from [Client setup and static assets](static-assets-and-client-setup.md#connect-live-socket).
 
-## Choose The Boundary {#choose-the-boundary}
+## Choose the boundary {#choose-the-boundary}
 
 Keep behavior in Scala unless it needs a browser API or must happen immediately
 without a server round trip. Scalive provides three increasingly powerful
@@ -26,7 +26,7 @@ boundaries:
 Use an ordinary typed LiveView message when the action changes server state.
 JavaScript should not become a second application model.
 
-## Compose Browser Tasks {#compose-client-only-commands}
+## Compose browser tasks {#compose-client-only-commands}
 
 Commands are immutable values executed in composition order:
 
@@ -68,7 +68,7 @@ Use @:apiSymbol(def:scalive.Client.exec)`ctx.client.exec`@:@ when a server callb
 work completes. A command containing a typed message push belongs on a rendered
 binding, where Scalive can encode that binding correctly.
 
-## Push Typed Server Events {#push-typed-server-events}
+## Push typed server events {#push-typed-server-events}
 
 Name the direction explicitly and derive JSON codecs for the payload:
 
@@ -85,7 +85,7 @@ ctx.client.push(CopyRequestEvent, CopyRequest(requestId, SampleText))
 still fail, so keep payloads small and model failure in the surrounding effect.
 Do not put secrets in browser events or traces.
 
-## Handle Typed Browser Results {#return-typed-hook-results}
+## Handle typed browser results {#return-typed-hook-results}
 
 Declare the reverse direction and install it once on the LiveView:
 
@@ -102,9 +102,14 @@ override def hooks: LiveHooks[Msg, Model] =
 ```
 
 @:apiSymbol(def:scalive.LiveHooks.onBrowserEvent)`onBrowserEvent`@:@ decodes a matching root event before invoking the handler. A
-malformed matching payload is rejected without changing the model. The Scala
-codec does not make JavaScript trustworthy: validate shape, length, permissions,
-and browser failures before calling `this.pushEvent`.
+malformed matching payload is rejected without changing the model.
+
+A successful decode proves only the payload's shape. Any browser can send any
+event, so the server must still validate the decoded values and authorize the
+action in the handler, for example by checking that `requestId` names an
+operation this LiveView started. Checks in JavaScript, such as the length limits
+in the hook below, only improve usability and handle browser failures; they
+protect nothing.
 
 For an event targeted at a stateful component, declare the same boundary on the
 component instead. The static handler also receives current props:
@@ -123,7 +128,7 @@ without `props`. Use `this.pushEvent` for a root event and `this.pushEventTo`
 when the component should own the event; targeting determines which
 handler runs, while `BrowserToServerEvent` determines how its payload is decoded.
 
-## Implement The Browser Hook {#implement-the-browser-hook}
+## Implement the browser hook {#implement-the-browser-hook}
 
 For an application with a custom module bundle, put the hook in a focused module
 such as `assets/js/browser-interop.js`. This is the implementation used by the
@@ -184,11 +189,11 @@ export function createBrowserInteropHook(clipboard = globalThis.navigator?.clipb
 ```
 
 `handleEvent` receives events pushed by `ctx.client.push`. `pushEvent` sends the
-result back as a root browser event, where `onBrowserEvent` validates and
-decodes it. The explicit failure result lets Scala clear or report the pending
+result back as a root browser event, where `onBrowserEvent` decodes it and the
+handler checks it. The explicit failure result lets Scala clear or report the pending
 operation instead of waiting forever.
 
-## Register The Hook With LiveSocket {#register-the-hook-with-live-socket}
+## Register the hook with LiveSocket {#register-the-hook-with-live-socket}
 
 This modular example uses the
 [custom bundle path](static-assets-and-client-setup.md#build-the-client-bundle),
@@ -226,7 +231,7 @@ An application using the supplied global clients can instead define the hook in
 its plain `app.js` and pass the registry when constructing `LiveView.LiveSocket`
 with `Phoenix.Socket`, without adding npm dependencies.
 
-## Give Every Hook Stable Identity {#give-every-hook-stable-identity}
+## Give every hook stable identity {#give-every-hook-stable-identity}
 
 Phoenix hooks require an element ID. @:apiSymbol(def:scalive.dom.hook)`dom.hook`@:@ renders the hook name and typed ID together:
 
@@ -243,7 +248,7 @@ Derive IDs from the component or nested LiveView instance. Fixed IDs collide
 when a page renders the same example twice. Keep hook selectors scoped to
 `this.el` unless the behavior deliberately owns a document-level resource.
 
-## Correlate Retries And Clean Up {#correlate-retries-and-clean-up}
+## Correlate retries and clean up {#correlate-retries-and-clean-up}
 
 Browser work can finish after a retry, navigation, or disconnect. Include a
 bounded request ID in both directions and accept a result only when it matches
@@ -258,7 +263,7 @@ Set a destroyed flag or abort owned asynchronous work in the hook's `destroyed`
 callback. Check it again after every awaited browser operation and tolerate
 `pushEvent` failure because the LiveSocket may disconnect before completion.
 
-## Related Tasks {#related-tasks}
+## Related tasks {#related-tasks}
 
 The [browser integration example](../examples/browser-integration.md) combines a
 client-only command with correlated clipboard events. Its executable source

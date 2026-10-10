@@ -11,7 +11,7 @@ object ActivityStreamExampleSpec extends ZIOSpecDefault:
     harness.html.map(Jsoup.parseBodyFragment)
 
   override def spec = suite("ActivityStreamExampleSpec")(
-    test("keeps durable history while emitting bounded stream inserts") {
+    test("keeps the full history in the model while emitting bounded stream inserts") {
       ZIO.scoped {
         for
           harness <- ConnectedRender.join(new ActivityStreamExample)
@@ -27,7 +27,7 @@ object ActivityStreamExampleSpec extends ZIOSpecDefault:
         )
       }
     },
-    test("deletes an activity from durable and rendered state") {
+    test("deletes an activity from the model and the rendered stream") {
       ZIO.scoped {
         for
           harness <- ConnectedRender.join(new ActivityStreamExample)
@@ -39,7 +39,7 @@ object ActivityStreamExampleSpec extends ZIOSpecDefault:
         )
       }
     },
-    test("restores durable and rendered state through the explicit reset") {
+    test("restores the model and the rendered stream through the explicit reset") {
       ZIO.scoped {
         for
           harness <- ConnectedRender.join(new ActivityStreamExample)

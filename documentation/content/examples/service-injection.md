@@ -9,7 +9,7 @@ A LiveView that loads its reports from a service it receives in its
 constructor. The reports come from the service; which report is selected is
 connection-local state.
 
-## Try It {#try-it}
+## Try it {#try-it}
 
 1. Click **Open incidents**. **Selected report** shows "Open incidents" and "3
    incidents need an owner."
@@ -20,7 +20,7 @@ connection-local state.
 
 @:example(service-injection)
 
-## How It Works {#how-it-works}
+## How it works {#how-it-works}
 
 - `ReportsExample` takes a `Reports` service as a constructor parameter and
   calls `reports.recent` in `mount` and on refresh.
@@ -31,7 +31,7 @@ connection-local state.
 - A service failure becomes the `Failed` model, which renders "Reports are
   temporarily unavailable." instead of crashing the page.
 
-## Related Guides {#related-guides}
+## Related guides {#related-guides}
 
 - [Services and dependency injection](../guides/services-and-zlayer-injection.md#inject-a-service-into-a-liveview)
   explains `from` and service layers.

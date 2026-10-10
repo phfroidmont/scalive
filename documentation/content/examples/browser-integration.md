@@ -9,7 +9,7 @@ Two ways to run code in the browser: a composed `JS` command that never reaches
 the server, and a JavaScript hook that copies text for the server and reports a
 typed result back.
 
-## Try It {#try-it}
+## Try it {#try-it}
 
 1. Click **Run composed command**. The placeholder disappears, and a panel
    reads "The command showed this panel." with "Run it again to toggle this
@@ -23,7 +23,7 @@ typed result back.
 
 @:example(browser-integration)
 
-## How It Works {#how-it-works}
+## How it works {#how-it-works}
 
 - `JS.show(...).hide(...).toggle(...)` composes the first button's command. It
   runs in the browser without a server message.
@@ -34,7 +34,7 @@ typed result back.
   `onBrowserEvent` hook accepts only the result for the pending request.
 - A denied clipboard is an ordinary failed result, not a crash.
 
-## Related Guides {#related-guides}
+## Related guides {#related-guides}
 
 - [Browser commands, events, and hooks](../guides/browser-integration.md#choose-the-boundary)
   explains commands, directional events, hook IDs, and correlation.

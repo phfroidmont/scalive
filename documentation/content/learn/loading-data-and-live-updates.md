@@ -5,7 +5,7 @@ order = 5
 section = learn
 %}
 
-## Define A Service {#define-a-service}
+## Define a service {#define-a-service}
 
 So far every page has kept its data in its own model. Real pages read data from
 databases, other services, or devices. This lesson builds a thermostat page
@@ -21,7 +21,7 @@ predictable implementation. The `ZLayer` describes how the application builds
 the real one at startup. This stand-in returns a random temperature after half a
 second, like a slow device would.
 
-## Give The Page Its Service {#give-the-page-its-service}
+## Give the page its service {#give-the-page-its-service}
 
 Add a route to `Routes.scala`:
 
@@ -44,7 +44,7 @@ the service in its constructor. The
 [services guide](../guides/services-and-zlayer-injection.md) covers several
 services, layers that need resources, and routes with parameters.
 
-## Load Data When The Page Connects {#load-data-when-the-page-connects}
+## Load data when the page connects {#load-data-when-the-page-connects}
 
 A LiveView mounts twice: once to render the first HTML response, and again when
 the browser connects. Reading a slow sensor during the first mount would delay
@@ -72,7 +72,7 @@ finishes, Scalive sends `Msg.Measured(result)`, where `result` is a
 `LiveAsyncResult[Double]`: `Succeeded(value)`, `Failed(cause)`, or
 `Cancelled(reason)`. The task stops if the visitor leaves the page.
 
-## Refresh On A Timer {#refresh-on-a-timer}
+## Refresh on a timer {#refresh-on-a-timer}
 
 The second statement in the connected branch starts a subscription.
 @:apiSymbol(def:scalive.Subscriptions.start)`connected.subscriptions.start`@:@
@@ -90,7 +90,7 @@ Starting a key that is already running replaces the old task, so a slow reading
 can never overwrite a newer one. `loading()` marks the reading as loading while
 keeping the last value, and `updated(result)` applies the finished result.
 
-## Render Each State {#render-each-state}
+## Render each state {#render-each-state}
 
 The view renders every state of the reading:
 
@@ -101,7 +101,7 @@ while a refresh runs or after it fails. `isLoading` shows the progress message,
 and the alert appears only after a failure. The visitor sees a fixed message
 rather than the exception.
 
-## Try It {#try-it}
+## Try it {#try-it}
 
 The complete `app/src/quickstart/ThermostatLiveView.scala`:
 
@@ -113,7 +113,7 @@ reading changes every ten seconds, and **Refresh** reads it immediately. View
 the page source: the first HTML response contains **Reading the sensor…**,
 because the sensor is only read after the browser connects.
 
-## Choose Where To Load {#choose-where-to-load}
+## Choose where to load {#choose-where-to-load}
 
 Load in the connected branch when the data is slow or only matters to visitors
 with a live connection. Load directly in `mount` when the data is fast and

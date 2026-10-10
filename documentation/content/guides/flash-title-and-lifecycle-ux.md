@@ -6,13 +6,13 @@ section = guides
 group = "Async and lifecycle"
 %}
 
-## Before You Start {#prerequisites}
+## Before you start {#prerequisites}
 
 You need a `LiveView` with rendered state. The title section also requires a
 root layout that renders `liveTitle`. Review [Lifecycle and connection behavior](../learn/lifecycle-and-connection-behavior.md)
 before attaching effects to lifecycle hooks.
 
-## Render Keyed Flash {#render-keyed-flash}
+## Render keyed flash {#render-keyed-flash}
 
 Define a stable @:apiSymbol(opaque-type:scalive.FlashKind)`FlashKind`@:@, update it through the phase context, and render only
 that key with @:apiSymbol(object:scalive.flash)`flash`@:@. `Saved` is
@@ -34,7 +34,7 @@ feedback such as a save result or navigation notice. Keep values free of
 secrets, and put information that must survive arbitrary reloads in durable
 application state instead.
 
-## Derive The Page Title {#derive-the-page-title}
+## Derive the page title {#derive-the-page-title}
 
 Override @:apiSymbol(def:scalive.LiveView.pageTitle)`pageTitle`@:@ on the routed root
 @:apiSymbol(trait:scalive.LiveView)`LiveView`@:@ and derive it from the same
@@ -53,7 +53,7 @@ title-like value for its own interface, but its @:apiSymbol(def:scalive.LiveView
 replace the containing document's title. The embedded lifecycle example makes
 that boundary visible by displaying its projection inside the example.
 
-## Show Connection State {#show-connection-state}
+## Show connection state {#show-connection-state}
 
 Render both states and let declarative connection bindings switch them in the
 browser:
@@ -70,23 +70,21 @@ Scalive's documentation shell freezes embedded examples while disconnected;
 applications can use the same connection bindings with JS commands to disable
 or explain unavailable interaction.
 
-## Keep After-Render Effects Observational {#keep-after-render-effects-observational}
+## Keep after-render effects observational {#keep-after-render-effects-observational}
 
 Declare static hooks once on the @:apiSymbol(trait:scalive.LiveView)`LiveView`@:@:
 
 @:sourceRegion(documentation/fixtures/guides/src/feedback/DocumentLiveView.scala, feedback-after-render)
 
-An after-render hook observes a render that already succeeded. It cannot return
-a replacement model. Use @:apiSymbol(def:scalive.LiveView.handleMessage)`handleMessage`@:@,
-@:apiSymbol(def:scalive.LiveView.Routed.handleParams)`handleParams`@:@, an async completion,
-or a subscription message when an effect must produce the next state.
+An after-render hook observes a render that already succeeded and cannot
+change the model. When an effect must produce the next state, use
+@:apiSymbol(def:scalive.LiveView.handleMessage)`handleMessage`@:@,
+@:apiSymbol(def:scalive.LiveView.Routed.handleParams)`handleParams`@:@, an async
+completion, or a subscription message instead.
+[Lifecycle hooks](lifecycle-hooks.md#after-render-limits) describes the rest of
+the after-render contract.
 
-Hooks are installed independently for disconnected and connected lifecycles.
-Match @:apiSymbol(def:scalive.LifecycleContext.connection)`ctx.connection`@:@,
-keep effects idempotent where practical, and avoid starting unmanaged fibers
-from a hook.
-
-## Exercise The Behavior {#exercise-the-behavior}
+## Exercise the behavior {#exercise-the-behavior}
 
 Use the [lifecycle example](../examples/lifecycle.md) to put and clear flash,
 change the projected title, inspect connected mount state, and reset the nested
@@ -96,7 +94,7 @@ after-render hook together.
 For the full lifecycle sequence and reconnect model, read
 [Lifecycle, state ownership, and reconnects](../learn/lifecycle-and-connection-behavior.md#two-independent-mounts).
 
-## Related Tasks {#related-tasks}
+## Related tasks {#related-tasks}
 
 - Install the title-owning document shell with [Layouts](layouts.md#install-root-and-ordinary-layouts).
 - Deliver delayed UI state through [Asynchronous work](async-work.md#prerequisites).

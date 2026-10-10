@@ -8,7 +8,7 @@ section = examples
 A @:apiSymbol(trait:scalive.LiveView)`LiveView`@:@ whose model is one `count`.
 Each button sends a typed message, and the LiveView returns the next count.
 
-## Try It {#try-it}
+## Try it {#try-it}
 
 1. Click **Increase** twice. The current model shows `count = 2`.
 2. Click **Decrease**. It shows `count = 1`.
@@ -16,7 +16,7 @@ Each button sends a typed message, and the LiveView returns the next count.
 
 @:example(counter)
 
-## How It Works {#how-it-works}
+## How it works {#how-it-works}
 
 - `on.click(Msg.Increment)` binds a button to a constant message. The browser
   reports the click; it never constructs the message.
@@ -25,7 +25,7 @@ Each button sends a typed message, and the LiveView returns the next count.
 - `view` renders `model.map(_.count.toString)`, so a click updates only the
   number in the page.
 
-## Related Guides {#related-guides}
+## Related guides {#related-guides}
 
 - [Quick start](../learn/quick-start.md) builds a counter from scratch.
 - [Models, messages, and effects](../learn/models-and-messages.md#give-the-counter-a-model)

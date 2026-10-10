@@ -1,11 +1,11 @@
 {%
-title = "Designing Dynamic HTML"
+title = "Designing dynamic HTML"
 description = "The API design journey from the first dynamic-value prototype to Scalive's current signal-backed view API."
 order = 2
 section = project
 %}
 
-## The Missing Information {#the-question}
+## The missing information {#the-question}
 
 The earliest Scalive experiment was only a model, a tiny HTML DSL, and a renderer
 that printed an initial result followed by an update. Even at that stage, the
@@ -45,7 +45,7 @@ felt like the renderer's responsibility. Most of the designs that followed were
 attempts to preserve just enough information for the renderer without making
 that machinery part of the application API.
 
-## A Function From The Model {#a-function-from-the-model}
+## A function from the model {#a-function-from-the-model}
 
 The first prototype represented a dynamic value as a function from the model.
 Stripped only of its throwaway example names, its API was small enough to show
@@ -80,7 +80,7 @@ element that disappears or a collection entry that moves while keeping its own
 dynamic values and event bindings. Position was enough for scalar text, but I
 needed something else before conditionals and collections could work reliably.
 
-## Putting State In Dyn {#putting-state-in-dyn}
+## Putting state in Dyn {#putting-state-in-dyn}
 
 My next attempts gave dynamic values more responsibility. In one version, each
 `Dyn` carried a key into an assigns-style state map. Changing an assign marked
@@ -123,7 +123,7 @@ collection entry the same entry, so asking for a key was the right call. What I
 no longer liked was storing retained render state in mutable objects that looked
 like application values. That state belonged in the renderer.
 
-## Rendering From A Plain Model {#rendering-from-a-plain-model}
+## Rendering from a plain model {#rendering-from-a-plain-model}
 
 The cleanest way to remove the problems around `Dyn` was to remove `Dyn` itself:
 
@@ -170,7 +170,7 @@ became clear that removing staging from the method signature had only moved it
 into tree reconstruction and identity heuristics. The syntax was simpler because
 the renderer was doing more guessing.
 
-## Back To Explicit Staging {#back-to-explicit-staging}
+## Back to explicit staging {#back-to-explicit-staging}
 
 The current API returns to an explicit dynamic value:
 
@@ -217,7 +217,7 @@ row scopes, caches, and cleanup behind those operations.
 The application still knows what each expression means while constructing this
 graph. Keeping that information is the point of returning to an explicit type.
 
-## Why Signal Is Limited {#why-signal-is-limited}
+## Why Signal is limited {#why-signal-is-limited}
 
 The signal API gives up some of the plain-model version's freedom. This ordinary
 Scala conditional cannot inspect a signal:
@@ -246,7 +246,7 @@ the domain key to `splitBy`, and the renderer owns the retained row state behind
 it. A stable HTML `id` is a separate choice for cases where the browser must
 preserve the exact DOM node across a move.
 
-## The Macro Route I Did Not Take {#the-macro-route}
+## The macro route I did not take {#the-macro-route}
 
 I considered using macros to keep the plain-model API while identifying dynamic
 fragments during compilation. In principle, that could have allowed arbitrary
@@ -267,7 +267,7 @@ Signals leave the boundary in ordinary Scala code. Static and dynamic values are
 visibly different where the distinction matters, without introducing a separate
 template language or an invisible compiler transformation.
 
-## Where The Boundary Ended Up {#where-the-boundary-ended-up}
+## Where the boundary ended up {#where-the-boundary-ended-up}
 
 The current design is built around replacing one strongly typed model as the
 LiveView's application state rather than mutating render values in place. The

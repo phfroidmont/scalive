@@ -5,19 +5,19 @@ order = 9
 section = learn
 %}
 
-## Follow The Startup Path {#follow-the-startup-path}
+## Follow the startup path {#follow-the-startup-path}
 
 The application built in Learn now has five pages, one service, and tests. Read
 it from the process toward the browser:
 
 1. Mill compiles Scala and includes ordinary classpath resources.
-2. `Main` loads configuration, security, the LiveView clients, static assets,
-   and application services.
+2. `Main` loads the transport configuration, the LiveView clients, static
+   assets, and application services.
 3. `Main` pairs typed routes with LiveViews and starts ZIO HTTP.
 4. A route selects a LiveView, and its layouts wrap the rendered page.
 5. The browser loads `app.js`, connects, forwards events, and applies updates.
 
-## Understand Both Mounts {#understand-both-mounts}
+## Understand both mounts {#understand-both-mounts}
 
 A Live route mounts once to produce the initial HTTP response and again when the
 browser establishes its live connection. These mounts create independent models;
@@ -25,7 +25,7 @@ the HTTP model is not passed into the connected lifecycle. The
 [lifecycle page](lifecycle-and-connection-behavior.md#two-independent-mounts)
 explains the consequences for state, resources, failures, and reconnects.
 
-## Separate The Application Boundaries {#separate-the-application-boundaries}
+## Separate the application boundaries {#separate-the-application-boundaries}
 
 `Main.scala` is the process boundary. It owns configuration, resource loading,
 dependency layers, route composition, and server lifetime. Per-visitor state and
@@ -67,7 +67,7 @@ the Phoenix clients packaged with Scalive, and
 [client setup guide](../guides/static-assets-and-client-setup.md) covers custom
 browser builds.
 
-## Keep Dependencies Pointing Inward {#keep-dependencies-pointing-inward}
+## Keep dependencies pointing inward {#keep-dependencies-pointing-inward}
 
 The process constructs infrastructure and passes dependencies to routed
 LiveViews. A growing application normally follows this direction:
@@ -76,7 +76,7 @@ LiveViews. A growing application normally follows this direction:
 Main
 ├── LiveViewClientAssets
 ├── StaticAssets
-├── LiveSecurity
+├── ZioHttpConfig
 ├── application services
 └── Live.router
     ├── typed routes
@@ -96,7 +96,7 @@ LiveViews may use injected services, but services should not depend on a
 particular LiveView or browser connection. This keeps durable domain behavior
 separate from connection-local presentation state.
 
-## Grow The Project {#grow-the-project}
+## Grow the project {#grow-the-project}
 
 Keep these boundaries as the application expands:
 

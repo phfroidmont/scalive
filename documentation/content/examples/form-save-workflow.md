@@ -10,7 +10,7 @@ differs from the last saved baseline, ties each save to the revision it
 submitted, and ignores completions that arrive too late. Instead of a real
 service, buttons simulate the save's outcome.
 
-## Try It {#try-it}
+## Try it {#try-it}
 
 1. Type a title, such as `Release notes`, and click **Begin save**. **Save
    state** shows `saving`, and the simulation buttons appear.
@@ -26,7 +26,7 @@ service, buttons simulate the save's outcome.
 
 @:example(form-save-workflow)
 
-## How It Works {#how-it-works}
+## How it works {#how-it-works}
 
 The status panel shows the workflow's dirty state, revision, save state, and
 the number of successful baseline advancements. It never repeats the raw form
@@ -48,7 +48,7 @@ input.
   `dismissFailure`, which returns the save state to `idle` without changing the
   draft, dirty state, baseline, or revision.
 
-## Related Guides {#related-guides}
+## Related guides {#related-guides}
 
 - [Saving forms](../guides/saving-forms.md#coordinate-form-workflow) explains
   the workflow and its transitions.

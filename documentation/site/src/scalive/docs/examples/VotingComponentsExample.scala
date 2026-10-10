@@ -5,6 +5,7 @@ import zio.{Task, ZIO}
 import scalive.*
 
 // docs:start voting-components-example
+// docs:start voting-component-logic
 object VoteComponent
     extends LiveComponent.WithOutput[
       VoteComponent.Props,
@@ -30,8 +31,10 @@ object VoteComponent
   def mount(props: Props, ctx: MountContext): Task[Model] =
     ZIO.succeed(Model(0, props.resetEpoch))
 
+  // docs:start voting-component-update
   override def update(props: Props, model: Model, ctx: UpdateContext): Task[Model] =
     ZIO.succeed(if props.resetEpoch == model.resetEpoch then model else Model(0, props.resetEpoch))
+  // docs:end voting-component-update
 
   def handleMessage(props: Props, model: Model, ctx: MessageContext) =
     case Msg.Vote =>
@@ -39,6 +42,7 @@ object VoteComponent
       ctx.emit(Output.VoteChanged(props.id, updated.votes)).as(updated)
     case Msg.Reset =>
       ctx.emit(Output.VoteChanged(props.id, 0)).as(model.copy(votes = 0))
+  // docs:end voting-component-logic
 
   def view(props: Signal[Props], model: Signal[Model], self: ComponentRef[Msg]) =
     articleTag(
@@ -65,6 +69,7 @@ object VoteComponent
         ),
         div(
           cls := "docs-vote-actions",
+          // docs:start voting-local-binding
           button(
             cls := "docs-vote-primary",
             typ := "button",
@@ -72,6 +77,7 @@ object VoteComponent
             on.click.to(self)(Msg.Vote),
             "Vote"
           ),
+          // docs:end voting-local-binding
           button(
             cls := "docs-vote-secondary",
             typ := "button",
@@ -95,6 +101,7 @@ final class VotingComponentsExample
       ZIO.succeed(
         model.copy(status = s"$id reported $votes vote${if votes == 1 then "" else "s"}.")
       )
+    // docs:start voting-send-update
     case Msg.UpdateScalaProps =>
       val revision = model.scalaRevision + 1
       ctx.components
@@ -102,6 +109,7 @@ final class VotingComponentsExample
           model
             .copy(scalaRevision = revision, status = s"Parent sent Scala props revision $revision.")
         )
+    // docs:end voting-send-update
     case Msg.Reset =>
       ZIO.succeed(Model.initial.copy(resetEpoch = model.resetEpoch + 1))
 
@@ -124,10 +132,12 @@ final class VotingComponentsExample
       ),
       div(
         cls := "docs-vote-grid",
+        // docs:start voting-render-component
         ScalaVote.render(
           model.map(model => scalaProps(model.scalaRevision, model.resetEpoch)),
           outputToMessage
         ),
+        // docs:end voting-render-component
         ZioVote.render(
           model.map(model =>
             VoteComponent.Props(
@@ -143,8 +153,10 @@ final class VotingComponentsExample
       )
     )
 
+  // docs:start voting-output-mapping
   private def outputToMessage(output: VoteComponent.Output): Msg = output match
     case VoteComponent.Output.VoteChanged(id, votes) => Msg.ComponentReported(id, votes)
+  // docs:end voting-output-mapping
 end VotingComponentsExample
 
 object VotingComponentsExample:
@@ -158,8 +170,10 @@ object VotingComponentsExample:
     case UpdateScalaProps
     case Reset
 
+  // docs:start voting-component-ids
   private val ScalaVote = component(VoteComponent, "scala-vote")
   private val ZioVote   = component(VoteComponent, "zio-vote")
+  // docs:end voting-component-ids
 
   private def scalaProps(revision: Int, resetEpoch: Int) =
     VoteComponent.Props(

@@ -5,7 +5,7 @@ order = 10
 section = learn
 %}
 
-## Continue By Task {#continue-by-task}
+## Continue by task {#continue-by-task}
 
 The Learn path built a small application and established the programming
 model. Continue by the task your application needs:
@@ -39,7 +39,7 @@ model. Continue by the task your application needs:
 The [Guides index](../guides/index.md#solve-a-task) provides the same complete
 task map with a summary of each guide.
 
-## Explore Working Examples {#explore-working-examples}
+## Explore working examples {#explore-working-examples}
 
 Start with the [typed counter](../examples/counter.md) and
 [shopping cart](../examples/shopping-cart.md) for the model-message-render loop.
@@ -68,13 +68,13 @@ Then choose a focused executable slice:
 Examples demonstrate one behavior at a time. They are evidence for an API, not
 a required application architecture.
 
-## Look Up The Current API {#look-up-the-current-api}
+## Look up the current API {#look-up-the-current-api}
 
 Use the [API reference](../api/index.md#packages) for exact current signatures.
 Scalive is alpha software, so prefer the API matching the revision or artifact
 you use rather than code copied from an older discussion.
 
-## Evaluate Scalive For An Application {#evaluate-scalive-for-an-application}
+## Evaluate Scalive for an application {#evaluate-scalive-for-an-application}
 
 Read [Project status](../project/index.md#project-status) and
 [compatibility scope](../project/index.md#compatibility-scope) before depending

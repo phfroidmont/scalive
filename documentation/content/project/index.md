@@ -5,22 +5,22 @@ order = 0
 section = project
 %}
 
-## Why Scalive Exists {#why-scalive-exists}
+## Why Scalive exists {#why-scalive-exists}
 
 Scalive grew out of building and maintaining a production Scala.js application,
 then searching for a simpler boundary between browser and server. Read
 [why I built Scalive](why-i-built-scalive.md#choosing-a-stack) for the personal
 and technical journey behind the project.
 
-## Follow The Render Design {#follow-the-render-design}
+## Follow the render design {#follow-the-render-design}
 
 Deciding how typed HTML should identify dynamic values was Scalive's central API
-design problem. [Designing Dynamic HTML](dynamic-html-identity.md#the-question)
+design problem. [Designing dynamic HTML](dynamic-html-identity.md#the-question)
 explores the competing approaches, what each one made easy or difficult, and why
 Scalive ultimately returned to explicit staging with a deliberately restricted
 `Signal` type.
 
-## Understand The Runtime {#understand-the-runtime}
+## Understand the runtime {#understand-the-runtime}
 
 The [runtime architecture](runtime-architecture.md#runtime-at-a-glance) explains
 how Scalive moves from disconnected rendering to socket bootstrap, serialized
@@ -29,7 +29,7 @@ projection, and cleanup. It introduces the concrete implementation only after
 establishing the runtime concepts; internal names are not additional supported
 application APIs.
 
-## Project Status {#project-status}
+## Project status {#project-status}
 
 Scalive is alpha software under active development. It implements substantial
 parts of the Phoenix LiveView programming model, but feature coverage and
@@ -42,7 +42,7 @@ the [compatibility status](compatibility.md#compatibility-target) for the curren
 feature matrix, known gaps, intentional Scala-first divergences, and verification
 guidance.
 
-## Expect Breaking Changes {#expect-breaking-changes}
+## Expect breaking changes {#expect-breaking-changes}
 
 Scalive does not provide source or binary compatibility guarantees during the
 alpha period. Public types, method signatures, package locations, and behavior
@@ -54,7 +54,7 @@ update application code. The [Learn path](../learn/index.md#start-here) and
 [API reference](../api/index.md#packages) describe the current API rather than a
 future stable contract.
 
-## Compatibility Scope {#compatibility-scope}
+## Compatibility scope {#compatibility-scope}
 
 Scalive aims to reproduce useful Phoenix LiveView behavior and feature coverage
 on Scala 3, ZIO, and ZIO HTTP. Compatibility means observable application and
@@ -83,7 +83,7 @@ Scalive is not intended to:
 - preserve alpha APIs solely to avoid migration work; or
 - replace JavaScript for behavior that inherently depends on browser APIs.
 
-## Report An Issue {#report-an-issue}
+## Report an issue {#report-an-issue}
 
 Use [GitHub issues](https://github.com/phfroidmont/scalive/issues) for bugs,
 missing behavior, documentation errors, and focused feature requests. Before

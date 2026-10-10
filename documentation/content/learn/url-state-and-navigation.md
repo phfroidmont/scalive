@@ -5,7 +5,7 @@ order = 6
 section = learn
 %}
 
-## Declare The Route Once {#declare-the-route-once}
+## Declare the route once {#declare-the-route-once}
 
 URLs are an application boundary as well as navigation history. Declare a route
 once, let Scalive decode its parameters, and use that same declaration to build
@@ -34,7 +34,7 @@ Run `mill app.run` and open `http://localhost:8080/search?q=zio`. Select
 **Search for Scala**: the address bar and the page both change without a reload.
 Select Back to return to `zio`, then **Clear** to remove the query.
 
-## Treat Decoded Parameters As Untrusted {#treat-decoded-parameters-as-untrusted}
+## Treat decoded parameters as untrusted {#treat-decoded-parameters-as-untrusted}
 
 Typed decoding establishes shape, not trust. Route parameters still came from a
 browser. Apply domain validation and bounds, and perform authorization against
@@ -45,7 +45,7 @@ enters the model; a decoded identifier would still need an authorized lookup.
 @:apiSymbol(def:scalive.LiveView.Routed.handleParams)`handleParams`@:@ receives them after mount and after every successful patch, which keeps
 Back, Forward, and in-page URL changes synchronized with the model.
 
-## Choose The Navigation Semantics {#choose-the-navigation-semantics}
+## Choose the navigation semantics {#choose-the-navigation-semantics}
 
 Use a rendered `link` when the user can activate a destination directly. It
 keeps a real `href`, so opening a new tab and disconnected navigation still

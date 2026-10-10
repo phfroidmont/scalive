@@ -1,11 +1,11 @@
 {%
-title = "Why I Built Scalive"
+title = "Why I built Scalive"
 description = "The path from building a production Scala.js application with Laminar to bringing Phoenix LiveView's server-driven model to Scala."
 order = 1
 section = project
 %}
 
-## Choosing A Stack {#choosing-a-stack}
+## Choosing a stack {#choosing-a-stack}
 
 In 2021, I started working full time on my own product,
 [OsteoView](https://osteoview.app/). The backend was always going to be
@@ -46,7 +46,7 @@ several years. It proved remarkably reliable and easy to maintain. Laminar
 remains an exceptional library, and it would still be my first choice today for
 a product that truly requires a single-page application.
 
-## Questioning The SPA Boundary {#questioning-the-spa-boundary}
+## Questioning the SPA boundary {#questioning-the-spa-boundary}
 
 Over time, however, I became dissatisfied with the SPA model itself. OsteoView's
 all-Scala stack allowed the frontend and backend to share code, while
@@ -84,7 +84,7 @@ Then the idea behind Scalive became obvious: what if I could combine the type
 safety and expressiveness of Scala with the server-driven model of Phoenix
 LiveView?
 
-## From Prototype To Scalive {#from-prototype-to-scalive}
+## From prototype to Scalive {#from-prototype-to-scalive}
 
 The first basic prototype established the most important technical premise:
 reusing the Phoenix LiveView JavaScript client from a Scala server was viable.
@@ -94,7 +94,7 @@ parts so that Scalive could produce efficient LiveView diffs. I ended up using
 an abstraction similar to Laminar's `Signal` to stage those parts. That supported
 the protocol's distinction between static and dynamic content without forcing
 an awkward or unidiomatic API on users. The
-[Designing Dynamic HTML](dynamic-html-identity.md#the-question) essay explores
+[Designing dynamic HTML](dynamic-html-identity.md#the-question) essay explores
 the API iterations and tradeoffs behind that choice.
 
 Many iterations followed. I eventually settled on an API that builds on the

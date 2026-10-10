@@ -1,6 +1,6 @@
 {%
 title = "Bounded activity stream"
-description = "Durable activity history drives an opaque stream handle with stable IDs and a five-row DOM window."
+description = "The model keeps the full activity history while a stream with stable IDs keeps five rows in the DOM."
 order = 5
 section = examples
 %}
@@ -10,9 +10,9 @@ the complete history. The @:apiSymbol(type-alias:scalive.LiveStream)`LiveStream`
 sends the browser one change per insert or delete instead of re-rendering the
 list.
 
-## Try It {#try-it}
+## Try it {#try-it}
 
-1. Click **Insert activity** twice. **Durable history** shows 6, and the list
+1. Click **Insert activity** twice. **Model history** shows 6, and the list
    shows the five newest rows: the oldest row has left the page.
 2. Click **Delete** on a row. The row disappears and the history count drops by
    one. The row that left in step 1 does not come back, because the stream only
@@ -20,7 +20,7 @@ list.
 
 @:example(activity-stream)
 
-## How It Works {#how-it-works}
+## How it works {#how-it-works}
 
 - `LiveStreamDef.byId(...)(_.id).keepLast(5)` names the stream, identifies rows
   by activity ID, and limits the browser to five rows.
@@ -29,7 +29,7 @@ list.
 - `renderIn(ol, ...)` renders the stream's container and gives each row its DOM
   ID.
 
-## Related Guides {#related-guides}
+## Related guides {#related-guides}
 
 - [Streams and collection updates](../guides/streams-and-collection-updates.md#separate-domain-state-from-stream-state)
   explains when to use a stream instead of a keyed list.

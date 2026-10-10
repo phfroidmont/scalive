@@ -42,7 +42,7 @@ final class ActivityStreamExample
         cls        := "docs-activity-summary",
         aria.label := "Activity stream state",
         div(
-          span(cls := "docs-activity-label", "Durable history"),
+          span(cls := "docs-activity-label", "Model history"),
           strong(
             cls                        := "docs-activity-count",
             dataAttr("activity-count") := "",

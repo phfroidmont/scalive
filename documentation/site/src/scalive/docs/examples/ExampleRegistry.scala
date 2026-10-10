@@ -144,7 +144,7 @@ private[docs] object ExampleRegistry:
           def project(value: ActivityStreamExample.Model) =
             projected(
               "ActivityStreamExample.Model",
-              "Current durable activity state",
+              "Current activity history and stream",
               constructor(
                 "Model",
                 field("activities", wildcard),

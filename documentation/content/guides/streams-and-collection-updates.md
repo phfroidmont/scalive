@@ -6,13 +6,13 @@ section = guides
 group = "State and components"
 %}
 
-## Before You Start {#prerequisites}
+## Before you start {#prerequisites}
 
 Start with a collection that renders correctly and whose entries have stable
 domain keys. If keyed rendering is not yet in place, see
 [HTML and event bindings](html-dsl-and-event-bindings.md#key-repeated-content).
 
-## Choose Streams Deliberately {#choose-streams-deliberately}
+## Choose streams deliberately {#choose-streams-deliberately}
 
 Ordinary Scala collections are the default. Render a collection normally when
 the complete value belongs in the model and ordinary tree diffing is sufficient.
@@ -27,7 +27,7 @@ frequently. They require more explicit ownership than keyed rendering, so they
 are not a general replacement for a `Vector` in the model, a database, or another
 source of truth.
 
-## Separate Domain State From Stream State {#separate-domain-state-from-stream-state}
+## Separate domain state from stream state {#separate-domain-state-from-stream-state}
 
 A @:apiSymbol(type-alias:scalive.LiveStream)`LiveStream[A]`@:@ is an opaque, immutable
 rendering handle. It intentionally does not expose collection operations or its
@@ -45,7 +45,7 @@ This separation also permits a bounded DOM without discarding domain data. The
 activity example keeps its complete history in a `Vector` while retaining only
 five rendered rows.
 
-## Define Stable Identity And Retention {#define-stable-identity-and-retention}
+## Define stable identity and retention {#define-stable-identity-and-retention}
 
 Create one @:apiSymbol(type-alias:scalive.LiveStreamDef)`LiveStreamDef[A, Id]`@:@ for each
 logical stream. Its name identifies the stream within the owning LiveView or
@@ -65,7 +65,7 @@ initial HTML remains useful when JavaScript never connects; the connected DOM
 is pruned to the configured limit. Retention limits stream state, not separately
 retained domain state.
 
-## Create The Stream During Mount {#create-the-stream-during-mount}
+## Create the stream during mount {#create-the-stream-during-mount}
 
 Call @:apiSymbol(def:scalive.Streams.create)`ctx.streams.create`@:@ once for a stream
 name in each lifecycle and retain the returned handle:
@@ -76,7 +76,7 @@ Creating the same name twice for one owner fails. Definitions are owner-scoped,
 but rendered container and row IDs are still document IDs and must remain unique
 across nested LiveViews and component instances.
 
-## Retain Every Replacement Handle {#retain-every-replacement-handle}
+## Retain every replacement handle {#retain-every-replacement-handle}
 
 Every stream operation returns a replacement handle. Store and render that exact
 value; rendering an older handle loses the pending operation:
@@ -90,7 +90,7 @@ inserting it. Bulk insertion behaves like repeated insertion at the same
 position, so repeatedly inserting first or at one fixed index can reverse input
 order.
 
-## Delete And Reset Coherently {#delete-and-reset-coherently}
+## Delete and reset coherently {#delete-and-reset-coherently}
 
 Apply the same domain operation to the domain data and the stream. The definition
 retains the domain ID type and maps that ID to the row's DOM ID, so deletion does
@@ -109,7 +109,7 @@ message handler when the user-facing contract resets the whole list:
 
 @:sourceRegion(documentation/fixtures/guides/src/activity/ActivityLiveView.scala, streams-reset)
 
-## Render The Stream Container {#render-the-stream-container}
+## Render the stream container {#render-the-stream-container}
 
 Inside `view`, `model` is a `Signal[Model]`, so select the stream handle with
 `model.map(_.activityStream)`. @:apiSymbol(extension:scalive.renderIn)`renderIn`@:@
@@ -131,7 +131,7 @@ The complete recipe on this page:
 Try insertion, bounded retention, deletion, and reset in the
 [bounded activity stream example](../examples/activity-stream.md).
 
-## Related Tasks {#related-tasks}
+## Related tasks {#related-tasks}
 
 - Keep simpler repeated content keyed with [HTML and event bindings](html-dsl-and-event-bindings.md#key-repeated-content).
 - Feed repeated updates from lifecycle-owned work with [Asynchronous work](async-work.md#prerequisites).

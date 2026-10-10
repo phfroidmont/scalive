@@ -6,13 +6,13 @@ section = guides
 group = "Assets and operations"
 %}
 
-## Before You Start {#prerequisites}
+## Before you start {#prerequisites}
 
-Start with an assembled `LiveApplication` and the `LiveSecurity` or
-`ZioHttpConfig` used to build its routes. Decide which ZIO Metrics connector the
+Start with an assembled `LiveApplication` and the `ZioHttpConfig` used to build
+its routes. Decide which ZIO Metrics connector the
 application will use before relying on the built-in metrics in production.
 
-## Choose The Observation Boundary {#choose-the-observation-boundary}
+## Choose the observation boundary {#choose-the-observation-boundary}
 
 Pass one @:apiSymbol(trait:scalive.LifecycleObserver)`LifecycleObserver`@:@ while
 assembling routes to receive structured events from disconnected HTTP rendering
@@ -32,20 +32,15 @@ must intercept or alter a particular root or component stage. Use a
 `LifecycleObserver` for route-wide operational events that cannot alter the
 observed lifecycle.
 
-## Register A Safe Observer {#register-an-observer}
+## Register a safe observer {#register-an-observer}
 
-Create a custom observer for structured logging or tracing and pass it to
+Create a custom observer for structured logging or tracing:
+
+@:sourceRegion(documentation/fixtures/guides/src/configuration/Configuration.scala, configuration-custom-observer)
+
+Pass it as the third argument of
 @:apiSymbol(def:scalive.ZioHttp.routes)`ZioHttp.routes`@:@:
-
-```scala unverified
-val applicationObserver = LifecycleObserver.fromFunction { event =>
-  ZIO.logAnnotate("lifecycle_event", event.name) {
-    ZIO.logDebug("Scalive lifecycle event")
-  }
-}
-
-val liveRoutes = ZioHttp.routes(application, security, applicationObserver)
-```
+`ZioHttp.routes(application, config, applicationObserver)`.
 
 The example records only the stable event name. Do not log `event.toString`:
 failure events may contain an application-thrown cause whose message contains
@@ -66,19 +61,13 @@ matching an event enum, include a fallback that safely ignores or generically
 records unknown cases so a library upgrade does not introduce a runtime
 `MatchError`.
 
-## Publish The Built-In Metrics {#publish-built-in-metrics}
+## Publish the built-in metrics {#publish-built-in-metrics}
 
 @:apiSymbol(object:scalive.LifecycleMetrics)`LifecycleMetrics`@:@ provides an
 exporter-independent ZIO Metrics adapter with fixed metric names, labels, and
 histogram boundaries:
 
-```scala unverified
-val liveRoutes = ZioHttp.routes(
-  application,
-  security,
-  LifecycleMetrics.observer
-)
-```
+@:sourceRegion(documentation/fixtures/guides/src/configuration/Configuration.scala, configuration-metrics-observer)
 
 Metric updates write synchronously to ZIO's in-memory metric registry and do no
 network or file I/O. Install and configure the application's preferred
@@ -96,16 +85,13 @@ Compose the metrics adapter with application-specific logging or tracing when
 both are needed. Observers run in composition order, and a failure in one does
 not prevent the next observer from receiving the event:
 
-```scala unverified
-val observer = LifecycleMetrics.observer.andThen(applicationObserver)
-val liveRoutes = ZioHttp.routes(application, security, observer)
-```
+@:sourceRegion(documentation/fixtures/guides/src/configuration/Configuration.scala, configuration-composed-observer)
 
 The built-in metric contract is intentionally fixed. Implement a separate
 `LifecycleObserver` when an application requires different names, labels, or
 histogram boundaries.
 
-## Use The Metric Families {#metric-families}
+## Use the metric families {#metric-families}
 
 The adapter publishes these metric families:
 
@@ -132,7 +118,7 @@ handler-failure metric and the enclosing failed turn. A mount failure may also
 fail an enclosing render, bootstrap turn, or join. Query the boundary relevant
 to an alert; do not sum counters across families as an incident total.
 
-## Read Labels Correctly {#metric-labels}
+## Read labels correctly {#metric-labels}
 
 Every series in one metric family has the same label keys. Enum values use lower
 snake case.
@@ -163,7 +149,7 @@ zero, and negative values all produce `false`; that value means no positive
 client-reported counter was observed, not authoritative proof of a first join.
 The counters are untrusted diagnostics and never authorization inputs.
 
-## Keep Series Bounded {#metric-cardinality}
+## Keep series bounded {#metric-cardinality}
 
 Durations are converted from monotonic nanoseconds to seconds. Duration
 histograms use exponentially doubling finite buckets from `0.0005` to `65.536`
@@ -181,9 +167,9 @@ messages, browser payloads, credentials, or session claims. Application-thrown
 causes may contain application data and require the same redaction policy as
 application logs.
 
-## Related Tasks {#related-tasks}
+## Related tasks {#related-tasks}
 
-- Assemble security and routes with [Configuration](configuration.md#current-configuration-contract).
+- Assemble the transport config and routes with [Configuration](configuration.md#current-configuration-contract).
 - Map operational symptoms to these metrics in
   [Troubleshooting](troubleshooting.md#use-lifecycle-metrics).
 - Verify exported metrics with the deployed application in

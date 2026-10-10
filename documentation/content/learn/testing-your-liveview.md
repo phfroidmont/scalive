@@ -5,7 +5,7 @@ order = 8
 section = learn
 %}
 
-## Add A Test Module {#add-a-test-module}
+## Add a test module {#add-a-test-module}
 
 Scalive's test support is the optional `dev.scalive::scalive-testing` artifact.
 Add a test module inside `app` in `build.mill`. It uses the same snapshot
@@ -55,7 +55,7 @@ scalive-quick-start/
                 └── ThermostatLiveViewSpec.scala
 ```
 
-## Write A First Test {#write-a-first-test}
+## Write a first test {#write-a-first-test}
 
 Create `app/test/src/quickstart/CounterLiveViewSpec.scala`:
 
@@ -79,7 +79,7 @@ mill app.test
 Mill compiles the application and its tests, then reports
 `increases the count, then resets it` as passed.
 
-## Test A Form {#test-a-form}
+## Test a form {#test-a-form}
 
 Create `app/test/src/quickstart/SignupLiveViewSpec.scala`:
 
@@ -92,7 +92,7 @@ behind. `html` returns the latest rendered HTML, and
 @:apiSymbol(object:scalive.testing.RenderedHtml)`RenderedHtml`@:@ queries it by
 CSS selector.
 
-## Test A Page That Uses A Service {#test-a-service-backed-page}
+## Test a page that uses a service {#test-a-service-backed-page}
 
 The thermostat takes its `Thermostat` service as a constructor argument, so a
 test can pass its own implementation. Create
@@ -113,7 +113,7 @@ refresh timer never fires because each test finishes first.
 
 Run `mill app.test` again. All five tests pass.
 
-## Go Further {#go-further}
+## Go further {#go-further}
 
 The [testing guide](../guides/testing.md#choose-the-test-boundary) covers the
 first HTTP response, routes with sessions and cookies, navigation, uploads,

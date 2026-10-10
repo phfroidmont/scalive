@@ -349,6 +349,90 @@ Verification: `mill __.test`, `mill documentation.check`, and
 `npm run test:xray` pass. `./scripts/e2e-run-upstream.sh` was not run: the API
 change removes overloads, and no runtime behavior changed.
 
+### Phase 5 (2026-10-10): findings 18–20
+
+API decision (finding 18, `ZioHttp.routes` overloads): `ZioHttp.routes` now
+takes only the `ZioHttpConfig`. Removed `routes(application, security)` and
+`routes(application, security, observer)`; they only unwrapped
+`security.config`, and readers could not tell when to use which. Handlers that
+need CSRF, flash, or cookies build `LiveSecurity(config)` from the same config.
+The quick start, Learn, and services `Main` files no longer construct a
+`LiveSecurity` they don't use, which also removed their `liveRoutes` value.
+
+Terminology (finding 18):
+
+- **Durable:** the activity stream's label is **Model history**, and its
+  catalog description, reset description, trace label, and tests say the model
+  keeps the history. The "State and rendering" category says "Model state".
+  "Durable" now means only data kept in storage or a shared service.
+- **Socket:** "socket" no longer stands for a LiveView lifecycle. Nested
+  LiveViews, components, hooks, uploads, async work, and the guides index say
+  "lifecycle"; transport text says "WebSocket" or "WebSocket connection". The
+  nested guide says the child shares the page's WebSocket under its own topic.
+  "Socket path" stays, because it names `withSocketPath`. Troubleshooting's
+  `#diagnose-socket-connections` became `#diagnose-websocket-connections`, and
+  the lifecycle example's label reads "Connected WebSocket mount".
+- **`SCALIVE_TOKEN_SECRET`:** Configuration now shows a compiled loader that
+  reads `SCALIVE_TOKEN_SECRET` and `SCALIVE_ALLOWED_ORIGINS` and fails when
+  either is missing, and says these names are the application's. The quick
+  start says Scalive reads no environment variables and that its `Main` falls
+  back to a development secret. Deployment and troubleshooting no longer
+  restate it.
+- **`routes` / `liveRoutes`:** `application` names a `LiveApplication` and
+  `routes` names ZIO HTTP routes everywhere; `liveRoutes` is gone from the
+  content and fixtures.
+- **Quick start:** lowercase in prose, "Quick start" only as a link title at
+  the start of a sentence.
+- Logout and example names were already fixed in phases 2 and 3.
+
+Presentation (finding 19):
+
+- **Sentence case:** every heading (468), both essay titles, and the guides
+  index groups. Heading IDs are unchanged. Proper nouns, code names, and "Live"
+  where it contrasts with HTTP keep their capitals.
+- **Snippets that changed the model:** the components guide now embeds regions
+  of the voting example, so `resetEpoch` is part of the model from the first
+  snippet. The others (`saved`, `Model.Failed`, `workspaces.authorize`) were
+  already compiled in phases 1 and 3.
+- **Repeated text:** Configuration has a new "Admit WebSocket origins" section
+  (`#admit-websocket-origins`) with the full Origin rules; troubleshooting,
+  deployment, client setup, and the connected test reference link to it. The
+  after-render contract lives only in the lifecycle hooks guide.
+  Troubleshooting links to the Learn lifecycle lesson instead of restating the
+  two mounts. The "two Scala coordinates" paragraph had already been reduced
+  to the runtime essay.
+- **Test evidence:** troubleshooting no longer cites native tests or upstream
+  audits. The compatibility matrix's columns are now "What works" and "Known
+  gaps"; spec class names, upstream test file names, and maintainer to-dos
+  moved to `docs/compatibility-evidence.md`, along with the verification
+  steps. The stale "typed URL builders may be exposed" gap now points to
+  `location`.
+- **Formatting glitches:** already gone after the phase 3 splits.
+
+Contradictions (finding 20):
+
+- The browser integration guide says that a decoded payload proves only its
+  shape, that the server must validate and authorize it, and that JavaScript
+  checks only help usability.
+- The nested LiveView guide states the sticky exception: under connected-turn
+  guards a child is never sticky. The hooks guide links to it instead of
+  explaining it.
+
+Also changed while editing these pages: troubleshooting puts lifecycle metrics
+after the basic startup, asset, WebSocket, CSRF, and reconnect checks (P3).
+Configuration's and lifecycle observability's inline blocks became regions of
+a new `configuration` guide fixture, with a test for the origin parser.
+`rg '```scala unverified' documentation/content` now reports 22 blocks.
+
+Left for later:
+
+- P3 smaller fixes other than the troubleshooting order.
+- 22 `scala unverified` blocks: the dynamic HTML essay (7), browser integration
+  (5), routes and navigation (5), nested LiveViews (2), and one each in client
+  setup, the quick start, and the Learn testing lesson (the last two are
+  `build.mill` files).
+- About 1,000 fallback summaries in the API reference.
+
 ## How this was verified
 
 - I read all 56 authored pages and every embedded example source they

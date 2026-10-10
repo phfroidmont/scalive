@@ -6,7 +6,7 @@ section = guides
 group = "Interfaces and input"
 %}
 
-## Before You Start {#prerequisites}
+## Before you start {#prerequisites}
 
 This guide extends the profile form from
 [Typed forms and validation](typed-forms-and-validation.md#handle-change-and-submit-events).
@@ -15,7 +15,7 @@ every error appears after a submit. That suits most forms; read on when errors
 should wait until the visitor leaves a field, or when a form must behave
 differently after a reconnect.
 
-## Understand The Default {#understand-the-default}
+## Understand the default {#understand-the-default}
 
 The Phoenix client marks fields the visitor has not used yet with `_unused_*`
 markers in each change. Scalive reads those markers into the form's used-field
@@ -27,7 +27,7 @@ Putting `phx.noUnusedField := true` on a form or control suppresses those
 markers, so every received field is treated as used. Keep that switch
 exceptional; the default gives field-local feedback before submit.
 
-## Choose When Feedback Appears {#choose-when-feedback-appears}
+## Choose when feedback appears {#choose-when-feedback-appears}
 
 Choose `FormFeedback.AfterBlur` when an invalid field should stay quiet until
 focus leaves it. For signal-backed forms, `formSignal.bind` ties rendering and
@@ -55,7 +55,7 @@ signal-backed field views append caller modifiers without those restrictions.
 For a custom scalar input, `inputAttributes` supplies its retained `id`, `name`,
 value, and blur wiring.
 
-## Normalize A Value On Blur {#normalize-a-value-on-blur}
+## Normalize a value on blur {#normalize-a-value-on-blur}
 
 Calling `.onBlur(value => Msg.NormalizePhone(value.trim))` on a bound control
 sends an application message after the feedback update. The command order does
@@ -77,7 +77,7 @@ while its row exists. Outside a keyed loop, use
 accepting a `BoundFormField`; it omits the control safely when the row
 disappears.
 
-## Reset Interaction Without Losing Values {#reset-interaction}
+## Reset interaction without losing values {#reset-interaction}
 
 `form.pristine` clears interaction while retaining current values, validation
 errors, and the active feedback policy. `Definition.fromValues(form.values)`
@@ -89,7 +89,7 @@ Feedback-only operations (`pristine` and `withAllErrorsVisible`) preserve
 malformed payload errors rather than silently dropping them through
 revalidation.
 
-## Recover A Form After Reconnect {#recover-a-form-after-reconnect}
+## Recover a form after reconnect {#recover-a-form-after-reconnect}
 
 When the connection drops and the page remounts, the Phoenix client sends the
 values still in the browser through the form's change binding. Give a
@@ -126,7 +126,7 @@ not survive a deliberate page exit, replace a database-backed draft, recover
 file input bytes, or merge concurrent edits. Persist drafts in an application
 service when those guarantees are required.
 
-## Related Tasks {#related-tasks}
+## Related tasks {#related-tasks}
 
 - Test changed-field visibility and submission with [Testing](testing.md#test-typed-form-behavior); keep automatic recovery assertions at the [browser boundary](testing.md#test-in-a-browser).
 - Render more control types with [Form controls](form-controls.md#prerequisites).

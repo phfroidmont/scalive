@@ -6,10 +6,10 @@ section = guides
 group = "Setup and foundations"
 %}
 
-## Before You Start {#prerequisites}
+## Before you start {#prerequisites}
 
 Start with a Scalive application whose routed page renders a complete root
-layout, such as the one in the [Quick start](../learn/quick-start.md). The quick
+layout, such as the one in the [quick start](../learn/quick-start.md). The quick
 start already loads the Phoenix and LiveView browser clients packaged in the
 Scalive artifact, connects `LiveSocket` from `app.js`, and serves `app.js` with
 `StaticAssets`. It needs no separate JavaScript build.
@@ -21,7 +21,7 @@ manifests. If the application imports browser packages, use the
 [custom client bundle](#build-the-client-bundle) instead of the packaged
 clients.
 
-## Load The Packaged Clients {#load-the-packaged-clients}
+## Load the packaged clients {#load-the-packaged-clients}
 
 Use the packaged clients when the application has no JavaScript build of its
 own. Load @:apiSymbol(class:scalive.LiveViewClientAssets)`LiveViewClientAssets`@:@
@@ -31,7 +31,7 @@ the [quick start's `Main`](../learn/quick-start.md#start-the-server) does:
 ```scala fragment
 clientAssets <- LiveViewClientAssets.load()
 // ...
-routes = liveRoutes ++ clientAssets.routes ++ assets.routes
+routes = ZioHttp.routes(application, config) ++ clientAssets.routes ++ assets.routes
 ```
 
 Then render the client scripts in the root layout's `<head>`, before the
@@ -71,15 +71,14 @@ layout's `<head>` and associates it with the CSRF cookie. Return that value as
 Pass options such as `hooks`, `uploaders`, or connection tuning in the final
 `LiveSocket` options object before calling `connect()`. To send your own values
 to mount, add them to `params` as shown in
-[Read connect metadata](#read-connect-metadata). Exposing the socket on `window`
-is optional and useful only for browser-console debugging.
+[Read connect metadata](#read-connect-metadata). Exposing `liveSocket` on
+`window` is optional and useful only for browser-console debugging.
 
-The browser adds the WebSocket `Origin` header automatically from the page's
-HTTP or HTTPS origin. Do not add it to `params` or attempt to set it from
-JavaScript. Instead, list that page origin in the server's
-[WebSocket allowlist](configuration.md#current-configuration-contract).
+The browser sets the WebSocket `Origin` header itself, so do not add it to
+`params`. List the page's origin in the server's
+[WebSocket origin allowlist](configuration.md#admit-websocket-origins).
 
-## Load A Classpath Tree {#load-classpath-assets}
+## Load a classpath tree {#load-classpath-assets}
 
 Load application assets from the classpath when the build packages them with
 the application. The quick start loads a single `app.js` this way. For a larger
@@ -102,7 +101,7 @@ remain available.
 configured asset and fails when one is missing. The default mount path is
 `/static`, and original unversioned URLs are disabled by default.
 
-## Load A Directory Tree {#load-a-directory}
+## Load a directory tree {#load-a-directory}
 
 Use @:apiSymbol(def:scalive.StaticAssetConfig.directory)`StaticAssetConfig.directory`@:@
 when assets are deployed outside the application classpath:
@@ -124,7 +123,7 @@ paths must be normalized relative paths; empty segments, `.`, `..`, and
 backslashes are rejected, and symlinks cannot escape the configured root. The
 mount path and originals defaults match the classpath tree.
 
-## Understand Versioned Paths {#serve-versioned-paths}
+## Understand versioned paths {#serve-versioned-paths}
 
 Classpath and directory trees serve every file below one version namespace, so
 render URLs from the loaded `StaticAssets` value rather than hard-coding them.
@@ -145,11 +144,11 @@ return `404` by default; set `serveOriginals = true` only when unversioned
 access is required. Originals serve current bytes with a current `ETag` and
 `no-cache`.
 
-## Add Routes And Resolve Paths {#add-static-routes-and-resolve-paths}
+## Add routes and resolve paths {#add-static-routes-and-resolve-paths}
 
 Add @:apiSymbol(val:scalive.StaticAssets.routes)`StaticAssets.routes`@:@ to the
 server routes, as the quick start's `Main` does with
-`liveRoutes ++ clientAssets.routes ++ assets.routes`. The routes serve `GET` and
+`ZioHttp.routes(application, config) ++ clientAssets.routes ++ assets.routes`. The routes serve `GET` and
 `HEAD` below the configured mount path, and query strings do not affect lookup.
 
 In a classpath or directory tree, `path` resolves a tree-relative name below the
@@ -168,7 +167,7 @@ path or manifest-defined final path, not an optional revalidating original.
 `immutable` and `revalidating` header policies. Replace it through
 `config.copy(cache = ...)` when the application requires different headers.
 
-## Render Tracked Tags {#render-tracked-tags}
+## Render tracked tags {#render-tracked-tags}
 
 Render the application's top-level script and stylesheet in the root layout's
 `<head>`. The quick start's root layout renders `app.js` this way; a stylesheet
@@ -196,7 +195,7 @@ application bundles whose change should be visible to the LiveView client. A
 connected view reads the tracking result through
 [`staticChanged`](#read-connect-metadata).
 
-## Build A Custom Client Bundle {#build-the-client-bundle}
+## Build a custom client bundle {#build-the-client-bundle}
 
 Use a custom browser build when the application needs package imports,
 TypeScript, source maps, generated chunks, or other build-owned output. Install
@@ -278,7 +277,7 @@ Keeping the whole output tree preserves chunks, workers, CSS, fonts, source
 maps, and relative references. Adjust the build tool integration when the
 application does not use Mill, while preserving the same complete resource tree.
 
-## Read Connect Metadata {#read-connect-metadata}
+## Read connect metadata {#read-connect-metadata}
 
 Add small browser-derived values to the `params` object when mount needs them:
 
@@ -310,15 +309,15 @@ metadata, not an application recovery contract.
 Connected capabilities also expose
 @:apiSymbol(def:scalive.ConnectedMetadata.staticChanged)`staticChanged`@:@, the
 result of [tracked tag](#render-tracked-tags) comparison. Use it to replace
-stale connected state or to initiate a full reload. On a routed root socket
-join, it is `true` when the client's non-empty list of tracked URLs differs from
+stale connected state or to initiate a full reload. When a routed root LiveView
+joins, it is `true` when the client's non-empty list of tracked URLs differs from
 the server-rendered list; query strings, fragments, and URL origins are ignored
 during comparison. Missing, malformed, or empty client tracking metadata yields
-`false`, and the result remains stable for that socket lifecycle. Therefore use
+`false`, and the result remains stable for that lifecycle. Therefore use
 it as a deployment-change hint, not proof that assets loaded successfully or as
 a security signal.
 
-## Choose An Asset Model {#choose-an-asset-model}
+## Choose an asset model {#choose-an-asset-model}
 
 Use a classpath or directory tree unless an external build must define final
 public paths or per-file cache policies. In that case, use a deployment
@@ -334,7 +333,7 @@ relative tree for a classpath or directory tree, or inventory every output in a
 deployment manifest. The packaged Phoenix clients use their own fixed classpath
 graph independently of this choice.
 
-## Load A Deployment Manifest {#load-a-deployment-manifest}
+## Load a deployment manifest {#load-a-deployment-manifest}
 
 Load the manifest with
 @:apiSymbol(def:scalive.StaticAssetConfig.deploymentClasspath)`StaticAssetConfig.deploymentClasspath`@:@
@@ -402,7 +401,7 @@ while `revalidate` responses use `no-cache`; both include a strong per-file
 after an in-place mutation until assets are reloaded. A `revalidate` file serves
 its current bytes with a current `ETag` at its stable final path.
 
-## Related Tasks {#related-tasks}
+## Related tasks {#related-tasks}
 
 - Place bundle tags in the document shell with [Layouts](layouts.md#install-root-and-ordinary-layouts).
 - Load the optional confirmation runtime with [Guard unsaved changes](navigation-guards.md#prerequisites).

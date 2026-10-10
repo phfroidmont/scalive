@@ -9,7 +9,7 @@ A form that uploads one small text file, counts its bytes, lines, and words,
 and immediately discards the file. It never stores or renders the file's
 contents.
 
-## Try It {#try-it}
+## Try it {#try-it}
 
 1. Under **Text file**, choose a `.txt` or `.md` file of at most 64 KiB. The
    file appears at 0%: choosing a file does not upload it yet.
@@ -22,7 +22,7 @@ contents.
 
 @:example(text-upload)
 
-## How It Works {#how-it-works}
+## How it works {#how-it-works}
 
 - `LiveUploadDef.inMemory` allows one `.txt` or `.md` file of at most 64 KiB.
   The server checks a chosen file's type and size before the browser sends any
@@ -37,7 +37,7 @@ These limits make an in-memory destination appropriate for this example.
 Larger or attacker-controlled files need a streaming writer or an external
 destination instead.
 
-## Related Guides {#related-guides}
+## Related guides {#related-guides}
 
 - [File uploads](../guides/uploads-and-consumption.md#choose-a-destination-and-set-hard-limits)
   covers destinations, limits, and consumption.

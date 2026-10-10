@@ -6,7 +6,7 @@ section = guides
 group = "Interfaces and input"
 %}
 
-## Before You Start {#prerequisites}
+## Before you start {#prerequisites}
 
 This guide assumes the form from
 [Typed forms and validation](typed-forms-and-validation.md#define-a-rooted-form).
@@ -16,7 +16,7 @@ submitted several times, use `Root.texts` and
 [`appended` / `removedAt`](typed-forms-and-validation.md#update-fields-programmatically)
 instead.
 
-## Model Repeated Rows {#model-repeated-rows}
+## Model repeated rows {#model-repeated-rows}
 
 Declare a row group under the root, define its fields relative to the group,
 and combine them into a row type. The group's product then becomes one field of
@@ -27,7 +27,7 @@ the form:
 `Contact.Definition` decodes a `Vector[Phone]` in row order, and each row
 accumulates its own field errors at that row's address.
 
-## Render The Rows {#render-the-rows}
+## Render the rows {#render-the-rows}
 
 `rows(Contact.PhoneRows)` on the form signal returns the rows with their stable
 keys. Render them with `splitBy` on the row key. Each row must render its
@@ -39,7 +39,7 @@ Each row is a `Signal` of a row view, so `row.map(_.field(...))` selects a field
 view and `row.presence()` renders the hidden control that keeps the row in the
 next submission, even when all its visible fields are empty or unchecked.
 
-## Give Rows Stable Keys {#give-rows-stable-keys}
+## Give rows stable keys {#give-rows-stable-keys}
 
 Every row has a `FormRowKey` that you choose. Keys, rather than display
 indexes, preserve a row's identity, used fields, and error addresses when rows
@@ -51,7 +51,7 @@ Start a form with existing rows through the group's `initial` and `row`:
 
 @:sourceRegion(documentation/site/src/scalive/docs/examples/RepeatedContactsFormExample.scala, repeated-contacts-initial)
 
-## Add, Remove, And Move Rows {#add-remove-and-move-rows}
+## Add, remove, and move rows {#add-remove-and-move-rows}
 
 Row operations are ordinary messages. Each row's buttons send its own key:
 
@@ -75,7 +75,7 @@ shows initialization, rendering, typed events, add, remove, both move
 directions, row-local validation, submission, and reset. Its order summary makes
 the persistent keys visible while rows move.
 
-## Accept Phoenix Nested Parameters {#accept-phoenix-nested-parameters}
+## Accept Phoenix nested parameters {#accept-phoenix-nested-parameters}
 
 The core wire shape is keyed and includes the presence control. To accept
 Phoenix's indexed nested-parameter convention, adapt that boundary explicitly.
@@ -95,7 +95,7 @@ match the application. Prefer the core keyed controls for new Scalive
 interfaces; use the adapter when interoperating with Phoenix-style clients or
 markup.
 
-## Related Tasks {#related-tasks}
+## Related tasks {#related-tasks}
 
 - Bind blur feedback to a row's control with [Form feedback and recovery](form-feedback-and-recovery.md#normalize-a-value-on-blur).
 - Test stable rows with [Testing](testing.md#test-typed-form-behavior).

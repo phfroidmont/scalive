@@ -8,7 +8,7 @@ section = examples
 A LiveView whose connected mount acquires a registration and releases it when
 the LiveView's lifecycle closes. Ordinary messages do not acquire it again.
 
-## Try It {#try-it}
+## Try it {#try-it}
 
 1. Read **Status** and **Handle**. The status shows "Acquired": the connected
    mount registered this LiveView and stored the handle in its model.
@@ -23,7 +23,7 @@ example's tests check that closing the LiveView releases the displayed handle.
 
 @:example(connected-resource)
 
-## How It Works {#how-it-works}
+## How it works {#how-it-works}
 
 - `mount` matches `ctx.connection` and calls
   `connected.resources.acquireRelease(register)(unregister)` only in the
@@ -35,7 +35,7 @@ example's tests check that closing the LiveView releases the displayed handle.
   WebSocket with their parent. State shared by a logical application session
   belongs in a longer-lived service instead.
 
-## Register At A Route Boundary {#register-at-a-route-boundary}
+## Register at a route boundary {#register-at-a-route-boundary}
 
 Keep acquisition in `mount` when the acquired value belongs in the initial model,
 as in the preview above. When registration is only a lifecycle side effect, attach
@@ -57,7 +57,7 @@ application session, or shared WebSocket. See the
 [initializer contract](../guides/connected-resources.md#route-and-session-resources)
 for failures, context projection, and remount behavior.
 
-## Related Guides {#related-guides}
+## Related guides {#related-guides}
 
 - [Connected resources](../guides/connected-resources.md#connected-resources)
   explains acquisition, release, and when to use a route initializer.

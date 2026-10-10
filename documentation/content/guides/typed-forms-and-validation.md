@@ -6,7 +6,7 @@ section = guides
 group = "Interfaces and input"
 %}
 
-## Before You Start {#prerequisites}
+## Before you start {#prerequisites}
 
 You need a `LiveView` with a typed model and messages, and you should be able to
 render controls and bind browser events. [Your first form](../learn/your-first-form.md)
@@ -25,7 +25,7 @@ after it build on the same form:
 - [Saving forms](saving-forms.md#prerequisites): dirty state and saving in the
   background.
 
-## Define A Rooted Form {#define-a-rooted-form}
+## Define a rooted form {#define-a-rooted-form}
 
 Start with a @:apiSymbol(class:scalive.FormRoot)`FormRoot`@:@, define fields relative
 to it, and combine those fields into one domain constructor:
@@ -48,7 +48,7 @@ The definition is plain data with no reference to a LiveView, so tests, other
 pages, and [ordinary HTTP forms](http-forms-and-redirects.md#prerequisites) can
 reuse it.
 
-## Keep Form State In The Model {#keep-form-state-in-the-model}
+## Keep form state in the model {#keep-form-state-in-the-model}
 
 Store the definition's `Form` type in the model. `Definition.Event` is the
 matching event type, so model and message declarations stay tied to this exact
@@ -69,7 +69,7 @@ the initial editable values immediately, so state may contain required-field err
 Those errors are intentionally not visible yet: the form has not been submitted
 and no field is used.
 
-## Handle Change And Submit {#handle-change-and-submit-events}
+## Handle change and submit {#handle-change-and-submit-events}
 
 Bind both LiveView events through the form definition, and read fields from the
 form stored in the model:
@@ -104,7 +104,7 @@ form's successful controls and identifies the changed control. See
 [HTML and event bindings](html-dsl-and-event-bindings.md#bind-events-to-messages)
 for the distinction between LiveView bindings and native event attributes.
 
-## Render Fields And Errors {#render-fields-and-errors}
+## Render fields and errors {#render-fields-and-errors}
 
 Inside `view`, `model` is a `Signal[Model]`. `model.map(_.form)` selects the form
 as a `Signal[Form]`, and its `field` method returns a field view with the
@@ -133,7 +133,7 @@ not in the model: a constant form such as a login page, or an HTML form rendered
 by an ordinary HTTP handler. See
 [Ordinary HTTP forms and redirects](http-forms-and-redirects.md#render-a-reusable-http-form).
 
-## Reset Deliberately {#reset-deliberately}
+## Reset deliberately {#reset-deliberately}
 
 A reset message should construct fresh initial form state and clear any saved
 result:
@@ -146,7 +146,7 @@ together. Replacing only input strings can leave stale validation state behind.
 Try change, invalid submit, valid submit, and reset behavior in the
 [typed profile form example](../examples/profile-form.md).
 
-## Choose Field Types And Combine Errors {#accumulate-field-errors}
+## Choose field types and combine errors {#accumulate-field-errors}
 
 Fields combined by `product` accumulate independent decoding errors in field
 order. An invalid name and email therefore produce both errors rather than
@@ -186,7 +186,7 @@ issue still has an owner-checked logical address:
 Each error retains its owner-scoped @:apiSymbol(class:scalive.FormAddress)`FormAddress`@:@,
 so rendering can attach feedback to the exact input.
 
-## Update Fields Programmatically {#update-fields-programmatically}
+## Update fields programmatically {#update-fields-programmatically}
 
 Use @:apiSymbol(def:scalive.Form.updated)`Form.updated`@:@ when a server-side action
 needs to replace one field with its typed editable input without rebuilding
@@ -212,7 +212,7 @@ Phoenix normally preserves browser-managed state for a focused control during
 DOM patches. Add `phx.patchFocused := true` to a control when a programmatic
 form update must replace its visible value while it remains focused.
 
-## Read Event Details {#read-event-details}
+## Read event details {#read-event-details}
 
 Both messages carry `Profile.Definition.Event`. Besides `event.form`,
 `event.kind` distinguishes `Changed`, `Submitted`, and `Recovered`, and
@@ -239,7 +239,7 @@ application action routing. Use `RawFormEvent[A]` only for an explicitly
 low-level `on.change.form(formCodec)` or equivalent `FormCodec` binding;
 definition-backed events should use `Definition.Event` and `event.form`.
 
-## Continue Through Input {#continue-through-input}
+## Continue through input {#continue-through-input}
 
 This guide is the typed-form step in the interface and input path:
 
@@ -250,7 +250,7 @@ This guide is the typed-form step in the interface and input path:
 3. [Ordinary HTTP forms and redirects](http-forms-and-redirects.md) for browser POST and Post/Redirect/Get.
 4. [Testing](testing.md#test-typed-form-behavior) for validation visibility, submission, and stable rows.
 
-## Related Tasks {#related-tasks}
+## Related tasks {#related-tasks}
 
 - Use [Ordinary HTTP forms and redirects](http-forms-and-redirects.md) when the browser should perform a normal GET or POST.
 - Use [Guard unsaved changes](navigation-guards.md#prerequisites) when leaving a dirty form should require confirmation.

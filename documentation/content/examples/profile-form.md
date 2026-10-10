@@ -9,7 +9,7 @@ A typed form with three validated fields and two submit buttons. Valid input
 becomes a `Profile`, and the button that submitted the form becomes a typed
 `Intent`.
 
-## Try It {#try-it}
+## Try it {#try-it}
 
 1. Type `ada` into **Email**. "Enter a valid email address." appears under that
    field, while the fields you have not used stay quiet.
@@ -22,7 +22,7 @@ becomes a `Profile`, and the button that submitted the form becomes a typed
 
 @:example(profile-form)
 
-## How It Works {#how-it-works}
+## How it works {#how-it-works}
 
 - `Profile.Definition` declares the fields and their validation once, and
   `Root.product[Profile]` decodes valid input into a `Profile`.
@@ -33,7 +33,7 @@ becomes a `Profile`, and the button that submitted the form becomes a typed
 - `submission.replaceTextWith("Saving...")` relabels the save button while the
   submission is in flight.
 
-## Related Guides {#related-guides}
+## Related guides {#related-guides}
 
 - [Typed forms and validation](../guides/typed-forms-and-validation.md#define-a-rooted-form)
   builds this kind of form step by step.

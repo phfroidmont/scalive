@@ -5,7 +5,7 @@ order = 1
 section = learn
 %}
 
-## Before You Begin {#before-you-begin}
+## Before you begin {#before-you-begin}
 
 Install JDK 17 or later and the Mill launcher. This quick start uses Scala
 `3.8.4`, Mill `1.1.8`, and the
@@ -28,7 +28,7 @@ Maven Central retains snapshots for a limited time.
 
 @:@
 
-## Create The Project {#create-the-project}
+## Create the project {#create-the-project}
 
 Create this project tree:
 
@@ -78,19 +78,19 @@ Mill automatically places files under `app/resources` on the application's
 classpath. Scalive packages the Phoenix and Phoenix LiveView browser clients,
 so this project needs no package manager or bundler.
 
-## Connect The Browser {#connect-the-browser}
+## Connect the browser {#connect-the-browser}
 
 Create `app/resources/public/app.js`:
 
 @:sourceRegion(documentation/fixtures/quick-start/resources/public/app.js, quick-start-browser)
 
-@:apiSymbol(val:scalive.Live.router)`Live.router`@:@ mounts its socket at `/live`
+@:apiSymbol(val:scalive.Live.router)`Live.router`@:@ serves its WebSocket below `/live`
 by default. The server injects the CSRF meta element into the root layout's
 `<head>` and binds it to a cookie. The client returns the value as `_csrf_token`
-when it opens the socket. Do not create or hard-code this token in JavaScript.
+when it opens the WebSocket. Do not create or hard-code this token in JavaScript.
 The packaged client scripts expose the `Phoenix` and `LiveView` globals used here.
 
-## Define The LiveView {#define-the-liveview}
+## Define the LiveView {#define-the-liveview}
 
 Create `app/src/quickstart/CounterLiveView.scala`:
 
@@ -100,7 +100,7 @@ The `Int` is all state needed to render this interface. `Msg` lists every input
 the view accepts. `mount` creates the state, `handleMessage` performs an
 effectful transition, and `view` projects the state into typed HTML.
 
-## Add Routes And Layout {#add-routes-and-layout}
+## Add routes and layout {#add-routes-and-layout}
 
 Create `app/src/quickstart/Routes.scala`:
 
@@ -121,7 +121,7 @@ order because `app.js` uses both client globals. The
 [layouts guide](../guides/layouts.md#install-root-and-ordinary-layouts) covers
 shared navigation and per-route layouts.
 
-## Start The Server {#start-the-server}
+## Start the server {#start-the-server}
 
 Create `app/src/quickstart/Main.scala`:
 
@@ -135,7 +135,10 @@ asset URLs, which include a version, so the plain `/static/app.js` path returns
 `404`.
 
 The configuration signs session cookies and accepts live connections only from
-pages served at `http://localhost:8080` and `http://127.0.0.1:8080`.
+pages served at `http://localhost:8080` and `http://127.0.0.1:8080`. Scalive
+reads no environment variables itself: `Main` reads the signing secret from
+`SCALIVE_TOKEN_SECRET`, a name this project chose, and falls back to a fixed
+development secret when it is unset.
 
 @:callout(warning)
 
@@ -148,7 +151,7 @@ and [Deployment](../guides/deployment.md#put-an-http-edge-in-front).
 
 @:@
 
-## Run It {#run-it}
+## Run it {#run-it}
 
 From the project root, run:
 
@@ -159,7 +162,7 @@ mill app.run
 Open `http://localhost:8080/`, substituting the configured `port` value if you
 changed it. The HTTP request first produces disconnected HTML. The client then
 connects to `/live`, Scalive mounts an independent connected model, and button
-events travel over the socket as typed messages.
+events travel over the WebSocket as typed messages.
 
 You are done when Mill compiles the application, the server listens on the
 configured port, and the browser shows a counter starting at `0`. Both buttons
@@ -168,7 +171,7 @@ should update it without reloading the page.
 Next, [Models, messages, and effects](models-and-messages.md) adds a Reset
 button and explains how the counter's state changes.
 
-## If Something Fails {#if-something-fails}
+## If something fails {#if-something-fails}
 
 - If Mill cannot resolve the Scalive dependency, confirm the snapshot version
   and repository above, then check [startup troubleshooting](../guides/troubleshooting.md#diagnose-startup-failures).
@@ -178,4 +181,4 @@ button and explains how the counter's state changes.
   `port` value in `Main.scala`; the server binding and local WebSocket origins
   derive from it. Open the replacement port in the browser. If the page loads
   but its buttons do not connect, check
-  [socket connections](../guides/troubleshooting.md#diagnose-socket-connections).
+  [WebSocket connections](../guides/troubleshooting.md#diagnose-websocket-connections).

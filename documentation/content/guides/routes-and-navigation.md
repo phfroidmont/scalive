@@ -6,14 +6,14 @@ section = guides
 group = "Routing and application structure"
 %}
 
-## Before You Start {#prerequisites}
+## Before you start {#prerequisites}
 
 Start with a URL whose routed `LiveView` mounts and renders, and a named route
 declaration that decodes it. The
 [Quick start](../learn/quick-start.md#add-routes-and-layout) shows the minimal
 router and layout wiring assumed here.
 
-## Name Route Declarations {#name-route-declarations}
+## Name route declarations {#name-route-declarations}
 
 A route declaration is both an inbound decoder and, when every transformation is
 reversible, an outbound location builder. Keep important declarations as named
@@ -25,7 +25,7 @@ object Routes:
   val search =
     (live / "search").queryOptional[String]("q")
 
-val routes = Live.router(
+val application = Live.router(
   Routes.search -> SearchLiveView()
 )
 ```
@@ -41,7 +41,7 @@ layouts retain their installation-time path parameters: the path codec's combine
 projects those parameters from the extended destination rather than exposing the
 larger parameter tuple to the earlier layout.
 
-## Map Parameters Into Domain Types {#map-parameters-into-domain-types}
+## Map parameters into domain types {#map-parameters-into-domain-types}
 
 Use @:apiSymbol(def:scalive.LiveEncodableRouteParamsBuilder.mapParams)`mapParams`@:@ when the codec-facing shape is not the shape the
 application should use. Supply both directions:
@@ -63,7 +63,7 @@ resulting builder remains mountable but cannot call `location`. That compile-tim
 restriction prevents a route from claiming it can safely reconstruct information
 that it discarded.
 
-## Mount And React To Parameters {#mount-and-react-to-parameters}
+## Mount and react to parameters {#mount-and-react-to-parameters}
 
 `mount(params, ctx)` receives typed parameters for the disconnected render and
 again for the fresh connected lifecycle. @:apiSymbol(def:scalive.LiveView.Routed.handleParams)`handleParams`@:@ runs after mount and after
@@ -96,7 +96,7 @@ The documentation examples catalog is a real routed view. Its `topic` query
 parameter controls a URL-addressable filter, and every topic link builds a typed
 location before issuing a patch.
 
-## Give A LiveView Its Services {#give-a-liveview-its-services}
+## Give a LiveView its services {#give-a-liveview-its-services}
 
 `->` pairs a route with a LiveView that needs nothing from the application. When
 the LiveView needs a service, register the route with
@@ -118,7 +118,7 @@ walks through a complete example, and the
 [services guide](services-and-zlayer-injection.md) covers several services,
 layers that own resources, and tests.
 
-## Authorize Route Mounts {#authorize-route-mounts}
+## Authorize route mounts {#authorize-route-mounts}
 
 Use @:apiSymbol(class:scalive.LiveRouteMountAspect)`LiveRouteMountAspect`@:@ to
 load and authorize a decoded destination before its LiveView is constructed. It
@@ -145,7 +145,7 @@ They are additive, do not change context or the page model, and fail through
 `Task` as mount failures, not controlled authorization rejections. See
 [route and session resources](connected-resources.md#route-and-session-resources).
 
-## Build Locations From Route Declarations {#build-locations-from-route-declarations}
+## Build locations from route declarations {#build-locations-from-route-declarations}
 
 Call @:apiSymbol(def:scalive.LiveEncodableRouteParamsBuilder.location)`location(params)`@:@ to create a
 @:apiSymbol(class:scalive.LiveLocation)`LiveLocation`@:@:
@@ -180,7 +180,7 @@ the site's actual search route declaration. Its complete executable source is:
 
 @:sourceRegion(documentation/site/src/scalive/docs/examples/NavigationExample.scala, navigation-example)
 
-## Choose Patch Or Navigate {#choose-patch-or-navigate}
+## Choose patch or navigate {#choose-patch-or-navigate}
 
 Patches keep the current routed LiveView mounted and call `handleParams` with
 the new URL. Use them for filters, pagination, tabs, and other URL state owned by
@@ -197,8 +197,8 @@ Navigation changes the routed LiveView:
 The new connected root lifecycle reruns its route/session resource initializers
 on navigation or reconnect. A patch or ordinary message retains the current
 resources without rerunning those callbacks. Initializers are not inherited by
-nested LiveViews and never imply shared ownership across roots on one socket or
-within one named live session.
+nested LiveViews and never imply shared ownership across roots on one WebSocket
+connection or within one named live session.
 
 Rendered links expose the same four choices through `link`. Prefer links for
 destinations the user can activate directly: they retain an ordinary `href` for
@@ -211,7 +211,7 @@ push when Back should return to the previous state. Use replace for
 canonicalization and transient intermediate URLs that should not remain in
 history.
 
-## Respect Route And Named Live-Session Boundaries {#respect-route-and-session-boundaries}
+## Respect route and named live session boundaries {#respect-route-and-session-boundaries}
 
 Live navigation is enhanced only when the destination is compatible with the
 current named live session and root layout. Crossing an incompatible boundary
@@ -244,7 +244,7 @@ That harness behavior is distinct from browser reconnect timing: only a real
 browser can prove when the JavaScript client retries after transport loss or
 falls back to an ordinary HTTP request at an incompatible boundary.
 
-## Related Tasks {#related-tasks}
+## Related tasks {#related-tasks}
 
 - Group compatible routes with [Live sessions and mount aspects](live-sessions-and-mount-aspects.md#choose-the-right-boundary).
 - Protect route groups with [Authentication and sessions](authentication.md#bind-admission-to-physical-connections).

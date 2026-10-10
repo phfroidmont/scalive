@@ -6,7 +6,7 @@ section = guides
 group = "Testing and troubleshooting"
 %}
 
-## Before You Start {#prerequisites}
+## Before you start {#prerequisites}
 
 This guide assumes a project with a test module, such as the quick-start
 application after [Testing your LiveView](../learn/testing-your-liveview.md).
@@ -16,7 +16,7 @@ This guide covers the next tests most applications need. The
 [connected test reference](connected-test-reference.md#prerequisites) lists the
 exact contracts of each helper.
 
-## Choose The Test Boundary {#choose-the-test-boundary}
+## Choose the test boundary {#choose-the-test-boundary}
 
 Scalive applications have three useful test boundaries:
 
@@ -45,7 +45,7 @@ successful-control selection or execute JavaScript.
 
 @:@
 
-## Interact With A Connected LiveView {#cover-connected-behavior}
+## Interact with a connected LiveView {#cover-connected-behavior}
 
 @:apiSymbol(def:scalive.testing.ConnectedRender.join)`ConnectedRender.join`@:@
 mounts one LiveView at `/`, renders its first HTML, and connects it. The
@@ -64,7 +64,7 @@ Interact through the view the way a visitor would:
 Each action waits for the server's reply. Then read the result with
 `text(selector)` for one element or `html` for the whole rendered view.
 
-## Wait For Background Updates {#wait-for-an-html-condition}
+## Wait for background updates {#wait-for-an-html-condition}
 
 Work started with [asynchronous work](async-work.md#prerequisites) or a
 [subscription](subscriptions.md#prerequisites) updates the page later, not as
@@ -82,7 +82,7 @@ uses `TestAspect.withLiveClock` for real timeouts.
 [Wait for an HTML condition](connected-test-reference.md#wait-for-an-html-condition)
 describes the deadline, clock, and concurrency rules.
 
-## Test Typed Form Behavior {#test-typed-form-behavior}
+## Test typed form behavior {#test-typed-form-behavior}
 
 Use `changeForm` with a target and `_unused_*` markers to verify field-local
 feedback. Use `submitForm` without unused markers to verify that submission
@@ -118,7 +118,7 @@ controls through the connected view, then assert stable row keys rather than
 display indexes. Automatic form recovery after a reconnect runs in the Phoenix
 JavaScript client, so verify it in a [browser test](#test-in-a-browser).
 
-## Test A Routed Application {#open-a-routed-application-client}
+## Test a routed application {#open-a-routed-application-client}
 
 When routes, mount aspects, layouts, or services are part of the claim, open the
 application instead of one LiveView.
@@ -137,7 +137,7 @@ and provides its service:
 `zio.test.{Live as _, *}`. When a test also builds routes with `live / "..."`,
 exclude `live` the same way: `import zio.test.{Live as _, live as _, *}`.
 
-## Follow A Navigation {#exercise-actions-and-navigation}
+## Follow a navigation {#exercise-actions-and-navigation}
 
 An action that navigates to another LiveView in the same live session returns
 `ConnectedAction.LiveNavigation`. Call `follow` to connect the destination the
@@ -150,7 +150,7 @@ and follows its **Open settings** button:
 The [action table](connected-test-reference.md#connected-actions) lists every
 outcome an action can report.
 
-## Test Disconnected Rendering {#test-disconnected-rendering}
+## Test disconnected rendering {#test-disconnected-rendering}
 
 Test the first HTML response when the claim is about what a visitor or crawler
 receives before the page connects: content, status codes, redirects, or
@@ -173,7 +173,7 @@ configuration.
 `zio.http.*` would import ZIO HTTP's `Routes`, which hides the quick start's
 `Routes` object. Import only the ZIO HTTP names the test uses.
 
-## Submit Ordinary Forms {#submit-ordinary-forms}
+## Submit ordinary forms {#submit-ordinary-forms}
 
 Use @:apiSymbol(def:scalive.testing.RenderedForm.submit)`RenderedForm.submit`@:@
 when a rendered GET or POST form should execute an ordinary local HTTP route.
@@ -184,7 +184,7 @@ the login page from
 
 @:sourceRegion(documentation/fixtures/guides/test/src/httpforms/LoginFlowSpec.scala, testing-submit-form)
 
-Here `routes` combines the Live routes and the HTTP handlers, built with one
+Here `routes` combines the Live routes and the HTTP handlers, built from one
 fixed test config, and `login` is a GET request for `/login`. The handler needs
 a `Sessions` service, so the effect is provided with a test layer. Cookies
 returned by one response are carried into the next request, and redirects stay
@@ -192,14 +192,15 @@ explicit: `followSeeOther` follows a local `303 See Other`. The
 [reference](connected-test-reference.md#submit-ordinary-forms) lists the exact
 encoding and cookie rules.
 
-## Test In A Browser {#test-in-a-browser}
+## Test in a browser {#test-in-a-browser}
 
 Run the same production-shaped server, browser assets, root layout, security
 configuration, and socket path that users will receive. A browser smoke suite
 should prove at least:
 
-- the disconnected document contains meaningful content before the socket joins;
-- the LiveSocket reaches the connected state;
+- the disconnected document contains meaningful content before the LiveView
+  connects;
+- `LiveSocket` reaches the connected state;
 - the server admits the page's exact configured HTTP or HTTPS `Origin`;
 - one event updates the existing DOM;
 - live patch or navigation preserves the expected URL and title;
@@ -214,9 +215,9 @@ should prove at least:
 Application teams own the selectors, fixtures, server startup, and assertions
 for their product.
 
-## Know What Each Test Proves {#know-what-each-test-proves}
+## Know what each test proves {#know-what-each-test-proves}
 
-A passing disconnected test does not prove a socket can join. A passing
+A passing disconnected test does not prove that the LiveView can join. A passing
 `ConnectedRender` test proves the server-side session but neither WebSocket
 `Origin` admission nor that the Phoenix client can patch the browser DOM. A
 browser test proves its scenario but may not isolate the failing lifecycle
@@ -224,7 +225,7 @@ stage. Keep at least one assertion at each boundary your application depends
 on, and use [Troubleshooting](troubleshooting.md#separate-the-two-mounts) to
 locate a failure before expanding the test suite.
 
-## Related Tasks {#related-tasks}
+## Related tasks {#related-tasks}
 
 - Look up helper contracts, reconnect admission, and origin tests in the [Connected test reference](connected-test-reference.md#prerequisites).
 - Supply deterministic dependencies with [Services and dependency injection](services-and-zlayer-injection.md#supply-a-test-implementation).

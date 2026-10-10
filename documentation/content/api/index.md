@@ -26,7 +26,7 @@ and members.
   (@:apiSymbol(object:scalive.testing.DisconnectedRender)`DisconnectedRender`@:@),
   page queries, and typed form test utilities.
 
-## Find The Core Types {#core-types}
+## Find the core types {#core-types}
 
 A first application uses these types. Their reference pages link to the guides
 that use them.
@@ -67,7 +67,7 @@ for indexed compatibility payloads,
 persistence, and @:apiSymbol(object:scalive.HttpFormDecoder)`HttpFormDecoder`@:@
 for bounded CSRF-validated POST bodies.
 
-## Lifecycle Resources And Observability {#lifecycle-resources-and-observability}
+## Lifecycle resources and observability {#lifecycle-resources-and-observability}
 
 @:apiSymbol(trait:scalive.ConnectedResources)`ConnectedResources`@:@ acquires
 and releases resources that send no messages during a connected mount. The

@@ -6,13 +6,13 @@ section = guides
 group = "State and components"
 %}
 
-## Before You Start {#prerequisites}
+## Before you start {#prerequisites}
 
 Start with a `LiveView` whose rendered model changes in response to a typed
 message. If the component will own a form, first make that form work with
 [typed validation](typed-forms-and-validation.md).
 
-## Choose A Stateful Component {#choose-a-stateful-component}
+## Choose a stateful component {#choose-a-stateful-component}
 
 Use a @:apiSymbol(trait:scalive.LiveComponent)`LiveComponent`@:@ when one reusable
 piece of application UI needs its own model, messages, and lifecycle. Keep
@@ -20,12 +20,13 @@ ordinary markup in functions when it does not need isolated state. Every statefu
 instance is identified by its component class and stable logical ID.
 
 Use a [nested LiveView](nested-liveviews.md) instead when the child needs a
-separate socket rather than only isolated state.
+separate LiveView lifecycle rather than only isolated state.
 
-```scala unverified
-private val ScalaVote = component(VoteComponent, "scala-vote")
-private val ZioVote   = component(VoteComponent, "zio-vote")
-```
+The recipes on this page come from the
+[voting components example](../examples/voting-components.md). Its parent
+declares two instances of one component class:
+
+@:sourceRegion(documentation/site/src/scalive/docs/examples/VotingComponentsExample.scala, voting-component-ids)
 
 The ID is application identity within that component class. An
 @:apiSymbol(opaque-type:scalive.ComponentRef)`ComponentRef`@:@ is an opaque,
@@ -33,7 +34,7 @@ type-safe semantic identity for the exact mounted component. Its representation
 is deliberately hidden: do not treat it as a numeric CID or persist it as domain
 state.
 
-## Separate Props, Messages, Model, And Output {#separate-component-types}
+## Separate props, messages, model, and output {#separate-component-types}
 
 The component APIs separate four independent roles:
 
@@ -47,65 +48,32 @@ Only an output-producing component declares `Output`, through
 An ordinary `LiveComponent[Props, Msg, Model]` has no output type parameter and
 uses the simpler `render(props)` placement API.
 
-This compact path shows a local message becoming an output and then a parent
-message:
+The vote component counts votes locally and reports each change as an output.
+Its model also keeps the parent's reset epoch, which
+[Send props from parent to component](#send-props-to-components) explains:
 
-```scala unverified
-object VoteComponent
-    extends LiveComponent.WithOutput[
-      VoteComponent.Props,
-      VoteComponent.Msg,
-      VoteComponent.Model,
-      VoteComponent.Output
-    ]:
-  final case class Props(id: String)
-  final case class Model(votes: Int)
+@:sourceRegion(documentation/site/src/scalive/docs/examples/VotingComponentsExample.scala, voting-component-logic)
 
-  enum Msg:
-    case Vote
+## Keep local events local {#keep-local-events-local}
 
-  enum Output:
-    case VoteChanged(id: String, votes: Int)
-
-  def mount(props: Props, ctx: MountContext) = ZIO.succeed(Model(0))
-
-  def handleMessage(props: Props, model: Model, ctx: MessageContext) =
-    case Msg.Vote =>
-      val updated = model.copy(votes = model.votes + 1)
-      ctx.emit(Output.VoteChanged(props.id, updated.votes)).as(updated)
-
-  def view(props: Signal[Props], model: Signal[Model], self: ComponentRef[Msg]) =
-    button(phx.target(self), on.click.to(self)(Msg.Vote), model.map(_.votes.toString))
-
-object VotingLiveView:
-  enum Msg:
-    case ComponentReported(id: String, votes: Int)
-
-  private val ScalaVote = component(VoteComponent, "scala-vote")
-
-  def renderVote(props: Signal[VoteComponent.Props]) =
-    ScalaVote.render(
-      props,
-      output => output match
-        case VoteComponent.Output.VoteChanged(id, votes) =>
-          Msg.ComponentReported(id, votes)
-    )
-```
-
-## Keep Local Events Local {#keep-local-events-local}
-
-Bindings rendered by a component accept its `Msg` values. As above, pair
+Bindings rendered by a component accept its `Msg` values. Pair
 `phx.target(self)` with `on.click.to(self)` so the Phoenix client sends the event
-to that exact runtime component rather than the owning LiveView.
+to that exact runtime component rather than the owning LiveView:
+
+@:sourceRegion(documentation/site/src/scalive/docs/examples/VotingComponentsExample.scala, voting-local-binding)
 
 Each stable instance owns a separate model. Voting in `scala-vote` therefore
 does not modify `zio-vote`.
 
-## Map Component Outputs {#map-component-outputs}
+## Map component outputs {#map-component-outputs}
 
 Emit only from `handleMessage`; mount, update, view construction, and after-render contexts
 do not expose this capability. The placement maps every output into a message
-accepted by its immediate owner, as in the compact example above.
+accepted by its immediate owner:
+
+@:sourceRegion(documentation/site/src/scalive/docs/examples/VotingComponentsExample.scala, voting-render-component)
+
+@:sourceRegion(documentation/site/src/scalive/docs/examples/VotingComponentsExample.scala, voting-output-mapping)
 
 Scala rejects a mapper that returns another owner's message type, and an
 output-producing component cannot be rendered without a mapper. A child nested
@@ -117,32 +85,25 @@ render first, then the owner handles the mapped message in a separate serialized
 server-message turn. This matches Phoenix LiveView's mailbox behavior without
 exposing untyped tuples or process IDs.
 
-## Send Props From Parent To Component {#send-props-to-components}
+## Send props from parent to component {#send-props-to-components}
 
 Changed props in an ordinary parent render invoke the component's `update`
 lifecycle. For an explicit update to an already mounted instance, call
 @:apiSymbol(def:scalive.ComponentUpdates.sendUpdate)`ctx.components.sendUpdate`@:@:
 
-```scala unverified
-case Msg.UpdateScalaProps =>
-  ctx.components.sendUpdate(ScalaVote, revisedProps).as(updatedParentModel)
-```
+@:sourceRegion(documentation/site/src/scalive/docs/examples/VotingComponentsExample.scala, voting-send-update)
 
 `update` receives the existing component model. Preserve it unless the props
-represent a deliberate reset:
+represent a deliberate reset. The parent's **Reset** increments `resetEpoch` in
+every instance's props, and the component starts over when the epoch it stored
+no longer matches:
 
-```scala unverified
-override def update(props: Props, model: Model, ctx: UpdateContext) =
-  ZIO.succeed(
-    if props.resetEpoch == model.resetEpoch then model
-    else Model(votes = 0, resetEpoch = props.resetEpoch)
-  )
-```
+@:sourceRegion(documentation/site/src/scalive/docs/examples/VotingComponentsExample.scala, voting-component-update)
 
 `sendUpdate` to an absent instance is ignored with a warning. Several explicit
 updates queued before one render use the last props value.
 
-## Use Component-Local Capabilities {#use-component-local-capabilities}
+## Use component-local capabilities {#use-component-local-capabilities}
 
 A component is more than a model and message handler. Its lifecycle contexts
 expose the same focused tools needed to implement a self-contained UI unit:
@@ -179,10 +140,10 @@ released.
 
 These capabilities remain local only where the runtime owns local state.
 Component flash uses the owning LiveView's `ctx.flash`, and navigation requested
-through message-phase `ctx.nav` navigates or patches the owning socket. It does
+through message-phase `ctx.nav` navigates or patches the owning LiveView. It does
 not create a route or history boundary around the component.
 
-## Target Deliberately {#target-deliberately}
+## Target deliberately {#target-deliberately}
 
 For a component-local browser event, specify `phx.target(self)` alongside the
 typed binding. The client target and the Scala message target are distinct:
@@ -195,13 +156,13 @@ typed binding. The client target and the Scala message target are distinct:
   class. Add `phx.target(self)` or a `DomSelector` to choose the actual client
   target according to Phoenix targeting semantics.
 
-Targets are limited to mounted components in the owning LiveView socket. They
-do not cross into another nested LiveView's socket, and a missing exact target
+Targets are limited to mounted components in the owning LiveView. They do not
+cross into a nested LiveView, and a missing exact target
 does not queue work for a future mount. Use typed outputs to communicate upward
 instead of treating selectors or numeric component IDs as an application
 message bus.
 
-## Remove Components Cleanly {#remove-components-cleanly}
+## Remove components cleanly {#remove-components-cleanly}
 
 Stop rendering an instance to request removal. Before the browser confirms that
 its component ID was destroyed, Scalive keeps the exact instance dormant: its
@@ -223,9 +184,9 @@ Do not retain a `ComponentRef`, upload snapshots, or other runtime handles after
 removal. Put durable data in the parent or an application service before hiding
 the component. A failed component lifecycle fails the active render or message
 lifecycle; model expected failures as component messages when the UI should
-recover without taking down the owning socket.
+recover without taking down the owning LiveView.
 
-## Choose Eventless When There Are No Messages {#choose-eventless-components}
+## Choose `Eventless` when there are no messages {#choose-eventless-components}
 
 Extend `LiveComponent.Eventless[Props, Model]` when a stateful component mounts,
 updates from props, and renders but cannot receive server messages. Its `Msg` is
@@ -234,12 +195,12 @@ updates from props, and renders but cannot receive server messages. Its `Msg` is
 instead when even component-local state and lifecycle capabilities are
 unnecessary.
 
-## Test Identity And Both Directions {#test-component-communication}
+## Test identity and both directions {#test-component-communication}
 
 Connected tests should prove that local state is isolated, output attribution
 uses stable application identity, prop updates preserve local state, and reset
 restores both parent and component models. Remount tests should also confirm that
-component state does not leak between socket lifecycles.
+component state does not leak between LiveView lifecycles.
 
 The complete voting example is extracted from executable source:
 
@@ -255,9 +216,9 @@ Try both communication directions in the
 fresh destruction with brief dormancy in the
 [component-owned subscriptions example](../examples/component-subscriptions.md).
 
-## Related Tasks {#related-tasks}
+## Related tasks {#related-tasks}
 
-- Use [Nested LiveViews](nested-liveviews.md) for independent socket ownership,
+- Use [Nested LiveViews](nested-liveviews.md) for an independent lifecycle,
   sticky navigation, and crash isolation.
 - Build component forms with [Typed forms and validation](typed-forms-and-validation.md).
 - Add component-owned files with [File uploads](uploads-and-consumption.md).

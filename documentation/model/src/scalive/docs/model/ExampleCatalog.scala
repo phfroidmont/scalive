@@ -24,11 +24,11 @@ object ExampleCatalog:
     id = "activity-stream",
     title = "Bounded activity stream",
     description =
-      "Durable activity history drives an opaque stream handle with stable IDs and a five-row DOM window.",
+      "The model keeps the full activity history while a stream with stable IDs keeps five rows in the DOM.",
     category = ExampleCategory.StateAndRendering,
     topics = Vector("streams", "collections", "DOM patches", "bounded rendering"),
     aliases = Vector("LiveStream", "LiveStreamDef", "insert", "delete", "reset", "keepLast"),
-    resetDescription = "Restore the initial durable history and rendered stream window.",
+    resetDescription = "Restore the initial history and rendered stream window.",
     sources = Vector(
       ExampleSource(
         label = "LiveView",

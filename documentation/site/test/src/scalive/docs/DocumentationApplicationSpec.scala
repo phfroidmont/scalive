@@ -400,8 +400,8 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
       ) && assertTrue(
         projectLinks.map(_.text()) == Vector(
           "Overview",
-          "Why I Built Scalive",
-          "Designing Dynamic HTML",
+          "Why I built Scalive",
+          "Designing dynamic HTML",
           "Runtime architecture",
           "Phoenix LiveView compatibility"
         ),

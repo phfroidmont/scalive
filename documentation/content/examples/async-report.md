@@ -10,7 +10,7 @@ of that work: loading, succeeded, failed, and cancelled. The delays are fixed
 so each state stays visible; in an application the same code wraps a database
 query or service call.
 
-## Try It {#try-it}
+## Try it {#try-it}
 
 1. Click **Run successful report**. The panel shows "Loading" for about two
    seconds, then "Succeeded" with the "Quarterly activity" report.
@@ -24,7 +24,7 @@ query or service call.
 
 @:example(async-report)
 
-## How It Works {#how-it-works}
+## How it works {#how-it-works}
 
 - Every button starts its task with `ctx.async.start(ReportTask)(task)(...)`.
   Starting the same key again interrupts the running task, so its result is
@@ -36,7 +36,7 @@ query or service call.
   the given reason. **Cancel report** is disabled while nothing runs.
 - The failure shows fixed copy rather than the exception's message.
 
-## Related Guides {#related-guides}
+## Related guides {#related-guides}
 
 - [Asynchronous work](../guides/async-work.md#model-finite-work-with-asyncvalue)
   explains task keys, `AsyncValue`, and cancellation.

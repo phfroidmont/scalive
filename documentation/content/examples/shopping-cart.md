@@ -9,7 +9,7 @@ A cart whose model is an immutable list of lines. Adding and removing products
 are typed messages, and the item count, subtotals, and total are derived from
 the lines rather than stored. The cart lives only as long as this connection.
 
-## Try It {#try-it}
+## Try it {#try-it}
 
 1. Click **Coffee beans** twice and **Notebook** once. The cart shows 3 items, a
    Coffee beans line with quantity 2, and a total of $34.48.
@@ -19,7 +19,7 @@ the lines rather than stored. The cart lives only as long as this connection.
 
 @:example(shopping-cart)
 
-## How It Works {#how-it-works}
+## How it works {#how-it-works}
 
 - `Msg.Add(product)` carries the product as a typed value. The browser only
   reports which button was clicked.
@@ -31,7 +31,7 @@ the lines rather than stored. The cart lives only as long as this connection.
 - `itemCount` and `totalInCents` are methods of the model, so they cannot
   disagree with the lines.
 
-## Related Guides {#related-guides}
+## Related guides {#related-guides}
 
 - [Rendering, bindings, and diffs](../learn/rendering-and-dom-updates.md#send-row-specific-messages)
   explains keyed rows and row-specific messages.

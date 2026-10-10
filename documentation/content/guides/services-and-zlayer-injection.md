@@ -6,13 +6,13 @@ section = guides
 group = "Routing and application structure"
 %}
 
-## Before You Start {#prerequisites}
+## Before you start {#prerequisites}
 
 Start from a working application such as the one in the
 [quick start](../learn/quick-start.md). This guide adds a reports page whose data
 comes from an application service.
 
-## Inject A Service Into A LiveView {#inject-a-service-into-a-liveview}
+## Inject a service into a LiveView {#inject-a-service-into-a-liveview}
 
 Use constructor injection when a @:apiSymbol(trait:scalive.LiveView)`LiveView`@:@
 needs an application service such as a repository, API client, or mailer. The
@@ -32,7 +32,7 @@ The complete path has four steps:
    environment.
 4. Provide the service's layer where the server starts.
 
-## Define The Service Boundary {#define-the-service-boundary}
+## Define the service boundary {#define-the-service-boundary}
 
 Expose the operations the LiveView needs instead of passing low-level clients or
 mutable references into UI code. A reports page can depend on this service:
@@ -48,7 +48,7 @@ production layer can instead acquire a database pool or HTTP client and expose
 the same `Reports` interface. If it acquires resources, build it with
 `ZLayer.scoped` so ZIO releases them when the application shuts down.
 
-## Capture The Service In The Constructor {#capture-the-service-in-the-constructor}
+## Capture the service in the constructor {#capture-the-service-in-the-constructor}
 
 Accept the service in the LiveView constructor and use it from lifecycle
 callbacks:
@@ -68,7 +68,7 @@ The model has one case for loaded reports and one for a failure, and the view
 handles both. `loaded` and `failure` are `Signal[Option[...]]` values, and
 `option` renders its content only while the value is defined.
 
-## Register The Route {#register-the-route}
+## Register the route {#register-the-route}
 
 Build the route with @:apiSymbol(def:scalive.LiveRouteBuilder.from)`from`@:@:
 
@@ -90,7 +90,7 @@ Two variants cover other needs:
 `from` takes one service type. When a LiveView needs several services, group
 them in one service that a layer builds from the others, and pass that service.
 
-## Provide Services At Startup {#provide-services-at-startup}
+## Provide services at startup {#provide-services-at-startup}
 
 Register the route and provide the service where the server starts:
 
@@ -103,7 +103,7 @@ Provide database pools, HTTP clients, repositories, and other long-lived
 resources here. Construction then stays in one place, and the compiler reports a
 missing layer before the server can run.
 
-## Handle Service Failures In The Model {#handle-service-failures-in-the-model}
+## Handle service failures in the model {#handle-service-failures-in-the-model}
 
 An unhandled service failure fails the LiveView's mount or message handling.
 Recover when the user can act on the failure, and represent that state in the
@@ -115,7 +115,7 @@ Show a safe user-facing message rather than raw exception details. Log the
 underlying cause with enough context, such as a request or correlation ID, to
 diagnose it.
 
-## Understand Service And LiveView Lifetimes {#understand-service-and-liveview-lifetimes}
+## Understand service and LiveView lifetimes {#understand-service-and-liveview-lifetimes}
 
 The layer given to `provide` is built once and shared by every route that needs
 the service. Scalive calls the route's `from` function for the disconnected
@@ -129,7 +129,7 @@ Scope records by tenant or user when required, bound retained data, and use
 concurrency-safe implementations. Per-visitor presentation state, such as the
 selected report, still belongs in the LiveView model.
 
-## Supply A Test Implementation {#supply-a-test-implementation}
+## Supply a test implementation {#supply-a-test-implementation}
 
 Because the service is a constructor argument, a test can pass its own
 implementation directly:
@@ -147,7 +147,7 @@ The `zio.test` import excludes `Live` because Scalive's
 @:apiSymbol(object:scalive.Live)`Live`@:@ has the same name. See
 [Testing LiveViews](testing.md#test-disconnected-rendering).
 
-## Explore The Runnable Example {#explore-the-runnable-example}
+## Explore the runnable example {#explore-the-runnable-example}
 
 The reports example applies the same structure. It handles loaded, empty, and
 failed service results. Refresh queries the service again, while reset changes
@@ -160,7 +160,7 @@ only connection-local selection state.
 Try the embedded preview, or open the real service-backed route from the
 [reports service injection example](../examples/service-injection.md).
 
-## Related Tasks {#related-tasks}
+## Related tasks {#related-tasks}
 
 - Share an authentication store between HTTP and Live routes in [Authentication and sessions](authentication.md#provide-one-shared-authentication-service).
 - Move finite, streaming, or acquired work under lifecycle ownership with [Asynchronous work](async-work.md#prerequisites).

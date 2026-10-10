@@ -5,7 +5,7 @@ order = 3
 section = learn
 %}
 
-## Build A View From The Model {#render-from-the-model}
+## Build a view from the model {#render-from-the-model}
 
 @:apiSymbol(def:scalive.LiveView.view)`view(model)`@:@ receives a
 `Signal[Model]` and returns an
@@ -24,7 +24,7 @@ Everything else in the view is static. The labels, the buttons, and their
 bindings are ordinary Scala values that never change. Leave effects and state
 transitions to lifecycle methods rather than running them from `view`.
 
-## Render The Cart {#render-the-cart}
+## Render the cart {#render-the-cart}
 
 The cart from the [previous lesson](models-and-messages.md#produce-explicit-state-transitions)
 shows the patterns most views need: content that appears and disappears, a list
@@ -45,7 +45,7 @@ Run `mill app.run` and open `http://localhost:8080/cart`. Add a few products,
 remove one, and add enough to pass $30.00. The sections below explain each part
 of the view.
 
-## Show Content Conditionally {#show-content-conditionally}
+## Show content conditionally {#show-content-conditionally}
 
 An `if` cannot inspect a signal, because the view is built before any model
 value exists. Instead, map the model to the value that decides what to show and
@@ -73,7 +73,7 @@ renders nothing for a value without a pair. `chooseMod` makes the same choice
 for attributes and other modifiers. Each of these builds every branch once and
 switches between them, which is why the view needs no `if`.
 
-## Preserve Collection Identity {#preserve-collection-identity}
+## Preserve collection identity {#preserve-collection-identity}
 
 Use @:apiSymbol(extension:scalive.splitBy)`splitBy(key) { ... }`@:@ on a collection
 signal whose entries have stable domain identity. The cart keys each row by
@@ -99,7 +99,7 @@ Use a [stream](../guides/streams-and-collection-updates.md#choose-streams-delibe
 when the collection should instead produce explicit ID-addressed browser
 operations.
 
-## Send A Row's Value With Its Message {#send-row-specific-messages}
+## Send a row's value with its message {#send-row-specific-messages}
 
 A binding can take a `Signal` of a message instead of a constant. Each row
 builds its **Remove one** message from its own line:
@@ -111,7 +111,7 @@ row's current value when the button is clicked. The browser only reports which
 binding fired; the server builds the message, so the product is still a typed
 value that the browser cannot forge.
 
-## Write Helpers That Take Signals {#write-helpers-that-take-signals}
+## Write helpers that take signals {#write-helpers-that-take-signals}
 
 `lineRow` takes a `Signal[Line]`, not a `Line`, because the row it builds must
 keep following the model. Write helpers this way when they return HTML whose
@@ -122,7 +122,7 @@ content changes.
 takes plain values is easier to reuse and test, so keep formatting and other
 calculations in plain functions and pass signals only to helpers that render.
 
-## Derive Display Values With Pure Functions {#derive-display-values}
+## Derive display values with pure functions {#derive-display-values}
 
 Each value derived from the model, such as the total or a disabled state, is
 one `map` of the model signal. When a value depends on two separate signals,
@@ -140,7 +140,7 @@ output without changing state, performing I/O, or starting work. Scalive may
 skip or reuse a transformation whose input has not changed, so a side effect in
 `map` would make the view incorrect.
 
-## Bind Events To Typed Messages {#bind-events-to-typed-messages}
+## Bind events to typed messages {#bind-events-to-typed-messages}
 
 Bindings from @:apiSymbol(object:scalive.on)`on`@:@ are values in the typed HTML
 tree. @:apiSymbol(lazy-val:scalive.on.click)`on.click(Msg.Increment)`@:@
@@ -153,7 +153,7 @@ and validated at their boundaries. The
 [HTML and event bindings guide](../guides/html-dsl-and-event-bindings.md) lists
 the other events, such as key presses, focus, and rate limiting.
 
-## Follow One Event To The DOM {#follow-one-event-to-the-dom}
+## Follow one event to the DOM {#follow-one-event-to-the-dom}
 
 One connected interaction follows this sequence:
 
@@ -166,7 +166,7 @@ One connected interaction follows this sequence:
 7. After a successful evaluation, Scalive commits the new model and snapshot.
 8. The browser receives the diff and patches its existing DOM.
 
-## Let Scalive Patch The DOM {#from-tree-changes-to-dom-changes}
+## Let Scalive patch the DOM {#from-tree-changes-to-dom-changes}
 
 An evaluation whose dynamic slots are unchanged may produce no diff. Changed
 dynamic text, attributes, or staged subtrees produce updates for those positions

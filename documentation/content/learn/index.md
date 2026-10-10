@@ -5,14 +5,14 @@ order = 0
 section = learn
 %}
 
-## Start Here {#start-here}
+## Start here {#start-here}
 
 Scalive lets you build interactive pages in Scala while keeping application
 state on the server. The server renders HTML and handles interactions. The
 browser shows that HTML, sends events such as clicks and form changes, and
 applies the small updates returned by the server.
 
-**Ready to build something? [Create and run the counter in Quick start.](quick-start.md)**
+**Ready to build something? [Create and run the counter in the quick start.](quick-start.md)**
 
 The central type is a
 @:apiSymbol(trait:scalive.LiveView)`LiveView[Msg, Model]`@:@:
@@ -34,7 +34,7 @@ explains how the initial HTTP response, live connection, and reconnects relate.
 The [runtime architecture](../project/runtime-architecture.md#runtime-at-a-glance)
 is available when you need implementation details.
 
-## Know Which Side Owns What {#know-which-side-owns-what}
+## Know which side owns what {#know-which-side-owns-what}
 
 | Concern | Server | Browser |
 | --- | --- | --- |
@@ -45,7 +45,7 @@ is available when you need implementation details.
 | Connection | Validates the join and owns connected LiveView lifecycle resources | Opens, monitors, disconnects, and reconnects `LiveSocket` |
 | Security | Treats URLs, connect parameters, and event payloads as untrusted | Is not an authority for identity or authorization |
 
-## Take The Ordered Path {#take-the-ordered-path}
+## Take the ordered path {#take-the-ordered-path}
 
 The pages build one application, starting from the quick-start counter. Each
 page adds a file or a page to the same project:

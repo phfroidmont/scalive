@@ -6,31 +6,26 @@ section = guides
 group = "Assets and operations"
 %}
 
-## Before You Start {#prerequisites}
+## Before you start {#prerequisites}
 
-You need to know whether browsers will use HTTP or HTTPS and which socket and
+You need to know whether browsers will use HTTP or HTTPS and which WebSocket and
 asset paths the application will expose. The [quick start](../learn/quick-start.md#start-the-server)
 provides a complete baseline if you do not yet have an assembled application.
 
-## Current Configuration Contract {#current-configuration-contract}
+## Current configuration contract {#current-configuration-contract}
 
-Scalive does not read environment variables or own process-wide endpoint
-configuration. The application loads and validates its settings, then constructs
-one @:apiSymbol(class:scalive.ZioHttpConfig)`ZioHttpConfig`@:@ for the LiveView
-transport:
+Scalive reads no environment variables and owns no process-wide endpoint
+configuration. The application loads and validates its settings, then
+constructs one @:apiSymbol(class:scalive.ZioHttpConfig)`ZioHttpConfig`@:@ and
+passes it to @:apiSymbol(def:scalive.ZioHttp.routes)`ZioHttp.routes`@:@. This
+loader fails when a setting is missing instead of falling back to a default:
 
-```scala unverified
-import java.time.Duration
+@:sourceRegion(documentation/fixtures/guides/src/configuration/Configuration.scala, configuration-load)
 
-val transportConfig = ZioHttpConfig(
-  signingSecret = requiredSecret,
-  sessionMaxAge = Duration.ofDays(7),
-  secureCookie = true,
-  allowedWebSocketOrigins = Set(WebSocketOrigin.https("example.com"))
-).fold(error => throw IllegalArgumentException(error.toString), identity)
-
-val liveRoutes = ZioHttp.routes(application, transportConfig)
-```
+`SCALIVE_TOKEN_SECRET` and `SCALIVE_ALLOWED_ORIGINS` are names this application
+chose. The quick start reads the same `SCALIVE_TOKEN_SECRET` but falls back to a
+fixed development secret so that it runs without setup; a deployed application
+must not keep that fallback.
 
 All four values are required:
 
@@ -39,45 +34,36 @@ All four values are required:
 | `signingSecret` | Signs framework-issued LiveView and CSRF values. Construction rejects secrets shorter than 32 UTF-8 bytes. Values are authenticated, not encrypted. | Load a stable, high-entropy secret through the application's secret facility. Every replica must use the same value. Changing it invalidates outstanding signed values. |
 | `sessionMaxAge` | Maximum accepted age for framework-issued LiveView and CSRF values. Construction rejects zero or negative durations. HTTP flash values have an independent 60-second lifetime. | Choose an explicit policy. This setting does not define authentication-session retention or make a browser cookie persistent. |
 | `secureCookie` | Controls the `Secure` attribute on framework cookies and cookies created through `LiveSecurity.cookies`. Scalive does not infer it from TLS or proxy headers. | Use `true` whenever the browser-facing origin is HTTPS. Local plain HTTP normally requires `false`. |
-| `allowedWebSocketOrigins` | Non-empty set of exact canonical browser origins admitted for WebSocket upgrades. Construction rejects a set with no usable origin. @:apiSymbol(object:scalive.WebSocketOrigin)`WebSocketOrigin`@:@ normalizes scheme and host case, default ports, and IP literals. | List every browser-facing page origin that may connect. Browser origins use `http` or `https`, not the socket URL's `ws` or `wss` scheme. Add explicit non-default ports, such as `WebSocketOrigin.https("example.com", 8443)`. |
+| `allowedWebSocketOrigins` | Non-empty set of exact browser origins admitted for WebSocket upgrades. Construction rejects a set with no usable origin. | List every browser-facing page origin that may connect. See [Admit WebSocket origins](#admit-websocket-origins). |
+
+Construct the value once and reuse it. `ZioHttp.routes` also validates the
+assembled Live route catalog, rejecting duplicate live-session names and duplicate
+rendered paths before the server starts.
+
+## Admit WebSocket origins {#admit-websocket-origins}
+
+Every WebSocket upgrade must carry exactly one valid `Origin` header that matches
+an entry in `allowedWebSocketOrigins`. A missing, `null`, malformed, duplicate,
+combined, or mismatched value receives HTTP 403 before the upgrade, with an empty
+body and no reason-specific log entry. The browser sets the header from the
+page's `http` or `https` origin, never the WebSocket's `ws` or `wss` URL, so list
+page origins.
+
+Scalive never derives origin trust from `Host`, `Forwarded`,
+`X-Forwarded-Host`, `X-Forwarded-Proto`, or an external URL prefix. Do not use
+those headers to decide whether cookies are secure either. A proxy must forward
+the browser's `Origin` unchanged.
 
 Use the throwing @:apiSymbol(def:scalive.WebSocketOrigin.http)`WebSocketOrigin.http`@:@ and
 @:apiSymbol(def:scalive.WebSocketOrigin.https)`WebSocketOrigin.https`@:@ constructors for trusted
-source literals. Parse deployment input through
+source literals, and pass a port when it isn't the default, as in
+`WebSocketOrigin.https("example.com", 8443)`. Parse deployment input through
 @:apiSymbol(def:scalive.WebSocketOrigin.parse)`WebSocketOrigin.parse`@:@ so an
-invalid value remains in the startup error channel. For example, load a
-comma-separated set without logging the untrusted value:
+invalid value stays in the startup error channel. The loader above parses a
+comma-separated list and reports the failing entry by position rather than
+logging the untrusted value:
 
-```scala unverified
-def parseOrigins(value: String): Either[String, Set[WebSocketOrigin]] =
-  val entries = value.split(",", -1).iterator.map(_.trim).toVector
-  if entries.isEmpty || entries.exists(_.isEmpty) then
-    Left("SCALIVE_ALLOWED_ORIGINS must contain only non-empty origins")
-  else
-    entries.zipWithIndex.foldLeft[Either[String, Set[WebSocketOrigin]]](Right(Set.empty)) {
-      case (validated, (entry, index)) =>
-        for
-          origins <- validated
-          origin <- WebSocketOrigin.parse(entry).left.map(error =>
-                      s"SCALIVE_ALLOWED_ORIGINS entry ${index + 1}: ${error.message}"
-                    )
-        yield origins + origin
-    }
-
-val transportConfig =
-  (for
-    rawOrigins <- sys.env
-                    .get("SCALIVE_ALLOWED_ORIGINS")
-                    .toRight("SCALIVE_ALLOWED_ORIGINS is required")
-    origins <- parseOrigins(rawOrigins)
-    config <- ZioHttpConfig(
-                signingSecret = requiredSecret,
-                sessionMaxAge = Duration.ofDays(7),
-                secureCookie = true,
-                allowedWebSocketOrigins = origins
-              ).left.map(_.toString)
-  yield config).fold(error => throw IllegalArgumentException(error), identity)
-```
+@:sourceRegion(documentation/fixtures/guides/src/configuration/Configuration.scala, configuration-parse-origins)
 
 When configuration supplies a trusted scheme separately from a dynamic host or
 port, use @:apiSymbol(def:scalive.WebSocketOrigin.httpEither)`httpEither`@:@ or
@@ -87,40 +73,33 @@ The policy is a finite exact set. Wildcard hosts, suffix matching, request-deriv
 origins, and custom predicates are intentionally unsupported. Unicode host input
 is rejected; configure the ASCII/punycode host serialized by the browser. Origins
 compare by canonical scheme, host, and effective port, so scheme and host case and
-an omitted default port do not create separate origins. Programmatic `http` and
-`https` constructors also canonicalize equivalent IP literal spellings;
+an omitted default port do not create separate origins. The `http` and `https`
+constructors also canonicalize equivalent IP literal spellings;
 `WebSocketOrigin.parse` requires a browser-serialized origin.
 
-Construct the value once and reuse it. @:apiSymbol(def:scalive.ZioHttp.routes)`ZioHttp.routes`@:@ also validates the
-assembled Live route catalog, rejecting duplicate live-session names and duplicate
-rendered paths before the server starts.
+## Share security with HTTP handlers {#share-security-with-http-handlers}
 
-## Share Security With HTTP Handlers {#share-security-with-http-handlers}
+Ordinary HTTP handlers that need the same CSRF, flash, or cookie policy as Live
+routes build a @:apiSymbol(class:scalive.LiveSecurity)`LiveSecurity`@:@ from the
+same config:
 
-Construct @:apiSymbol(class:scalive.LiveSecurity)`LiveSecurity`@:@ when ordinary
-HTTP handlers need the same CSRF, flash, or cookie policy as Live routes:
-
-```scala unverified
-val security = LiveSecurity(transportConfig)
-val liveRoutes = ZioHttp.routes(application, security)
-```
+@:sourceRegion(documentation/fixtures/guides/src/httpforms/LoginHttpRoutes.scala, http-forms-assembly)
 
 Cookies produced by these helpers are host-only, root-scoped, `HttpOnly`, and
 `SameSite=Lax`. Their `Secure` attribute comes from `secureCookie`. The current
 API does not configure another cookie domain, path, same-site value, or
 `HttpOnly` policy.
 
-Use the same `LiveSecurity` value in checked form handlers and HTTP-to-Live flash
-redirects. Do not place passwords, access tokens, cookie values, or other secrets
-inside signed session claims or flash values: a browser can read signed content.
+Do not place passwords, access tokens, cookie values, or other secrets inside
+signed session claims or flash values: a browser can read signed content.
 
-## Configure Routes And Assets {#configure-routes-and-assets}
+## Configure routes and assets {#configure-routes-and-assets}
 
 The remaining framework choices are made while assembling the application:
 
 | Concern | API and default | Requirement |
 | --- | --- | --- |
-| Live socket | `Live.router.withSocketPath`; default `/live` | Configure the Phoenix client with the same mount. The WebSocket upgrade is the mount's `/websocket` child, `/live/websocket` by default. |
+| WebSocket path | `Live.router.withSocketPath`; default `/live` | Configure the Phoenix client with the same mount. The WebSocket upgrade is the mount's `/websocket` child, `/live/websocket` by default. |
 | Root and Live layouts | `Live.router.withRootLayout` and `.withLayout`; identity root and no ordinary layouts by default | Supply a complete `<html>`, `<head>`, and `<body>` root with the application assets. Scalive inserts its CSRF metadata into the `<head>`. |
 | Packaged Phoenix clients | `LiveViewClientAssets.load`; default mount `/_scalive/live-view` | Unless a custom bundle imports both npm clients, load once at startup, add `clientAssets.routes`, and render `phoenixScript` before `liveViewScript` and the application bootstrap. Pass another mount to `load` when the default conflicts with application routing. |
 | Static assets | `StaticAssetConfig.classpath`, `.directory`, `.deploymentClasspath`, or `.deploymentDirectory`; default mount `/static` | Load assets before startup, add `assets.routes`, and render versioned or final URLs from the same loaded value. |
@@ -131,42 +110,34 @@ build owns exact final filenames and cache policy through a deployment manifest.
 
 The Scala and JavaScript socket paths must agree:
 
-```scala unverified
-val application = Live.router
-  .withSocketPath(PathCodec.empty / "socket")(
-    Routes.home -> HomeLiveView()
-  )
-```
+@:sourceRegion(documentation/fixtures/guides/src/configuration/Configuration.scala, configuration-socket-path)
 
 ```js
 const liveSocket = new LiveView.LiveSocket("/socket", Phoenix.Socket, { params })
 ```
 
+The Phoenix client then opens the WebSocket at `/socket/websocket`, and a
+reverse proxy must forward the upgrade on that path.
+
 Use [Client setup and static assets](static-assets-and-client-setup.md) for asset
 sources, versioned paths, deployment manifests, cache policy, and complete
 browser wiring.
 
-## Observe Lifecycle Operations {#observe-lifecycle-operations}
+## Observe lifecycle operations {#observe-lifecycle-operations}
 
 Pass one @:apiSymbol(trait:scalive.LifecycleObserver)`LifecycleObserver`@:@ as the
-third route argument. The built-in adapter records fixed, low-cardinality ZIO
-metrics for disconnected renders, joins, mounts, connected turns, failures,
-queue pressure, and lifecycle termination:
+third argument of `ZioHttp.routes`. The built-in adapter records fixed,
+low-cardinality ZIO metrics for disconnected renders, joins, mounts, connected
+turns, failures, queue pressure, and lifecycle termination:
 
-```scala unverified
-val liveRoutes = ZioHttp.routes(
-  application,
-  security,
-  LifecycleMetrics.observer
-)
-```
+@:sourceRegion(documentation/fixtures/guides/src/configuration/Configuration.scala, configuration-metrics-observer)
 
 Use [Lifecycle observability](lifecycle-observability.md#choose-the-observation-boundary)
 for safe custom observers, the complete metric and label contract, exporter
 verification, cardinality rules, and the boundary between lifecycle and endpoint
 instrumentation.
 
-## Configure The Server Separately {#configure-the-server-separately}
+## Configure the server separately {#configure-the-server-separately}
 
 The application and ZIO HTTP own environment-variable names, bind address,
 port, direct TLS, server request handling, idle timeouts, response compression,
@@ -176,12 +147,6 @@ not fields of `ZioHttpConfig`.
 
 Public URL generation and trusted-proxy policy remain application concerns.
 Validate a public URL when the application needs to generate absolute URLs.
-WebSocket origin admission is instead transport configuration: every upgrade
-must contain exactly one valid `Origin` matching `allowedWebSocketOrigins`.
-Missing, `null`, malformed, duplicate, combined, or mismatched values receive
-HTTP 403 before upgrade. Scalive never derives origin trust from `Host`,
-`Forwarded`, `X-Forwarded-Host`, `X-Forwarded-Proto`, or an external URL prefix;
-do not use those untrusted headers to decide whether cookies are secure either.
 
 Load and validate all application settings once at startup, before
 `StaticAssets.load`, route assembly, and `Server.serve`. Missing secrets, invalid
@@ -191,16 +156,17 @@ partially configured instance serving traffic.
 Scalive supplies no central setting for health routes, cluster membership,
 shared LiveView state, or transport fallback. Add endpoint-level HTTP
 instrumentation as application middleware and use `LifecycleObserver` for
-LiveView operations. Scalive supports WebSocket transport only; deployment and scaling consequences are covered in
+LiveView operations. Scalive supports WebSocket transport only; deployment and
+scaling consequences are covered in
 [Deployment](deployment.md#put-an-http-edge-in-front).
 
-## Related Tasks {#related-tasks}
+## Related tasks {#related-tasks}
 
 - Continue with [Deployment](deployment.md#build-and-run-the-current-application)
   to package and operate the application.
 - Use [Client setup and static assets](static-assets-and-client-setup.md) to
-  configure browser, socket, and asset paths.
+  configure browser, WebSocket, and asset paths.
 - Publish and interpret LiveView metrics with
   [Lifecycle observability](lifecycle-observability.md#publish-built-in-metrics).
-- Use [Troubleshooting](troubleshooting.md#diagnose-socket-connections) when the
+- Use [Troubleshooting](troubleshooting.md#diagnose-websocket-connections) when the
   HTTP render succeeds but the WebSocket does not join.

@@ -6,7 +6,7 @@ section = guides
 group = "Interfaces and input"
 %}
 
-## Before You Start {#prerequisites}
+## Before you start {#prerequisites}
 
 This guide extends the profile form from
 [Typed forms and validation](typed-forms-and-validation.md#handle-change-and-submit-events),
@@ -16,7 +16,7 @@ fast. When saving is slow, the visitor can keep editing, or the page needs
 @:apiSymbol(class:scalive.FormWorkflow)`FormWorkflow`@:@. It also uses
 [asynchronous work](async-work.md#run-finite-work-with-a-typed-key).
 
-## Wrap The Form In A Workflow {#coordinate-form-workflow}
+## Wrap the form in a workflow {#coordinate-form-workflow}
 
 The model stores `Definition.Workflow[SaveError]` instead of the form. It holds
 the current form, the last saved values (the baseline), and the state of at most
@@ -37,7 +37,7 @@ compares the current values with the baseline, and `isSaving` reports whether a
 save is in flight; the complete recipe below uses both to label the button and
 show "You have unsaved changes."
 
-## Apply The Save Result {#apply-the-save-result}
+## Apply the save result {#apply-the-save-result}
 
 Each save captures a valid value, its editable values, a token, and a revision.
 The completion message carries the captured `FormSubmissionToken` unchanged.
@@ -53,7 +53,7 @@ when no newer revision exists; edits made while saving stay current and remain
 dirty. Use `saveFailed` to retain the failed submission for retry diagnostics
 and `saveCancelled` to return to idle without advancing the baseline.
 
-## Show A Failure For The Submitted Draft {#show-a-failure-for-the-submitted-draft}
+## Show a failure for the submitted draft {#show-a-failure-for-the-submitted-draft}
 
 Use `failureForCurrentRevision` when failure feedback should apply only to the
 draft that was submitted. The view renders it with
@@ -78,7 +78,7 @@ current form, baseline, revision, and submission-token correlation. It leaves
 idle and saving workflows unchanged; it does not cancel persistence or reset
 the form. Failure storage is the last retained failed attempt, not an audit log.
 
-## Reset To The Baseline {#reset-to-the-baseline}
+## Reset to the baseline {#reset-to-the-baseline}
 
 Call `workflow.reset` to return to the baseline, and handle
 `FormWorkflowReset.Saving` explicitly:
@@ -90,7 +90,7 @@ discarding an in-flight save, so cancellation policy remains an application
 decision. Do not replace an active workflow with a fresh one: that discards its
 in-flight correlation state and restarts submission token generation.
 
-## Study The Complete Recipe {#study-the-complete-recipe}
+## Study the complete recipe {#study-the-complete-recipe}
 
 @:sourceRegion(documentation/fixtures/guides/src/forms/ProfileSaveLiveView.scala, forms-workflow)
 
@@ -99,7 +99,7 @@ deterministic controls for invalid and overlapping starts, success, failure,
 cancellation, revision-specific failure feedback and dismissal, edits during
 save, stale replay, blocked reset, and baseline advancement.
 
-## Related Tasks {#related-tasks}
+## Related tasks {#related-tasks}
 
 - Warn before leaving a form with unsaved changes with [Navigation guards](navigation-guards.md#prerequisites).
 - Cancel or replace background work with [Asynchronous work](async-work.md#cancel-explicitly-when-it-is-user-visible).

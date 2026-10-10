@@ -6,12 +6,12 @@ section = guides
 group = "Orientation"
 %}
 
-## Before You Start {#prerequisites}
+## Before you start {#prerequisites}
 
 No Elixir or Phoenix experience is required. If Scalive is also new to you, the
-[Quick start](../learn/quick-start.md) provides a runnable application shape.
+[quick start](../learn/quick-start.md) provides a runnable application shape.
 
-## Start With The Programming Model {#start-with-the-programming-model}
+## Start with the programming model {#start-with-the-programming-model}
 
 Phoenix LiveView is a server-side programming model for interactive web pages.
 The server owns page state, renders HTML, receives browser events, and sends
@@ -26,7 +26,7 @@ Scalive is also alpha software and does not claim complete Phoenix LiveView
 parity. Read [Project status](../project/index.md#project-status) before choosing
 it for an application.
 
-## Map The Core Concepts {#map-the-core-concepts}
+## Map the core concepts {#map-the-core-concepts}
 
 | Phoenix LiveView concept | Scalive concept | What it means |
 | --- | --- | --- |
@@ -47,7 +47,7 @@ it for an application.
 The names do not imply identical APIs or complete behavior coverage. They show
 where to start when a Phoenix guide or discussion uses a familiar concept.
 
-## Follow One Interaction {#follow-one-interaction}
+## Follow one interaction {#follow-one-interaction}
 
 A Scalive interaction has four explicit parts:
 
@@ -66,11 +66,11 @@ A Scalive interaction has four explicit parts:
 The model remains on the server. Scalive does not require a second client-side
 state tree or a JavaScript component framework for ordinary interactions.
 
-For the current code shape, follow the [Quick start](../learn/quick-start.md),
+For the current code shape, follow the [quick start](../learn/quick-start.md),
 then read [Models, messages, and effects](../learn/models-and-messages.md#one-model-one-message-type)
 and [Rendering, bindings, and diffs](../learn/rendering-and-dom-updates.md#render-from-the-model).
 
-## Understand The Two Mount Phases {#understand-the-two-mount-phases}
+## Understand the two mount phases {#understand-the-two-mount-phases}
 
 The first request is ordinary HTTP. Scalive mounts the
 @:apiSymbol(trait:scalive.LiveView)`LiveView`@:@ and renders a
@@ -94,7 +94,7 @@ then review the [HTTP-to-connected phase boundary](live-sessions-and-mount-aspec
 Changing policy still belongs in connected-turn guards and authorization at each
 sensitive operation.
 
-## Translate State And Effects {#translate-state-and-effects}
+## Translate state and effects {#translate-state-and-effects}
 
 Phoenix examples commonly update values stored as socket assigns. In Scalive,
 put those values in an immutable `Model`, represent allowed inputs with a `Msg`
@@ -107,7 +107,7 @@ updates use typed context capabilities or dedicated Scalive values. Consult the
 [API reference](../api/index.md#packages) for the API that exists in the current
 revision rather than translating an Elixir call by name.
 
-## Keep Browser Code At The Edge {#keep-browser-code-at-the-edge}
+## Keep browser code at the edge {#keep-browser-code-at-the-edge}
 
 Scalive uses the Phoenix LiveView JavaScript client for the live connection and
 DOM patching. Application state and normal event handling stay in Scala. Use a
@@ -119,7 +119,7 @@ This client relationship does not make every Phoenix server feature available
 in Scalive. Protocol compatibility, public API coverage, and framework feature
 coverage are separate concerns.
 
-## Read Scalive Documentation First {#read-scalive-documentation-first}
+## Read Scalive documentation first {#read-scalive-documentation-first}
 
 Phoenix documentation is useful for understanding the broader LiveView model,
 but Phoenix code is not Scalive code. Names, lifecycle results, route setup,
@@ -131,7 +131,7 @@ surface. If a Phoenix feature is important to your application, do not infer
 support from this concept map; check the current API and raise an issue as
 described in [Project status](../project/index.md#report-an-issue).
 
-## Related Tasks {#related-tasks}
+## Related tasks {#related-tasks}
 
 - Build typed markup and messages in [HTML and event bindings](html-dsl-and-event-bindings.md#prerequisites).
 - Connect the browser client in [Client setup and static assets](static-assets-and-client-setup.md#prerequisites).

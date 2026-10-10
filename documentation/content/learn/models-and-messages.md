@@ -5,7 +5,7 @@ order = 2
 section = learn
 %}
 
-## One Model, One Message Type {#one-model-one-message-type}
+## One model, one message type {#one-model-one-message-type}
 
 A @:apiSymbol(trait:scalive.LiveView)`LiveView[Msg, Model]`@:@ owns one model
 type and accepts one message type. Its three required methods are:
@@ -21,7 +21,7 @@ state through a `Signal` whose value follows committed model changes. `Msg` list
 the inputs that may change the state. Context values provide capabilities valid
 at the current lifecycle stage; they are not additional application state.
 
-## Give The Counter A Model {#give-the-counter-a-model}
+## Give the counter a model {#give-the-counter-a-model}
 
 The quick start used an `Int` as the model and accepted two messages. A case
 class leaves room for more fields, and a third message adds a way back to zero.
@@ -37,7 +37,7 @@ them, such as `CounterLiveView.Msg.Reset`.
 Run `mill app.run` again. The page now has a **Reset** button that returns the
 count to `0`.
 
-## Keep The Browser At A Decoding Boundary {#keep-the-browser-at-a-decoding-boundary}
+## Keep the browser at a decoding boundary {#keep-the-browser-at-a-decoding-boundary}
 
 A binding such as `on.click(Msg.Reset)` attaches a constant, server-constructed
 intent. The browser reports that the binding fired; it does not construct the
@@ -51,7 +51,7 @@ domain logic uses them. For structured input, use
 @:apiSymbol(class:scalive.FormEvent)`FormEvent`@:@ in the message, as
 [Your first form](your-first-form.md) shows.
 
-## Read The Minimum ZIO Vocabulary {#read-the-minimum-zio-vocabulary}
+## Read the minimum ZIO vocabulary {#read-the-minimum-zio-vocabulary}
 
 Scalive callbacks return effects because mounting or changing state may call a
 service, perform I/O, or fail. Learn only requires this small subset:
@@ -71,7 +71,7 @@ Returning an effect describes work for Scalive to run. Do not create another
 ZIO runtime inside a callback. [Loading data and live updates](loading-data-and-live-updates.md)
 shows the lifecycle-managed way to run work in the background.
 
-## Produce Explicit State Transitions {#produce-explicit-state-transitions}
+## Produce explicit state transitions {#produce-explicit-state-transitions}
 
 @:apiSymbol(def:scalive.LiveView.mount)`mount`@:@ produces the initial model.
 @:apiSymbol(def:scalive.LiveView.handleMessage)`handleMessage`@:@ receives the
@@ -98,7 +98,7 @@ that should be rendered next. If a failure is actionable by the user, recover it
 into explicit model state rather than silently discarding it. Effects completed
 before a later failure are not automatically rolled back.
 
-## Keep Messages Meaningful {#keep-messages-meaningful}
+## Keep messages meaningful {#keep-messages-meaningful}
 
 Prefer messages that describe application intent and carry already typed
 values, such as `Add(product)` rather than an event name and a raw string. This

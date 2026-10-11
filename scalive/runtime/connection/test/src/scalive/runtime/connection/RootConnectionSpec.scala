@@ -499,8 +499,14 @@ object RootConnectionSpec extends ZIOSpecDefault:
                           .afterRender((_, _) => order.update(_ :+ "after-render")),
                         pageTitle = _ => None,
                         mount = _ => order.update(_ :+ "mount").as(0),
-                        handleMessage = (model, _, message) =>
-                          order.update(_ :+ s"handler:$message").as(model + 1),
+                        handleMessage = (model, ctx, message) =>
+                          order.update(_ :+ s"handler:$message") *>
+                            ZIO
+                              .when(message == "start")(
+                                ctx.async.start(AsyncKey[Int]("work"))(ZIO.succeed(1))(_ =>
+                                  "async"
+                                )
+                              ).as(model + 1),
                         prepareParams = _ =>
                           ZIO.succeed(
                             RootParamsHandler(
@@ -526,8 +532,8 @@ object RootConnectionSpec extends ZIOSpecDefault:
           patchId  = CommandId.fresh().toOption.get
           _       <- connection.submitPatch(patchId, destination)
           _       <- outputs.take
-          async    = LiveAsyncEvent(AsyncKey[Any]("work"), LiveAsyncResult.Succeeded("async"))
-          _       <- connection.submitAsyncCompletion(async)
+          _       <- connection.submitInfo("start")
+          _       <- outputs.take
           _       <- outputs.take
           connected <- order.get
         yield assertTrue(
@@ -545,6 +551,10 @@ object RootConnectionSpec extends ZIOSpecDefault:
             "guard",
             "params",
             "params-handler",
+            "after-render",
+            "guard",
+            "info:start",
+            "handler:start",
             "after-render",
             "guard",
             "async",
@@ -891,28 +901,61 @@ object RootConnectionSpec extends ZIOSpecDefault:
         )
       }
     },
-    test("async completion has its own hook boundary and honors halt") {
+    test("async hooks see the task outcome and its message, and can halt") {
       ZIO.scoped {
+        val work = AsyncKey[Int]("work")
         for
-          handled <- Ref.make(false)
+          seen    <- Ref.make(Vector.empty[(Boolean, Any, Int)])
+          handled <- Ref.make(Vector.empty[Int])
           outputs <- Queue.unbounded[ConnectionOutput]
           view = new LiveView[Int, Int]:
                    def mount(ctx: MountContext): Task[Int] =
-                     ctx.hooks.async.attach("async")((model, event, _) => event.result match
-                       case LiveAsyncResult.Succeeded(value) =>
-                         ZIO.succeed(LiveHookResult.halt(model + value * 10))
-                       case _ => ZIO.succeed(LiveHookResult.cont(model))).as(1)
+                     ctx.hooks.async.attach("async")((model, event, _) =>
+                       val value = event.result match
+                         case LiveAsyncResult.Succeeded(value) => value
+                         case other                            => other
+                       seen.update(_ :+ ((event.key == work, value, event.message))).as(
+                         if event.message > 0 then LiveHookResult.halt(model + event.message)
+                         else LiveHookResult.cont(model)
+                       )
+                     ) *> (ctx.connection match
+                       case Connection.Connected(connected) =>
+                         connected.async.start(work)(ZIO.succeed(2)) {
+                           case LiveAsyncResult.Succeeded(value) => value * 10
+                           case _                                => -1
+                         }
+                       case Connection.Disconnected => ZIO.unit
+                     ).as(1)
                    def handleMessage(model: Int, ctx: MessageContext): Int => Task[Int] =
-                     message => handled.set(true).as(model + message)
+                     message =>
+                       handled.update(_ :+ message) *>
+                         (if message == 20 then
+                            ctx.async.start(work)(ZIO.fail(Exception("failed"))) {
+                              case LiveAsyncResult.Succeeded(value) => value * 10
+                              case _                                => -1
+                            }
+                          else ZIO.unit).as(model + message)
                    def view(model: Signal[Int]) = div(model.map(_.toString))
           connection <- RootConnection.start(config, metadata, view, outputs.offer(_).unit)
-          _ <- outputs.take
-          event = LiveAsyncEvent(AsyncKey[Any]("work"), LiveAsyncResult.Succeeded(2))
-          _ <- connection.submitAsyncCompletion(event)
-          _ <- outputs.take
-          model <- connection.inspectModel
-          called <- handled.get
-        yield assertTrue(model == 21, !called)
+          _          <- outputs.take
+          _          <- outputs.take
+          halted     <- connection.inspectModel
+          _          <- connection.submitInfo(20)
+          _          <- outputs.take
+          _          <- outputs.take
+          observed   <- seen.get
+          messages   <- handled.get
+        yield assertTrue(
+          halted == 21,
+          observed.take(1) == Vector((true, 2, 20)),
+          observed.drop(1).map(entry => (entry._1, entry._3)) == Vector((true, -1)),
+          observed.drop(1).forall(entry =>
+            entry._2 match
+              case LiveAsyncResult.Failed(_) => true
+              case _                         => false
+          ),
+          messages == Vector(20, -1)
+        )
       }
     },
     test("normal close is idempotent and rejects future submissions") {

@@ -196,7 +196,6 @@ enum SessionCommand[+Msg]:
     payload: BindingPayload,
     event: Option[LiveEvent] = None)            extends SessionCommand[Nothing]
   case Message[Msg](epoch: Epoch, message: Msg) extends SessionCommand[Msg]
-  case AsyncCompletion[Msg](epoch: Epoch, event: LiveAsyncEvent[Msg]) extends SessionCommand[Msg]
   private[kernel] case ManagedAsync(
     epoch: Epoch,
     token: ResourceToken,
@@ -211,10 +210,6 @@ enum SessionCommand[+Msg]:
     epoch: Epoch,
     component: ComponentInstanceId,
     message: Any) extends SessionCommand[Nothing]
-  private[scalive] case ComponentAsyncCompletion(
-    epoch: Epoch,
-    component: ComponentInstanceId,
-    event: LiveAsyncEvent[Any]) extends SessionCommand[Nothing]
   private[scalive] case Upload(
     epoch: Epoch,
     command: CommandId,
@@ -226,12 +221,10 @@ enum SessionCommand[+Msg]:
     case ClientEvent(epoch, _, _, _)             => epoch
     case ComponentClientEvent(epoch, _, _, _, _) => epoch
     case Message(epoch, _)                       => epoch
-    case AsyncCompletion(epoch, _)               => epoch
     case ManagedAsync(epoch, _, _)               => epoch
     case ManagedSubscription(epoch, _, _)        => epoch
     case ManagedSubscriptionEnded(epoch, _)      => epoch
     case ComponentMessage(epoch, _, _)           => epoch
-    case ComponentAsyncCompletion(epoch, _, _)   => epoch
     case Upload(epoch, _, _, _)                  => epoch
     case ParamsPatch(epoch, _)                   => epoch
 end SessionCommand
@@ -278,9 +271,6 @@ final private[scalive] case class SessionLogic[Msg, Model](
   ] = None,
   handleInfo: Option[(Model, Msg) => Task[TurnDraft[Msg, Model]]] = None,
   handleAsync: Option[(Model, LiveAsyncEvent[Msg]) => Task[TurnDraft[Msg, Model]]] = None,
-  handleManagedAsync: Option[
-    (Model, LiveAsyncEvent[Msg], Msg) => Task[TurnDraft[Msg, Model]]
-  ] = None,
   handleUpload: Option[
     (Model, CommandId, UploadMutation[?]) => Task[TurnDraft[Msg, Model]]
   ] = None,
@@ -503,18 +493,6 @@ trait ComponentEnvironment[RootMsg, RootModel]:
     state: ComponentEnvironmentState,
     draft: TurnDraft[RootMsg, RootModel]
   ): Task[ComponentCallbackResult[A, RootMsg, RootModel]]
-  def managedAsync[P, M, A, O](
-    id: ComponentInstanceId,
-    component: LiveComponent[P, M, A],
-    props: P,
-    model: A,
-    event: LiveAsyncEvent[M],
-    _message: M,
-    emit: O => Task[Unit],
-    state: ComponentEnvironmentState,
-    draft: TurnDraft[RootMsg, RootModel]
-  ): Task[ComponentCallbackResult[A, RootMsg, RootModel]] =
-    async(id, component, props, model, event, emit, state, draft)
   def browserEvent[P, M, A, O](
     id: ComponentInstanceId,
     component: LiveComponent[P, M, A],

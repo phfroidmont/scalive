@@ -474,9 +474,9 @@ trait RootAsyncHooks[Msg, Model]:
   /** Attaches `hook` under `id`, to run when a task the view started completes, before its message
     * reaches `handleMessage`.
     *
-    * The hook receives a [[LiveAsyncEvent]] with the task's key and outcome. A halt skips later
-    * hooks and `handleMessage`. Attaching an `id` that is already attached replaces that hook in
-    * place.
+    * The hook receives a [[LiveAsyncEvent]] with the task's key, outcome, and message. A halt skips
+    * later hooks and `handleMessage`. Attaching an `id` that is already attached replaces that hook
+    * in place.
     */
   def attach(
     id: String
@@ -591,9 +591,9 @@ trait ComponentAsyncHooks[Props, Msg, Model]:
   /** Attaches `hook` under `id`, to run when a task this instance started completes, before its
     * message reaches `handleMessage`.
     *
-    * The hook receives a [[LiveAsyncEvent]] with the task's key and outcome. A halt skips later
-    * hooks and `handleMessage`. Attaching an `id` that is already attached replaces that hook in
-    * place.
+    * The hook receives a [[LiveAsyncEvent]] with the task's key, outcome, and message. A halt skips
+    * later hooks and `handleMessage`. Attaching an `id` that is already attached replaces that hook
+    * in place.
     */
   def attach(
     id: String

@@ -407,8 +407,8 @@ object SessionKernelSpec extends ZIOSpecDefault:
                     guardConnectedTurn = halt.get.map(value =>
                       if value then Left(LiveConnectedTurnFailure.Halt) else Right(())
                     ),
-                    handleManagedAsync = Some((model, _, message) =>
-                      handled.update(_ + 1).as(TurnDraft(model + message))
+                    handleAsync = Some((model, event) =>
+                      handled.update(_ + 1).as(TurnDraft(model + event.message))
                     )
                   )
           kernel <- SessionKernel.start(

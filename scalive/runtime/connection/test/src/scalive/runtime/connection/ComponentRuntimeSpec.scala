@@ -55,7 +55,10 @@ object ComponentRuntimeSpec extends ZIOSpecDefault:
       order.update(_ :+ s"update:$props").as(model + props)
 
     def handleMessage(props: Int, model: Int, ctx: MessageContext): Int => Task[Int] =
-      message => order.update(_ :+ "message") *> ctx.emit(model + message).as(model + message)
+      case 0 =>
+        ctx.async.start(AsyncKey[Int]("work"))(ZIO.succeed(99))(_ => 99).as(model)
+      case message =>
+        order.update(_ :+ "message") *> ctx.emit(model + message).as(model + message)
 
     def view(props: Signal[Int], model: Signal[Int], self: ComponentRef[Int]): HtmlElement[Int] =
       div(model.map(_.toString))
@@ -121,18 +124,19 @@ object ComponentRuntimeSpec extends ZIOSpecDefault:
                         )
           _   <- sink.take
           ids <- connection.inspectComponentIds
-          event = LiveAsyncEvent(
-                    AsyncKey[Int]("work").asInstanceOf[AsyncKey[Any]],
-                    LiveAsyncResult.Succeeded(99)
-                  )
           command = CommandId.fresh().toOption.get
-          _      <- connection.submitComponentAsyncCompletion(command, ids(1), event)
-          _      <- sink.take
-          left   <- connection.inspectComponentModel[Int](ids.head)
-          right  <- connection.inspectComponentModel[Int](ids(1))
+          _      <- connection.submitComponentMessage(command, ids(1), 0)
+          // 1 from update, 1 from the event hook, 10 from the halting async hook, and no 99.
+          right <- zio.test.Live.live(
+                     connection
+                       .inspectComponentModel[Int](ids(1))
+                       .repeatUntil(_.contains(12))
+                       .timeout(5.seconds)
+                   ).map(_.flatten)
+          left <- connection.inspectComponentModel[Int](ids.head)
           _      <- connection.close
           closed <- ZIO.foreach(ids)(connection.componentWasClosed)
-        yield assertTrue(left.contains(1), right.contains(11), closed.forall(identity))
+        yield assertTrue(left.contains(1), right.contains(12), closed.forall(identity))
       }
     },
     test("resolves component tokens by exact reference identity") {
@@ -687,30 +691,30 @@ object ComponentRuntimeSpec extends ZIOSpecDefault:
         mounted     <- environment.mount(id, definition, (), draft)
         failedEvent: LiveAsyncEvent[Int] = LiveAsyncEvent(
                         AsyncKey[Any]("failed"),
-                        LiveAsyncResult.Failed(Exception("failed"))
+                        LiveAsyncResult.Failed(Exception("failed")),
+                        5
                       )
-        failed <- environment.managedAsync(
+        failed <- environment.async(
                     id,
                     definition,
                     (),
                     mounted.model,
                     failedEvent,
-                    5,
                     (_: Nothing) => ZIO.unit,
                     mounted.state,
                     mounted.draft
                   )
         cancelledEvent: LiveAsyncEvent[Int] = LiveAsyncEvent(
                            AsyncKey[Any]("cancelled"),
-                           LiveAsyncResult.Cancelled(Some("cancelled"))
+                           LiveAsyncResult.Cancelled(Some("cancelled")),
+                           7
                          )
-        cancelled <- environment.managedAsync(
+        cancelled <- environment.async(
                        id,
                        definition,
                        (),
                        failed.model,
                        cancelledEvent,
-                       7,
                        (_: Nothing) => ZIO.unit,
                        failed.state,
                        failed.draft

@@ -24,12 +24,10 @@ private[scalive] enum RuntimeCommandKind:
   case ClientEvent
   case ComponentClientEvent
   case Message
-  case AsyncCompletion
   case ManagedAsync
   case ManagedSubscription
   case ManagedSubscriptionEnded
   case ComponentMessage
-  case ComponentAsyncCompletion
   case Upload
   case ParamsPatch
   case Internal
@@ -756,13 +754,11 @@ final private[scalive] class RuntimeObserver private (
   private def operationKind(kind: RuntimeCommandKind): RuntimeTraceOperationKind = kind match
     case RuntimeCommandKind.ClientEvent | RuntimeCommandKind.ComponentClientEvent =>
       RuntimeTraceOperationKind.ClientEvent
-    case RuntimeCommandKind.AsyncCompletion | RuntimeCommandKind.ManagedAsync =>
-      RuntimeTraceOperationKind.AsyncCompletion
-    case RuntimeCommandKind.Upload      => RuntimeTraceOperationKind.Upload
-    case RuntimeCommandKind.ParamsPatch => RuntimeTraceOperationKind.LivePatch
+    case RuntimeCommandKind.ManagedAsync => RuntimeTraceOperationKind.AsyncCompletion
+    case RuntimeCommandKind.Upload       => RuntimeTraceOperationKind.Upload
+    case RuntimeCommandKind.ParamsPatch  => RuntimeTraceOperationKind.LivePatch
     case RuntimeCommandKind.Message | RuntimeCommandKind.ManagedSubscription |
-        RuntimeCommandKind.ManagedSubscriptionEnded | RuntimeCommandKind.ComponentMessage |
-        RuntimeCommandKind.ComponentAsyncCompletion =>
+        RuntimeCommandKind.ManagedSubscriptionEnded | RuntimeCommandKind.ComponentMessage =>
       RuntimeTraceOperationKind.ServerMessage
     case RuntimeCommandKind.Internal => RuntimeTraceOperationKind.Other
 
@@ -842,13 +838,11 @@ private[scalive] object RuntimeObserver:
     case RuntimeCommandKind.ClientEvent          => LifecycleTurnKind.BrowserEvent
     case RuntimeCommandKind.ComponentClientEvent => LifecycleTurnKind.ComponentBrowserEvent
     case RuntimeCommandKind.Message              => LifecycleTurnKind.Message
-    case RuntimeCommandKind.AsyncCompletion | RuntimeCommandKind.ManagedAsync =>
-      LifecycleTurnKind.AsyncCompletion
+    case RuntimeCommandKind.ManagedAsync         => LifecycleTurnKind.AsyncCompletion
     case RuntimeCommandKind.ManagedSubscription | RuntimeCommandKind.ManagedSubscriptionEnded =>
       LifecycleTurnKind.Subscription
-    case RuntimeCommandKind.ComponentMessage | RuntimeCommandKind.ComponentAsyncCompletion =>
-      LifecycleTurnKind.ComponentMessage
-    case RuntimeCommandKind.Upload      => LifecycleTurnKind.Upload
-    case RuntimeCommandKind.ParamsPatch => LifecycleTurnKind.ParamsPatch
-    case RuntimeCommandKind.Internal    => LifecycleTurnKind.Internal
+    case RuntimeCommandKind.ComponentMessage => LifecycleTurnKind.ComponentMessage
+    case RuntimeCommandKind.Upload           => LifecycleTurnKind.Upload
+    case RuntimeCommandKind.ParamsPatch      => LifecycleTurnKind.ParamsPatch
+    case RuntimeCommandKind.Internal         => LifecycleTurnKind.Internal
 end RuntimeObserver

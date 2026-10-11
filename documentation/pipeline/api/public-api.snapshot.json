@@ -632,8 +632,8 @@
       "kind" : "class",
       "signatures" : [
         {
-          "id" : "class:scalive.LiveAsyncEvent:9e4e89cda2470efd",
-          "signature" : "class LiveAsyncEvent[+Msg](name: AsyncKey[Any], result: LiveAsyncResult[Msg])"
+          "id" : "class:scalive.LiveAsyncEvent:17eaa0b628680b7e",
+          "signature" : "class LiveAsyncEvent[+Msg](key: AsyncKey[Any], result: LiveAsyncResult[Any], message: Msg)"
         }
       ]
     },
@@ -23465,14 +23465,26 @@
       ]
     },
     {
-      "id" : "val:scalive.LiveAsyncEvent.name",
+      "id" : "val:scalive.LiveAsyncEvent.key",
       "ownerId" : "class:scalive.LiveAsyncEvent",
-      "qualifiedName" : "scalive.LiveAsyncEvent.name",
+      "qualifiedName" : "scalive.LiveAsyncEvent.key",
       "kind" : "val",
       "signatures" : [
         {
-          "id" : "val:scalive.LiveAsyncEvent.name:d00fa8835e8b0bf0",
-          "signature" : "val name: AsyncKey[Any]"
+          "id" : "val:scalive.LiveAsyncEvent.key:871941cf89c4b66e",
+          "signature" : "val key: AsyncKey[Any]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveAsyncEvent.message",
+      "ownerId" : "class:scalive.LiveAsyncEvent",
+      "qualifiedName" : "scalive.LiveAsyncEvent.message",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveAsyncEvent.message:8a518084008893af",
+          "signature" : "val message: Msg"
         }
       ]
     },
@@ -23483,8 +23495,8 @@
       "kind" : "val",
       "signatures" : [
         {
-          "id" : "val:scalive.LiveAsyncEvent.result:321319ba84849592",
-          "signature" : "val result: LiveAsyncResult[Msg]"
+          "id" : "val:scalive.LiveAsyncEvent.result:7a338d4f2af31ba4",
+          "signature" : "val result: LiveAsyncResult[Any]"
         }
       ]
     },

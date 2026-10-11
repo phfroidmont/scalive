@@ -69,18 +69,6 @@ final private[scalive] class SessionKernel[Msg, Model] private (
   ): ZIO[Any, SessionRejection, TurnResult] =
     submit(SessionCommand.ComponentMessage(epoch, component, message))
 
-  private[scalive] def submitComponentAsync[Message](
-    component: ComponentInstanceId,
-    event: LiveAsyncEvent[Message]
-  ): ZIO[Any, SessionRejection, TurnResult] =
-    submit(
-      SessionCommand.ComponentAsyncCompletion(
-        epoch,
-        component,
-        event.asInstanceOf[LiveAsyncEvent[Any]]
-      )
-    )
-
   private[scalive] def submit(
     id: CommandId,
     command: SessionCommand[Msg]
@@ -251,8 +239,6 @@ final private[scalive] class SessionKernel[Msg, Model] private (
       RuntimeCommandKind.ComponentClientEvent -> RuntimeInitiator.Browser
     case _: SessionCommand.Message[?] =>
       RuntimeCommandKind.Message -> RuntimeInitiator.Application
-    case _: SessionCommand.AsyncCompletion[?] =>
-      RuntimeCommandKind.AsyncCompletion -> RuntimeInitiator.Application
     case _: SessionCommand.ManagedAsync =>
       RuntimeCommandKind.ManagedAsync -> RuntimeInitiator.ManagedResource
     case _: SessionCommand.ManagedSubscription =>
@@ -261,8 +247,6 @@ final private[scalive] class SessionKernel[Msg, Model] private (
       RuntimeCommandKind.ManagedSubscriptionEnded -> RuntimeInitiator.ManagedResource
     case _: SessionCommand.ComponentMessage =>
       RuntimeCommandKind.ComponentMessage -> RuntimeInitiator.Application
-    case _: SessionCommand.ComponentAsyncCompletion =>
-      RuntimeCommandKind.ComponentAsyncCompletion -> RuntimeInitiator.Application
     case _: SessionCommand.Upload      => RuntimeCommandKind.Upload -> RuntimeInitiator.Browser
     case _: SessionCommand.ParamsPatch =>
       RuntimeCommandKind.ParamsPatch -> RuntimeInitiator.Browser
@@ -585,32 +569,6 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                   logic.handleInfo.getOrElse(logic.handle)(state.committed.model, message),
                   Some(tracked)
                 )
-            case SessionCommand.AsyncCompletion(_, event) =>
-              logic.handleAsync match
-                case Some(handler) =>
-                  executeTurn(
-                    state,
-                    work,
-                    handler(state.committed.model, event),
-                    Some(tracked)
-                  )
-                case None =>
-                  event.result match
-                    case scalive.LiveAsyncResult.Succeeded(message) =>
-                      observer.message(commandCorrelation(state.epoch, commandId), message) *>
-                        executeTurn(
-                          state,
-                          work,
-                          logic.handle(state.committed.model, message),
-                          Some(tracked)
-                        )
-                    case _ =>
-                      executeTurn(
-                        state,
-                        work,
-                        ZIO.succeed(TurnDraft(state.committed.model)),
-                        Some(tracked)
-                      )
             case SessionCommand.ManagedAsync(_, token, result) =>
               state.committed.managedResources.current(token) match
                 case Some(ManagedResource.Async(_, _, mapResult)) =>
@@ -711,14 +669,6 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                 work,
                 component,
                 ComponentAction.Message(message),
-                Some(tracked)
-              )
-            case SessionCommand.ComponentAsyncCompletion(_, component, event) =>
-              executeComponentTurn(
-                state,
-                work,
-                component,
-                ComponentAction.Async(event),
                 Some(tracked)
               )
             case SessionCommand.Upload(_, uploadCommand, mutation, publish) =>
@@ -1316,14 +1266,10 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     token: Option[ResourceToken],
     response: Option[TrackedCommand]
   ): UIO[Unit] =
-    val message                      = completion.message.asInstanceOf[Msg]
-    val result: LiveAsyncResult[Msg] = completion.result match
-      case LiveAsyncResult.Succeeded(_)      => LiveAsyncResult.Succeeded(message)
-      case LiveAsyncResult.Failed(cause)     => LiveAsyncResult.Failed(cause)
-      case LiveAsyncResult.Cancelled(reason) => LiveAsyncResult.Cancelled(reason)
-    val event = LiveAsyncEvent(AsyncKey[Any](completion.name), result)
-    val next  = logic.handleManagedAsync match
-      case Some(handler) => handler(state.committed.model, event, message)
+    val message = completion.message.asInstanceOf[Msg]
+    val event   = LiveAsyncEvent(AsyncKey[Any](completion.name), completion.result, message)
+    val next    = logic.handleAsync match
+      case Some(handler) => handler(state.committed.model, event)
       case None          => logic.handle(state.committed.model, message)
     val operations = token.toVector.map(ResourceOperation.Complete(_))
     executeTurn(
@@ -2337,7 +2283,13 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                                      )
                                    )
                                  )
-                               case Some((target, ComponentAction.Async(event))) if target == id =>
+                               case Some((target, ComponentAction.ManagedAsync(completion)))
+                                   if target == id =>
+                                 val event = LiveAsyncEvent(
+                                   AsyncKey[Any](completion.name),
+                                   completion.result,
+                                   completion.message.asInstanceOf[M]
+                                 )
                                  restore(
                                    phase(SessionStage.ComponentAsync)(
                                      componentEnvironment.async[P, M, A, O](
@@ -2345,32 +2297,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                                        component,
                                        effectiveProps,
                                        updated.model,
-                                       event.asInstanceOf[LiveAsyncEvent[M]],
-                                       output,
-                                       updated.state,
-                                       updated.draft
-                                     )
-                                   )
-                                 )
-                               case Some((target, ComponentAction.ManagedAsync(completion)))
-                                   if target == id =>
-                                 val message                    = completion.message.asInstanceOf[M]
-                                 val result: LiveAsyncResult[M] = completion.result match
-                                   case LiveAsyncResult.Succeeded(_) =>
-                                     LiveAsyncResult.Succeeded(message)
-                                   case LiveAsyncResult.Failed(cause) =>
-                                     LiveAsyncResult.Failed(cause)
-                                   case LiveAsyncResult.Cancelled(reason) =>
-                                     LiveAsyncResult.Cancelled(reason)
-                                 restore(
-                                   phase(SessionStage.ComponentAsync)(
-                                     componentEnvironment.managedAsync[P, M, A, O](
-                                       id,
-                                       component,
-                                       effectiveProps,
-                                       updated.model,
-                                       LiveAsyncEvent(AsyncKey[Any](completion.name), result),
-                                       message,
+                                       event,
                                        output,
                                        updated.state,
                                        updated.draft
@@ -4160,7 +4087,6 @@ private[scalive] object SessionKernel:
 
   private enum ComponentAction:
     case Message(value: Any)
-    case Async(event: LiveAsyncEvent[Any])
     case ManagedAsync(completion: ManagedAsyncCompletion)
     case Browser(command: SessionCommand.ComponentClientEvent)
 

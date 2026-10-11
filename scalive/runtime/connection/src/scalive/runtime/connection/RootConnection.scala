@@ -155,20 +155,6 @@ final private[scalive] class RootConnection[Msg, Model] private (
   ): IO[ConnectionError, Unit] =
     enqueue(command, Event.ComponentMessage(command, component, message)).unit
 
-  private[connection] def submitComponentAsyncCompletion[M](
-    command: CommandId,
-    component: ComponentInstanceId,
-    event: LiveAsyncEvent[M]
-  ): IO[ConnectionError, Unit] =
-    enqueue(command, Event.ComponentAsync(command, component, event)).flatMap(_.await)
-
-  private[scalive] def offerComponentAsyncCompletion[M](
-    command: CommandId,
-    component: ComponentInstanceId,
-    event: LiveAsyncEvent[M]
-  ): IO[ConnectionError, Unit] =
-    enqueue(command, Event.ComponentAsync(command, component, event)).unit
-
   def submitPatch(command: CommandId, destination: URL): IO[ConnectionError, Unit] =
     enqueuePatch(command, destination).flatMap(_.await)
 
@@ -734,10 +720,6 @@ final private[scalive] class RootConnection[Msg, Model] private (
   private[connection] def submitInfo(message: Msg): IO[ConnectionError, Unit] =
     kernel.submit(SessionCommand.Message(epoch, message)).unit.mapError(connectionError)
 
-  private[connection] def submitAsyncCompletion(event: LiveAsyncEvent[Msg])
-    : IO[ConnectionError, Unit] =
-    kernel.submit(SessionCommand.AsyncCompletion(epoch, event)).unit.mapError(connectionError)
-
   private[connection] def ingressDepth: UIO[Int] = ingress.size
 
   private[connection] def pendingCount: UIO[Int] = pending.get.map(_.size)
@@ -826,12 +808,6 @@ final private[scalive] class RootConnection[Msg, Model] private (
             SessionCommand.Message(epoch, message.asInstanceOf[Msg])
           case Event.ComponentMessage(_, component, message) =>
             SessionCommand.ComponentMessage(epoch, component, message)
-          case Event.ComponentAsync(_, component, event) =>
-            SessionCommand.ComponentAsyncCompletion(
-              epoch,
-              component,
-              event.asInstanceOf[LiveAsyncEvent[Any]]
-            )
           case Event.Upload(command, mutation) =>
             SessionCommand.Upload(epoch, command, mutation)
           case Event.Patch(_, destination) => SessionCommand.ParamsPatch(epoch, destination)
@@ -1124,10 +1100,6 @@ private[scalive] object RootConnection:
       event: LiveEvent)
     case Message(command: CommandId, message: Any)
     case ComponentMessage(command: CommandId, component: ComponentInstanceId, message: Any)
-    case ComponentAsync(
-      command: CommandId,
-      component: ComponentInstanceId,
-      event: LiveAsyncEvent[?])
     case Upload(command: CommandId, mutation: UploadMutation[?])
     case Patch(command: CommandId, destination: URL)
 
@@ -1136,7 +1108,6 @@ private[scalive] object RootConnection:
       case ComponentBrowser(command, _, _, _, _) => command
       case Message(command, _)                   => command
       case ComponentMessage(command, _, _)       => command
-      case ComponentAsync(command, _, _)         => command
       case Upload(command, _)                    => command
       case Patch(command, _)                     => command
 
@@ -1385,24 +1356,7 @@ private[scalive] object RootConnection:
                     )
                   ),
                   handleAsync = Some((state, event) =>
-                    runAsyncTurn(
-                      state,
-                      metadata,
-                      lifecycle,
-                      rootOwner,
-                      event,
-                      None
-                    )
-                  ),
-                  handleManagedAsync = Some((state, event, message) =>
-                    runAsyncTurn(
-                      state,
-                      metadata,
-                      lifecycle,
-                      rootOwner,
-                      event,
-                      Some(message)
-                    )
+                    runAsyncTurn(state, metadata, lifecycle, rootOwner, event)
                   ),
                   handleUpload = Some((state, command, mutation) =>
                     mutation.execute(state.uploads).flatMap { result =>
@@ -1764,8 +1718,7 @@ private[scalive] object RootConnection:
     metadata: RootConnectionMetadata,
     lifecycle: RootLifecycle[Msg, Model],
     owner: OwnerId,
-    event: LiveAsyncEvent[Msg],
-    mappedMessage: Option[Msg]
+    event: LiveAsyncEvent[Msg]
   ): Task[TurnDraft[Msg, RootState[Msg, Model]]] =
     for
       journal <- rootJournal(owner, state, TurnDraft(state))
@@ -1785,14 +1738,7 @@ private[scalive] object RootConnection:
       model <- hooked match
                  case Hooked.Halt(value)     => ZIO.succeed(value)
                  case Hooked.Continue(value) =>
-                   mappedMessage.orElse(
-                     event.result match
-                       case LiveAsyncResult.Succeeded(message) => Some(message)
-                       case _                                  => None
-                   ) match
-                     case Some(message) =>
-                       ZIO.suspend(lifecycle.handleMessage(value, context, message))
-                     case None => ZIO.succeed(value)
+                   ZIO.suspend(lifecycle.handleMessage(value, context, event.message))
       draft <- rootDraft(state, lifecycle, journal, model, state.url, ownsPageTitle = true)
     yield draft
 

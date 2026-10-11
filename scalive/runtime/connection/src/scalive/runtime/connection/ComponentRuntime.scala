@@ -120,40 +120,7 @@ final private[connection] class ConnectedComponentEnvironment[RootMsg, RootModel
       next   <- hooked match
                 case LiveHookResult.Halt(current)     => ZIO.succeed(current)
                 case LiveHookResult.Continue(current) =>
-                  event.result match
-                    case LiveAsyncResult.Succeeded(message) =>
-                      ZIO.suspend(component.handleMessage(props, current, context)(message))
-                    case _ => ZIO.succeed(current)
-      result <- turn.result(next)
-    yield result
-
-  override def managedAsync[P, M, A, O](
-    id: ComponentInstanceId,
-    component: LiveComponent[P, M, A],
-    props: P,
-    model: A,
-    event: LiveAsyncEvent[M],
-    message: M,
-    emit: O => Task[Unit],
-    state: ComponentEnvironmentState,
-    draft: Draft
-  ): Task[ComponentCallbackResult[A, RootMsg, RootState[RootMsg, RootModel]]] =
-    for
-      turn <- ComponentTurn.make(
-                draft,
-                registry[P, M, A](state),
-                lifecycle,
-                id,
-                ownerEpoch,
-                streamStore(state)
-              )
-      context = ComponentMessageContextImpl[P, M, A, O](metadata, component, emit, turn)
-      hooks  <- turn.hookRegistry[P, M, A]
-      hooked <- runAsyncHooks(hooks.async, props, model, event, context)
-      next   <- hooked match
-                case LiveHookResult.Halt(current)     => ZIO.succeed(current)
-                case LiveHookResult.Continue(current) =>
-                  ZIO.suspend(component.handleMessage(props, current, context)(message))
+                  ZIO.suspend(component.handleMessage(props, current, context)(event.message))
       result <- turn.result(next)
     yield result
 

@@ -27,15 +27,18 @@ enum LiveAsyncResult[+A]:
 
 /** A task that ended, as passed to `async` lifecycle hooks before the owner handles its message.
   *
-  * @param name
-  *   The key the task was started under.
+  * @param key
+  *   The key the task was started under. Compare it with a typed key using `==`.
   * @param result
-  *   How the task ended. A success carries the message built by the task's `toMsg`, not the task's
-  *   value.
+  *   How the task ended, with the task's value when it succeeded.
+  * @param message
+  *   The message the task's `toMsg` built from `result`, which the owner handles unless a hook
+  *   halts.
   */
 final case class LiveAsyncEvent[+Msg](
-  name: AsyncKey[Any],
-  result: LiveAsyncResult[Msg])
+  key: AsyncKey[Any],
+  result: LiveAsyncResult[Any],
+  message: Msg)
 
 /** The state of background work, kept in the model to render loading, result, and failure.
   *

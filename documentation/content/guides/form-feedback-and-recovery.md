@@ -115,10 +115,16 @@ history: applying a recovery update to retained server state preserves it, but
 applying it to a freshly mounted form restores values without old blur history.
 
 Disable client recovery explicitly when replay would be unsafe or the server is
-authoritative. Add this attribute to the form:
+authoritative. `onChange` always renders the recovery binding, so bind change
+events with `on.change.form` instead, and add `phx.autoRecover := "ignore"` to
+the form:
 
 ```scala fragment
-phx.autoRecover := "ignore"
+form(
+  on.change.form(Profile.Definition)(Msg.Validate(_)),
+  phx.autoRecover := "ignore",
+  // fields
+)
 ```
 
 Recovery restores what the browser still holds; it is not draft storage. It does

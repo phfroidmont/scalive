@@ -25,7 +25,8 @@ and pass attributes and children in document order:
 
 A tag call produces an @:apiSymbol(class:scalive.HtmlElement)`HtmlElement[Msg]`@:@. Strings
 become escaped text content, nested elements become child content, and an
-`IterableOnce` of modifiers can be passed directly. Derive dynamic text and
+`Option` or other `IterableOnce` of modifiers or elements can be passed
+directly, as in `ul(items.map(item => li(item.name)))`. Derive dynamic text and
 attributes with signal `.map`, as the item count does here. The `view` method
 constructs this signal-backed view graph once per graph lifetime rather than
 rebuilding the tree after every model update.

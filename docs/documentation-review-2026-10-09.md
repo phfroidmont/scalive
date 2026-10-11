@@ -523,6 +523,63 @@ Left for later:
 
 - About 1,000 fallback summaries in the API reference.
 
+### Phase 8 (2026-10-11): Scaladoc for every public definition
+
+Every public definition now has Scaladoc, and `documentation.check` fails when
+one does not. The generated fallback sentence is gone.
+
+- **Hidden internals** (`feat(api)!`): the `Mod.Attr` and `Mod.Content` cases,
+  `ComponentSpec`, `NestedViewSpec`, `ComponentDispatch`, and
+  `HtmlElement.attrMods`/`contentMods` are private to `scalive` (132 symbols).
+  `Mod.Input` now accepts elements and collections of elements, so the docs
+  site and e2eApp no longer wrap elements in `Mod.Content.Tag`.
+- **Pipeline:**
+  - Classes, objects, enums, and opaque types exported from `scalive.upload`,
+    `scalive.streams`, and `scalive.render` are documented as those
+    definitions, with their members. `LiveUploadDef`, `LiveStreamDef`,
+    `UploadRef`, and the `StaticHtmlError` cases used to show a bare alias with
+    no members.
+  - A field takes its owner's `@param` text, presented as a sentence. The 25
+    curated summaries in `reference.json` moved into Scaladoc, and the
+    mechanism is gone.
+  - Undocumented `equals`/`hashCode`/`toString` overrides, `derives`
+    instances, and companions without public members are left out. Signatures
+    no longer show `X$package.` or the `streams.`/`upload.` prefixes.
+  - `ApiSnapshot.validateDocumentation` requires Scaladoc on every signature
+    except packages, and reports overloads whose first paragraphs differ.
+- **Scaladoc:** 790 symbols in 51 files, including the lifecycle events, hook
+  traits, `phx` attributes, forms, security, static assets, routing, and
+  testing types. The pipeline's API index and search use the summaries
+  directly.
+- **Guide fixes found while writing:**
+  - Lifecycle hooks: attaching an existing dynamic hook ID replaces that hook
+    in place; it does not fail with `IllegalArgumentException`.
+  - Form recovery: `phx.autoRecover := "ignore"` on a form that uses
+    `onChange` renders a duplicate `phx-auto-recover` and fails. The guide now
+    binds change events with `on.change.form` instead.
+  - The HTML guide says a collection of elements is a valid child.
+
+Verification: `mill __.test` (1,227 passed) after `mill clean`,
+`mill __.compile`, `mill documentation.check`, `mill __.checkFormat`, and
+`npm run test:xray` (32 passed) pass.
+
+Found while writing, not fixed:
+
+- `dom.onMount`, `dom.onRemove`, `connection.onConnect`, and
+  `connection.onDisconnect` accept messages, but the Phoenix client only runs
+  `JS` commands for these attributes. A message renders as an event ID, and
+  `JS.exec` then calls `exec_null`, which throws in the browser. A binding type
+  that accepts only `JS` commands would rule this out.
+- `ConnectedLifecycleContext.epoch` is always 1, and a root LiveView keeps its
+  `lifecycleId` across reconnects.
+- `ctx.components.sendUpdate[C]` finds the component through `MODULE$` by
+  reflection, which likely fails for a component defined as a class.
+- `upload.onProgress` ignores its receiver.
+- `LiveUploadError.fromReason` never produces `Custom`, so a custom error comes
+  back as `Unknown` after a JSON round trip.
+- A `LiveSession` can be passed into another `Live.session`, which silently
+  drops the inner session's name.
+
 ## How this was verified
 
 - I read all 56 authored pages and every embedded example source they

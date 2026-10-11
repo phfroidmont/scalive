@@ -150,11 +150,11 @@ read-only:
 `ctx.hooks.event.detach("read-only-policy")` from a component update, message,
 or after-render context when the policy no longer applies.
 
-An ID must be unique among dynamic hooks in the same stage and owner. Attaching
-a duplicate fails with `IllegalArgumentException`. The same text may identify a
-hook in another stage or component instance because those registries are
-independent. Detaching an absent ID succeeds, and dynamic detach cannot remove a
-static hook.
+An ID identifies one dynamic hook in a stage and owner. Attaching an ID that is
+already attached there replaces that hook in its position. The same text may
+identify a hook in another stage or component instance because those registries
+are independent. Detaching an absent ID succeeds, and dynamic detach cannot
+remove a static hook.
 
 Dispatch uses a snapshot of one stage's registry. Attaching or detaching while
 hooks are running changes the next dispatch, not the one already in progress.

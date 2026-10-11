@@ -586,6 +586,27 @@ Found while writing, not fixed:
 - Fixed: `RenderError.Unsupported` said the feature "is not supported by the
   minimal render engine", an engine that does not exist. It now says the
   feature requires a LiveView lifecycle.
+- Fixed: `FormPath.ParseLimits` accepted zero or negative limits and `parse`
+  reported them as `RepresentationError.InvalidLimits`, mixing a programmer
+  error with untrusted-input errors. `ParseLimits` now rejects them when built,
+  like `FormLimits`; `InvalidLimits` and `NullLimits` are removed.
+- Fixed: `FieldIssues.apply` took any collection and threw when it was empty,
+  which an `emap` refinement could hit at render time. It now takes a first
+  issue and the rest; `FieldIssues.from` returns `None` for an empty
+  collection.
+- Documented: the bound control helpers throw when their modifiers set an
+  attribute the binding owns. `FormControl` lists those attributes and every
+  helper says it throws. The guide no longer implies that plain field views
+  accept any attribute.
+- Not a bug: `FormErrors.apply` and `one` do not check that an address belongs
+  to the form. The owner type already rules out another form root, `emap`
+  replaces errors at undeclared addresses with one root error, and the
+  Scaladoc points to the checked `FormDefinition.errors`.
+- Not fixed: `Form.http` looks only at the first attribute of an attribute
+  group when it rejects `action` and `method`. A second `action` or `method`
+  still fails the render through the duplicate-attribute check.
+- Not fixed: `FormPathSegment.Name("")` can be built, but every path
+  constructor rejects it, so no `FormPath` contains it.
 - Fixed: `FormRowKey.from` accepted any letter or digit that fits in one UTF-16
   code unit, such as `é` or `٣`, but not one outside that range or a decomposed
   accent, and it allowed lookalike keys. Row keys are now ASCII letters,

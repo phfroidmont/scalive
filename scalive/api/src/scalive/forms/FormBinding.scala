@@ -224,6 +224,11 @@ private[scalive] object FormBinding:
   * @param blurred
   *   The update message that marks this field as blurred. A composite widget sends it when focus
   *   leaves the whole widget; under [[FormFeedback.AfterBlur]] it makes the field's errors visible.
+  *
+  * The binding owns the `id`, `name`, `value`, `type`, `checked`, `phx-change`, and `phx-blur`
+  * attributes of every control it renders, in any letter case. The control helpers throw
+  * `IllegalArgumentException` when their `mods` set one, even one the control would not render. For
+  * a custom control, use [[inputAttributes]] instead of a helper.
   */
 final class FormControl[Owner, Input, Value, Msg] private[scalive] (
   val view: Signal[FormFieldView[Owner, Input, Value]],
@@ -306,33 +311,62 @@ final class FormControl[Owner, Input, Value, Msg] private[scalive] (
     aria.invalid.optional(hasVisibleErrors.map(value => Option.when(value)("true")))
   )
 
-  /** Renders a text input from the retained raw scalar value. */
+  /** Renders a text input from the retained raw scalar value.
+    *
+    * Throws `IllegalArgumentException` when `mods` sets an attribute this binding owns; see
+    * [[FormControl]].
+    */
   def text(mods: Mod.Input[Msg]*): HtmlElement[Msg] =
     input(typ := "text", inputAttributes, controlModifiers(mods))
 
-  /** Renders an email input from the retained raw scalar value. */
+  /** Renders an email input from the retained raw scalar value.
+    *
+    * Throws `IllegalArgumentException` when `mods` sets an attribute this binding owns; see
+    * [[FormControl]].
+    */
   def email(mods: Mod.Input[Msg]*): HtmlElement[Msg] =
     input(typ := "email", inputAttributes, controlModifiers(mods))
 
-  /** Renders a telephone input from the retained raw scalar value. */
+  /** Renders a telephone input from the retained raw scalar value.
+    *
+    * Throws `IllegalArgumentException` when `mods` sets an attribute this binding owns; see
+    * [[FormControl]].
+    */
   def tel(mods: Mod.Input[Msg]*): HtmlElement[Msg] =
     input(typ := "tel", inputAttributes, controlModifiers(mods))
 
   /** Renders a date input without parsing the retained raw scalar value. Native browser
     * sanitization can make invalid raw dates appear empty.
+    *
+    * Throws `IllegalArgumentException` when `mods` sets an attribute this binding owns; see
+    * [[FormControl]].
     */
   def date(mods: Mod.Input[Msg]*): HtmlElement[Msg] =
     input(typ := "date", inputAttributes, controlModifiers(mods))
 
-  /** Renders a search input from the retained raw scalar value. */
+  /** Renders a search input from the retained raw scalar value.
+    *
+    * Throws `IllegalArgumentException` when `mods` sets an attribute this binding owns; see
+    * [[FormControl]].
+    */
   def search(mods: Mod.Input[Msg]*): HtmlElement[Msg] =
     input(typ := "search", inputAttributes, controlModifiers(mods))
 
-  /** Renders a password input from the retained raw scalar value. */
+  /** Renders a password input from the retained raw scalar value.
+    *
+    * Throws `IllegalArgumentException` when `mods` sets an attribute this binding owns; see
+    * [[FormControl]].
+    */
   def password(mods: Mod.Input[Msg]*): HtmlElement[Msg] =
     input(typ := "password", inputAttributes, controlModifiers(mods))
 
-  /** Hidden values never install a native blur handler. */
+  /** Renders a hidden input from the retained raw scalar value.
+    *
+    * Hidden values never install a native blur handler.
+    *
+    * Throws `IllegalArgumentException` when `mods` sets an attribute this binding owns; see
+    * [[FormControl]].
+    */
   def hidden(mods: Mod.Input[Msg]*): HtmlElement[Msg] =
     input(
       typ      := "hidden",
@@ -346,6 +380,9 @@ final class FormControl[Owner, Input, Value, Msg] private[scalive] (
     *
     * This form uses the checked value `"true"`, matching `FieldInput.checkbox()`. No hidden
     * unchecked input is rendered.
+    *
+    * Throws `IllegalArgumentException` when `mods` sets an attribute this binding owns; see
+    * [[FormControl]].
     */
   def checkbox(mods: Mod.Input[Msg]*): HtmlElement[Msg] = checkbox("true", mods*)
 
@@ -354,6 +391,9 @@ final class FormControl[Owner, Input, Value, Msg] private[scalive] (
     * This form uses `checkedValue`, which must match the token the field's codec expects, as in
     * `FieldInput.checkbox("yes")` with `control.checkbox("yes")`. No hidden unchecked input is
     * rendered.
+    *
+    * Throws `IllegalArgumentException` when `mods` sets an attribute this binding owns; see
+    * [[FormControl]].
     */
   def checkbox(checkedValue: String, mods: Mod.Input[Msg]*): HtmlElement[Msg] =
     input(
@@ -380,7 +420,11 @@ final class FormControl[Owner, Input, Value, Msg] private[scalive] (
     val encoded = key.iterator.map(char => f"${char.toInt}%04x").mkString
     new FormControlItem(id.map(_ + s"_item_$encoded"), name, rawValues, blurAttributes)
 
-  /** Renders a textarea from the retained raw scalar value. */
+  /** Renders a textarea from the retained raw scalar value.
+    *
+    * Throws `IllegalArgumentException` when `mods` sets an attribute this binding owns; see
+    * [[FormControl]].
+    */
   def textarea(mods: Mod.Input[Msg]*): HtmlElement[Msg] =
     Form.textareaTag(
       idAttr   := id,
@@ -393,6 +437,9 @@ final class FormControl[Owner, Input, Value, Msg] private[scalive] (
   /** Renders a select from `(value, label)` options, selecting each one in the retained raw values.
     *
     * For a `multiple` select, use a repeated-value field such as `Root.texts`.
+    *
+    * Throws `IllegalArgumentException` when `mods` sets an attribute this binding owns; see
+    * [[FormControl]].
     */
   def select(options: Iterable[(String, String)], mods: Mod.Input[Msg]*): HtmlElement[Msg] =
     _root_.scalive.select(
@@ -447,6 +494,9 @@ final class FormControlItem[Msg] private[scalive] (
     *
     * This form takes a fixed token. ARIA remains opt-in through the parent control's validation
     * attributes.
+    *
+    * Throws `IllegalArgumentException` when `mods` sets an attribute this binding owns; see
+    * [[FormControl]].
     */
   def checkbox(checkedValue: String, mods: Mod.Input[Msg]*): HtmlElement[Msg] =
     input(
@@ -463,6 +513,9 @@ final class FormControlItem[Msg] private[scalive] (
     *
     * This form takes a reactive token without changing item identity. Both token and raw-value
     * changes update checked state; changing the token never rewrites the field's retained values.
+    *
+    * Throws `IllegalArgumentException` when `mods` sets an attribute this binding owns; see
+    * [[FormControl]].
     */
   def checkbox(checkedValue: Signal[String], mods: Mod.Input[Msg]*): HtmlElement[Msg] =
     input(

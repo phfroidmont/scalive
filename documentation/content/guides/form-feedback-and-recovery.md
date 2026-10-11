@@ -50,10 +50,12 @@ the binding is the policy's configuration point.
 
 A bound control's `id` and feedback ID are scoped by the form `DomRef`; use its
 `id`, `validationAttributes`, and `errorFeedback` together for labels and ARIA.
-Bound controls reject overrides of binding-owned attributes, while plain and
-signal-backed field views append caller modifiers without those restrictions.
-For a custom scalar input, `inputAttributes` supplies its retained `id`, `name`,
-value, and blur wiring.
+A bound control throws `IllegalArgumentException` when its modifiers set `id`,
+`name`, `value`, `type`, `checked`, `phx-change`, or `phx-blur`, which the
+binding owns. Plain and signal-backed field views append caller modifiers
+without that check, but an attribute they already render still fails the
+render as a duplicate. For a custom scalar input, `inputAttributes` supplies
+its retained `id`, `name`, value, and blur wiring.
 
 ## Normalize a value on blur {#normalize-a-value-on-blur}
 

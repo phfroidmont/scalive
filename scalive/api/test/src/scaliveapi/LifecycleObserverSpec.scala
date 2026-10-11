@@ -44,7 +44,7 @@ object LifecycleObserverSpec extends ZIOSpecDefault:
       yield assertTrue(result.isSuccess, continued)
     },
     test("events expose correlations without application payload fields") {
-      val lifecycle = ConnectedLifecycleContext(1L, 2L, 3L)
+      val lifecycle = ConnectedLifecycleContext(1L, 2L)
       val event = LifecycleEvent.TurnFailed(
         lifecycle,
         turnId = 4L,

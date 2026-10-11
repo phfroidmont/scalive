@@ -68,8 +68,8 @@
       "kind" : "class",
       "signatures" : [
         {
-          "id" : "class:scalive.ConnectedLifecycleContext:34d64ed209898ff7",
-          "signature" : "class ConnectedLifecycleContext(connectionId: Long, lifecycleId: Long, epoch: Long)"
+          "id" : "class:scalive.ConnectedLifecycleContext:a27fbd4a444924bf",
+          "signature" : "class ConnectedLifecycleContext(connectionId: Long, lifecycleId: Long)"
         }
       ]
     },
@@ -20209,18 +20209,6 @@
         {
           "id" : "val:scalive.ConnectedLifecycleContext.connectionId:2d762016ac35bd58",
           "signature" : "val connectionId: Long"
-        }
-      ]
-    },
-    {
-      "id" : "val:scalive.ConnectedLifecycleContext.epoch",
-      "ownerId" : "class:scalive.ConnectedLifecycleContext",
-      "qualifiedName" : "scalive.ConnectedLifecycleContext.epoch",
-      "kind" : "val",
-      "signatures" : [
-        {
-          "id" : "val:scalive.ConnectedLifecycleContext.epoch:d4790288494fe1b5",
-          "signature" : "val epoch: Long"
         }
       ]
     },

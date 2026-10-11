@@ -1480,7 +1480,7 @@ object ZioHttp:
                                     _ => LifecycleJoinTarget.Nested
                                   )
                                 )
-              observedLifecycle <- Ref.make(nestedClaims.toOption.flatMap(_.childLifecycle))
+              observedLifecycle <- Ref.make(Option.empty[LifecycleId])
               _                 <- restore(
                      joinLifecycle(
                        routes,
@@ -1905,8 +1905,7 @@ object ZioHttp:
               LifecycleEvent.JoinSucceeded(
                 ConnectedLifecycleContext(
                   supervisor.id.value,
-                  connection.lifecycle.value,
-                  connection.epoch.value
+                  connection.lifecycle.value
                 ),
                 target,
                 attempt,
@@ -2052,7 +2051,6 @@ object ZioHttp:
                   admitted =>
                     Ref.make(Option.empty[PreparedAdmission]).flatMap { pendingAdmission =>
                       val install = for
-                        _ <- observedLifecycle.set(Some(LifecycleId(admitted.claims.lifecycle)))
                         request = connectedRequest(socketRequest, admitted.url)
                         prepared <-
                           ZIO.uninterruptibleMask { restore =>
@@ -2127,7 +2125,9 @@ object ZioHttp:
                                             Some(LifecycleId(admitted.claims.lifecycle)),
                                           bootstrapChildLifecycles =
                                             admitted.claims.nestedLifecycles.view
-                                              .mapValues(LifecycleId(_)).toMap
+                                              .mapValues(LifecycleId(_)).toMap,
+                                          onLifecycleAssigned =
+                                            lifecycle => observedLifecycle.set(Some(lifecycle))
                                         ).mapError(error => Exception(error.toString))
                         _        <- connectionReady.succeed(connection)
                         retained <- joined.get
@@ -2195,25 +2195,26 @@ object ZioHttp:
                         .catchAll { error =>
                           val clearInitial =
                             ZIO.when(join.redirect.isEmpty)(registration.set(None))
-                          clearInitial *>
+                          clearInitial *> observedLifecycle.get.flatMap(lifecycle =>
                             observeJoinRejected(
                               observer,
                               supervisor,
-                              Some(LifecycleId(admitted.claims.lifecycle)),
+                              lifecycle,
                               LifecycleJoinTarget.Root,
                               attempt,
                               joinStarted,
                               Some(error),
                               outcomeClaimed
                             ) *>
-                            ZIO.logWarning(
-                              s"Rejecting connected root lifecycle topic=$topic: ${error.getMessage}"
-                            ) *>
-                            transportAdmission.isDisconnecting.flatMap {
-                              case true  => ZIO.unit
-                              case false =>
-                                writer.offer(joinFailureEnvelope(joinRef, ref, topic, error))
-                            }
+                              ZIO.logWarning(
+                                s"Rejecting connected root lifecycle topic=$topic: ${error.getMessage}"
+                              ) *>
+                              transportAdmission.isDisconnecting.flatMap {
+                                case true  => ZIO.unit
+                                case false =>
+                                  writer.offer(joinFailureEnvelope(joinRef, ref, topic, error))
+                              }
+                          )
                         }
                     }
                 )
@@ -2272,7 +2273,6 @@ object ZioHttp:
           writer.offer(PhoenixOutput.error(joinRef, ref, topic, staleReason)),
       (claims, url, reservation) =>
         (for
-          _               <- observedLifecycle.set(claims.childLifecycle)
           renderedState   <- Ref.make(Option.empty[PhoenixRenderedState])
           projectionGate  <- Semaphore.make(1L)
           eventGate       <- Semaphore.make(1L)
@@ -2333,7 +2333,9 @@ object ZioHttp:
                             startup.offer,
                             failureNotifier = failureNotifier,
                             reattach = join.sticky,
-                            requestedLifecycle = claims.childLifecycle
+                            requestedLifecycle = claims.childLifecycle,
+                            onLifecycleAssigned =
+                              lifecycle => observedLifecycle.set(Some(lifecycle))
                           ).mapError {
                             case ConnectionSupervisor.StartError.LinkedConnectionFailed(error) =>
                               ReportedNestedJoinFailure(error)
@@ -2372,32 +2374,36 @@ object ZioHttp:
                )
         yield ()).catchAll {
           case error: ReportedNestedJoinFailure =>
-            observeJoinRejected(
-              observer,
-              supervisor,
-              claims.childLifecycle,
-              LifecycleJoinTarget.Nested,
-              attempt,
-              joinStarted,
-              Some(error),
-              outcomeClaimed
-            ) *> ZIO.logWarning(
-              s"Rejecting connected linked nested lifecycle topic=$topic: ${error.getMessage}"
+            observedLifecycle.get.flatMap(lifecycle =>
+              observeJoinRejected(
+                observer,
+                supervisor,
+                lifecycle,
+                LifecycleJoinTarget.Nested,
+                attempt,
+                joinStarted,
+                Some(error),
+                outcomeClaimed
+              ) *> ZIO.logWarning(
+                s"Rejecting connected linked nested lifecycle topic=$topic: ${error.getMessage}"
+              )
             )
           case error =>
-            observeJoinRejected(
-              observer,
-              supervisor,
-              claims.childLifecycle,
-              LifecycleJoinTarget.Nested,
-              attempt,
-              joinStarted,
-              Some(error),
-              outcomeClaimed
-            ) *> ZIO.logWarning(
-              s"Rejecting connected nested lifecycle topic=$topic: ${error.getMessage}"
-            ) *>
-              writer.offer(joinFailureEnvelope(joinRef, ref, topic, error))
+            observedLifecycle.get.flatMap(lifecycle =>
+              observeJoinRejected(
+                observer,
+                supervisor,
+                lifecycle,
+                LifecycleJoinTarget.Nested,
+                attempt,
+                joinStarted,
+                Some(error),
+                outcomeClaimed
+              ) *> ZIO.logWarning(
+                s"Rejecting connected nested lifecycle topic=$topic: ${error.getMessage}"
+              ) *>
+                writer.offer(joinFailureEnvelope(joinRef, ref, topic, error))
+            )
         }
     )
   end joinNested

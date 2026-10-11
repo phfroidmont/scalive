@@ -9,7 +9,7 @@ import scalive.render.BindingId
 import scalive.render.EvaluatedTree
 import scalive.render.RenderDelta
 import scalive.runtime.contracts.*
-import scalive.runtime.kernel.{RuntimeObserver, SessionEffects}
+import scalive.runtime.kernel.{RuntimeObserver, SessionEffects, SessionFailure, SessionStage}
 import scalive.runtime.resources.HostedWorkerId
 import scalive.runtime.resources.UploadPreflightView
 import scalive.runtime.resources.UploadRegistryError
@@ -278,6 +278,36 @@ final private[scalive] class ConnectionSupervisor private (
 
   private var state: State                                                 = State.empty
   private var retirements: Map[ConnectedLifecycle, Promise[Nothing, Unit]] = Map.empty
+  private var assignedLifecycles: Set[LifecycleId]                         = Set.empty
+
+  /** Returns an ID this connection has never assigned. A lifecycle keeps the ID issued by its
+    * disconnected render only the first time it claims it here; a rejoin after a crash or a live
+    * navigation presents the same claim and gets a fresh ID.
+    */
+  private def assignLifecycle(requested: Option[LifecycleId]): IO[StartError, LifecycleId] =
+    gate.withPermit {
+      ZIO.suspendSucceed {
+        val assigned = requested.filterNot(assignedLifecycles.contains) match
+          case Some(lifecycle) => Right(lifecycle)
+          case None            =>
+            Iterator
+              .continually(LifecycleId.fresh())
+              .find(_.forall(lifecycle => !assignedLifecycles.contains(lifecycle)))
+              .get
+        assigned match
+          case Right(lifecycle) =>
+            assignedLifecycles += lifecycle
+            ZIO.succeed(lifecycle)
+          case Left(error) =>
+            ZIO.fail(
+              StartError.ConnectionFailed(
+                ConnectionError.SessionFailed(
+                  SessionFailure.StageFailed(SessionStage.Identity, error.toString)
+                )
+              )
+            )
+      }
+    }
 
   def startRootLifecycle[Msg, Model](
     lifecycle: RootLifecycle[Msg, Model],
@@ -287,37 +317,39 @@ final private[scalive] class ConnectionSupervisor private (
     loading: Boolean,
     sink: ConnectionOutput => Task[Unit],
     requestedLifecycle: Option[LifecycleId] = None,
-    bootstrapChildLifecycles: Map[String, LifecycleId] = Map.empty
+    bootstrapChildLifecycles: Map[String, LifecycleId] = Map.empty,
+    onLifecycleAssigned: LifecycleId => UIO[Unit] = _ => ZIO.unit
   ): IO[StartError, ConnectedLifecycle] =
-    val seed = ZIO.foreachDiscard(requestedLifecycle)(parentLifecycle =>
-      topology.seedChildLifecycles(parentLifecycle, bootstrapChildLifecycles)
-    )
-    val start = startSlot(topic, Some(domId), parent = None).flatMap { slot =>
-      startInSlot(slot) { childScope =>
-        childScope
-          .extend(
-            RootConnection.startLifecycle(
-              config,
-              metadata,
-              lifecycle,
-              sink,
-              topology.preparer(
-                domId,
-                loading,
-                lifecycle.connectedTurnGuard
-              ),
-              ownsPageTitle = true,
-              requestedLifecycle = requestedLifecycle,
-              providedConnection = Some(connectionId),
-              observer = observer,
-              topic = Some(topic)
-            )
-          ).map(connection => ConnectedLifecycle(connection, topic, domId, observer))
-      }(entry => installRoot(slot, entry))
+    def start(lifecycleId: LifecycleId) =
+      startSlot(topic, Some(domId), parent = None).flatMap { slot =>
+        startInSlot(slot) { childScope =>
+          childScope
+            .extend(
+              RootConnection.startLifecycle(
+                config,
+                metadata,
+                lifecycle,
+                sink,
+                topology.preparer(
+                  domId,
+                  loading,
+                  lifecycle.connectedTurnGuard
+                ),
+                ownsPageTitle = true,
+                requestedLifecycle = Some(lifecycleId),
+                providedConnection = Some(connectionId),
+                observer = observer,
+                topic = Some(topic)
+              )
+            ).map(connection => ConnectedLifecycle(connection, topic, domId, observer))
+        }(entry => installRoot(slot, entry))
+      }
+    assignLifecycle(requestedLifecycle).tap(onLifecycleAssigned).flatMap { lifecycleId =>
+      if requestedLifecycle.contains(lifecycleId) then
+        topology.seedChildLifecycles(lifecycleId, bootstrapChildLifecycles) *>
+          start(lifecycleId).ensuring(topology.clearChildLifecycles(lifecycleId))
+      else start(lifecycleId)
     }
-    seed *> start.ensuring(
-      ZIO.foreachDiscard(requestedLifecycle)(topology.clearChildLifecycles)
-    )
   end startRootLifecycle
 
   /** Reserves only an already committed exact topology registration. */
@@ -339,7 +371,8 @@ final private[scalive] class ConnectionSupervisor private (
     sink: ConnectionOutput => Task[Unit],
     failureNotifier: NestedFailureNotifier = NestedFailureNotifier.noop,
     reattach: Boolean = false,
-    requestedLifecycle: Option[LifecycleId] = None
+    requestedLifecycle: Option[LifecycleId] = None,
+    onLifecycleAssigned: LifecycleId => UIO[Unit] = _ => ZIO.unit
   ): IO[StartError, ConnectedLifecycle] =
     val started = for
       active <- topology.registration(reservation.registration.id)
@@ -363,7 +396,8 @@ final private[scalive] class ConnectionSupervisor private (
                         loading,
                         sink,
                         failureNotifier,
-                        requestedLifecycle
+                        requestedLifecycle,
+                        onLifecycleAssigned
                       )
     yield handle
     started.catchAll {
@@ -389,13 +423,15 @@ final private[scalive] class ConnectionSupervisor private (
     loading: Boolean,
     sink: ConnectionOutput => Task[Unit],
     failureNotifier: NestedFailureNotifier,
-    requestedLifecycle: Option[LifecycleId]
+    requestedLifecycle: Option[LifecycleId],
+    onLifecycleAssigned: LifecycleId => UIO[Unit]
   ): IO[StartError, ConnectedLifecycle] =
     for
       admitted <- topology.beginJoin(reservation)
       _        <- ZIO
              .fail(StartError.RegistrationRevoked(reservation.registration.id)).unless(admitted)
-      slot <- startSlot(
+      lifecycleId <- assignLifecycle(requestedLifecycle).tap(onLifecycleAssigned)
+      slot        <- startSlot(
                 reservation.registration.topic,
                 rootDomId = None,
                 parent = Some(
@@ -432,7 +468,7 @@ final private[scalive] class ConnectionSupervisor private (
                                         reservation.connectedTurnGuard
                                       ),
                                       ownsPageTitle = false,
-                                      requestedLifecycle = requestedLifecycle,
+                                      requestedLifecycle = Some(lifecycleId),
                                       providedConnection = Some(connectionId),
                                       observer = observer,
                                       closeAfterNavigate = !reservation.registration.sticky,

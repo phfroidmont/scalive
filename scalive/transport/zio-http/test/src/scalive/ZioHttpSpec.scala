@@ -1967,6 +1967,80 @@ object ZioHttpSpec extends ZIOSpecDefault:
         )
       }
     },
+    test("each connected lifecycle on a connection gets its own lifecycle ID") {
+      val crash = BrowserToServerEvent[Json]("crash")
+      def page(label: String) = new LiveView[Nothing, Unit]:
+        override val hooks = LiveHooks.empty[Nothing, Unit]
+          .onBrowserEvent(crash)((_, _, _) => ZIO.fail(Exception("crash")))
+        def mount(ctx: MountContext) = ZIO.unit
+        def handleMessage(model: Unit, ctx: MessageContext): Nothing => Task[Unit] = identity
+        def view(model: Signal[Unit]) = div(label)
+      val broken = new LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ZIO.fail(Exception("broken"))
+        def view(model: Signal[Unit]) = div()
+      val application = scalive.Live.router(
+        scalive.live(page("home")),
+        (scalive.live / "next")(page("next")),
+        (scalive.live / "broken")(broken)
+      )
+
+      zio.test.Live.live(for
+        events <- Ref.make(Vector.empty[LifecycleEvent])
+        observer = LifecycleObserver.fromFunction(event => events.update(_ :+ event))
+        result <- withServer(application, observer) { port =>
+                    for
+                      page   <- bootstrap(port)
+                      socket <- connect(port, page)
+                      first  <- joinRoot(socket, page)
+                      _ <- socket.send(
+                             PhoenixEnvelope(
+                               PhoenixRef.Value("root-join"),
+                               PhoenixRef.Value("2"),
+                               s"lv:${page.rootId}",
+                               "event",
+                               Json.Obj(
+                                 "type"  -> Json.Str("click"),
+                                 "event" -> Json.Str(crash.value),
+                                 "value" -> Json.Obj.empty,
+                                 "cid"   -> Json.Null
+                               )
+                             )
+                           )
+                      _       <- socket.receive.repeatUntil(_.event == "phx_error")
+                      rejoin  <- joinRoot(socket, page)
+                      next    <- redirectRoot(socket, page, "/next", "3")
+                      failed  <- redirectRoot(socket, page, "/broken", "4")
+                      _       <- socket.close
+                      observed <- events.get
+                    yield (first, rejoin, next, failed, observed)
+                  }
+        (first, rejoin, next, failed, observed) = result
+        disconnected = observed.collect {
+                         case LifecycleEvent.DisconnectedRenderSucceeded(lifecycle, _) => lifecycle
+                       }
+        connected = observed.collect {
+                      case LifecycleEvent.MountSucceeded(LifecycleMount.Connected(lifecycle), _) =>
+                        lifecycle
+                    }
+        failedMount = observed.collect {
+                        case LifecycleEvent.MountFailed(LifecycleMount.Connected(lifecycle), _, _) =>
+                          lifecycle.lifecycleId
+                      }
+        rejected = observed.collect { case event: LifecycleEvent.JoinRejected => event.lifecycleId }
+      yield assertTrue(
+        status(first) == "ok",
+        status(rejoin) == "ok",
+        status(next) == "ok",
+        status(failed) == "error",
+        failedMount.size == 1,
+        rejected == failedMount.map(Some(_)),
+        failedMount.forall(id => !connected.map(_.lifecycleId).contains(id)),
+        connected.size == 3,
+        connected.map(_.connectionId).distinct.size == 1,
+        connected.map(_.lifecycleId).distinct.size == 3,
+        connected.headOption.map(_.lifecycleId) == disconnected.headOption
+      ))
+    },
     test("disconnect guard settles the event, closes the socket, and cleans up the lifecycle") {
       val event    = BrowserToServerEvent[Json]("disconnect-event")
       val cleanup  = AtomicInteger()
@@ -2192,6 +2266,31 @@ object ZioHttpSpec extends ZIOSpecDefault:
         )
       )
     ) *> socket.receiveReply("1", topic)
+
+  private def redirectRoot(
+    socket: SocketClient,
+    bootstrap: Bootstrap,
+    destination: String,
+    ref: String
+  ): Task[PhoenixEnvelope] =
+    val topic = s"lv:${bootstrap.rootId}"
+    socket.send(
+      PhoenixEnvelope(
+        PhoenixRef.Value(s"redirect-$ref"),
+        PhoenixRef.Value(ref),
+        topic,
+        "phx_join",
+        Json.Obj(
+          "url"      -> Json.Null,
+          "redirect" -> Json.Str(destination),
+          "flash"    -> Json.Null,
+          "session"  -> Json.Str(bootstrap.session),
+          "static"   -> Json.Str(bootstrap.static),
+          "params"   -> Json.Obj("_mounts" -> Json.Num(1)),
+          "sticky"   -> Json.Bool(false)
+        )
+      )
+    ) *> socket.receiveReply(ref, topic)
 
   private def sendEvent(
     socket: SocketClient,

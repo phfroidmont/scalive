@@ -41,16 +41,14 @@ object LifecycleObserver:
   *   The ID of the WebSocket connection. Root and nested LiveViews joined over the same WebSocket
   *   share it, and a reconnect gets a new one.
   * @param lifecycleId
-  *   The ID of the LiveView lifecycle. A root LiveView reuses the ID issued by its disconnected
-  *   render, so the ID stays the same across reconnects; combine it with `connectionId` to tell
-  *   connections apart.
-  * @param epoch
-  *   The epoch of the lifecycle, used with the two IDs to correlate its events.
+  *   The ID of the LiveView lifecycle, unique on its connection. A LiveView's first connected
+  *   lifecycle on a connection reuses the ID issued by its disconnected render, so the ID stays the
+  *   same across reconnects; combine it with `connectionId` to tell connections apart. A rejoin
+  *   after a crash and a LiveView reached by live navigation get a new ID.
   */
 final case class ConnectedLifecycleContext(
   connectionId: Long,
-  lifecycleId: Long,
-  epoch: Long)
+  lifecycleId: Long)
 
 /** Identifies the phase in which a LiveView mount ran. */
 enum LifecycleMount:
@@ -362,8 +360,8 @@ enum LifecycleEvent:
     * @param connectionId
     *   The ID of the WebSocket connection that sent the join.
     * @param lifecycleId
-    *   The ID of the lifecycle that the join targeted, or `None` when Scalive rejected the join
-    *   before identifying one.
+    *   The ID of the lifecycle the join started, as in its mount events, or `None` when Scalive
+    *   rejected the join before starting one.
     * @param target
     *   Whether the join targeted a root or nested LiveView.
     * @param attempt

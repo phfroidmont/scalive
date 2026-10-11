@@ -807,8 +807,7 @@ private[scalive] object RuntimeObserver:
   def connected(correlation: RuntimeCorrelation): ConnectedLifecycleContext =
     ConnectedLifecycleContext(
       correlation.connection.value,
-      correlation.lifecycle.value,
-      correlation.epoch.value
+      correlation.lifecycle.value
     )
 
   def lifecycleFailure(failure: RuntimeFailure): LifecycleFailure = failure match

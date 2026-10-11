@@ -1091,7 +1091,7 @@ final private[scalive] class RootConnection[Msg, Model] private (
   ): UIO[Unit] =
     observer.observeLifecycle(
       LifecycleEvent.QueuePressure(
-        ConnectedLifecycleContext(connectionId.value, lifecycle.value, epoch.value),
+        ConnectedLifecycleContext(connectionId.value, lifecycle.value),
         queue,
         depth,
         capacity,
@@ -1279,8 +1279,7 @@ private[scalive] object RootConnection:
                       mount = LifecycleMount.Connected(
                                 ConnectedLifecycleContext(
                                   connectionId.value,
-                                  lifecycleId.value,
-                                  Epoch.initial.value
+                                  lifecycleId.value
                                 )
                               )
                       _ <- mountExit match

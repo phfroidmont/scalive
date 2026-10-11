@@ -281,7 +281,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
       case None =>
         observer.observeLifecycle(
           LifecycleEvent.QueuePressure(
-            ConnectedLifecycleContext(connection.value, lifecycle.value, epoch.value),
+            ConnectedLifecycleContext(connection.value, lifecycle.value),
             LifecycleQueue.KernelMailbox,
             config.mailboxCapacity,
             config.mailboxCapacity,
@@ -1437,7 +1437,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
       }
 
   private def connectedLifecycleContext: ConnectedLifecycleContext =
-    ConnectedLifecycleContext(connection.value, lifecycle.value, epoch.value)
+    ConnectedLifecycleContext(connection.value, lifecycle.value)
 
   private def observedTurnKind(response: Option[TrackedCommand]): LifecycleTurnKind =
     response.fold(LifecycleTurnKind.Internal)(command =>
@@ -3069,7 +3069,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
   ): UIO[Unit] =
     observer.observeLifecycle(
       LifecycleEvent.SubscriptionFailed(
-        ConnectedLifecycleContext(connection.value, lifecycle.value, epoch.value),
+        ConnectedLifecycleContext(connection.value, lifecycle.value),
         token.identity.value,
         delivery,
         LifecycleError(LifecycleFailure.SubscriptionDefect, cause.defects.headOption)

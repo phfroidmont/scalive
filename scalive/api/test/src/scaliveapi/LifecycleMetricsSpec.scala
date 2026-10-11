@@ -49,7 +49,7 @@ object LifecycleMetricsSpec extends ZIOSpecDefault:
         ),
         failedLabels
       )
-      val lifecycle = ConnectedLifecycleContext(101L, 102L, 103L)
+      val lifecycle = ConnectedLifecycleContext(101L, 102L)
 
       for
         succeededBefore         <- succeededCounter.value
@@ -104,7 +104,7 @@ object LifecycleMetricsSpec extends ZIOSpecDefault:
         base,
         labels ++ Vector("request_id" -> "runtime-identifier", "outcome" -> "ambient")
       )
-      val lifecycle = ConnectedLifecycleContext(111L, 112L, 113L)
+      val lifecycle = ConnectedLifecycleContext(111L, 112L)
 
       for
         expectedBefore     <- expected.value
@@ -203,7 +203,7 @@ object LifecycleMetricsSpec extends ZIOSpecDefault:
           "stage"   -> "none"
         )
       )
-      val lifecycle = ConnectedLifecycleContext(121L, 122L, 123L)
+      val lifecycle = ConnectedLifecycleContext(121L, 122L)
 
       for
         renderBefore         <- render.value
@@ -365,7 +365,7 @@ object LifecycleMetricsSpec extends ZIOSpecDefault:
           "stage"    -> "none"
         )
       )
-      val lifecycle = ConnectedLifecycleContext(301L, 302L, 303L)
+      val lifecycle = ConnectedLifecycleContext(301L, 302L)
 
       for
         renderBefore       <- render.value
@@ -444,7 +444,7 @@ object LifecycleMetricsSpec extends ZIOSpecDefault:
         ),
         Vector("queue" -> "connection_pending_commands")
       )
-      val lifecycle = ConnectedLifecycleContext(401L, 402L, 403L)
+      val lifecycle = ConnectedLifecycleContext(401L, 402L)
 
       for
         sampledDepthBefore      <- sampledDepth.value
@@ -497,7 +497,7 @@ object LifecycleMetricsSpec extends ZIOSpecDefault:
         ),
         Vector("reason" -> "failed", "failure" -> "stage", "stage" -> "writer")
       )
-      val lifecycle = ConnectedLifecycleContext(501L, 502L, 503L)
+      val lifecycle = ConnectedLifecycleContext(501L, 502L)
 
       for
         disconnectedBefore <- disconnected.value

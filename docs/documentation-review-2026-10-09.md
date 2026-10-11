@@ -579,6 +579,17 @@ Found while writing, not fixed:
   lifecycle an ID it has not used before; only the first claim keeps the
   disconnected ID. `epoch` is removed, and `JoinRejected` reports the ID the
   failed lifecycle actually had.
+- Fixed: `CsrfProtection.validate` reported `InvalidToken` instead of
+  `MissingCookie` when the token was over 4096 characters, because the length
+  check ran before the cookie lookup. The length check now runs after the
+  cookie checks and still before signature verification.
+- Fixed: `RenderError.Unsupported` said the feature "is not supported by the
+  minimal render engine", an engine that does not exist. It now says the
+  feature requires a LiveView lifecycle.
+- Not reachable: `StaticHtml` evaluates a stream before rejecting it, so a
+  stream with duplicate DOM IDs reports `DuplicateStreamDomId` rather than
+  `Unsupported`. Applications cannot build such a stream: `LiveStream` has no
+  public constructor and runtime streams remove duplicate IDs.
 - Not a bug: `Streams.delete` with an ID that is not in the stream still sends
   a delete. Phoenix's `stream_delete` does the same, the browser finds no row
   to remove, and `StreamStoreSpec` asserts it. The Scaladoc now says so.

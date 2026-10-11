@@ -438,7 +438,12 @@ object ManagedComponentSubscriptionsSpec extends ZIOSpecDefault:
   private def componentId(
     connection: RootConnection[RootMessage, RootModel]
   ): IO[ConnectionError, ComponentInstanceId] =
-    connection.inspectComponentIds.repeatUntil(_.nonEmpty).map(_.head)
+    def inspect: IO[ConnectionError, Vector[ComponentInstanceId]] =
+      connection.inspectComponentIds.catchSome {
+        case ConnectionError.KernelRejected(SessionRejection.MailboxSaturated(_)) =>
+          ZIO.yieldNow *> inspect
+      }
+    (ZIO.yieldNow *> inspect).repeatUntil(_.nonEmpty).map(_.head)
 
   private def awaitRootShow(
     connection: RootConnection[RootMessage, RootModel],

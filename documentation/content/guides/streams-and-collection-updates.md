@@ -29,7 +29,7 @@ source of truth.
 
 ## Separate domain state from stream state {#separate-domain-state-from-stream-state}
 
-A @:apiSymbol(type-alias:scalive.LiveStream)`LiveStream[A]`@:@ is an opaque, immutable
+A @:apiSymbol(class:scalive.LiveStream)`LiveStream[A]`@:@ is an opaque, immutable
 rendering handle. It intentionally does not expose collection operations or its
 entries. Keep queryable domain data separately and store the latest stream
 handle beside it:
@@ -47,7 +47,7 @@ five rendered rows.
 
 ## Define stable identity and retention {#define-stable-identity-and-retention}
 
-Create one @:apiSymbol(type-alias:scalive.LiveStreamDef)`LiveStreamDef[A, Id]`@:@ for each
+Create one @:apiSymbol(class:scalive.LiveStreamDef)`LiveStreamDef[A, Id]`@:@ for each
 logical stream. Its name identifies the stream within the owning LiveView or
 component, and its DOM-ID function identifies rows:
 
@@ -84,7 +84,7 @@ value; rendering an older handle loses the pending operation:
 @:sourceRegion(documentation/fixtures/guides/src/activity/ActivityLiveView.scala, streams-insert)
 
 @:apiSymbol(def:scalive.Streams.insert)`insert`@:@ appends by default. Supply a
-@:apiSymbol(type-alias:scalive.StreamAt)`StreamAt`@:@ value to insert first or at an
+@:apiSymbol(enum:scalive.StreamAt)`StreamAt`@:@ value to insert first or at an
 index, and use `updateOnly = true` to ignore a missing identity instead of
 inserting it. Bulk insertion behaves like repeated insertion at the same
 position, so repeatedly inserting first or at one fixed index can reverse input

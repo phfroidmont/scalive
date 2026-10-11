@@ -26,6 +26,9 @@ final class WebSocketOrigin private (
     result = 31 * result + host.hashCode
     31 * result + port
 
+  /** Serializes the origin as a browser sends it, such as `https://example.com`, omitting the
+    * scheme's default port.
+    */
   override def toString: String =
     val authority = if host.contains(':') then s"[$host]" else host
     val default   = if scheme == "http" then 80 else 443

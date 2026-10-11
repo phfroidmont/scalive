@@ -10,6 +10,19 @@ import tastyquery.Contexts.Context
 import tastyquery.Modifiers.TermSymbolKind
 import tastyquery.Symbols.*
 import tastyquery.Symbols.TypeMemberDefinition
+import tastyquery.Trees.Apply
+import tastyquery.Trees.DefDef
+import tastyquery.Trees.Select
+import tastyquery.Trees.TermTree
+import tastyquery.Trees.TypeApply
+import tastyquery.Types.AppliedType
+import tastyquery.Types.ByNameType
+import tastyquery.Types.TermRef
+import tastyquery.Types.Type
+import tastyquery.Types.TypeAlias
+import tastyquery.Types.TypeLambda
+import tastyquery.Types.TypeOrMethodic
+import tastyquery.Types.TypeRef
 import tastyquery.jdk.ClasspathLoaders
 
 import scalive.docs.model.*
@@ -18,8 +31,7 @@ final case class ApiReferenceConfig(
   repositoryRoot: Path,
   targetRoots: Seq[Path],
   dependencyClasspath: Seq[Path],
-  metadata: ApiReferenceMetadata,
-  curatedSummaries: Map[String, String] = Map.empty)
+  metadata: ApiReferenceMetadata)
 
 final case class ApiReferenceError(messages: Vector[String]):
   def message: String = messages.mkString("\n")
@@ -28,6 +40,7 @@ object ApiReferencePipeline:
   private val IncludedPackages    = Vector("scalive", "scalive.codecs", "scalive.testing")
   private val IncludedPackageSet  = IncludedPackages.toSet
   private val DomDefinitionPrefix = "scalive.defs."
+  private val UniversalMethods    = Set("equals", "hashCode", "toString")
 
   def generate(config: ApiReferenceConfig): Either[ApiReferenceError, ApiReference] =
     try
@@ -125,9 +138,9 @@ object ApiReferencePipeline:
           case nested: ClassSymbol if eligible(nested) =>
             addOwner(nested, exposedName(nested, packageName), Some(packageId), exposure(nested))
           case term: TermSymbol if eligibleTerm(term) =>
-            addTerm(term, packageName, packageId, exposure(term), pageOwner = false)
+            addMember(term, s"$packageName.${sourceName(term)}", packageId, exposure(term))
           case member: TypeMemberSymbol if eligible(member) =>
-            addType(member, packageName, packageId, exposure(member), pageOwner = false)
+            addMember(member, s"$packageName.${sourceName(member)}", packageId, exposure(member))
           case _ => ()
         }
 
@@ -195,21 +208,9 @@ object ApiReferencePipeline:
               ownerExposure
             )
           case term: TermSymbol if eligibleTerm(term) =>
-            addTerm(
-              term,
-              s"$qualifiedName.${sourceName(term)}",
-              id,
-              ownerExposure,
-              pageOwner = false
-            )
+            addMember(term, s"$qualifiedName.${sourceName(term)}", id, ownerExposure)
           case member: TypeMemberSymbol if eligible(member) =>
-            addType(
-              member,
-              s"$qualifiedName.${sourceName(member)}",
-              id,
-              ownerExposure,
-              pageOwner = false
-            )
+            addMember(member, s"$qualifiedName.${sourceName(member)}", id, ownerExposure)
           case _ => ()
         }
 
@@ -235,6 +236,94 @@ object ApiReferencePipeline:
       end if
     end addOwner
 
+    /** Adds a term or type member. An `export` forwarder of a definition outside the documented
+      * packages is documented as that definition, under the exported name.
+      */
+    private def addMember(
+      member: TermSymbol | TypeMemberSymbol,
+      qualifiedName: String,
+      ownerId: String,
+      memberExposure: ApiExposure
+    ): Unit =
+      exportedDefinition(member) match
+        case Some(target: ClassSymbol) =>
+          if eligible(target) then
+            addOwner(target, qualifiedName, Some(ownerId), ApiExposure.Exported)
+        case Some(target: TermSymbol) =>
+          addTerm(target, qualifiedName, ownerId, ApiExposure.Exported, pageOwner = false)
+        case Some(target: TypeMemberSymbol) =>
+          addType(target, qualifiedName, ownerId, ApiExposure.Exported, pageOwner = false)
+        case _ =>
+          member match
+            case term: TermSymbol =>
+              addTerm(term, qualifiedName, ownerId, memberExposure, pageOwner = false)
+            case member: TypeMemberSymbol =>
+              addType(member, qualifiedName, ownerId, memberExposure, pageOwner = false)
+
+    /** The definition outside the documented packages that an `export` forwarder stands for.
+      *
+      * Exported classes, objects, and opaque types resolve through chained exports, such as
+      * `scalive.LiveUploadDef` to `scalive.upload.api.LiveUploadDef` to the class
+      * `scalive.upload.LiveUploadDef`. An exported method resolves to the method it calls. TASTy
+      * marks only term forwarders as exports, so a type alias forwards when it keeps its target's
+      * name. An exported type is an abstract member bounded by its target.
+      */
+    private def exportedDefinition(symbol: TermOrTypeSymbol): Option[TermOrTypeSymbol] =
+      val target = symbol match
+        case member: TypeMemberSymbol =>
+          val alias = member.typeDef match
+            case TypeMemberDefinition.TypeAlias(alias)               => Some(alias)
+            case TypeMemberDefinition.AbstractType(TypeAlias(alias)) => Some(alias)
+            case _                                                   => None
+          alias
+            .flatMap(referencedType)
+            .filter(target => sourceName(target) == sourceName(member))
+        case term: TermSymbol if term.isExport => forwardedTerm(term)
+        case _                                 => None
+      target.flatMap {
+        case alias: TypeMemberSymbol if !alias.isOpaqueTypeAlias => exportedDefinition(alias)
+        case term: TermSymbol if term.isExport                   => exportedDefinition(term)
+        case definition                                          =>
+          val packageName = packageOf(definition)
+          Option.when(packageName.startsWith("scalive.") && !IncludedPackageSet(packageName))(
+            definition
+          )
+      }
+
+    private def referencedType(tpe: Type): Option[TermOrTypeSymbol] =
+      tpe match
+        case lambda: TypeLambda   => referencedType(lambda.resultType)
+        case applied: AppliedType => referencedType(applied.tycon)
+        case ref: TypeRef => ref.optSymbol.collect { case symbol: TermOrTypeSymbol => symbol }
+        case _            => None
+
+    private def forwardedTerm(term: TermSymbol): Option[TermOrTypeSymbol] =
+      def module(tpe: TypeOrMethodic): Option[TermOrTypeSymbol] =
+        tpe match
+          case byName: ByNameType => module(byName.resultType)
+          case ref: TermRef       =>
+            ref.optSymbol.flatMap(value =>
+              if value.isModuleVal then value.moduleClass
+              else Option.when(value.isExport)(value)
+            )
+          case ref: TypeRef =>
+            ref.optSymbol.collect { case owner: ClassSymbol if owner.isModuleClass => owner }
+          case _ => None
+      def called(tree: TermTree): Option[TermSymbol] =
+        tree match
+          case Apply(function, _)     => called(function)
+          case TypeApply(function, _) => called(function)
+          case select: Select => Some(select.symbol).collect { case value: TermSymbol => value }
+          case _              => None
+      module(term.declaredType).orElse(
+        term.tree.collect { case definition: DefDef => definition }.flatMap(_.rhs).flatMap(called)
+      )
+
+    private def packageOf(symbol: Symbol): String =
+      symbol.owner match
+        case pkg: PackageSymbol => pkg.fullName.toString
+        case owner              => packageOf(owner)
+
     private def addTerm(
       term: TermSymbol,
       qualifiedName: String,
@@ -257,11 +346,18 @@ object ApiReferencePipeline:
           termSignature(term),
           ApiOrigin(originName(term), termExposure),
           sourceFor(term),
-          commentFor(term),
+          commentFor(term).orElse(parameterComment(term)),
           None,
           pageOwner
         )
       )
+
+    /** A class's `@param` text documents the field that parameter defines. */
+    private def parameterComment(term: TermSymbol): Option[String] =
+      term.owner match
+        case owner: ClassSymbol if term.isParamAccessor =>
+          commentFor(owner).flatMap(ScaladocParser.parameter(_, sourceName(term)))
+        case _ => None
 
     private def addType(
       member: TypeMemberSymbol,
@@ -375,10 +471,9 @@ object ApiReferencePipeline:
           entries.flatMap(_.generatedSummary) ++
             signatures.flatMap(_.documentation.flatMap(ScaladocParser.summary))
         ).distinct.sorted
-        val summary = config.curatedSummaries
-          .get(id).orElse {
-            Option.when(generatedSummaries.size == 1)(generatedSummaries.head)
-          }.getOrElse(fallbackSummary(first))
+        val summary = Option
+          .when(generatedSummaries.size == 1)(generatedSummaries.head)
+          .getOrElse(fallbackSummary(first))
         ApiSymbol(
           id = id,
           ownerId = first.ownerId,
@@ -402,11 +497,15 @@ object ApiReferencePipeline:
       symbol.isPublic && companionPublic && (!symbol.isSynthetic || record.exists(_.exported))
 
     private def eligibleTerm(term: TermSymbol): Boolean =
+      val name = term.name.toString
       eligible(term) &&
-        !term.isModuleVal &&
-        !term.isSetter &&
-        term.name.toString != "<init>" &&
-        !term.name.toString.contains("$default$")
+      !term.isModuleVal &&
+      !term.isSetter &&
+      name != "<init>" &&
+      // Compiler-generated names, such as default arguments and `derives` instances.
+      !name.contains('$') &&
+      // An undocumented override of a universal method adds nothing to the reference.
+      !(UniversalMethods(name) && commentFor(term).isEmpty)
 
     private def exposure(symbol: TermOrTypeSymbol): ApiExposure =
       val exported = symbol match
@@ -619,6 +718,8 @@ object ApiReferencePipeline:
     private def normalizeSignature(value: String): String =
       value
         .replace("scalive.package$.", "scalive.")
+        // Applications name the `streams` and `upload` types through their exports in `scalive`.
+        .replaceAll("(?<![\\w.])(scalive\\.)?(?:streams|upload)(?:\\.api)?\\.(?=[A-Z])", "$1")
         .replaceAll("\\s+", " ")
         .trim
 

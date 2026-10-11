@@ -1,6 +1,12 @@
 package scalive
 
-/** Untrusted successful-control metadata reported by a client protocol. */
+/** Untrusted successful-control metadata reported by a client protocol.
+  *
+  * @param name
+  *   The submit control's `name`.
+  * @param value
+  *   The submit control's `value`.
+  */
 final case class RawFormSubmitter(name: String, value: String)
 
 enum ErrorVisibility derives CanEqual:

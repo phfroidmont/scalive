@@ -14,9 +14,9 @@ private[pipeline] object ApiSignatureFormatter:
       .replace("scala.collection.immutable.", "")
       .replace("scala.", "")
       .replace("java.lang.", "")
-      .replaceAll("[A-Za-z0-9_]+\\$package\\.", "")
       .replaceAll("[A-Za-z0-9_]+\\.this\\.", "")
       .replaceAll("([A-Za-z0-9_]+)\\$\\.this\\.", "$1.")
+      .replaceAll("[A-Za-z0-9_]+\\$package\\.", "")
     val scalaSyntax = shortened match
       case methodSignature(keyword, name, declaredType) =>
         s"$keyword $name${renderMethodType(declaredType)}"

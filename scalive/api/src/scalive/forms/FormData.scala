@@ -23,7 +23,7 @@ import zio.http.{Body, Form as HttpForm, FormField as HttpFormField, MediaType}
   * }}}
   *
   * @param raw
-  *   textual field pairs in encounter order
+  *   Every submitted name-value pair in encounter order, including duplicates.
   */
 final case class FormData private (raw: Vector[(String, String)]):
   /** Groups values by exact field name while preserving each name's value order.

@@ -51,6 +51,14 @@ private[pipeline] object ScaladocParser:
                     })
     yield ApiDocumentation(parsedBody, parsedTags)
 
+  /** The `@param name` text of `comment`, as the comment of the field that parameter defines. */
+  def parameter(comment: String, name: String): Option[String] =
+    splitComment(clean(comment))._2
+      .find(tag => tag.name == "param" && tag.subject.contains(name))
+      .map(_.lines)
+      .filter(_.exists(_.trim.nonEmpty))
+      .map(lines => lines.mkString("/** ", "\n  * ", " */"))
+
   def summary(documentation: ApiDocumentation): Option[String] =
     documentation.body
       .collectFirst { case Block.Paragraph(content) => inlineText(content).trim }

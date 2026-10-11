@@ -15,6 +15,17 @@ enum FormEventKind derives CanEqual:
   *
   * [[target]] uses stable [[FormAddress]] identity when resolution succeeds; [[browserTarget]]
   * preserves the protocol-level [[FormPath]], including compatibility-layer spelling.
+  *
+  * @param target
+  *   The stable address of the changed field, when the definition resolves it.
+  * @param rawSubmitter
+  *   The untrusted submit control the client reported, when available.
+  * @param metadata
+  *   Additional event metadata supplied by the client protocol.
+  * @param browserTarget
+  *   The original protocol-level form path, including compatibility-layer spelling.
+  * @param diagnostics
+  *   Non-fatal target and compatibility translation diagnostics.
   */
 final case class FormEventMeta[Owner](
   target: Option[FormAddress[Owner]] = None,

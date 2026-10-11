@@ -63,6 +63,8 @@ object ApiReferencePipelineSpec extends ZIOSpecDefault:
 
   private val targetRoots = Vector(
     Path.of(classOf[scalive.LiveView[?, ?]].getProtectionDomain.getCodeSource.getLocation.toURI),
+    Path.of(classOf[scalive.HttpFormDecoder[?]].getProtectionDomain.getCodeSource.getLocation.toURI),
+    Path.of(classOf[scalive.StaticHtml.type].getProtectionDomain.getCodeSource.getLocation.toURI),
     Path.of(
       classOf[scalive.testing.DisconnectedRender.type].getProtectionDomain.getCodeSource.getLocation.toURI
     ),
@@ -88,8 +90,7 @@ object ApiReferencePipelineSpec extends ZIOSpecDefault:
     repositoryRoot,
     targetRoots,
     dependencyClasspath,
-    apiSettings.metadata("0123456789abcdef0123456789abcdef01234567"),
-    curatedSummaries = apiSettings.summaries
+    apiSettings.metadata("0123456789abcdef0123456789abcdef01234567")
   )
   private lazy val result  = ApiReferencePipeline.generate(config)
   private lazy val symbols = result.toOption.toVector.flatMap(_.symbols)
@@ -126,7 +127,7 @@ object ApiReferencePipelineSpec extends ZIOSpecDefault:
         !symbols.exists(_.qualifiedName.contains("scopedPrivateMember")),
         !symbols.exists(_.qualifiedName.startsWith("scalive.LiveConnectedTurnGuard")),
         !symbols.exists(_.qualifiedName.startsWith("scalive.LiveRouteDefinition")),
-        !symbols.exists(_.name.contains("$default$")),
+        !symbols.exists(_.name.contains("$")),
         !symbols.exists(_.name == "<init>"),
         !symbols.exists(_.qualifiedName == "scalive.JSCommands.Binding"),
         !symbols.exists(_.qualifiedName == "scalive.ComponentRef.cid"),
@@ -309,16 +310,10 @@ object ApiReferencePipelineSpec extends ZIOSpecDefault:
         "extension:scalive.FormFieldView.validationAttributes",
         "extension:scalive.FormRowView.presence"
       )
-      val forms      = symbols.filter(symbol => required(symbol.qualifiedName))
-      val extensions = symbols.filter(symbol => requiredExtensions(symbol.id))
-      val curated    = config.curatedSummaries.keySet
-      def deliberatelyCurated(symbol: ApiSymbol): Boolean =
-        val expectedSignatures =
-          if symbol.id == "def:scalive.HttpFormDecoder.urlEncoded" then 2 else 1
-        curated(symbol.id) && symbol.signatures.size == expectedSignatures
-      val undocumented = (forms ++ extensions).distinct.filterNot(symbol =>
-        symbol.signatures.forall(_.documentation.nonEmpty) ||
-          deliberatelyCurated(symbol)
+      val forms        = symbols.filter(symbol => required(symbol.qualifiedName))
+      val extensions   = symbols.filter(symbol => requiredExtensions(symbol.id))
+      val undocumented = (forms ++ extensions).distinct.filterNot(
+        _.signatures.forall(_.documentation.nonEmpty)
       )
 
       assertTrue(
@@ -326,6 +321,43 @@ object ApiReferencePipelineSpec extends ZIOSpecDefault:
         forms.map(_.qualifiedName).toSet == required,
         extensions.map(_.id).toSet == requiredExtensions,
         undocumented.map(_.qualifiedName).isEmpty
+      )
+    },
+    test("documents exported definitions under their exported names") {
+      def find(id: String) = symbols.find(_.id == id)
+      val uploadDef        = find("class:scalive.LiveUploadDef")
+      val uploadDefObject  = find("object:scalive.LiveUploadDef")
+      val validated        = find("def:scalive.LiveUploadDef.validated")
+      val uploadRef        = find("opaque-type:scalive.UploadRef")
+      val streamAt         = find("enum:scalive.StreamAt")
+
+      assertTrue(
+        uploadDef.exists(symbol =>
+          symbol.route == "/api/scalive/live-upload-def" &&
+            symbol.signatures.forall(signature =>
+              signature.origin == ApiOrigin("scalive.upload.LiveUploadDef", ApiExposure.Exported) &&
+                signature.documentation.nonEmpty
+            )
+        ),
+        uploadDefObject.exists(_.route == "/api/scalive/live-upload-def/companion"),
+        validated.exists(_.ownerId.contains("object:scalive.LiveUploadDef")),
+        uploadRef.exists(_.signatures.forall(_.documentation.nonEmpty)),
+        streamAt.exists(_.ownerId.contains("package:scalive")),
+        find("type-alias:scalive.LiveUploadDef").isEmpty,
+        find("def:scalive.LiveUploadDef").isEmpty,
+        find("def:scalive.StreamAt").isEmpty
+      )
+    },
+    test("documents fields with their owner's @param text and omits noise members") {
+      val field = symbols.find(_.id == "val:scalive.testing.TastyQueryEnum.Parameterized.value")
+      val fixtureNames = symbols
+        .filter(_.qualifiedName.startsWith("scalive.testing.TastyQueryEnum"))
+        .map(_.name)
+
+      assertTrue(
+        field.exists(_.summary == "The text this case carries."),
+        !fixtureNames.contains("toString"),
+        !fixtureNames.exists(_.contains("CanEqual"))
       )
     },
     test("exposes parameterless and parameterized enum cases") {
@@ -426,7 +458,9 @@ object ApiReferencePipelineSpec extends ZIOSpecDefault:
             "/blob/0123456789abcdef0123456789abcdef01234567/scalive/api/src/scalive/"
           ))
         ),
-        liveUpload.exists(symbol => symbol.route == "/api/scalive" && symbol.fragment.nonEmpty),
+        liveUpload.exists(symbol =>
+          symbol.route == "/api/scalive/live-upload" && symbol.fragment.isEmpty
+        ),
         liveViewTrait.exists(_.route == "/api/scalive/live-view"),
         liveViewObject.exists(_.route == "/api/scalive/live-view/companion"),
         handleMessage.exists(_.route == "/api/scalive/live-view"),

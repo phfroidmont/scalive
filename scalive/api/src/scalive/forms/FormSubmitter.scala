@@ -7,10 +7,12 @@ import scala.reflect.Enum
   * The browser representation remains an ordinary successful control with a stable `name` and
   * `value`. Decoding proves only that untrusted form data selected a declared action; applications
   * must still authorize the resulting operation.
+  *
+  * @param name
+  *   The exact browser field name shared by this submitter's controls.
   */
 final class FormSubmitter[Owner, Schema, Action <: Enum] private[scalive] (
   private[scalive] val definition: FormDefinition[Owner, ?],
-  /** Exact browser field name shared by this submitter's controls. */
   val name: String,
   mappings: Vector[(Action, String)]):
 

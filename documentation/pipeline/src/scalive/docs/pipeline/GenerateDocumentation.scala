@@ -22,7 +22,7 @@ object GenerateDocumentation:
                    paths(dependencyClasspath)
                  )
           (settings, reference) = api
-          _        <- ApiSnapshot.validateSummaries(reference, settings.summaries)
+          _        <- ApiSnapshot.validateSummaries(reference)
           snapshot <- ApiReferenceFiles.loadSnapshot(Path.of(snapshotPath))
           _        <- ApiSnapshot.validate(reference, snapshot)
           bundle   <- ContentPipeline

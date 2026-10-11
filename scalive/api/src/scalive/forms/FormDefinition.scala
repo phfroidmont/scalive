@@ -8,6 +8,17 @@ import scala.reflect.Enum
   *
   * These limits bound accepted structure and accumulated errors; the original [[FormEvent.data]]
   * remains available for diagnostics.
+  *
+  * @param maxPathDepth
+  *   The maximum nesting depth of one submitted form path.
+  * @param maxSegmentLength
+  *   The maximum length, in characters, of one form-path segment.
+  * @param maxValuesPerField
+  *   The maximum number of raw values retained for one declared field.
+  * @param maxRowsPerGroup
+  *   The maximum number of repeated rows retained in one group.
+  * @param maxErrors
+  *   The maximum number of projection and validation errors retained for one event.
   */
 final case class FormLimits(
   maxPathDepth: Int = 32,
@@ -45,6 +56,7 @@ final class FormValues[Owner, Schema] private[scalive] (
   override def hashCode(): Int =
     System.identityHashCode(schemaIdentity) * 31 * 31 + static.hashCode() * 31 + groups.hashCode()
 
+  /** Returns `FormValues(<redacted>)`, so logging a form never prints submitted values. */
   override def toString: String = "FormValues(<redacted>)"
 
 final private[scalive] case class FormProjection[Owner, Schema](

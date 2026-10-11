@@ -64,16 +64,10 @@ object ApiSnapshotSpec extends ZIOSpecDefault:
         errors.exists(_.contains("changed: def:scalive.changed"))
       )
     },
-    test("requires summaries and rejects stale curated entries") {
+    test("requires summaries") {
       val reference = ApiReference(metadata, Vector(symbol("def:scalive.sample", "def sample: Int", "")))
-      val errors = ApiSnapshot.validateSummaries(
-        reference,
-        Map("def:scalive.unknown" -> "Unknown summary")
-      ).left.toOption.toVector.flatMap(_.messages)
-      assertTrue(
-        errors.exists(_.contains("missing summary: def:scalive.sample")),
-        errors.exists(_.contains("unknown curated summary: def:scalive.unknown"))
-      )
+      val errors = ApiSnapshot.validateSummaries(reference).left.toOption.toVector.flatMap(_.messages)
+      assertTrue(errors.exists(_.contains("missing summary: def:scalive.sample")))
     }
   )
 end ApiSnapshotSpec

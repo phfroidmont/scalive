@@ -11,8 +11,7 @@ import scalive.docs.model.*
 final case class ApiReferenceSettings(
   repositoryUrl: String,
   domTypesVersion: String,
-  domGeneratorPath: String,
-  summaries: Map[String, String])
+  domGeneratorPath: String)
     derives JsonCodec:
   def metadata(revision: String): ApiReferenceMetadata =
     ApiReferenceMetadata(repositoryUrl, revision, domTypesVersion, domGeneratorPath)
@@ -33,8 +32,7 @@ object ApiReferenceFiles:
                        repositoryRoot,
                        targetRoots,
                        dependencyClasspath,
-                       settings.metadata(revision),
-                       settings.summaries
+                       settings.metadata(revision)
                      )
                    )
     yield settings -> reference

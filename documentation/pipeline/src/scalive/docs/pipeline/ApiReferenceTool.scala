@@ -18,13 +18,13 @@ object ApiReferenceTool:
           _ <- mode match
                  case "check" =>
                    for
-                     _        <- ApiSnapshot.validateSummaries(reference, settings.summaries)
+                     _        <- ApiSnapshot.validateSummaries(reference)
                      snapshot <- ApiReferenceFiles.loadSnapshot(Path.of(snapshotPath))
                      _        <- ApiSnapshot.validate(reference, snapshot)
                    yield ()
                  case "update" =>
                    ApiSnapshot
-                     .validateSummaries(reference, settings.summaries)
+                     .validateSummaries(reference)
                      .flatMap(_ =>
                        ApiReferenceFiles.writeSnapshot(Path.of(snapshotPath), reference)
                      )

@@ -97,7 +97,10 @@ object HttpFormDecoder:
       case Error.Validation(errors)                => onValidation(errors)
   end Error
 
-  /** Builds a bounded, CSRF-protected decoder around the low-level [[FormCodec]] escape hatch. */
+  /** Builds a bounded, CSRF-protected decoder for URL-encoded form bodies.
+    *
+    * This form decodes with the low-level [[FormCodec]] escape hatch.
+    */
   def urlEncoded[A](
     codec: FormCodec[A],
     maxBytes: Long,
@@ -106,10 +109,11 @@ object HttpFormDecoder:
     bounded(maxBytes)
     new HttpFormDecoder(codec.decode, maxBytes, csrf)
 
-  /** Returns a submitted typed form even when schema validation fails.
+  /** Builds a bounded, CSRF-protected decoder for URL-encoded form bodies.
     *
-    * Use this when validation errors must be rendered; submitted interaction makes all errors
-    * visible. Transport, representation, and CSRF failures still reject decoding.
+    * This form returns the submitted typed form even when schema validation fails. Use it when
+    * validation errors must be rendered; submitted interaction makes all errors visible. Transport,
+    * representation, and CSRF failures still reject decoding.
     */
   def urlEncoded[Owner, Domain](
     definition: FormDefinition[Owner, Domain],

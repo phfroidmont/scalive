@@ -58,20 +58,9 @@ object ApiSnapshot:
     val result = errors.result()
     Either.cond(result.isEmpty, (), ApiReferenceError(result))
 
-  def validateSummaries(
-    reference: ApiReference,
-    curatedSummaries: Map[String, String]
-  ): Either[ApiReferenceError, Unit] =
-    val symbolIds = reference.symbols.map(_.id).toSet
-    val missing   = reference.symbols.collect {
+  def validateSummaries(reference: ApiReference): Either[ApiReferenceError, Unit] =
+    val missing = reference.symbols.collect {
       case symbol if symbol.summary.trim.isEmpty => s"missing summary: ${symbol.id}"
     }
-    val unknown = (curatedSummaries.keySet -- symbolIds).toVector.sorted.map(id =>
-      s"unknown curated summary: $id"
-    )
-    val blank = curatedSummaries.toVector.collect {
-      case (id, summary) if summary.trim.isEmpty => s"blank curated summary: $id"
-    }.sorted
-    val errors = missing ++ unknown ++ blank
-    Either.cond(errors.isEmpty, (), ApiReferenceError(errors))
+    Either.cond(missing.isEmpty, (), ApiReferenceError(missing))
 end ApiSnapshot

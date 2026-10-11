@@ -24,7 +24,7 @@ Use this small-file path first:
 4. refresh the upload snapshot when progress arrives; and
 5. consume completed entries, then retain the replacement snapshot.
 
-A @:apiSymbol(type-alias:scalive.LiveUploadDef)`LiveUploadDef[Result]`@:@ fixes the upload
+A @:apiSymbol(class:scalive.LiveUploadDef)`LiveUploadDef[Result]`@:@ fixes the upload
 name, selection policy, limits, destination result type, and whether transfer
 starts automatically:
 
@@ -36,7 +36,7 @@ the limits strict and expected concurrency modest.
 ## Allow the upload during every mount {#allow-the-upload-during-every-mount}
 
 Keep one stable definition value and retain the returned
-@:apiSymbol(type-alias:scalive.LiveUpload)`LiveUpload[Result]`@:@ snapshot:
+@:apiSymbol(class:scalive.LiveUpload)`LiveUpload[Result]`@:@ snapshot:
 
 @:sourceRegion(documentation/fixtures/guides/src/uploads/TextUploadLiveView.scala, uploads-mount)
 
@@ -91,7 +91,7 @@ progress, skips invalid entries, and is not transactional: an earlier consumed
 entry stays consumed if a later callback fails.
 
 The framework owns a completed destination result while the callback runs. The
-returned @:apiSymbol(type-alias:scalive.ConsumeDecision)`ConsumeDecision`@:@ determines
+returned @:apiSymbol(enum:scalive.ConsumeDecision)`ConsumeDecision`@:@ determines
 what happens next:
 
 - `Consume(value)` removes the entry and transfers responsibility for its result to application code. Destination cleanup is not called.

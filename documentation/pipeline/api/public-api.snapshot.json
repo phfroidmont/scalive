@@ -26,6 +26,18 @@
       ]
     },
     {
+      "id" : "class:scalive.CompletedUpload",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.CompletedUpload",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.CompletedUpload:a7306db8a17647ab",
+          "signature" : "class CompletedUpload[Result]"
+        }
+      ]
+    },
+    {
       "id" : "class:scalive.ComponentOutputChannel",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.ComponentOutputChannel",
@@ -82,6 +94,18 @@
         {
           "id" : "class:scalive.CsrfProtection:8ed5731835a46c3e",
           "signature" : "class CsrfProtection"
+        }
+      ]
+    },
+    {
+      "id" : "class:scalive.ExternalUploadClientConfig",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.ExternalUploadClientConfig",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.ExternalUploadClientConfig:ea63f2a72cc8d0c4",
+          "signature" : "class ExternalUploadClientConfig"
         }
       ]
     },
@@ -914,6 +938,162 @@
       ]
     },
     {
+      "id" : "class:scalive.LiveStream",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.LiveStream",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.LiveStream:40fa7d33945e89e0",
+          "signature" : "class LiveStream[+A]"
+        }
+      ]
+    },
+    {
+      "id" : "class:scalive.LiveStreamDef",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.LiveStreamDef",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.LiveStreamDef:8107941d4e4d6790",
+          "signature" : "class LiveStreamDef[A, Id]"
+        }
+      ]
+    },
+    {
+      "id" : "class:scalive.LiveUpload",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.LiveUpload",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.LiveUpload:40e5a1b42567a583",
+          "signature" : "class LiveUpload[Result]"
+        }
+      ]
+    },
+    {
+      "id" : "class:scalive.LiveUploadDef",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.LiveUploadDef",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.LiveUploadDef:9d2d97aac99f1de3",
+          "signature" : "class LiveUploadDef[Result]"
+        }
+      ]
+    },
+    {
+      "id" : "class:scalive.LiveUploadEntry",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.LiveUploadEntry",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.LiveUploadEntry:6e420e3b39895238",
+          "signature" : "class LiveUploadEntry[Result]"
+        }
+      ]
+    },
+    {
+      "id" : "class:scalive.LiveUploadOperationError",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.LiveUploadOperationError",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.LiveUploadOperationError:259736f50782736b",
+          "signature" : "class LiveUploadOperationError(message: String) extends Exception"
+        }
+      ]
+    },
+    {
+      "id" : "class:scalive.LiveUploadOperationError.ActiveEntries",
+      "ownerId" : "object:scalive.LiveUploadOperationError",
+      "qualifiedName" : "scalive.LiveUploadOperationError.ActiveEntries",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.LiveUploadOperationError.ActiveEntries:f55ef787923f164e",
+          "signature" : "class ActiveEntries(name: String) extends LiveUploadOperationError"
+        }
+      ]
+    },
+    {
+      "id" : "class:scalive.LiveUploadOperationError.DefinitionMismatch",
+      "ownerId" : "object:scalive.LiveUploadOperationError",
+      "qualifiedName" : "scalive.LiveUploadOperationError.DefinitionMismatch",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.LiveUploadOperationError.DefinitionMismatch:1bc63e2450c03f45",
+          "signature" : "class DefinitionMismatch(name: String) extends LiveUploadOperationError"
+        }
+      ]
+    },
+    {
+      "id" : "class:scalive.LiveUploadOperationError.EntriesInProgress",
+      "ownerId" : "object:scalive.LiveUploadOperationError",
+      "qualifiedName" : "scalive.LiveUploadOperationError.EntriesInProgress",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.LiveUploadOperationError.EntriesInProgress:94ac1b086335860d",
+          "signature" : "class EntriesInProgress(name: String) extends LiveUploadOperationError"
+        }
+      ]
+    },
+    {
+      "id" : "class:scalive.LiveUploadOperationError.EntryNotActive",
+      "ownerId" : "object:scalive.LiveUploadOperationError",
+      "qualifiedName" : "scalive.LiveUploadOperationError.EntryNotActive",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.LiveUploadOperationError.EntryNotActive:4ab310a70e7772d5",
+          "signature" : "class EntryNotActive(ref: UploadEntryRef) extends LiveUploadOperationError"
+        }
+      ]
+    },
+    {
+      "id" : "class:scalive.LiveUploadOperationError.EntryNotCompleted",
+      "ownerId" : "object:scalive.LiveUploadOperationError",
+      "qualifiedName" : "scalive.LiveUploadOperationError.EntryNotCompleted",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.LiveUploadOperationError.EntryNotCompleted:8dda93e288bf1952",
+          "signature" : "class EntryNotCompleted(ref: UploadEntryRef) extends LiveUploadOperationError"
+        }
+      ]
+    },
+    {
+      "id" : "class:scalive.LiveUploadOperationError.NotAllowed",
+      "ownerId" : "object:scalive.LiveUploadOperationError",
+      "qualifiedName" : "scalive.LiveUploadOperationError.NotAllowed",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.LiveUploadOperationError.NotAllowed:9e4051db39e52bc6",
+          "signature" : "class NotAllowed(name: String) extends LiveUploadOperationError"
+        }
+      ]
+    },
+    {
+      "id" : "class:scalive.LiveUploadWriterError",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.LiveUploadWriterError",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.LiveUploadWriterError:e4000367e2ebf31e",
+          "signature" : "class LiveUploadWriterError(reason: String) extends Exception"
+        }
+      ]
+    },
+    {
       "id" : "class:scalive.LiveViewClientAssets",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.LiveViewClientAssets",
@@ -1102,6 +1282,138 @@
         {
           "id" : "class:scalive.StaticAssets:ae0bde6a3e2bbb43",
           "signature" : "class StaticAssets"
+        }
+      ]
+    },
+    {
+      "id" : "class:scalive.StaticHtmlError.DuplicateBinding",
+      "ownerId" : "object:scalive.StaticHtmlError",
+      "qualifiedName" : "scalive.StaticHtmlError.DuplicateBinding",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.StaticHtmlError.DuplicateBinding:fcce0661035a1a54",
+          "signature" : "class DuplicateBinding(id: render.BindingId) extends render.RenderError"
+        }
+      ]
+    },
+    {
+      "id" : "class:scalive.StaticHtmlError.DuplicateKey",
+      "ownerId" : "object:scalive.StaticHtmlError",
+      "qualifiedName" : "scalive.StaticHtmlError.DuplicateKey",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.StaticHtmlError.DuplicateKey:d0dce8a4836c8948",
+          "signature" : "class DuplicateKey(key: Any) extends render.RenderError"
+        }
+      ]
+    },
+    {
+      "id" : "class:scalive.StaticHtmlError.DuplicateStreamDomId",
+      "ownerId" : "object:scalive.StaticHtmlError",
+      "qualifiedName" : "scalive.StaticHtmlError.DuplicateStreamDomId",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.StaticHtmlError.DuplicateStreamDomId:d2d02fda14a9ad65",
+          "signature" : "class DuplicateStreamDomId(domId: String) extends render.RenderError"
+        }
+      ]
+    },
+    {
+      "id" : "class:scalive.StaticHtmlError.EvaluationFailed",
+      "ownerId" : "object:scalive.StaticHtmlError",
+      "qualifiedName" : "scalive.StaticHtmlError.EvaluationFailed",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.StaticHtmlError.EvaluationFailed:da29097642008746",
+          "signature" : "class EvaluationFailed(error: Throwable) extends render.RenderError"
+        }
+      ]
+    },
+    {
+      "id" : "class:scalive.StaticHtmlError.IdentityExhausted",
+      "ownerId" : "object:scalive.StaticHtmlError",
+      "qualifiedName" : "scalive.StaticHtmlError.IdentityExhausted",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.StaticHtmlError.IdentityExhausted:61401afa6f290433",
+          "signature" : "class IdentityExhausted(kind: String) extends render.RenderError"
+        }
+      ]
+    },
+    {
+      "id" : "class:scalive.StaticHtmlError.InvalidHtml",
+      "ownerId" : "object:scalive.StaticHtmlError",
+      "qualifiedName" : "scalive.StaticHtmlError.InvalidHtml",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.StaticHtmlError.InvalidHtml:54d519268b64f1f1",
+          "signature" : "class InvalidHtml(message: String) extends render.RenderError"
+        }
+      ]
+    },
+    {
+      "id" : "class:scalive.StaticHtmlError.SignalScopeViolation",
+      "ownerId" : "object:scalive.StaticHtmlError",
+      "qualifiedName" : "scalive.StaticHtmlError.SignalScopeViolation",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.StaticHtmlError.SignalScopeViolation:6f86cb6957f2da56",
+          "signature" : "class SignalScopeViolation(message: String) extends render.RenderError"
+        }
+      ]
+    },
+    {
+      "id" : "class:scalive.StaticHtmlError.UnresolvedComponents",
+      "ownerId" : "object:scalive.StaticHtmlError",
+      "qualifiedName" : "scalive.StaticHtmlError.UnresolvedComponents",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.StaticHtmlError.UnresolvedComponents:06fa42cf897b1d17",
+          "signature" : "class UnresolvedComponents(locations: Vector[render.TemplateId]) extends render.RenderError"
+        }
+      ]
+    },
+    {
+      "id" : "class:scalive.StaticHtmlError.UnresolvedNested",
+      "ownerId" : "object:scalive.StaticHtmlError",
+      "qualifiedName" : "scalive.StaticHtmlError.UnresolvedNested",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.StaticHtmlError.UnresolvedNested:49be6f0e685dc9b6",
+          "signature" : "class UnresolvedNested(locations: Vector[render.TemplateId]) extends render.RenderError"
+        }
+      ]
+    },
+    {
+      "id" : "class:scalive.StaticHtmlError.Unsupported",
+      "ownerId" : "object:scalive.StaticHtmlError",
+      "qualifiedName" : "scalive.StaticHtmlError.Unsupported",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.StaticHtmlError.Unsupported:61b1e793745e630e",
+          "signature" : "class Unsupported(feature: String) extends render.RenderError"
+        }
+      ]
+    },
+    {
+      "id" : "class:scalive.UploadClientMetadata",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.UploadClientMetadata",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.UploadClientMetadata:f17f888488619323",
+          "signature" : "class UploadClientMetadata"
         }
       ]
     },
@@ -1329,7 +1641,7 @@
       "signatures" : [
         {
           "id" : "def:scalive.AsyncKey.apply:7298f9514aa55121",
-          "signature" : "def apply[A](value: String): AsyncKey$package.AsyncKey[A]"
+          "signature" : "def apply[A](value: String): AsyncKey[A]"
         }
       ]
     },
@@ -1437,7 +1749,7 @@
       "signatures" : [
         {
           "id" : "def:scalive.BrowserToServerEvent.apply:67347d99c7f016e8",
-          "signature" : "def apply[A](value: String): BrowserEvent$package.BrowserToServerEvent[A]"
+          "signature" : "def apply[A](value: String): BrowserToServerEvent[A]"
         }
       ]
     },
@@ -2098,18 +2410,6 @@
       ]
     },
     {
-      "id" : "def:scalive.ConsumeDecision",
-      "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.ConsumeDecision",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.ConsumeDecision:2d067088b95ba4f1",
-          "signature" : "def ConsumeDecision: upload.api.ConsumeDecision.type"
-        }
-      ]
-    },
-    {
       "id" : "def:scalive.ContextAppend.append",
       "ownerId" : "trait:scalive.ContextAppend",
       "qualifiedName" : "scalive.ContextAppend.append",
@@ -2177,7 +2477,7 @@
       "signatures" : [
         {
           "id" : "def:scalive.DomRef.apply:75534899b72ee781",
-          "signature" : "def apply(value: String): DomRef$package.DomRef"
+          "signature" : "def apply(value: String): DomRef"
         }
       ]
     },
@@ -2189,19 +2489,31 @@
       "signatures" : [
         {
           "id" : "def:scalive.DomSelector.css:5f9d5f9649f01378",
-          "signature" : "def css(value: String): DomRef$package.DomSelector"
+          "signature" : "def css(value: String): DomSelector"
         }
       ]
     },
     {
-      "id" : "def:scalive.ExternalUploadClientConfig",
-      "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.ExternalUploadClientConfig",
+      "id" : "def:scalive.ExternalUploadClientConfig.apply",
+      "ownerId" : "object:scalive.ExternalUploadClientConfig",
+      "qualifiedName" : "scalive.ExternalUploadClientConfig.apply",
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.ExternalUploadClientConfig:816a02d0b0ad7c0f",
-          "signature" : "def ExternalUploadClientConfig: upload.api.ExternalUploadClientConfig.type"
+          "id" : "def:scalive.ExternalUploadClientConfig.apply:d51ef2febdcde99e",
+          "signature" : "def apply(json: zio.json.ast.Json.Obj): ExternalUploadClientConfig"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.ExternalUploadClientConfig.validated",
+      "ownerId" : "object:scalive.ExternalUploadClientConfig",
+      "qualifiedName" : "scalive.ExternalUploadClientConfig.validated",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.ExternalUploadClientConfig.validated:4af3f534b139c4b7",
+          "signature" : "def validated(json: zio.json.ast.Json.Obj): Either[IllegalArgumentException, ExternalUploadClientConfig]"
         }
       ]
     },
@@ -2302,30 +2614,6 @@
       ]
     },
     {
-      "id" : "def:scalive.FieldIssues.equals",
-      "ownerId" : "class:scalive.FieldIssues",
-      "qualifiedName" : "scalive.FieldIssues.equals",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.FieldIssues.equals:4a089e9b88fec6e9",
-          "signature" : "def equals(other: Any): Boolean"
-        }
-      ]
-    },
-    {
-      "id" : "def:scalive.FieldIssues.hashCode",
-      "ownerId" : "class:scalive.FieldIssues",
-      "qualifiedName" : "scalive.FieldIssues.hashCode",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.FieldIssues.hashCode:70f3a5bca9d2106f",
-          "signature" : "def hashCode(): Int"
-        }
-      ]
-    },
-    {
       "id" : "def:scalive.FieldIssues.one",
       "ownerId" : "object:scalive.FieldIssues",
       "qualifiedName" : "scalive.FieldIssues.one",
@@ -2409,7 +2697,7 @@
       "signatures" : [
         {
           "id" : "def:scalive.FlashKind.apply:d69fe46e8e0d8bb9",
-          "signature" : "def apply(value: String): FlashKind$package.FlashKind"
+          "signature" : "def apply(value: String): FlashKind"
         }
       ]
     },
@@ -2694,30 +2982,6 @@
         {
           "id" : "def:scalive.FormAction.unsafe:acc129c639c8724b",
           "signature" : "def unsafe(method: FormAction.Method, href: String): FormAction"
-        }
-      ]
-    },
-    {
-      "id" : "def:scalive.FormAddress.equals",
-      "ownerId" : "class:scalive.FormAddress",
-      "qualifiedName" : "scalive.FormAddress.equals",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.FormAddress.equals:4a089e9b88fec6e9",
-          "signature" : "def equals(other: Any): Boolean"
-        }
-      ]
-    },
-    {
-      "id" : "def:scalive.FormAddress.hashCode",
-      "ownerId" : "class:scalive.FormAddress",
-      "qualifiedName" : "scalive.FormAddress.hashCode",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.FormAddress.hashCode:70f3a5bca9d2106f",
-          "signature" : "def hashCode(): Int"
         }
       ]
     },
@@ -3650,18 +3914,6 @@
       ]
     },
     {
-      "id" : "def:scalive.FormErrors.equals",
-      "ownerId" : "class:scalive.FormErrors",
-      "qualifiedName" : "scalive.FormErrors.equals",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.FormErrors.equals:4a089e9b88fec6e9",
-          "signature" : "def equals(other: Any): Boolean"
-        }
-      ]
-    },
-    {
       "id" : "def:scalive.FormErrors.forAddress",
       "ownerId" : "class:scalive.FormErrors",
       "qualifiedName" : "scalive.FormErrors.forAddress",
@@ -3670,18 +3922,6 @@
         {
           "id" : "def:scalive.FormErrors.forAddress:c48c6cc941a7dd9d",
           "signature" : "def forAddress(address: FormAddress[Owner]): Vector[FormError[Owner]]"
-        }
-      ]
-    },
-    {
-      "id" : "def:scalive.FormErrors.hashCode",
-      "ownerId" : "class:scalive.FormErrors",
-      "qualifiedName" : "scalive.FormErrors.hashCode",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.FormErrors.hashCode:70f3a5bca9d2106f",
-          "signature" : "def hashCode(): Int"
         }
       ]
     },
@@ -4194,30 +4434,6 @@
       ]
     },
     {
-      "id" : "def:scalive.FormInteraction.equals",
-      "ownerId" : "class:scalive.FormInteraction",
-      "qualifiedName" : "scalive.FormInteraction.equals",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.FormInteraction.equals:4a089e9b88fec6e9",
-          "signature" : "def equals(other: Any): Boolean"
-        }
-      ]
-    },
-    {
-      "id" : "def:scalive.FormInteraction.hashCode",
-      "ownerId" : "class:scalive.FormInteraction",
-      "qualifiedName" : "scalive.FormInteraction.hashCode",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.FormInteraction.hashCode:70f3a5bca9d2106f",
-          "signature" : "def hashCode(): Int"
-        }
-      ]
-    },
-    {
       "id" : "def:scalive.FormInteraction.isBlurred",
       "ownerId" : "class:scalive.FormInteraction",
       "qualifiedName" : "scalive.FormInteraction.isBlurred",
@@ -4525,7 +4741,7 @@
       "signatures" : [
         {
           "id" : "def:scalive.FormRowKey.from:94d594af4ccc7a69",
-          "signature" : "def from[Group](value: String): Either[FormRowKey.Error, FormAddress$package.FormRowKey[Group]]"
+          "signature" : "def from[Group](value: String): Either[FormRowKey.Error, FormRowKey[Group]]"
         }
       ]
     },
@@ -4537,7 +4753,7 @@
       "signatures" : [
         {
           "id" : "def:scalive.FormRowKey.random:a6a05b15f214352d",
-          "signature" : "def random[Group]: zio.package.UIO[FormAddress$package.FormRowKey[Group]]"
+          "signature" : "def random[Group]: zio.package.UIO[FormRowKey[Group]]"
         }
       ]
     },
@@ -4706,30 +4922,6 @@
         {
           "id" : "def:scalive.FormUpdate.applyTo:624dedb973845058",
           "signature" : "def applyTo(current: Form[Owner, Schema, Domain]): AppliedFormUpdate[Owner, Schema, Domain]"
-        }
-      ]
-    },
-    {
-      "id" : "def:scalive.FormValues.equals",
-      "ownerId" : "class:scalive.FormValues",
-      "qualifiedName" : "scalive.FormValues.equals",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.FormValues.equals:4a089e9b88fec6e9",
-          "signature" : "def equals(other: Any): Boolean"
-        }
-      ]
-    },
-    {
-      "id" : "def:scalive.FormValues.hashCode",
-      "ownerId" : "class:scalive.FormValues",
-      "qualifiedName" : "scalive.FormValues.hashCode",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.FormValues.hashCode:70f3a5bca9d2106f",
-          "signature" : "def hashCode(): Int"
         }
       ]
     },
@@ -5221,7 +5413,7 @@
       "signatures" : [
         {
           "id" : "def:scalive.Key.apply:2730079acaf8b79b",
-          "signature" : "def apply(value: String): Key$package.Key"
+          "signature" : "def apply(value: String): Key"
         }
       ]
     },
@@ -5722,18 +5914,6 @@
         {
           "id" : "def:scalive.LiveEventHookResult.haltReply:2a76396a0e115f8c",
           "signature" : "def haltReply[Model](model: Model, value: zio.json.ast.Json): LiveEventHookResult[Model]"
-        }
-      ]
-    },
-    {
-      "id" : "def:scalive.LiveExternalUploadResult",
-      "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.LiveExternalUploadResult",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.LiveExternalUploadResult:88ebc4f656de4493",
-          "signature" : "def LiveExternalUploadResult: upload.api.LiveExternalUploadResult.type"
         }
       ]
     },
@@ -7178,134 +7358,470 @@
       ]
     },
     {
-      "id" : "def:scalive.LiveStream",
-      "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.LiveStream",
+      "id" : "def:scalive.LiveStreamDef.apply",
+      "ownerId" : "object:scalive.LiveStreamDef",
+      "qualifiedName" : "scalive.LiveStreamDef.apply",
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.LiveStream:6ef0b61988090a1c",
-          "signature" : "def LiveStream: streams.LiveStream$"
+          "id" : "def:scalive.LiveStreamDef.apply:7d65d73401ac0340",
+          "signature" : "def apply[A, Id](name: String, id: A => Id, domId: Id => String, limit: Option[StreamLimit] = ...): LiveStreamDef[A, Id]"
         }
       ]
     },
     {
-      "id" : "def:scalive.LiveStreamDef",
-      "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.LiveStreamDef",
+      "id" : "def:scalive.LiveStreamDef.byId",
+      "ownerId" : "object:scalive.LiveStreamDef",
+      "qualifiedName" : "scalive.LiveStreamDef.byId",
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.LiveStreamDef:4069331fea6fea26",
-          "signature" : "def LiveStreamDef: streams.api.LiveStreamDef.type"
+          "id" : "def:scalive.LiveStreamDef.byId:9cde88cc4938492d",
+          "signature" : "def byId[A, Id](name: String)(id: A => Id): LiveStreamDef[A, Id]"
         }
       ]
     },
     {
-      "id" : "def:scalive.LiveUploadAbortReason",
-      "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.LiveUploadAbortReason",
+      "id" : "def:scalive.LiveStreamDef.keepFirst",
+      "ownerId" : "class:scalive.LiveStreamDef",
+      "qualifiedName" : "scalive.LiveStreamDef.keepFirst",
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.LiveUploadAbortReason:734baa09974ab9c9",
-          "signature" : "def LiveUploadAbortReason: upload.api.LiveUploadAbortReason.type"
+          "id" : "def:scalive.LiveStreamDef.keepFirst:7b05e3ecb3371644",
+          "signature" : "def keepFirst(count: Int): LiveStreamDef[A, Id]"
         }
       ]
     },
     {
-      "id" : "def:scalive.LiveUploadAccept",
-      "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.LiveUploadAccept",
+      "id" : "def:scalive.LiveStreamDef.keepLast",
+      "ownerId" : "class:scalive.LiveStreamDef",
+      "qualifiedName" : "scalive.LiveStreamDef.keepLast",
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.LiveUploadAccept:57d70d22eb34b96d",
-          "signature" : "def LiveUploadAccept: upload.api.LiveUploadAccept.type"
+          "id" : "def:scalive.LiveStreamDef.keepLast:3811a50af0ca0b69",
+          "signature" : "def keepLast(count: Int): LiveStreamDef[A, Id]"
         }
       ]
     },
     {
-      "id" : "def:scalive.LiveUploadDef",
-      "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.LiveUploadDef",
+      "id" : "def:scalive.LiveStreamDef.withLimit",
+      "ownerId" : "class:scalive.LiveStreamDef",
+      "qualifiedName" : "scalive.LiveStreamDef.withLimit",
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.LiveUploadDef:247ea3c545ded61a",
-          "signature" : "def LiveUploadDef: upload.api.LiveUploadDef.type"
+          "id" : "def:scalive.LiveStreamDef.withLimit:fb1c89ca9d040e5e",
+          "signature" : "def withLimit(limit: Option[StreamLimit]): LiveStreamDef[A, Id]"
         }
       ]
     },
     {
-      "id" : "def:scalive.LiveUploadDestination",
-      "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.LiveUploadDestination",
+      "id" : "def:scalive.LiveStreamDef.withoutLimit",
+      "ownerId" : "class:scalive.LiveStreamDef",
+      "qualifiedName" : "scalive.LiveStreamDef.withoutLimit",
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.LiveUploadDestination:33b84683904c0c18",
-          "signature" : "def LiveUploadDestination: upload.api.LiveUploadDestination.type"
+          "id" : "def:scalive.LiveStreamDef.withoutLimit:115193ffc668d9cf",
+          "signature" : "def withoutLimit: LiveStreamDef[A, Id]"
         }
       ]
     },
     {
-      "id" : "def:scalive.LiveUploadEntryStatus",
-      "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.LiveUploadEntryStatus",
+      "id" : "def:scalive.LiveUpload.accept",
+      "ownerId" : "class:scalive.LiveUpload",
+      "qualifiedName" : "scalive.LiveUpload.accept",
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.LiveUploadEntryStatus:f4723d12a9107911",
-          "signature" : "def LiveUploadEntryStatus: upload.api.LiveUploadEntryStatus.type"
+          "id" : "def:scalive.LiveUpload.accept:1f70bf6d2227bfc0",
+          "signature" : "def accept: LiveUploadAccept"
         }
       ]
     },
     {
-      "id" : "def:scalive.LiveUploadError",
-      "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.LiveUploadError",
+      "id" : "def:scalive.LiveUpload.autoUpload",
+      "ownerId" : "class:scalive.LiveUpload",
+      "qualifiedName" : "scalive.LiveUpload.autoUpload",
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.LiveUploadError:a553a0ec2d2e83f0",
-          "signature" : "def LiveUploadError: upload.api.LiveUploadError.type"
+          "id" : "def:scalive.LiveUpload.autoUpload:cecca5860b9c05e6",
+          "signature" : "def autoUpload: Boolean"
         }
       ]
     },
     {
-      "id" : "def:scalive.LiveUploadMaxEntriesMode",
-      "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.LiveUploadMaxEntriesMode",
+      "id" : "def:scalive.LiveUpload.chunkSize",
+      "ownerId" : "class:scalive.LiveUpload",
+      "qualifiedName" : "scalive.LiveUpload.chunkSize",
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.LiveUploadMaxEntriesMode:ea9b55ddf2aa0c0c",
-          "signature" : "def LiveUploadMaxEntriesMode: upload.api.LiveUploadMaxEntriesMode.type"
+          "id" : "def:scalive.LiveUpload.chunkSize:37d408c602ce6eb3",
+          "signature" : "def chunkSize: Int"
         }
       ]
     },
     {
-      "id" : "def:scalive.LiveUploadOperationError",
-      "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.LiveUploadOperationError",
+      "id" : "def:scalive.LiveUpload.chunkTimeout",
+      "ownerId" : "class:scalive.LiveUpload",
+      "qualifiedName" : "scalive.LiveUpload.chunkTimeout",
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.LiveUploadOperationError:9a149380c8503291",
-          "signature" : "def LiveUploadOperationError: upload.api.LiveUploadOperationError.type"
+          "id" : "def:scalive.LiveUpload.chunkTimeout:699be1c724406eac",
+          "signature" : "def chunkTimeout: zio.package.Duration"
         }
       ]
     },
     {
-      "id" : "def:scalive.LiveUploadWriterError",
-      "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.LiveUploadWriterError",
+      "id" : "def:scalive.LiveUpload.external",
+      "ownerId" : "class:scalive.LiveUpload",
+      "qualifiedName" : "scalive.LiveUpload.external",
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.LiveUploadWriterError:72c0e4981d4cf857",
-          "signature" : "def LiveUploadWriterError: upload.api.LiveUploadWriterError.type"
+          "id" : "def:scalive.LiveUpload.external:7e772ec34f3423df",
+          "signature" : "def external: Boolean"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LiveUpload.maxEntries",
+      "ownerId" : "class:scalive.LiveUpload",
+      "qualifiedName" : "scalive.LiveUpload.maxEntries",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveUpload.maxEntries:c28bc9f9ddddc507",
+          "signature" : "def maxEntries: Int"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LiveUpload.maxEntriesMode",
+      "ownerId" : "class:scalive.LiveUpload",
+      "qualifiedName" : "scalive.LiveUpload.maxEntriesMode",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveUpload.maxEntriesMode:292206c90d55cb63",
+          "signature" : "def maxEntriesMode: LiveUploadMaxEntriesMode"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LiveUpload.maxFileSize",
+      "ownerId" : "class:scalive.LiveUpload",
+      "qualifiedName" : "scalive.LiveUpload.maxFileSize",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveUpload.maxFileSize:c492ab97e5f3da73",
+          "signature" : "def maxFileSize: Long"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LiveUpload.name",
+      "ownerId" : "class:scalive.LiveUpload",
+      "qualifiedName" : "scalive.LiveUpload.name",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveUpload.name:c85334720b0c1834",
+          "signature" : "def name: String"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LiveUploadAccept.only",
+      "ownerId" : "object:scalive.LiveUploadAccept",
+      "qualifiedName" : "scalive.LiveUploadAccept.only",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveUploadAccept.only:79eaa7e8fd12dcf2",
+          "signature" : "def only(first: String, rest: String*): LiveUploadAccept"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LiveUploadAccept.toHtmlValue",
+      "ownerId" : "trait:scalive.LiveUploadAccept",
+      "qualifiedName" : "scalive.LiveUploadAccept.toHtmlValue",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveUploadAccept.toHtmlValue:ec0d6d10074282a8",
+          "signature" : "def toHtmlValue: String"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LiveUploadAccept.validated",
+      "ownerId" : "object:scalive.LiveUploadAccept",
+      "qualifiedName" : "scalive.LiveUploadAccept.validated",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveUploadAccept.validated:e3443c8f7fba6407",
+          "signature" : "def validated(values: Iterable[String]): Either[IllegalArgumentException, LiveUploadAccept]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LiveUploadDef.external",
+      "ownerId" : "object:scalive.LiveUploadDef",
+      "qualifiedName" : "scalive.LiveUploadDef.external",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveUploadDef.external:7a2cbb49b6cac268",
+          "signature" : "def external[Result](name: String, accept: LiveUploadAccept, uploader: LiveUploadExternalUploader[Result], maxEntries: Int = ..., maxFileSize: Long = ..., chunkSize: Int = ..., chunkTimeout: zio.package.Duration = ..., autoUpload: Boolean = ..., progress: Option[LiveUploadProgress[Result]] = ..., maxEntriesMode: LiveUploadMaxEntriesMode = ..., validator: Option[UploadClientMetadata => Option[String]] = ...): LiveUploadDef[Result]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LiveUploadDef.hosted",
+      "ownerId" : "object:scalive.LiveUploadDef",
+      "qualifiedName" : "scalive.LiveUploadDef.hosted",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveUploadDef.hosted:1e58d5cefd8d9b2f",
+          "signature" : "def hosted[State, Result](name: String, accept: LiveUploadAccept, writer: LiveUploadWriter[State, Result], maxEntries: Int = ..., maxFileSize: Long = ..., chunkSize: Int = ..., chunkTimeout: zio.package.Duration = ..., autoUpload: Boolean = ..., progress: Option[LiveUploadProgress[Result]] = ..., maxEntriesMode: LiveUploadMaxEntriesMode = ..., validator: Option[UploadClientMetadata => Option[String]] = ...): LiveUploadDef[Result]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LiveUploadDef.inMemory",
+      "ownerId" : "object:scalive.LiveUploadDef",
+      "qualifiedName" : "scalive.LiveUploadDef.inMemory",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveUploadDef.inMemory:040b036d8015afda",
+          "signature" : "def inMemory(name: String, accept: LiveUploadAccept, maxEntries: Int = ..., maxFileSize: Long = ..., chunkSize: Int = ..., chunkTimeout: zio.package.Duration = ..., autoUpload: Boolean = ..., progress: Option[LiveUploadProgress[zio.Chunk[Byte]]] = ..., maxEntriesMode: LiveUploadMaxEntriesMode = ..., validator: Option[UploadClientMetadata => Option[String]] = ...): LiveUploadDef[zio.Chunk[Byte]]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LiveUploadDef.validated",
+      "ownerId" : "object:scalive.LiveUploadDef",
+      "qualifiedName" : "scalive.LiveUploadDef.validated",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveUploadDef.validated:b48dc69cd233ca7b",
+          "signature" : "def validated[Result](name: String, accept: LiveUploadAccept, destination: LiveUploadDestination[Result], maxEntries: Int = ..., maxFileSize: Long = ..., chunkSize: Int = ..., chunkTimeout: zio.package.Duration = ..., autoUpload: Boolean = ..., progress: Option[LiveUploadProgress[Result]] = ..., maxEntriesMode: LiveUploadMaxEntriesMode = ..., validator: Option[UploadClientMetadata => Option[String]] = ...): Either[IllegalArgumentException, LiveUploadDef[Result]]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LiveUploadDestination.external",
+      "ownerId" : "object:scalive.LiveUploadDestination",
+      "qualifiedName" : "scalive.LiveUploadDestination.external",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveUploadDestination.external:9f55570c2845286e",
+          "signature" : "def external[Result](uploader: LiveUploadExternalUploader[Result]): LiveUploadDestination[Result]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LiveUploadDestination.hosted",
+      "ownerId" : "object:scalive.LiveUploadDestination",
+      "qualifiedName" : "scalive.LiveUploadDestination.hosted",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveUploadDestination.hosted:daa441c8a35d1845",
+          "signature" : "def hosted[State, Result](writer: LiveUploadWriter[State, Result]): LiveUploadDestination[Result]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LiveUploadDestination.inMemory",
+      "ownerId" : "object:scalive.LiveUploadDestination",
+      "qualifiedName" : "scalive.LiveUploadDestination.inMemory",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveUploadDestination.inMemory:d13282c3d8395704",
+          "signature" : "def inMemory: LiveUploadDestination[zio.Chunk[Byte]]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LiveUploadEntry.errors",
+      "ownerId" : "class:scalive.LiveUploadEntry",
+      "qualifiedName" : "scalive.LiveUploadEntry.errors",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveUploadEntry.errors:86782a12809650e6",
+          "signature" : "def errors: List[LiveUploadError]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LiveUploadEntry.progress",
+      "ownerId" : "class:scalive.LiveUploadEntry",
+      "qualifiedName" : "scalive.LiveUploadEntry.progress",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveUploadEntry.progress:d5808e2bd9807e85",
+          "signature" : "def progress: Int"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LiveUploadError.fromJson",
+      "ownerId" : "object:scalive.LiveUploadError",
+      "qualifiedName" : "scalive.LiveUploadError.fromJson",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveUploadError.fromJson:9e494714992294b5",
+          "signature" : "def fromJson(value: zio.json.ast.Json): LiveUploadError"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LiveUploadError.fromReason",
+      "ownerId" : "object:scalive.LiveUploadError",
+      "qualifiedName" : "scalive.LiveUploadError.fromReason",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveUploadError.fromReason:d2d8da64d1eb0956",
+          "signature" : "def fromReason(reason: String): LiveUploadError"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LiveUploadError.toJson",
+      "ownerId" : "object:scalive.LiveUploadError",
+      "qualifiedName" : "scalive.LiveUploadError.toJson",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveUploadError.toJson:63290e58b2ace2ca",
+          "signature" : "def toJson(error: LiveUploadError): zio.json.ast.Json"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LiveUploadExternalUploader.discard",
+      "ownerId" : "trait:scalive.LiveUploadExternalUploader",
+      "qualifiedName" : "scalive.LiveUploadExternalUploader.discard",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveUploadExternalUploader.discard:987e2d8b5e81a069",
+          "signature" : "def discard(result: Result): zio.package.Task[Unit]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LiveUploadExternalUploader.preflight",
+      "ownerId" : "trait:scalive.LiveUploadExternalUploader",
+      "qualifiedName" : "scalive.LiveUploadExternalUploader.preflight",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveUploadExternalUploader.preflight:60ad55e08808d978",
+          "signature" : "def preflight(client: UploadClientMetadata): zio.package.Task[LiveExternalUploadResult[Result]]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LiveUploadProgress.onProgress",
+      "ownerId" : "trait:scalive.LiveUploadProgress",
+      "qualifiedName" : "scalive.LiveUploadProgress.onProgress",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveUploadProgress.onProgress:0e20f0728dcf0cbb",
+          "signature" : "def onProgress(entry: LiveUploadEntry[Result]): zio.package.Task[Unit]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LiveUploadWriter.abort",
+      "ownerId" : "trait:scalive.LiveUploadWriter",
+      "qualifiedName" : "scalive.LiveUploadWriter.abort",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveUploadWriter.abort:c784365f0da50df4",
+          "signature" : "def abort(state: State, reason: LiveUploadAbortReason): zio.package.Task[Unit]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LiveUploadWriter.complete",
+      "ownerId" : "trait:scalive.LiveUploadWriter",
+      "qualifiedName" : "scalive.LiveUploadWriter.complete",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveUploadWriter.complete:44169822bc4454c1",
+          "signature" : "def complete(state: State): zio.package.Task[Result]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LiveUploadWriter.discard",
+      "ownerId" : "trait:scalive.LiveUploadWriter",
+      "qualifiedName" : "scalive.LiveUploadWriter.discard",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveUploadWriter.discard:eb591c5b5ac192d0",
+          "signature" : "def discard(result: Result): zio.package.Task[Unit]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LiveUploadWriter.init",
+      "ownerId" : "trait:scalive.LiveUploadWriter",
+      "qualifiedName" : "scalive.LiveUploadWriter.init",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveUploadWriter.init:5d20fe6c219128c4",
+          "signature" : "def init(client: UploadClientMetadata): zio.package.Task[State]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LiveUploadWriter.metadata",
+      "ownerId" : "trait:scalive.LiveUploadWriter",
+      "qualifiedName" : "scalive.LiveUploadWriter.metadata",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveUploadWriter.metadata:12c1f5b9ae038f26",
+          "signature" : "def metadata(result: Result): zio.json.ast.Json.Obj"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LiveUploadWriter.writeChunk",
+      "ownerId" : "trait:scalive.LiveUploadWriter",
+      "qualifiedName" : "scalive.LiveUploadWriter.writeChunk",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveUploadWriter.writeChunk:d5e15c42432a1cb8",
+          "signature" : "def writeChunk(data: zio.Chunk[Byte], state: State): zio.package.Task[State]"
         }
       ]
     },
@@ -8633,7 +9149,7 @@
       "signatures" : [
         {
           "id" : "def:scalive.ServerToBrowserEvent.apply:07d9e3360d221089",
-          "signature" : "def apply[A](value: String): BrowserEvent$package.ServerToBrowserEvent[A]"
+          "signature" : "def apply[A](value: String): ServerToBrowserEvent[A]"
         }
       ]
     },
@@ -8830,158 +9346,14 @@
       ]
     },
     {
-      "id" : "def:scalive.StaticHtmlError.DuplicateBinding",
-      "ownerId" : "object:scalive.StaticHtmlError",
-      "qualifiedName" : "scalive.StaticHtmlError.DuplicateBinding",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.StaticHtmlError.DuplicateBinding:bab8271aae5dd179",
-          "signature" : "def DuplicateBinding: render.RenderError.DuplicateBinding.type"
-        }
-      ]
-    },
-    {
-      "id" : "def:scalive.StaticHtmlError.DuplicateKey",
-      "ownerId" : "object:scalive.StaticHtmlError",
-      "qualifiedName" : "scalive.StaticHtmlError.DuplicateKey",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.StaticHtmlError.DuplicateKey:78731b25b062bc99",
-          "signature" : "def DuplicateKey: render.RenderError.DuplicateKey.type"
-        }
-      ]
-    },
-    {
-      "id" : "def:scalive.StaticHtmlError.DuplicateStreamDomId",
-      "ownerId" : "object:scalive.StaticHtmlError",
-      "qualifiedName" : "scalive.StaticHtmlError.DuplicateStreamDomId",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.StaticHtmlError.DuplicateStreamDomId:e85e09d81c4495ca",
-          "signature" : "def DuplicateStreamDomId: render.RenderError.DuplicateStreamDomId.type"
-        }
-      ]
-    },
-    {
-      "id" : "def:scalive.StaticHtmlError.EvaluationFailed",
-      "ownerId" : "object:scalive.StaticHtmlError",
-      "qualifiedName" : "scalive.StaticHtmlError.EvaluationFailed",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.StaticHtmlError.EvaluationFailed:6ee9fe0d2ea3537e",
-          "signature" : "def EvaluationFailed: render.RenderError.EvaluationFailed.type"
-        }
-      ]
-    },
-    {
-      "id" : "def:scalive.StaticHtmlError.IdentityExhausted",
-      "ownerId" : "object:scalive.StaticHtmlError",
-      "qualifiedName" : "scalive.StaticHtmlError.IdentityExhausted",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.StaticHtmlError.IdentityExhausted:39480f0ad0357368",
-          "signature" : "def IdentityExhausted: render.RenderError.IdentityExhausted.type"
-        }
-      ]
-    },
-    {
-      "id" : "def:scalive.StaticHtmlError.InvalidHtml",
-      "ownerId" : "object:scalive.StaticHtmlError",
-      "qualifiedName" : "scalive.StaticHtmlError.InvalidHtml",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.StaticHtmlError.InvalidHtml:1fdf214f7899d975",
-          "signature" : "def InvalidHtml: render.RenderError.InvalidHtml.type"
-        }
-      ]
-    },
-    {
-      "id" : "def:scalive.StaticHtmlError.SignalScopeViolation",
-      "ownerId" : "object:scalive.StaticHtmlError",
-      "qualifiedName" : "scalive.StaticHtmlError.SignalScopeViolation",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.StaticHtmlError.SignalScopeViolation:fabd265a2e1b3b62",
-          "signature" : "def SignalScopeViolation: render.RenderError.SignalScopeViolation.type"
-        }
-      ]
-    },
-    {
-      "id" : "def:scalive.StaticHtmlError.UnresolvedComponents",
-      "ownerId" : "object:scalive.StaticHtmlError",
-      "qualifiedName" : "scalive.StaticHtmlError.UnresolvedComponents",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.StaticHtmlError.UnresolvedComponents:5315378e6b024cd6",
-          "signature" : "def UnresolvedComponents: render.RenderError.UnresolvedComponents.type"
-        }
-      ]
-    },
-    {
-      "id" : "def:scalive.StaticHtmlError.UnresolvedNested",
-      "ownerId" : "object:scalive.StaticHtmlError",
-      "qualifiedName" : "scalive.StaticHtmlError.UnresolvedNested",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.StaticHtmlError.UnresolvedNested:f8a717969e04e667",
-          "signature" : "def UnresolvedNested: render.RenderError.UnresolvedNested.type"
-        }
-      ]
-    },
-    {
-      "id" : "def:scalive.StaticHtmlError.Unsupported",
-      "ownerId" : "object:scalive.StaticHtmlError",
-      "qualifiedName" : "scalive.StaticHtmlError.Unsupported",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.StaticHtmlError.Unsupported:5ed6de351ce5ade6",
-          "signature" : "def Unsupported: render.RenderError.Unsupported.type"
-        }
-      ]
-    },
-    {
-      "id" : "def:scalive.StreamAt",
-      "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.StreamAt",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.StreamAt:ab4a8c9aaddd9c86",
-          "signature" : "def StreamAt: streams.api.StreamAt.type"
-        }
-      ]
-    },
-    {
-      "id" : "def:scalive.StreamLimit",
-      "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.StreamLimit",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.StreamLimit:1e8be09a7414786e",
-          "signature" : "def StreamLimit: streams.api.StreamLimit.type"
-        }
-      ]
-    },
-    {
       "id" : "def:scalive.Streams.create",
       "ownerId" : "trait:scalive.Streams",
       "qualifiedName" : "scalive.Streams.create",
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.Streams.create:76124cea4b35d565",
-          "signature" : "def create[A, Id](definition: streams.LiveStreamDef[A, Id], items: Iterable[A]): zio.package.Task[streams.LiveStream[A]]"
+          "id" : "def:scalive.Streams.create:1625cb2fc695c82a",
+          "signature" : "def create[A, Id](definition: LiveStreamDef[A, Id], items: Iterable[A]): zio.package.Task[LiveStream[A]]"
         }
       ]
     },
@@ -8992,8 +9364,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.Streams.delete:96e03620b8943eca",
-          "signature" : "def delete[A, Id](definition: streams.LiveStreamDef[A, Id], id: Id): zio.package.Task[streams.LiveStream[A]]"
+          "id" : "def:scalive.Streams.delete:a81fe393d10e8bd2",
+          "signature" : "def delete[A, Id](definition: LiveStreamDef[A, Id], id: Id): zio.package.Task[LiveStream[A]]"
         }
       ]
     },
@@ -9004,8 +9376,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.Streams.deleteByDomId:0e370a976c075ddc",
-          "signature" : "def deleteByDomId[A, Id](definition: streams.LiveStreamDef[A, Id], domId: String): zio.package.Task[streams.LiveStream[A]]"
+          "id" : "def:scalive.Streams.deleteByDomId:c3396b98458fb410",
+          "signature" : "def deleteByDomId[A, Id](definition: LiveStreamDef[A, Id], domId: String): zio.package.Task[LiveStream[A]]"
         }
       ]
     },
@@ -9016,8 +9388,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.Streams.insert:8b92d7159e7c3d8a",
-          "signature" : "def insert[A, Id](definition: streams.LiveStreamDef[A, Id], item: A, at: streams.StreamAt = ..., updateOnly: Boolean = ...): zio.package.Task[streams.LiveStream[A]]"
+          "id" : "def:scalive.Streams.insert:25b33068cef94510",
+          "signature" : "def insert[A, Id](definition: LiveStreamDef[A, Id], item: A, at: StreamAt = ..., updateOnly: Boolean = ...): zio.package.Task[LiveStream[A]]"
         }
       ]
     },
@@ -9028,8 +9400,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.Streams.insertAll:791a77dc23a96bef",
-          "signature" : "def insertAll[A, Id](definition: streams.LiveStreamDef[A, Id], items: Iterable[A], at: streams.StreamAt = ...): zio.package.Task[streams.LiveStream[A]]"
+          "id" : "def:scalive.Streams.insertAll:2d3a22462b9931b4",
+          "signature" : "def insertAll[A, Id](definition: LiveStreamDef[A, Id], items: Iterable[A], at: StreamAt = ...): zio.package.Task[LiveStream[A]]"
         }
       ]
     },
@@ -9040,8 +9412,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.Streams.reset:1825c511dc499ff3",
-          "signature" : "def reset[A, Id](definition: streams.LiveStreamDef[A, Id], items: Iterable[A], at: streams.StreamAt = ...): zio.package.Task[streams.LiveStream[A]]"
+          "id" : "def:scalive.Streams.reset:e786b553bbbb3494",
+          "signature" : "def reset[A, Id](definition: LiveStreamDef[A, Id], items: Iterable[A], at: StreamAt = ...): zio.package.Task[LiveStream[A]]"
         }
       ]
     },
@@ -9053,7 +9425,7 @@
       "signatures" : [
         {
           "id" : "def:scalive.SubscriptionKey.apply:ebd6bf23e150d7d6",
-          "signature" : "def apply(value: String): SubscriptionKey$package.SubscriptionKey"
+          "signature" : "def apply(value: String): SubscriptionKey"
         }
       ]
     },
@@ -9094,38 +9466,14 @@
       ]
     },
     {
-      "id" : "def:scalive.UploadEntryRef",
-      "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.UploadEntryRef",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.UploadEntryRef:20013520bcb56fd9",
-          "signature" : "def UploadEntryRef: upload.api.UploadEntryRef.type"
-        }
-      ]
-    },
-    {
-      "id" : "def:scalive.UploadRef",
-      "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.UploadRef",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.UploadRef:a53383552eb2118a",
-          "signature" : "def UploadRef: upload.api.UploadRef.type"
-        }
-      ]
-    },
-    {
       "id" : "def:scalive.Uploads.allow",
       "ownerId" : "trait:scalive.Uploads",
       "qualifiedName" : "scalive.Uploads.allow",
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.Uploads.allow:002c5e0eab0557a5",
-          "signature" : "def allow[R](definition: upload.LiveUploadDef[R]): zio.package.Task[upload.LiveUpload[R]]"
+          "id" : "def:scalive.Uploads.allow:790c8f4fe33f19dc",
+          "signature" : "def allow[R](definition: LiveUploadDef[R]): zio.package.Task[LiveUpload[R]]"
         }
       ]
     },
@@ -9136,8 +9484,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.Uploads.cancel:aecdc46baeaa4d59",
-          "signature" : "def cancel[R](entry: upload.LiveUploadEntry[R]): zio.package.Task[upload.LiveUpload[R]]"
+          "id" : "def:scalive.Uploads.cancel:56de362a6dfcec05",
+          "signature" : "def cancel[R](entry: LiveUploadEntry[R]): zio.package.Task[LiveUpload[R]]"
         }
       ]
     },
@@ -9148,8 +9496,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.Uploads.consume:891ffe1ed7466977",
-          "signature" : "def consume[R, A](entry: upload.LiveUploadEntry[R])(callback: upload.CompletedUpload[R] => zio.package.Task[upload.ConsumeDecision[A]]): zio.package.Task[(A, upload.LiveUpload[R])]"
+          "id" : "def:scalive.Uploads.consume:93507263f80ba86a",
+          "signature" : "def consume[R, A](entry: LiveUploadEntry[R])(callback: CompletedUpload[R] => zio.package.Task[ConsumeDecision[A]]): zio.package.Task[(A, LiveUpload[R])]"
         }
       ]
     },
@@ -9160,8 +9508,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.Uploads.consumeCompleted:241b7bfe51644b58",
-          "signature" : "def consumeCompleted[R, A](definition: upload.LiveUploadDef[R])(callback: upload.CompletedUpload[R] => zio.package.Task[upload.ConsumeDecision[A]]): zio.package.Task[(List[A], upload.LiveUpload[R])]"
+          "id" : "def:scalive.Uploads.consumeCompleted:fcdc6d9cfa37da8d",
+          "signature" : "def consumeCompleted[R, A](definition: LiveUploadDef[R])(callback: CompletedUpload[R] => zio.package.Task[ConsumeDecision[A]]): zio.package.Task[(List[A], LiveUpload[R])]"
         }
       ]
     },
@@ -9172,8 +9520,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.Uploads.disallow:bbb7af4fd92a266a",
-          "signature" : "def disallow[R](definition: upload.LiveUploadDef[R]): zio.package.Task[Unit]"
+          "id" : "def:scalive.Uploads.disallow:f9ddfcf54b12e9f4",
+          "signature" : "def disallow[R](definition: LiveUploadDef[R]): zio.package.Task[Unit]"
         }
       ]
     },
@@ -9184,8 +9532,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.Uploads.get:aff189c50d3ea45b",
-          "signature" : "def get[R](definition: upload.LiveUploadDef[R]): zio.package.Task[Option[upload.LiveUpload[R]]]"
+          "id" : "def:scalive.Uploads.get:a7e6e2f07612e4e0",
+          "signature" : "def get[R](definition: LiveUploadDef[R]): zio.package.Task[Option[LiveUpload[R]]]"
         }
       ]
     },
@@ -9198,30 +9546,6 @@
         {
           "id" : "def:scalive.WebSocketOrigin.Error.message:7fa6f8877d98c85e",
           "signature" : "def message: String"
-        }
-      ]
-    },
-    {
-      "id" : "def:scalive.WebSocketOrigin.equals",
-      "ownerId" : "class:scalive.WebSocketOrigin",
-      "qualifiedName" : "scalive.WebSocketOrigin.equals",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.WebSocketOrigin.equals:4a089e9b88fec6e9",
-          "signature" : "def equals(other: Any): Boolean"
-        }
-      ]
-    },
-    {
-      "id" : "def:scalive.WebSocketOrigin.hashCode",
-      "ownerId" : "class:scalive.WebSocketOrigin",
-      "qualifiedName" : "scalive.WebSocketOrigin.hashCode",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.WebSocketOrigin.hashCode:70f3a5bca9d2106f",
-          "signature" : "def hashCode(): Int"
         }
       ]
     },
@@ -9322,30 +9646,6 @@
         {
           "id" : "def:scalive.ZioHttpConfig.apply:8e3162552e0850fb",
           "signature" : "def apply(signingSecret: String, sessionMaxAge: java.time.Duration, secureCookie: Boolean, allowedWebSocketOrigins: Set[WebSocketOrigin]): Either[ZioHttpConfig.Error, ZioHttpConfig]"
-        }
-      ]
-    },
-    {
-      "id" : "def:scalive.ZioHttpConfig.equals",
-      "ownerId" : "class:scalive.ZioHttpConfig",
-      "qualifiedName" : "scalive.ZioHttpConfig.equals",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.ZioHttpConfig.equals:4a089e9b88fec6e9",
-          "signature" : "def equals(other: Any): Boolean"
-        }
-      ]
-    },
-    {
-      "id" : "def:scalive.ZioHttpConfig.hashCode",
-      "ownerId" : "class:scalive.ZioHttpConfig",
-      "qualifiedName" : "scalive.ZioHttpConfig.hashCode",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.ZioHttpConfig.hashCode:70f3a5bca9d2106f",
-          "signature" : "def hashCode(): Int"
         }
       ]
     },
@@ -10506,6 +10806,42 @@
       ]
     },
     {
+      "id" : "enum:scalive.ConsumeDecision",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.ConsumeDecision",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.ConsumeDecision:35cfbda89b3a5507",
+          "signature" : "enum ConsumeDecision[+A]"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.ConsumeDecision.Consume",
+      "ownerId" : "enum:scalive.ConsumeDecision",
+      "qualifiedName" : "scalive.ConsumeDecision.Consume",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.ConsumeDecision.Consume:2d60c30fa5aca42d",
+          "signature" : "enum Consume[+A](value: A) extends ConsumeDecision[A]"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.ConsumeDecision.Postpone",
+      "ownerId" : "enum:scalive.ConsumeDecision",
+      "qualifiedName" : "scalive.ConsumeDecision.Postpone",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.ConsumeDecision.Postpone:7d96e37e87356695",
+          "signature" : "enum Postpone[+A](value: A) extends ConsumeDecision[A]"
+        }
+      ]
+    },
+    {
       "id" : "enum:scalive.CsrfProtection.ValidationError",
       "ownerId" : "object:scalive.CsrfProtection",
       "qualifiedName" : "scalive.CsrfProtection.ValidationError",
@@ -11658,6 +11994,42 @@
       ]
     },
     {
+      "id" : "enum:scalive.LiveExternalUploadResult",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.LiveExternalUploadResult",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.LiveExternalUploadResult:91112ab6dc53a157",
+          "signature" : "enum LiveExternalUploadResult[+Result]"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.LiveExternalUploadResult.Error",
+      "ownerId" : "enum:scalive.LiveExternalUploadResult",
+      "qualifiedName" : "scalive.LiveExternalUploadResult.Error",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.LiveExternalUploadResult.Error:4e7bbb49b40dd638",
+          "signature" : "enum Error[+Result](meta: zio.json.ast.Json.Obj) extends LiveExternalUploadResult[Result]"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.LiveExternalUploadResult.Ready",
+      "ownerId" : "enum:scalive.LiveExternalUploadResult",
+      "qualifiedName" : "scalive.LiveExternalUploadResult.Ready",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.LiveExternalUploadResult.Ready:f4ab9edba1f37d95",
+          "signature" : "enum Ready[+Result](clientConfig: ExternalUploadClientConfig, result: Result) extends LiveExternalUploadResult[Result]"
+        }
+      ]
+    },
+    {
       "id" : "enum:scalive.LiveHookResult",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.LiveHookResult",
@@ -11886,6 +12258,138 @@
       ]
     },
     {
+      "id" : "enum:scalive.LiveUploadAbortReason",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.LiveUploadAbortReason",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.LiveUploadAbortReason:a0ded6f0de9b3434",
+          "signature" : "enum LiveUploadAbortReason"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.LiveUploadAbortReason.Failed",
+      "ownerId" : "enum:scalive.LiveUploadAbortReason",
+      "qualifiedName" : "scalive.LiveUploadAbortReason.Failed",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.LiveUploadAbortReason.Failed:2767a1006d56b18e",
+          "signature" : "enum Failed(reason: String) extends LiveUploadAbortReason"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.LiveUploadEntryStatus",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.LiveUploadEntryStatus",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.LiveUploadEntryStatus:a2f5e6466a7f315f",
+          "signature" : "enum LiveUploadEntryStatus"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.LiveUploadEntryStatus.Invalid",
+      "ownerId" : "enum:scalive.LiveUploadEntryStatus",
+      "qualifiedName" : "scalive.LiveUploadEntryStatus.Invalid",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.LiveUploadEntryStatus.Invalid:48ddf6fbcf25bda3",
+          "signature" : "enum Invalid(errors: List[LiveUploadError]) extends LiveUploadEntryStatus"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.LiveUploadEntryStatus.Uploading",
+      "ownerId" : "enum:scalive.LiveUploadEntryStatus",
+      "qualifiedName" : "scalive.LiveUploadEntryStatus.Uploading",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.LiveUploadEntryStatus.Uploading:a8b513ebdd4ed8f7",
+          "signature" : "enum Uploading(progress: Int) extends LiveUploadEntryStatus"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.LiveUploadError",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.LiveUploadError",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.LiveUploadError:c867d66e2963019d",
+          "signature" : "enum LiveUploadError"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.LiveUploadError.Custom",
+      "ownerId" : "enum:scalive.LiveUploadError",
+      "qualifiedName" : "scalive.LiveUploadError.Custom",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.LiveUploadError.Custom:87db9caad1a676b9",
+          "signature" : "enum Custom(reason: String) extends LiveUploadError"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.LiveUploadError.External",
+      "ownerId" : "enum:scalive.LiveUploadError",
+      "qualifiedName" : "scalive.LiveUploadError.External",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.LiveUploadError.External:89d480ae55c86b98",
+          "signature" : "enum External(meta: zio.json.ast.Json.Obj) extends LiveUploadError"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.LiveUploadError.Unknown",
+      "ownerId" : "enum:scalive.LiveUploadError",
+      "qualifiedName" : "scalive.LiveUploadError.Unknown",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.LiveUploadError.Unknown:40912c233cee789f",
+          "signature" : "enum Unknown(code: String) extends LiveUploadError"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.LiveUploadError.WriterFailure",
+      "ownerId" : "enum:scalive.LiveUploadError",
+      "qualifiedName" : "scalive.LiveUploadError.WriterFailure",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.LiveUploadError.WriterFailure:235eb7b04db25c5f",
+          "signature" : "enum WriterFailure(reason: String) extends LiveUploadError"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.LiveUploadMaxEntriesMode",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.LiveUploadMaxEntriesMode",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.LiveUploadMaxEntriesMode:4239e2cd99403c5f",
+          "signature" : "enum LiveUploadMaxEntriesMode"
+        }
+      ]
+    },
+    {
       "id" : "enum:scalive.Mod.Attr",
       "ownerId" : "object:scalive.Mod",
       "qualifiedName" : "scalive.Mod.Attr",
@@ -11930,6 +12434,66 @@
         {
           "id" : "enum:scalive.StaticAssetCachePolicy:8961eb3cd2e08143",
           "signature" : "enum StaticAssetCachePolicy"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.StreamAt",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.StreamAt",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.StreamAt:c12a5de398cc9f43",
+          "signature" : "enum StreamAt"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.StreamAt.Index",
+      "ownerId" : "enum:scalive.StreamAt",
+      "qualifiedName" : "scalive.StreamAt.Index",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.StreamAt.Index:e17faa6b2512f1ea",
+          "signature" : "enum Index(value: Int) extends StreamAt"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.StreamLimit",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.StreamLimit",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.StreamLimit:cd4e69b1b9d4812b",
+          "signature" : "enum StreamLimit"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.StreamLimit.KeepFirst",
+      "ownerId" : "enum:scalive.StreamLimit",
+      "qualifiedName" : "scalive.StreamLimit.KeepFirst",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.StreamLimit.KeepFirst:ca2490ccdd76a9dd",
+          "signature" : "enum KeepFirst(count: Int) extends StreamLimit"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.StreamLimit.KeepLast",
+      "ownerId" : "enum:scalive.StreamLimit",
+      "qualifiedName" : "scalive.StreamLimit.KeepLast",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.StreamLimit.KeepLast:17f85846e795a3e8",
+          "signature" : "enum KeepLast(count: Int) extends StreamLimit"
         }
       ]
     },
@@ -12169,7 +12733,7 @@
       "signatures" : [
         {
           "id" : "extension:scalive.AsyncKey.value:f5a521ab77a59f95",
-          "signature" : "extension def value[A](key: AsyncKey$package.AsyncKey[A]): String"
+          "signature" : "extension def value[A](key: AsyncKey[A]): String"
         }
       ]
     },
@@ -12241,7 +12805,7 @@
       "signatures" : [
         {
           "id" : "extension:scalive.BrowserToServerEvent.value:ac5509a1fb1add90",
-          "signature" : "extension def value[A](event: BrowserEvent$package.BrowserToServerEvent[A]): String"
+          "signature" : "extension def value[A](event: BrowserToServerEvent[A]): String"
         }
       ]
     },
@@ -12253,7 +12817,7 @@
       "signatures" : [
         {
           "id" : "extension:scalive.DomRef.attr:89fa34ed72d16bfc",
-          "signature" : "extension def attr(ref: DomRef$package.DomRef): Mod.Attr[Nothing]"
+          "signature" : "extension def attr(ref: DomRef): Mod.Attr[Nothing]"
         }
       ]
     },
@@ -12265,7 +12829,7 @@
       "signatures" : [
         {
           "id" : "extension:scalive.DomRef.selector:b13e278856097aa8",
-          "signature" : "extension def selector(ref: DomRef$package.DomRef): DomRef$package.DomSelector"
+          "signature" : "extension def selector(ref: DomRef): DomSelector"
         }
       ]
     },
@@ -12277,7 +12841,7 @@
       "signatures" : [
         {
           "id" : "extension:scalive.DomRef.value:231efeca9cbf8542",
-          "signature" : "extension def value(ref: DomRef$package.DomRef): String"
+          "signature" : "extension def value(ref: DomRef): String"
         }
       ]
     },
@@ -12289,7 +12853,7 @@
       "signatures" : [
         {
           "id" : "extension:scalive.FlashKind.value:6c94dffbe80240ba",
-          "signature" : "extension def value(kind: FlashKind$package.FlashKind): String"
+          "signature" : "extension def value(kind: FlashKind): String"
         }
       ]
     },
@@ -12497,7 +13061,7 @@
       "signatures" : [
         {
           "id" : "extension:scalive.FormRevision.value:acdde13eaba459b7",
-          "signature" : "extension def value(revision: FormWorkflow$package.FormRevision): Long"
+          "signature" : "extension def value(revision: FormRevision): Long"
         }
       ]
     },
@@ -12509,7 +13073,7 @@
       "signatures" : [
         {
           "id" : "extension:scalive.FormRowKey.value:104c52e4d810050d",
-          "signature" : "extension def value[Group](key: FormAddress$package.FormRowKey[Group]): String"
+          "signature" : "extension def value[Group](key: FormRowKey[Group]): String"
         }
       ]
     },
@@ -12889,7 +13453,7 @@
       "signatures" : [
         {
           "id" : "extension:scalive.ServerToBrowserEvent.value:a81f0c1b2b91d424",
-          "signature" : "extension def value[A](event: BrowserEvent$package.ServerToBrowserEvent[A]): String"
+          "signature" : "extension def value[A](event: ServerToBrowserEvent[A]): String"
         }
       ]
     },
@@ -12981,7 +13545,31 @@
       "signatures" : [
         {
           "id" : "extension:scalive.SubscriptionKey.value:a2ebfacf900239dc",
-          "signature" : "extension def value(key: SubscriptionKey$package.SubscriptionKey): String"
+          "signature" : "extension def value(key: SubscriptionKey): String"
+        }
+      ]
+    },
+    {
+      "id" : "extension:scalive.UploadEntryRef.value",
+      "ownerId" : "object:scalive.UploadEntryRef",
+      "qualifiedName" : "scalive.UploadEntryRef.value",
+      "kind" : "extension",
+      "signatures" : [
+        {
+          "id" : "extension:scalive.UploadEntryRef.value:0384387061242135",
+          "signature" : "extension def value(ref: UploadEntryRef): String"
+        }
+      ]
+    },
+    {
+      "id" : "extension:scalive.UploadRef.value",
+      "ownerId" : "object:scalive.UploadRef",
+      "qualifiedName" : "scalive.UploadRef.value",
+      "kind" : "extension",
+      "signatures" : [
+        {
+          "id" : "extension:scalive.UploadRef.value:65e0f968cb4f7037",
+          "signature" : "extension def value(ref: UploadRef): String"
         }
       ]
     },
@@ -13072,12 +13660,12 @@
       "kind" : "extension",
       "signatures" : [
         {
-          "id" : "extension:scalive.renderIn:2e3c851e1d5b37ab",
-          "signature" : "extension def renderIn[A](stream: streams.LiveStream[A])[Msg](container: HtmlTag, mods: Mod[Msg]*)(project: A => HtmlElement[Msg]): HtmlElement[Msg]"
+          "id" : "extension:scalive.renderIn:4c2431c11303c84e",
+          "signature" : "extension def renderIn[A](stream: LiveStream[A])[Msg](container: HtmlTag, mods: Mod[Msg]*)(project: A => HtmlElement[Msg]): HtmlElement[Msg]"
         },
         {
-          "id" : "extension:scalive.renderIn:f549d7639a57eecd",
-          "signature" : "extension def renderIn[A](stream: Signal[streams.LiveStream[A]])[Msg](container: HtmlTag, mods: Mod[Msg]*)(project: Signal[A] => HtmlElement[Msg]): HtmlElement[Msg]"
+          "id" : "extension:scalive.renderIn:c262cb9d7c84be17",
+          "signature" : "extension def renderIn[A](stream: Signal[LiveStream[A]])[Msg](container: HtmlTag, mods: Mod[Msg]*)(project: Signal[A] => HtmlElement[Msg]): HtmlElement[Msg]"
         }
       ]
     },
@@ -13132,12 +13720,12 @@
       "kind" : "extension",
       "signatures" : [
         {
-          "id" : "extension:scalive.stream:0cc613575050c87b",
-          "signature" : "extension def stream[A](stream: streams.LiveStream[A])[Msg](project: (String, A) => HtmlElement[Msg]): Mod[Msg]"
+          "id" : "extension:scalive.stream:e1b94e984c8d1fa8",
+          "signature" : "extension def stream[A](stream: LiveStream[A])[Msg](project: (String, A) => HtmlElement[Msg]): Mod[Msg]"
         },
         {
-          "id" : "extension:scalive.stream:36ede0878a0265c3",
-          "signature" : "extension def stream[A](stream: Signal[streams.LiveStream[A]])[Msg](project: (String, Signal[A]) => HtmlElement[Msg]): Mod[Msg]"
+          "id" : "extension:scalive.stream:ea88f525c5819dff",
+          "signature" : "extension def stream[A](stream: Signal[LiveStream[A]])[Msg](project: (String, Signal[A]) => HtmlElement[Msg]): Mod[Msg]"
         }
       ]
     },
@@ -13148,12 +13736,12 @@
       "kind" : "extension",
       "signatures" : [
         {
-          "id" : "extension:scalive.value:09cfa8b1c73ebedd",
-          "signature" : "extension def value(ref: upload.UploadEntryRef): String"
+          "id" : "extension:scalive.value:0384387061242135",
+          "signature" : "extension def value(ref: UploadEntryRef): String"
         },
         {
-          "id" : "extension:scalive.value:3b31730167ac226f",
-          "signature" : "extension def value(ref: upload.UploadRef): String"
+          "id" : "extension:scalive.value:65e0f968cb4f7037",
+          "signature" : "extension def value(ref: UploadRef): String"
         }
       ]
     },
@@ -13165,7 +13753,7 @@
       "signatures" : [
         {
           "id" : "given:scalive.AsyncKey.given_CanEqual_AsyncKey_AsyncKey:959953a2d1316d7e",
-          "signature" : "given given_CanEqual_AsyncKey_AsyncKey[A, B]: CanEqual[AsyncKey$package.AsyncKey[A], AsyncKey$package.AsyncKey[B]]"
+          "signature" : "given given_CanEqual_AsyncKey_AsyncKey[A, B]: CanEqual[AsyncKey[A], AsyncKey[B]]"
         }
       ]
     },
@@ -13178,54 +13766,6 @@
         {
           "id" : "given:scalive.ContextAppend.empty:a600222b6915a588",
           "signature" : "given empty[Out]: ContextAppend.empty[Out]"
-        }
-      ]
-    },
-    {
-      "id" : "given:scalive.FieldIssues.derived$CanEqual",
-      "ownerId" : "object:scalive.FieldIssues",
-      "qualifiedName" : "scalive.FieldIssues.derived$CanEqual",
-      "kind" : "given",
-      "signatures" : [
-        {
-          "id" : "given:scalive.FieldIssues.derived$CanEqual:23334d7b536350b5",
-          "signature" : "given derived$CanEqual: CanEqual[FieldIssues, FieldIssues]"
-        }
-      ]
-    },
-    {
-      "id" : "given:scalive.FormAddress.derived$CanEqual",
-      "ownerId" : "object:scalive.FormAddress",
-      "qualifiedName" : "scalive.FormAddress.derived$CanEqual",
-      "kind" : "given",
-      "signatures" : [
-        {
-          "id" : "given:scalive.FormAddress.derived$CanEqual:968451f915c9b86c",
-          "signature" : "given derived$CanEqual[Owner_$_L, Owner_$_R](implicit x$0: CanEqual[Owner_$_L, Owner_$_R]): CanEqual[FormAddress[Owner_$_L], FormAddress[Owner_$_R]]"
-        }
-      ]
-    },
-    {
-      "id" : "given:scalive.FormErrors.derived$CanEqual",
-      "ownerId" : "object:scalive.FormErrors",
-      "qualifiedName" : "scalive.FormErrors.derived$CanEqual",
-      "kind" : "given",
-      "signatures" : [
-        {
-          "id" : "given:scalive.FormErrors.derived$CanEqual:9d19deaeb857a989",
-          "signature" : "given derived$CanEqual[Owner_$_L, Owner_$_R](implicit x$0: CanEqual[Owner_$_L, Owner_$_R]): CanEqual[FormErrors[Owner_$_L], FormErrors[Owner_$_R]]"
-        }
-      ]
-    },
-    {
-      "id" : "given:scalive.FormInteraction.derived$CanEqual",
-      "ownerId" : "object:scalive.FormInteraction",
-      "qualifiedName" : "scalive.FormInteraction.derived$CanEqual",
-      "kind" : "given",
-      "signatures" : [
-        {
-          "id" : "given:scalive.FormInteraction.derived$CanEqual:3bdd534d9a1b9fa7",
-          "signature" : "given derived$CanEqual[Owner_$_L, Owner_$_R](implicit x$0: CanEqual[Owner_$_L, Owner_$_R]): CanEqual[FormInteraction[Owner_$_L], FormInteraction[Owner_$_R]]"
         }
       ]
     },
@@ -16854,6 +17394,18 @@
       ]
     },
     {
+      "id" : "object:scalive.ExternalUploadClientConfig",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.ExternalUploadClientConfig",
+      "kind" : "object",
+      "signatures" : [
+        {
+          "id" : "object:scalive.ExternalUploadClientConfig:791f50e05f5fa181",
+          "signature" : "object ExternalUploadClientConfig"
+        }
+      ]
+    },
+    {
       "id" : "object:scalive.FieldInput",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.FieldInput",
@@ -17526,6 +18078,90 @@
       ]
     },
     {
+      "id" : "object:scalive.LiveStreamDef",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.LiveStreamDef",
+      "kind" : "object",
+      "signatures" : [
+        {
+          "id" : "object:scalive.LiveStreamDef:7d229fd21787b8d0",
+          "signature" : "object LiveStreamDef"
+        }
+      ]
+    },
+    {
+      "id" : "object:scalive.LiveUploadAccept",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.LiveUploadAccept",
+      "kind" : "object",
+      "signatures" : [
+        {
+          "id" : "object:scalive.LiveUploadAccept:7821fa791b4d9a87",
+          "signature" : "object LiveUploadAccept"
+        }
+      ]
+    },
+    {
+      "id" : "object:scalive.LiveUploadAccept.Any",
+      "ownerId" : "object:scalive.LiveUploadAccept",
+      "qualifiedName" : "scalive.LiveUploadAccept.Any",
+      "kind" : "object",
+      "signatures" : [
+        {
+          "id" : "object:scalive.LiveUploadAccept.Any:a584721b52e76224",
+          "signature" : "object Any extends LiveUploadAccept"
+        }
+      ]
+    },
+    {
+      "id" : "object:scalive.LiveUploadDef",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.LiveUploadDef",
+      "kind" : "object",
+      "signatures" : [
+        {
+          "id" : "object:scalive.LiveUploadDef:6362c8c4173a3f26",
+          "signature" : "object LiveUploadDef"
+        }
+      ]
+    },
+    {
+      "id" : "object:scalive.LiveUploadDestination",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.LiveUploadDestination",
+      "kind" : "object",
+      "signatures" : [
+        {
+          "id" : "object:scalive.LiveUploadDestination:7dcbe3bb264fc6b9",
+          "signature" : "object LiveUploadDestination"
+        }
+      ]
+    },
+    {
+      "id" : "object:scalive.LiveUploadError",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.LiveUploadError",
+      "kind" : "object",
+      "signatures" : [
+        {
+          "id" : "object:scalive.LiveUploadError:9b8e0a1860e4f8c8",
+          "signature" : "object LiveUploadError"
+        }
+      ]
+    },
+    {
+      "id" : "object:scalive.LiveUploadOperationError",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.LiveUploadOperationError",
+      "kind" : "object",
+      "signatures" : [
+        {
+          "id" : "object:scalive.LiveUploadOperationError:48b02846ae001e8e",
+          "signature" : "object LiveUploadOperationError"
+        }
+      ]
+    },
+    {
       "id" : "object:scalive.LiveView",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.LiveView",
@@ -17738,6 +18374,30 @@
         {
           "id" : "object:scalive.SubscriptionKey:b8abd78dd473a90c",
           "signature" : "object SubscriptionKey"
+        }
+      ]
+    },
+    {
+      "id" : "object:scalive.UploadEntryRef",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.UploadEntryRef",
+      "kind" : "object",
+      "signatures" : [
+        {
+          "id" : "object:scalive.UploadEntryRef:1174fac2df47744a",
+          "signature" : "object UploadEntryRef"
+        }
+      ]
+    },
+    {
+      "id" : "object:scalive.UploadRef",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.UploadRef",
+      "kind" : "object",
+      "signatures" : [
+        {
+          "id" : "object:scalive.UploadRef:e319009c70921b06",
+          "signature" : "object UploadRef"
         }
       ]
     },
@@ -18122,6 +18782,30 @@
         {
           "id" : "opaque-type:scalive.SubscriptionKey:8e7b9e6720fa15dc",
           "signature" : "opaque type SubscriptionKey = String"
+        }
+      ]
+    },
+    {
+      "id" : "opaque-type:scalive.UploadEntryRef",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.UploadEntryRef",
+      "kind" : "opaqueType",
+      "signatures" : [
+        {
+          "id" : "opaque-type:scalive.UploadEntryRef:49fa1b127e08bebc",
+          "signature" : "opaque type UploadEntryRef = String"
+        }
+      ]
+    },
+    {
+      "id" : "opaque-type:scalive.UploadRef",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.UploadRef",
+      "kind" : "opaqueType",
+      "signatures" : [
+        {
+          "id" : "opaque-type:scalive.UploadRef:bc53a8b53fd12078",
+          "signature" : "opaque type UploadRef = String"
         }
       ]
     },
@@ -18617,6 +19301,66 @@
       ]
     },
     {
+      "id" : "trait:scalive.LiveUploadAccept",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.LiveUploadAccept",
+      "kind" : "trait",
+      "signatures" : [
+        {
+          "id" : "trait:scalive.LiveUploadAccept:0e068900d1a3d130",
+          "signature" : "trait LiveUploadAccept"
+        }
+      ]
+    },
+    {
+      "id" : "trait:scalive.LiveUploadDestination",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.LiveUploadDestination",
+      "kind" : "trait",
+      "signatures" : [
+        {
+          "id" : "trait:scalive.LiveUploadDestination:0575dfa262d92a0d",
+          "signature" : "trait LiveUploadDestination[Result]"
+        }
+      ]
+    },
+    {
+      "id" : "trait:scalive.LiveUploadExternalUploader",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.LiveUploadExternalUploader",
+      "kind" : "trait",
+      "signatures" : [
+        {
+          "id" : "trait:scalive.LiveUploadExternalUploader:fe01d2259af42b2e",
+          "signature" : "trait LiveUploadExternalUploader[Result]"
+        }
+      ]
+    },
+    {
+      "id" : "trait:scalive.LiveUploadProgress",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.LiveUploadProgress",
+      "kind" : "trait",
+      "signatures" : [
+        {
+          "id" : "trait:scalive.LiveUploadProgress:bcb86a9c8544483a",
+          "signature" : "trait LiveUploadProgress[Result]"
+        }
+      ]
+    },
+    {
+      "id" : "trait:scalive.LiveUploadWriter",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.LiveUploadWriter",
+      "kind" : "trait",
+      "signatures" : [
+        {
+          "id" : "trait:scalive.LiveUploadWriter:ab15ae949cd56a30",
+          "signature" : "trait LiveUploadWriter[State, Result]"
+        }
+      ]
+    },
+    {
       "id" : "trait:scalive.LiveView",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.LiveView",
@@ -18941,30 +19685,6 @@
       ]
     },
     {
-      "id" : "type-alias:scalive.CompletedUpload",
-      "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.CompletedUpload",
-      "kind" : "typeAlias",
-      "signatures" : [
-        {
-          "id" : "type-alias:scalive.CompletedUpload:806f6ee21906b912",
-          "signature" : "type CompletedUpload = ([Result] =>> upload.CompletedUpload[Result])"
-        }
-      ]
-    },
-    {
-      "id" : "type-alias:scalive.ConsumeDecision",
-      "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.ConsumeDecision",
-      "kind" : "typeAlias",
-      "signatures" : [
-        {
-          "id" : "type-alias:scalive.ConsumeDecision:80ec5b99d54ad0e5",
-          "signature" : "type ConsumeDecision = ([A] =>> upload.ConsumeDecision[A])"
-        }
-      ]
-    },
-    {
       "id" : "type-alias:scalive.ContextAppend.Aux",
       "ownerId" : "object:scalive.ContextAppend",
       "qualifiedName" : "scalive.ContextAppend.Aux",
@@ -18985,18 +19705,6 @@
         {
           "id" : "type-alias:scalive.ContextAppend.Result:007af9d67a7f9985",
           "signature" : "type Result"
-        }
-      ]
-    },
-    {
-      "id" : "type-alias:scalive.ExternalUploadClientConfig",
-      "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.ExternalUploadClientConfig",
-      "kind" : "typeAlias",
-      "signatures" : [
-        {
-          "id" : "type-alias:scalive.ExternalUploadClientConfig:fa075a57ea1624b5",
-          "signature" : "type ExternalUploadClientConfig = upload.api.ExternalUploadClientConfig"
         }
       ]
     },
@@ -19229,18 +19937,6 @@
       ]
     },
     {
-      "id" : "type-alias:scalive.LiveExternalUploadResult",
-      "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.LiveExternalUploadResult",
-      "kind" : "typeAlias",
-      "signatures" : [
-        {
-          "id" : "type-alias:scalive.LiveExternalUploadResult:8671e9f0909587bd",
-          "signature" : "type LiveExternalUploadResult = ([Result] =>> upload.LiveExternalUploadResult[Result])"
-        }
-      ]
-    },
-    {
       "id" : "type-alias:scalive.LiveRouteFragment.Input",
       "ownerId" : "trait:scalive.LiveRouteFragment",
       "qualifiedName" : "scalive.LiveRouteFragment.Input",
@@ -19261,198 +19957,6 @@
         {
           "id" : "type-alias:scalive.LiveSession.Input:883e0001c8ffa666",
           "signature" : "type Input = Any"
-        }
-      ]
-    },
-    {
-      "id" : "type-alias:scalive.LiveStream",
-      "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.LiveStream",
-      "kind" : "typeAlias",
-      "signatures" : [
-        {
-          "id" : "type-alias:scalive.LiveStream:506168b4cd5bf996",
-          "signature" : "type LiveStream = ([A] =>> streams.LiveStream[A])"
-        }
-      ]
-    },
-    {
-      "id" : "type-alias:scalive.LiveStreamDef",
-      "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.LiveStreamDef",
-      "kind" : "typeAlias",
-      "signatures" : [
-        {
-          "id" : "type-alias:scalive.LiveStreamDef:bb602d2770a27eac",
-          "signature" : "type LiveStreamDef = ([A, Id] =>> streams.LiveStreamDef[A, Id])"
-        }
-      ]
-    },
-    {
-      "id" : "type-alias:scalive.LiveUpload",
-      "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.LiveUpload",
-      "kind" : "typeAlias",
-      "signatures" : [
-        {
-          "id" : "type-alias:scalive.LiveUpload:77c022dbafa26617",
-          "signature" : "type LiveUpload = ([Result] =>> upload.LiveUpload[Result])"
-        }
-      ]
-    },
-    {
-      "id" : "type-alias:scalive.LiveUploadAbortReason",
-      "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.LiveUploadAbortReason",
-      "kind" : "typeAlias",
-      "signatures" : [
-        {
-          "id" : "type-alias:scalive.LiveUploadAbortReason:408c6cdf6d72c589",
-          "signature" : "type LiveUploadAbortReason = upload.api.LiveUploadAbortReason"
-        }
-      ]
-    },
-    {
-      "id" : "type-alias:scalive.LiveUploadAccept",
-      "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.LiveUploadAccept",
-      "kind" : "typeAlias",
-      "signatures" : [
-        {
-          "id" : "type-alias:scalive.LiveUploadAccept:cb86b4dd12973905",
-          "signature" : "type LiveUploadAccept = upload.api.LiveUploadAccept"
-        }
-      ]
-    },
-    {
-      "id" : "type-alias:scalive.LiveUploadDef",
-      "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.LiveUploadDef",
-      "kind" : "typeAlias",
-      "signatures" : [
-        {
-          "id" : "type-alias:scalive.LiveUploadDef:0c469bd6ceb35d89",
-          "signature" : "type LiveUploadDef = ([Result] =>> upload.LiveUploadDef[Result])"
-        }
-      ]
-    },
-    {
-      "id" : "type-alias:scalive.LiveUploadDestination",
-      "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.LiveUploadDestination",
-      "kind" : "typeAlias",
-      "signatures" : [
-        {
-          "id" : "type-alias:scalive.LiveUploadDestination:c00a6d14fdc37502",
-          "signature" : "type LiveUploadDestination = ([Result] =>> upload.LiveUploadDestination[Result])"
-        }
-      ]
-    },
-    {
-      "id" : "type-alias:scalive.LiveUploadEntry",
-      "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.LiveUploadEntry",
-      "kind" : "typeAlias",
-      "signatures" : [
-        {
-          "id" : "type-alias:scalive.LiveUploadEntry:09e4144b0bd858ce",
-          "signature" : "type LiveUploadEntry = ([Result] =>> upload.LiveUploadEntry[Result])"
-        }
-      ]
-    },
-    {
-      "id" : "type-alias:scalive.LiveUploadEntryStatus",
-      "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.LiveUploadEntryStatus",
-      "kind" : "typeAlias",
-      "signatures" : [
-        {
-          "id" : "type-alias:scalive.LiveUploadEntryStatus:0b7425b0b64a5306",
-          "signature" : "type LiveUploadEntryStatus = upload.api.LiveUploadEntryStatus"
-        }
-      ]
-    },
-    {
-      "id" : "type-alias:scalive.LiveUploadError",
-      "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.LiveUploadError",
-      "kind" : "typeAlias",
-      "signatures" : [
-        {
-          "id" : "type-alias:scalive.LiveUploadError:8d31b19f2182d1c0",
-          "signature" : "type LiveUploadError = upload.api.LiveUploadError"
-        }
-      ]
-    },
-    {
-      "id" : "type-alias:scalive.LiveUploadExternalUploader",
-      "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.LiveUploadExternalUploader",
-      "kind" : "typeAlias",
-      "signatures" : [
-        {
-          "id" : "type-alias:scalive.LiveUploadExternalUploader:1771b4f95b2914b1",
-          "signature" : "type LiveUploadExternalUploader = ([Result] =>> upload.LiveUploadExternalUploader[Result])"
-        }
-      ]
-    },
-    {
-      "id" : "type-alias:scalive.LiveUploadMaxEntriesMode",
-      "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.LiveUploadMaxEntriesMode",
-      "kind" : "typeAlias",
-      "signatures" : [
-        {
-          "id" : "type-alias:scalive.LiveUploadMaxEntriesMode:722d48167f2018fe",
-          "signature" : "type LiveUploadMaxEntriesMode = upload.api.LiveUploadMaxEntriesMode"
-        }
-      ]
-    },
-    {
-      "id" : "type-alias:scalive.LiveUploadOperationError",
-      "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.LiveUploadOperationError",
-      "kind" : "typeAlias",
-      "signatures" : [
-        {
-          "id" : "type-alias:scalive.LiveUploadOperationError:7150d066f3cff068",
-          "signature" : "type LiveUploadOperationError = upload.api.LiveUploadOperationError"
-        }
-      ]
-    },
-    {
-      "id" : "type-alias:scalive.LiveUploadProgress",
-      "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.LiveUploadProgress",
-      "kind" : "typeAlias",
-      "signatures" : [
-        {
-          "id" : "type-alias:scalive.LiveUploadProgress:ac1649e5cba57d6f",
-          "signature" : "type LiveUploadProgress = ([Result] =>> upload.LiveUploadProgress[Result])"
-        }
-      ]
-    },
-    {
-      "id" : "type-alias:scalive.LiveUploadWriter",
-      "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.LiveUploadWriter",
-      "kind" : "typeAlias",
-      "signatures" : [
-        {
-          "id" : "type-alias:scalive.LiveUploadWriter:8b79b88d18687931",
-          "signature" : "type LiveUploadWriter = ([State, Result] =>> upload.LiveUploadWriter[State, Result])"
-        }
-      ]
-    },
-    {
-      "id" : "type-alias:scalive.LiveUploadWriterError",
-      "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.LiveUploadWriterError",
-      "kind" : "typeAlias",
-      "signatures" : [
-        {
-          "id" : "type-alias:scalive.LiveUploadWriterError:e44fd1a941e50e15",
-          "signature" : "type LiveUploadWriterError = upload.api.LiveUploadWriterError"
         }
       ]
     },
@@ -19661,186 +20165,6 @@
       ]
     },
     {
-      "id" : "type-alias:scalive.StaticHtmlError.DuplicateBinding",
-      "ownerId" : "object:scalive.StaticHtmlError",
-      "qualifiedName" : "scalive.StaticHtmlError.DuplicateBinding",
-      "kind" : "typeAlias",
-      "signatures" : [
-        {
-          "id" : "type-alias:scalive.StaticHtmlError.DuplicateBinding:7177be2c83e7697f",
-          "signature" : "type DuplicateBinding = render.RenderError.DuplicateBinding"
-        }
-      ]
-    },
-    {
-      "id" : "type-alias:scalive.StaticHtmlError.DuplicateKey",
-      "ownerId" : "object:scalive.StaticHtmlError",
-      "qualifiedName" : "scalive.StaticHtmlError.DuplicateKey",
-      "kind" : "typeAlias",
-      "signatures" : [
-        {
-          "id" : "type-alias:scalive.StaticHtmlError.DuplicateKey:2b79fe515a65ddda",
-          "signature" : "type DuplicateKey = render.RenderError.DuplicateKey"
-        }
-      ]
-    },
-    {
-      "id" : "type-alias:scalive.StaticHtmlError.DuplicateStreamDomId",
-      "ownerId" : "object:scalive.StaticHtmlError",
-      "qualifiedName" : "scalive.StaticHtmlError.DuplicateStreamDomId",
-      "kind" : "typeAlias",
-      "signatures" : [
-        {
-          "id" : "type-alias:scalive.StaticHtmlError.DuplicateStreamDomId:a8a451b9352dc2d9",
-          "signature" : "type DuplicateStreamDomId = render.RenderError.DuplicateStreamDomId"
-        }
-      ]
-    },
-    {
-      "id" : "type-alias:scalive.StaticHtmlError.EvaluationFailed",
-      "ownerId" : "object:scalive.StaticHtmlError",
-      "qualifiedName" : "scalive.StaticHtmlError.EvaluationFailed",
-      "kind" : "typeAlias",
-      "signatures" : [
-        {
-          "id" : "type-alias:scalive.StaticHtmlError.EvaluationFailed:518435d3132bf2bf",
-          "signature" : "type EvaluationFailed = render.RenderError.EvaluationFailed"
-        }
-      ]
-    },
-    {
-      "id" : "type-alias:scalive.StaticHtmlError.IdentityExhausted",
-      "ownerId" : "object:scalive.StaticHtmlError",
-      "qualifiedName" : "scalive.StaticHtmlError.IdentityExhausted",
-      "kind" : "typeAlias",
-      "signatures" : [
-        {
-          "id" : "type-alias:scalive.StaticHtmlError.IdentityExhausted:9b9651955ad99d65",
-          "signature" : "type IdentityExhausted = render.RenderError.IdentityExhausted"
-        }
-      ]
-    },
-    {
-      "id" : "type-alias:scalive.StaticHtmlError.InvalidHtml",
-      "ownerId" : "object:scalive.StaticHtmlError",
-      "qualifiedName" : "scalive.StaticHtmlError.InvalidHtml",
-      "kind" : "typeAlias",
-      "signatures" : [
-        {
-          "id" : "type-alias:scalive.StaticHtmlError.InvalidHtml:44cdc4adbbc4488f",
-          "signature" : "type InvalidHtml = render.RenderError.InvalidHtml"
-        }
-      ]
-    },
-    {
-      "id" : "type-alias:scalive.StaticHtmlError.SignalScopeViolation",
-      "ownerId" : "object:scalive.StaticHtmlError",
-      "qualifiedName" : "scalive.StaticHtmlError.SignalScopeViolation",
-      "kind" : "typeAlias",
-      "signatures" : [
-        {
-          "id" : "type-alias:scalive.StaticHtmlError.SignalScopeViolation:fea95943b499758c",
-          "signature" : "type SignalScopeViolation = render.RenderError.SignalScopeViolation"
-        }
-      ]
-    },
-    {
-      "id" : "type-alias:scalive.StaticHtmlError.UnresolvedComponents",
-      "ownerId" : "object:scalive.StaticHtmlError",
-      "qualifiedName" : "scalive.StaticHtmlError.UnresolvedComponents",
-      "kind" : "typeAlias",
-      "signatures" : [
-        {
-          "id" : "type-alias:scalive.StaticHtmlError.UnresolvedComponents:efc7d4033042dbf6",
-          "signature" : "type UnresolvedComponents = render.RenderError.UnresolvedComponents"
-        }
-      ]
-    },
-    {
-      "id" : "type-alias:scalive.StaticHtmlError.UnresolvedNested",
-      "ownerId" : "object:scalive.StaticHtmlError",
-      "qualifiedName" : "scalive.StaticHtmlError.UnresolvedNested",
-      "kind" : "typeAlias",
-      "signatures" : [
-        {
-          "id" : "type-alias:scalive.StaticHtmlError.UnresolvedNested:f0c09762261261d6",
-          "signature" : "type UnresolvedNested = render.RenderError.UnresolvedNested"
-        }
-      ]
-    },
-    {
-      "id" : "type-alias:scalive.StaticHtmlError.Unsupported",
-      "ownerId" : "object:scalive.StaticHtmlError",
-      "qualifiedName" : "scalive.StaticHtmlError.Unsupported",
-      "kind" : "typeAlias",
-      "signatures" : [
-        {
-          "id" : "type-alias:scalive.StaticHtmlError.Unsupported:1cf66524e4ce2cd0",
-          "signature" : "type Unsupported = render.RenderError.Unsupported"
-        }
-      ]
-    },
-    {
-      "id" : "type-alias:scalive.StreamAt",
-      "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.StreamAt",
-      "kind" : "typeAlias",
-      "signatures" : [
-        {
-          "id" : "type-alias:scalive.StreamAt:2d5b8a9af585e8d9",
-          "signature" : "type StreamAt = streams.api.StreamAt"
-        }
-      ]
-    },
-    {
-      "id" : "type-alias:scalive.StreamLimit",
-      "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.StreamLimit",
-      "kind" : "typeAlias",
-      "signatures" : [
-        {
-          "id" : "type-alias:scalive.StreamLimit:544e486d79339cf0",
-          "signature" : "type StreamLimit = streams.api.StreamLimit"
-        }
-      ]
-    },
-    {
-      "id" : "type-alias:scalive.UploadClientMetadata",
-      "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.UploadClientMetadata",
-      "kind" : "typeAlias",
-      "signatures" : [
-        {
-          "id" : "type-alias:scalive.UploadClientMetadata:1f384bb21156e299",
-          "signature" : "type UploadClientMetadata = upload.api.UploadClientMetadata"
-        }
-      ]
-    },
-    {
-      "id" : "type-alias:scalive.UploadEntryRef",
-      "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.UploadEntryRef",
-      "kind" : "typeAlias",
-      "signatures" : [
-        {
-          "id" : "type-alias:scalive.UploadEntryRef:daeb660bf0636419",
-          "signature" : "type UploadEntryRef = upload.api.UploadEntryRef"
-        }
-      ]
-    },
-    {
-      "id" : "type-alias:scalive.UploadRef",
-      "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.UploadRef",
-      "kind" : "typeAlias",
-      "signatures" : [
-        {
-          "id" : "type-alias:scalive.UploadRef:226ee1cd5659ce28",
-          "signature" : "type UploadRef = upload.api.UploadRef"
-        }
-      ]
-    },
-    {
       "id" : "val:scalive.AppliedFormUpdate.form",
       "ownerId" : "class:scalive.AppliedFormUpdate",
       "qualifiedName" : "scalive.AppliedFormUpdate.form",
@@ -20009,6 +20333,54 @@
       ]
     },
     {
+      "id" : "val:scalive.CompletedUpload.client",
+      "ownerId" : "class:scalive.CompletedUpload",
+      "qualifiedName" : "scalive.CompletedUpload.client",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.CompletedUpload.client:b9ef24e9d522d654",
+          "signature" : "val client: UploadClientMetadata"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.CompletedUpload.metadata",
+      "ownerId" : "class:scalive.CompletedUpload",
+      "qualifiedName" : "scalive.CompletedUpload.metadata",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.CompletedUpload.metadata:98c5d1fd9393a402",
+          "signature" : "val metadata: zio.json.ast.Json.Obj"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.CompletedUpload.ref",
+      "ownerId" : "class:scalive.CompletedUpload",
+      "qualifiedName" : "scalive.CompletedUpload.ref",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.CompletedUpload.ref:a3a8437e96d7e64f",
+          "signature" : "val ref: UploadEntryRef"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.CompletedUpload.result",
+      "ownerId" : "class:scalive.CompletedUpload",
+      "qualifiedName" : "scalive.CompletedUpload.result",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.CompletedUpload.result:33e0a70a5d83890f",
+          "signature" : "val result: Result"
+        }
+      ]
+    },
+    {
       "id" : "val:scalive.ConnectedLifecycleContext.connectionId",
       "ownerId" : "class:scalive.ConnectedLifecycleContext",
       "qualifiedName" : "scalive.ConnectedLifecycleContext.connectionId",
@@ -20065,6 +20437,30 @@
         {
           "id" : "val:scalive.Connection.Disconnected:bfff23990cb1a4b2",
           "signature" : "val Disconnected: Connection[Nothing]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.ConsumeDecision.Consume.value",
+      "ownerId" : "enum:scalive.ConsumeDecision.Consume",
+      "qualifiedName" : "scalive.ConsumeDecision.Consume.value",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.ConsumeDecision.Consume.value:134666b0c6489619",
+          "signature" : "val value: A"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.ConsumeDecision.Postpone.value",
+      "ownerId" : "enum:scalive.ConsumeDecision.Postpone",
+      "qualifiedName" : "scalive.ConsumeDecision.Postpone.value",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.ConsumeDecision.Postpone.value:94d550d6294289f5",
+          "signature" : "val value: A"
         }
       ]
     },
@@ -20184,7 +20580,7 @@
       "signatures" : [
         {
           "id" : "val:scalive.DomSelector.current:004a889e78b54626",
-          "signature" : "val current: DomRef$package.DomSelector"
+          "signature" : "val current: DomSelector"
         }
       ]
     },
@@ -20209,6 +20605,18 @@
         {
           "id" : "val:scalive.ErrorVisibility.UsedOnly:882277dbec776e5b",
           "signature" : "val UsedOnly: ErrorVisibility"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.ExternalUploadClientConfig.json",
+      "ownerId" : "class:scalive.ExternalUploadClientConfig",
+      "qualifiedName" : "scalive.ExternalUploadClientConfig.json",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.ExternalUploadClientConfig.json:0ebd87758bd5e200",
+          "signature" : "val json: zio.json.ast.Json.Obj"
         }
       ]
     },
@@ -21252,7 +21660,7 @@
       "signatures" : [
         {
           "id" : "val:scalive.FormRevision.initial:95ed774338ef8f93",
-          "signature" : "val initial: FormWorkflow$package.FormRevision"
+          "signature" : "val initial: FormRevision"
         }
       ]
     },
@@ -21876,7 +22284,7 @@
       "signatures" : [
         {
           "id" : "val:scalive.Key.ArrowDown:16be4dc025fe4301",
-          "signature" : "val ArrowDown: Key$package.Key"
+          "signature" : "val ArrowDown: Key"
         }
       ]
     },
@@ -21888,7 +22296,7 @@
       "signatures" : [
         {
           "id" : "val:scalive.Key.ArrowLeft:2b50f5e82e5b56ba",
-          "signature" : "val ArrowLeft: Key$package.Key"
+          "signature" : "val ArrowLeft: Key"
         }
       ]
     },
@@ -21900,7 +22308,7 @@
       "signatures" : [
         {
           "id" : "val:scalive.Key.ArrowRight:77490c1a17477a8b",
-          "signature" : "val ArrowRight: Key$package.Key"
+          "signature" : "val ArrowRight: Key"
         }
       ]
     },
@@ -21912,7 +22320,7 @@
       "signatures" : [
         {
           "id" : "val:scalive.Key.ArrowUp:82c407e5ae7ec30c",
-          "signature" : "val ArrowUp: Key$package.Key"
+          "signature" : "val ArrowUp: Key"
         }
       ]
     },
@@ -21924,7 +22332,7 @@
       "signatures" : [
         {
           "id" : "val:scalive.Key.Enter:244c2d699d162b3b",
-          "signature" : "val Enter: Key$package.Key"
+          "signature" : "val Enter: Key"
         }
       ]
     },
@@ -21936,7 +22344,7 @@
       "signatures" : [
         {
           "id" : "val:scalive.Key.Escape:0c42aadad3f6cf27",
-          "signature" : "val Escape: Key$package.Key"
+          "signature" : "val Escape: Key"
         }
       ]
     },
@@ -21948,7 +22356,7 @@
       "signatures" : [
         {
           "id" : "val:scalive.Key.Space:df1cd41c4862bd0a",
-          "signature" : "val Space: Key$package.Key"
+          "signature" : "val Space: Key"
         }
       ]
     },
@@ -21960,7 +22368,7 @@
       "signatures" : [
         {
           "id" : "val:scalive.Key.Tab:e4fcd3913122fce8",
-          "signature" : "val Tab: Key$package.Key"
+          "signature" : "val Tab: Key"
         }
       ]
     },
@@ -23585,6 +23993,42 @@
       ]
     },
     {
+      "id" : "val:scalive.LiveExternalUploadResult.Error.meta",
+      "ownerId" : "enum:scalive.LiveExternalUploadResult.Error",
+      "qualifiedName" : "scalive.LiveExternalUploadResult.Error.meta",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveExternalUploadResult.Error.meta:bfaf0129b666e0bd",
+          "signature" : "val meta: zio.json.ast.Json.Obj"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveExternalUploadResult.Ready.clientConfig",
+      "ownerId" : "enum:scalive.LiveExternalUploadResult.Ready",
+      "qualifiedName" : "scalive.LiveExternalUploadResult.Ready.clientConfig",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveExternalUploadResult.Ready.clientConfig:c8dadc705c464c3c",
+          "signature" : "val clientConfig: ExternalUploadClientConfig"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveExternalUploadResult.Ready.result",
+      "ownerId" : "enum:scalive.LiveExternalUploadResult.Ready",
+      "qualifiedName" : "scalive.LiveExternalUploadResult.Ready.result",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveExternalUploadResult.Ready.result:c2fd64ce57cee9e1",
+          "signature" : "val result: Result"
+        }
+      ]
+    },
+    {
       "id" : "val:scalive.LiveHookResult.Continue.model",
       "ownerId" : "enum:scalive.LiveHookResult.Continue",
       "qualifiedName" : "scalive.LiveHookResult.Continue.model",
@@ -24085,6 +24529,594 @@
         {
           "id" : "val:scalive.LiveSessionMountRequest.request:cd3737f9089832e4",
           "signature" : "val request: zio.http.Request"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveStreamDef.domId",
+      "ownerId" : "class:scalive.LiveStreamDef",
+      "qualifiedName" : "scalive.LiveStreamDef.domId",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveStreamDef.domId:50474be4f91a6260",
+          "signature" : "val domId: Id => String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveStreamDef.id",
+      "ownerId" : "class:scalive.LiveStreamDef",
+      "qualifiedName" : "scalive.LiveStreamDef.id",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveStreamDef.id:a19a7cbcc05daf08",
+          "signature" : "val id: A => Id"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveStreamDef.limit",
+      "ownerId" : "class:scalive.LiveStreamDef",
+      "qualifiedName" : "scalive.LiveStreamDef.limit",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveStreamDef.limit:e9abedc59e63e6d8",
+          "signature" : "val limit: Option[StreamLimit]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveStreamDef.name",
+      "ownerId" : "class:scalive.LiveStreamDef",
+      "qualifiedName" : "scalive.LiveStreamDef.name",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveStreamDef.name:81da2bb6fc574443",
+          "signature" : "val name: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveUpload.definition",
+      "ownerId" : "class:scalive.LiveUpload",
+      "qualifiedName" : "scalive.LiveUpload.definition",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveUpload.definition:47fe3fd15a1d9003",
+          "signature" : "val definition: LiveUploadDef[Result]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveUpload.entries",
+      "ownerId" : "class:scalive.LiveUpload",
+      "qualifiedName" : "scalive.LiveUpload.entries",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveUpload.entries:f65cc3f2817570df",
+          "signature" : "val entries: List[LiveUploadEntry[Result]]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveUpload.errors",
+      "ownerId" : "class:scalive.LiveUpload",
+      "qualifiedName" : "scalive.LiveUpload.errors",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveUpload.errors:9e3e2094a9957fc9",
+          "signature" : "val errors: List[LiveUploadError]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveUpload.ref",
+      "ownerId" : "class:scalive.LiveUpload",
+      "qualifiedName" : "scalive.LiveUpload.ref",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveUpload.ref:bb2784cf30b6216d",
+          "signature" : "val ref: UploadRef"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveUploadAbortReason.Cancelled",
+      "ownerId" : "enum:scalive.LiveUploadAbortReason",
+      "qualifiedName" : "scalive.LiveUploadAbortReason.Cancelled",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveUploadAbortReason.Cancelled:cf6b1333b6848c25",
+          "signature" : "val Cancelled: LiveUploadAbortReason"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveUploadAbortReason.ComponentRemoved",
+      "ownerId" : "enum:scalive.LiveUploadAbortReason",
+      "qualifiedName" : "scalive.LiveUploadAbortReason.ComponentRemoved",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveUploadAbortReason.ComponentRemoved:3f3f92f070924de5",
+          "signature" : "val ComponentRemoved: LiveUploadAbortReason"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveUploadAbortReason.Disallowed",
+      "ownerId" : "enum:scalive.LiveUploadAbortReason",
+      "qualifiedName" : "scalive.LiveUploadAbortReason.Disallowed",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveUploadAbortReason.Disallowed:71dd3c85beacd4c3",
+          "signature" : "val Disallowed: LiveUploadAbortReason"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveUploadAbortReason.Failed.reason",
+      "ownerId" : "enum:scalive.LiveUploadAbortReason.Failed",
+      "qualifiedName" : "scalive.LiveUploadAbortReason.Failed.reason",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveUploadAbortReason.Failed.reason:e19c9f8bccc2ebfe",
+          "signature" : "val reason: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveUploadAbortReason.SocketShutdown",
+      "ownerId" : "enum:scalive.LiveUploadAbortReason",
+      "qualifiedName" : "scalive.LiveUploadAbortReason.SocketShutdown",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveUploadAbortReason.SocketShutdown:c8deea7460ae661f",
+          "signature" : "val SocketShutdown: LiveUploadAbortReason"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveUploadDef.accept",
+      "ownerId" : "class:scalive.LiveUploadDef",
+      "qualifiedName" : "scalive.LiveUploadDef.accept",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveUploadDef.accept:f6fdc1cba1fd6489",
+          "signature" : "val accept: LiveUploadAccept"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveUploadDef.autoUpload",
+      "ownerId" : "class:scalive.LiveUploadDef",
+      "qualifiedName" : "scalive.LiveUploadDef.autoUpload",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveUploadDef.autoUpload:36d655137516c488",
+          "signature" : "val autoUpload: Boolean"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveUploadDef.chunkSize",
+      "ownerId" : "class:scalive.LiveUploadDef",
+      "qualifiedName" : "scalive.LiveUploadDef.chunkSize",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveUploadDef.chunkSize:07550b2e2eedfd07",
+          "signature" : "val chunkSize: Int"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveUploadDef.chunkTimeout",
+      "ownerId" : "class:scalive.LiveUploadDef",
+      "qualifiedName" : "scalive.LiveUploadDef.chunkTimeout",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveUploadDef.chunkTimeout:25c02506c445e46d",
+          "signature" : "val chunkTimeout: zio.package.Duration"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveUploadDef.maxEntries",
+      "ownerId" : "class:scalive.LiveUploadDef",
+      "qualifiedName" : "scalive.LiveUploadDef.maxEntries",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveUploadDef.maxEntries:adc954ebe3f11c7b",
+          "signature" : "val maxEntries: Int"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveUploadDef.maxEntriesMode",
+      "ownerId" : "class:scalive.LiveUploadDef",
+      "qualifiedName" : "scalive.LiveUploadDef.maxEntriesMode",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveUploadDef.maxEntriesMode:cb0c7559cd738abc",
+          "signature" : "val maxEntriesMode: LiveUploadMaxEntriesMode"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveUploadDef.maxFileSize",
+      "ownerId" : "class:scalive.LiveUploadDef",
+      "qualifiedName" : "scalive.LiveUploadDef.maxFileSize",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveUploadDef.maxFileSize:b1f340c2300ba5c3",
+          "signature" : "val maxFileSize: Long"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveUploadDef.name",
+      "ownerId" : "class:scalive.LiveUploadDef",
+      "qualifiedName" : "scalive.LiveUploadDef.name",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveUploadDef.name:81da2bb6fc574443",
+          "signature" : "val name: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveUploadDef.progress",
+      "ownerId" : "class:scalive.LiveUploadDef",
+      "qualifiedName" : "scalive.LiveUploadDef.progress",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveUploadDef.progress:1fbdc60562a8edac",
+          "signature" : "val progress: Option[LiveUploadProgress[Result]]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveUploadDef.validator",
+      "ownerId" : "class:scalive.LiveUploadDef",
+      "qualifiedName" : "scalive.LiveUploadDef.validator",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveUploadDef.validator:a07d812aac9df268",
+          "signature" : "val validator: Option[UploadClientMetadata => Option[String]]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveUploadEntry.client",
+      "ownerId" : "class:scalive.LiveUploadEntry",
+      "qualifiedName" : "scalive.LiveUploadEntry.client",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveUploadEntry.client:b9ef24e9d522d654",
+          "signature" : "val client: UploadClientMetadata"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveUploadEntry.metadata",
+      "ownerId" : "class:scalive.LiveUploadEntry",
+      "qualifiedName" : "scalive.LiveUploadEntry.metadata",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveUploadEntry.metadata:73558a9422568d5d",
+          "signature" : "val metadata: Option[zio.json.ast.Json.Obj]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveUploadEntry.ref",
+      "ownerId" : "class:scalive.LiveUploadEntry",
+      "qualifiedName" : "scalive.LiveUploadEntry.ref",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveUploadEntry.ref:a3a8437e96d7e64f",
+          "signature" : "val ref: UploadEntryRef"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveUploadEntry.status",
+      "ownerId" : "class:scalive.LiveUploadEntry",
+      "qualifiedName" : "scalive.LiveUploadEntry.status",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveUploadEntry.status:fb057909cf8405c8",
+          "signature" : "val status: LiveUploadEntryStatus"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveUploadEntryStatus.Completed",
+      "ownerId" : "enum:scalive.LiveUploadEntryStatus",
+      "qualifiedName" : "scalive.LiveUploadEntryStatus.Completed",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveUploadEntryStatus.Completed:2e8be1a08c0d2f16",
+          "signature" : "val Completed: LiveUploadEntryStatus"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveUploadEntryStatus.Invalid.errors",
+      "ownerId" : "enum:scalive.LiveUploadEntryStatus.Invalid",
+      "qualifiedName" : "scalive.LiveUploadEntryStatus.Invalid.errors",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveUploadEntryStatus.Invalid.errors:9e3e2094a9957fc9",
+          "signature" : "val errors: List[LiveUploadError]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveUploadEntryStatus.Preflighted",
+      "ownerId" : "enum:scalive.LiveUploadEntryStatus",
+      "qualifiedName" : "scalive.LiveUploadEntryStatus.Preflighted",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveUploadEntryStatus.Preflighted:0c374293340ddaeb",
+          "signature" : "val Preflighted: LiveUploadEntryStatus"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveUploadEntryStatus.Selected",
+      "ownerId" : "enum:scalive.LiveUploadEntryStatus",
+      "qualifiedName" : "scalive.LiveUploadEntryStatus.Selected",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveUploadEntryStatus.Selected:3af0aabdc2b59c50",
+          "signature" : "val Selected: LiveUploadEntryStatus"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveUploadEntryStatus.Uploading.progress",
+      "ownerId" : "enum:scalive.LiveUploadEntryStatus.Uploading",
+      "qualifiedName" : "scalive.LiveUploadEntryStatus.Uploading.progress",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveUploadEntryStatus.Uploading.progress:5e2be7472a0e4c98",
+          "signature" : "val progress: Int"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveUploadError.Custom.reason",
+      "ownerId" : "enum:scalive.LiveUploadError.Custom",
+      "qualifiedName" : "scalive.LiveUploadError.Custom.reason",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveUploadError.Custom.reason:e19c9f8bccc2ebfe",
+          "signature" : "val reason: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveUploadError.External.meta",
+      "ownerId" : "enum:scalive.LiveUploadError.External",
+      "qualifiedName" : "scalive.LiveUploadError.External.meta",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveUploadError.External.meta:bfaf0129b666e0bd",
+          "signature" : "val meta: zio.json.ast.Json.Obj"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveUploadError.ExternalClientFailure",
+      "ownerId" : "enum:scalive.LiveUploadError",
+      "qualifiedName" : "scalive.LiveUploadError.ExternalClientFailure",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveUploadError.ExternalClientFailure:f4da22b5b4d4c82f",
+          "signature" : "val ExternalClientFailure: LiveUploadError"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveUploadError.NotAccepted",
+      "ownerId" : "enum:scalive.LiveUploadError",
+      "qualifiedName" : "scalive.LiveUploadError.NotAccepted",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveUploadError.NotAccepted:42941f86729c3f18",
+          "signature" : "val NotAccepted: LiveUploadError"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveUploadError.TooLarge",
+      "ownerId" : "enum:scalive.LiveUploadError",
+      "qualifiedName" : "scalive.LiveUploadError.TooLarge",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveUploadError.TooLarge:5a8e797ff26f0ac3",
+          "signature" : "val TooLarge: LiveUploadError"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveUploadError.TooManyFiles",
+      "ownerId" : "enum:scalive.LiveUploadError",
+      "qualifiedName" : "scalive.LiveUploadError.TooManyFiles",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveUploadError.TooManyFiles:7e11baaec2198928",
+          "signature" : "val TooManyFiles: LiveUploadError"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveUploadError.Unknown.code",
+      "ownerId" : "enum:scalive.LiveUploadError.Unknown",
+      "qualifiedName" : "scalive.LiveUploadError.Unknown.code",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveUploadError.Unknown.code:c90a16a2a19cf004",
+          "signature" : "val code: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveUploadError.WriterFailure.reason",
+      "ownerId" : "enum:scalive.LiveUploadError.WriterFailure",
+      "qualifiedName" : "scalive.LiveUploadError.WriterFailure.reason",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveUploadError.WriterFailure.reason:e19c9f8bccc2ebfe",
+          "signature" : "val reason: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveUploadMaxEntriesMode.Selected",
+      "ownerId" : "enum:scalive.LiveUploadMaxEntriesMode",
+      "qualifiedName" : "scalive.LiveUploadMaxEntriesMode.Selected",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveUploadMaxEntriesMode.Selected:8d2516269adbad50",
+          "signature" : "val Selected: LiveUploadMaxEntriesMode"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveUploadMaxEntriesMode.Total",
+      "ownerId" : "enum:scalive.LiveUploadMaxEntriesMode",
+      "qualifiedName" : "scalive.LiveUploadMaxEntriesMode.Total",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveUploadMaxEntriesMode.Total:fe59e80a00ac8e8d",
+          "signature" : "val Total: LiveUploadMaxEntriesMode"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveUploadOperationError.ActiveEntries.name",
+      "ownerId" : "class:scalive.LiveUploadOperationError.ActiveEntries",
+      "qualifiedName" : "scalive.LiveUploadOperationError.ActiveEntries.name",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveUploadOperationError.ActiveEntries.name:81da2bb6fc574443",
+          "signature" : "val name: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveUploadOperationError.DefinitionMismatch.name",
+      "ownerId" : "class:scalive.LiveUploadOperationError.DefinitionMismatch",
+      "qualifiedName" : "scalive.LiveUploadOperationError.DefinitionMismatch.name",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveUploadOperationError.DefinitionMismatch.name:81da2bb6fc574443",
+          "signature" : "val name: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveUploadOperationError.EntriesInProgress.name",
+      "ownerId" : "class:scalive.LiveUploadOperationError.EntriesInProgress",
+      "qualifiedName" : "scalive.LiveUploadOperationError.EntriesInProgress.name",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveUploadOperationError.EntriesInProgress.name:81da2bb6fc574443",
+          "signature" : "val name: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveUploadOperationError.EntryNotActive.ref",
+      "ownerId" : "class:scalive.LiveUploadOperationError.EntryNotActive",
+      "qualifiedName" : "scalive.LiveUploadOperationError.EntryNotActive.ref",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveUploadOperationError.EntryNotActive.ref:a3a8437e96d7e64f",
+          "signature" : "val ref: UploadEntryRef"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveUploadOperationError.EntryNotCompleted.ref",
+      "ownerId" : "class:scalive.LiveUploadOperationError.EntryNotCompleted",
+      "qualifiedName" : "scalive.LiveUploadOperationError.EntryNotCompleted.ref",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveUploadOperationError.EntryNotCompleted.ref:a3a8437e96d7e64f",
+          "signature" : "val ref: UploadEntryRef"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveUploadOperationError.NotAllowed.name",
+      "ownerId" : "class:scalive.LiveUploadOperationError.NotAllowed",
+      "qualifiedName" : "scalive.LiveUploadOperationError.NotAllowed.name",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveUploadOperationError.NotAllowed.name:81da2bb6fc574443",
+          "signature" : "val name: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveUploadWriterError.reason",
+      "ownerId" : "class:scalive.LiveUploadWriterError",
+      "qualifiedName" : "scalive.LiveUploadWriterError.reason",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveUploadWriterError.reason:e19c9f8bccc2ebfe",
+          "signature" : "val reason: String"
         }
       ]
     },
@@ -24773,6 +25805,186 @@
       ]
     },
     {
+      "id" : "val:scalive.StaticHtmlError.DuplicateBinding.id",
+      "ownerId" : "class:scalive.StaticHtmlError.DuplicateBinding",
+      "qualifiedName" : "scalive.StaticHtmlError.DuplicateBinding.id",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.StaticHtmlError.DuplicateBinding.id:a6f35d9c400acb9a",
+          "signature" : "val id: render.BindingId"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.StaticHtmlError.DuplicateKey.key",
+      "ownerId" : "class:scalive.StaticHtmlError.DuplicateKey",
+      "qualifiedName" : "scalive.StaticHtmlError.DuplicateKey.key",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.StaticHtmlError.DuplicateKey.key:d686a3c253e5fe75",
+          "signature" : "val key: Any"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.StaticHtmlError.DuplicateStreamDomId.domId",
+      "ownerId" : "class:scalive.StaticHtmlError.DuplicateStreamDomId",
+      "qualifiedName" : "scalive.StaticHtmlError.DuplicateStreamDomId.domId",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.StaticHtmlError.DuplicateStreamDomId.domId:aa7da6c7d12f5771",
+          "signature" : "val domId: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.StaticHtmlError.EvaluationFailed.error",
+      "ownerId" : "class:scalive.StaticHtmlError.EvaluationFailed",
+      "qualifiedName" : "scalive.StaticHtmlError.EvaluationFailed.error",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.StaticHtmlError.EvaluationFailed.error:52ea1b90b61ce86f",
+          "signature" : "val error: Throwable"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.StaticHtmlError.IdentityExhausted.kind",
+      "ownerId" : "class:scalive.StaticHtmlError.IdentityExhausted",
+      "qualifiedName" : "scalive.StaticHtmlError.IdentityExhausted.kind",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.StaticHtmlError.IdentityExhausted.kind:71a747d2600f7ae5",
+          "signature" : "val kind: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.StaticHtmlError.InvalidHtml.message",
+      "ownerId" : "class:scalive.StaticHtmlError.InvalidHtml",
+      "qualifiedName" : "scalive.StaticHtmlError.InvalidHtml.message",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.StaticHtmlError.InvalidHtml.message:cf8fb61777aa1331",
+          "signature" : "val message: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.StaticHtmlError.SignalScopeViolation.message",
+      "ownerId" : "class:scalive.StaticHtmlError.SignalScopeViolation",
+      "qualifiedName" : "scalive.StaticHtmlError.SignalScopeViolation.message",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.StaticHtmlError.SignalScopeViolation.message:cf8fb61777aa1331",
+          "signature" : "val message: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.StaticHtmlError.UnresolvedComponents.locations",
+      "ownerId" : "class:scalive.StaticHtmlError.UnresolvedComponents",
+      "qualifiedName" : "scalive.StaticHtmlError.UnresolvedComponents.locations",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.StaticHtmlError.UnresolvedComponents.locations:679c4bde357fe660",
+          "signature" : "val locations: Vector[render.TemplateId]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.StaticHtmlError.UnresolvedNested.locations",
+      "ownerId" : "class:scalive.StaticHtmlError.UnresolvedNested",
+      "qualifiedName" : "scalive.StaticHtmlError.UnresolvedNested.locations",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.StaticHtmlError.UnresolvedNested.locations:679c4bde357fe660",
+          "signature" : "val locations: Vector[render.TemplateId]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.StaticHtmlError.Unsupported.feature",
+      "ownerId" : "class:scalive.StaticHtmlError.Unsupported",
+      "qualifiedName" : "scalive.StaticHtmlError.Unsupported.feature",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.StaticHtmlError.Unsupported.feature:810556020861ab9f",
+          "signature" : "val feature: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.StreamAt.First",
+      "ownerId" : "enum:scalive.StreamAt",
+      "qualifiedName" : "scalive.StreamAt.First",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.StreamAt.First:7087bd15b046a848",
+          "signature" : "val First: StreamAt"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.StreamAt.Index.value",
+      "ownerId" : "enum:scalive.StreamAt.Index",
+      "qualifiedName" : "scalive.StreamAt.Index.value",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.StreamAt.Index.value:473b0b404f2e6009",
+          "signature" : "val value: Int"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.StreamAt.Last",
+      "ownerId" : "enum:scalive.StreamAt",
+      "qualifiedName" : "scalive.StreamAt.Last",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.StreamAt.Last:49523d52aa746a51",
+          "signature" : "val Last: StreamAt"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.StreamLimit.KeepFirst.count",
+      "ownerId" : "enum:scalive.StreamLimit.KeepFirst",
+      "qualifiedName" : "scalive.StreamLimit.KeepFirst.count",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.StreamLimit.KeepFirst.count:95230e3d104377d1",
+          "signature" : "val count: Int"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.StreamLimit.KeepLast.count",
+      "ownerId" : "enum:scalive.StreamLimit.KeepLast",
+      "qualifiedName" : "scalive.StreamLimit.KeepLast.count",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.StreamLimit.KeepLast.count:95230e3d104377d1",
+          "signature" : "val count: Int"
+        }
+      ]
+    },
+    {
       "id" : "val:scalive.SubscriptionDelivery.Latest",
       "ownerId" : "enum:scalive.SubscriptionDelivery",
       "qualifiedName" : "scalive.SubscriptionDelivery.Latest",
@@ -24793,6 +26005,78 @@
         {
           "id" : "val:scalive.SubscriptionDelivery.Lossless:a25cd7e31f1df012",
           "signature" : "val Lossless: SubscriptionDelivery"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.UploadClientMetadata.fileName",
+      "ownerId" : "class:scalive.UploadClientMetadata",
+      "qualifiedName" : "scalive.UploadClientMetadata.fileName",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.UploadClientMetadata.fileName:e7b60a918576be5f",
+          "signature" : "val fileName: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.UploadClientMetadata.lastModifiedMillis",
+      "ownerId" : "class:scalive.UploadClientMetadata",
+      "qualifiedName" : "scalive.UploadClientMetadata.lastModifiedMillis",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.UploadClientMetadata.lastModifiedMillis:ddcdc4a84732f500",
+          "signature" : "val lastModifiedMillis: Option[Long]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.UploadClientMetadata.mediaType",
+      "ownerId" : "class:scalive.UploadClientMetadata",
+      "qualifiedName" : "scalive.UploadClientMetadata.mediaType",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.UploadClientMetadata.mediaType:1a4f70167f723924",
+          "signature" : "val mediaType: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.UploadClientMetadata.metadata",
+      "ownerId" : "class:scalive.UploadClientMetadata",
+      "qualifiedName" : "scalive.UploadClientMetadata.metadata",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.UploadClientMetadata.metadata:a7acf3f68a98d765",
+          "signature" : "val metadata: Option[zio.json.ast.Json]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.UploadClientMetadata.relativePath",
+      "ownerId" : "class:scalive.UploadClientMetadata",
+      "qualifiedName" : "scalive.UploadClientMetadata.relativePath",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.UploadClientMetadata.relativePath:21ff5cf6fad40e95",
+          "signature" : "val relativePath: Option[String]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.UploadClientMetadata.sizeBytes",
+      "ownerId" : "class:scalive.UploadClientMetadata",
+      "qualifiedName" : "scalive.UploadClientMetadata.sizeBytes",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.UploadClientMetadata.sizeBytes:cbf1b72cbba2bdbe",
+          "signature" : "val sizeBytes: Long"
         }
       ]
     },

@@ -45,11 +45,15 @@ final class FormAddress[Owner] private[scalive] (
 
   override def hashCode(): Int = segments.hashCode()
 
+  /** Renders the address for diagnostics, as in `profile/addresses/{home}/city`: names as-is and
+    * row keys in braces.
+    */
   override def toString: String = segments
     .map {
       case FormAddressSegment.Name(value) => value
       case FormAddressSegment.Row(key)    => s"{$key}"
     }.mkString("/")
+end FormAddress
 
 /** Constructors for owner-scoped logical field and row addresses. */
 object FormAddress:

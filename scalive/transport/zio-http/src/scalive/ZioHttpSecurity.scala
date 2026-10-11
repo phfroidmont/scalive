@@ -52,6 +52,7 @@ final class ZioHttpConfig private (
     result = 31 * result + java.lang.Boolean.hashCode(secureCookie)
     31 * result + allowedWebSocketOrigins.hashCode()
 
+  /** Describes the configuration with the signing secret redacted, so it is safe to log. */
   override def toString: String =
     s"ZioHttpConfig(signingSecret=<redacted>, sessionMaxAge=$sessionMaxAge, secureCookie=$secureCookie, allowedWebSocketOrigins=$allowedWebSocketOrigins)"
 

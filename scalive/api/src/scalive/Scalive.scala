@@ -672,10 +672,10 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
   /** Bindings and helpers that follow the LiveView's connection to the server. */
   object connection:
     /** Runs a `JS` command each time the LiveView joins, including after a reconnect. */
-    lazy val onConnect = HtmlAttrBinding("phx-connected")
+    lazy val onConnect = JSCommandBinding("phx-connected")
 
     /** Runs a `JS` command shortly after the LiveView loses its connection. */
-    lazy val onDisconnect = HtmlAttrBinding("phx-disconnected")
+    lazy val onDisconnect = JSCommandBinding("phx-disconnected")
 
     /** Shows the element only while the LiveView is connected. */
     lazy val visibleWhenConnected: Vector[Mod[Nothing]] = Vector(
@@ -702,12 +702,12 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
       * It runs once per element, when the LiveView connects or when a patch adds the element. Use
       * `JS.push` inside the command to send a message.
       */
-    lazy val onMount = HtmlAttrBinding("phx-mounted")
+    lazy val onMount = JSCommandBinding("phx-mounted")
 
     /** Runs a `JS` command when a patch removes the element (`phx-remove`), as for an exit
       * transition.
       */
-    lazy val onRemove = HtmlAttrBinding("phx-remove")
+    lazy val onRemove = JSCommandBinding("phx-remove")
 
     /** Attaches the client hook registered as `name` to the element, with the `id` a hook requires.
       *

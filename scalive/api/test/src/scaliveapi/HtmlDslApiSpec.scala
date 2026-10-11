@@ -80,6 +80,37 @@ object HtmlDslApiSpec extends ZIOSpecDefault:
 
       assertTrue(errors.isEmpty)
     },
+    test("client lifecycle bindings accept only JS commands") {
+      // The Phoenix client runs only JS commands for these attributes; a message would render as a
+      // bare binding ID, which `JS.exec` cannot run.
+      val messageErrors = Vector(
+        scala.compiletime.testing.typeCheckErrors("""
+          import scalive.*
+          val binding = dom.onMount("mounted")
+        """),
+        scala.compiletime.testing.typeCheckErrors("""
+          import scalive.*
+          val binding = dom.onRemove("removed")
+        """),
+        scala.compiletime.testing.typeCheckErrors("""
+          import scalive.*
+          val binding = connection.onConnect("connected")
+        """),
+        scala.compiletime.testing.typeCheckErrors("""
+          import scalive.*
+          val binding = connection.onDisconnect("disconnected")
+        """)
+      )
+      val commandErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        val mounted: Mod.Attr[String] = dom.onMount(JS.push("mounted"))
+        val removed: Mod.Attr[Nothing] = dom.onRemove(JS.hide())
+        val connected: Mod.Attr[Nothing] = connection.onConnect(JS.removeClass("offline"))
+        val disconnected: Mod.Attr[Nothing] = connection.onDisconnect(JS.addClass("offline"))
+      """)
+
+      assertTrue(messageErrors.forall(_.nonEmpty), commandErrors.isEmpty)
+    },
     test("event binding builders cannot be publicly constructed") {
       val bindingConstructorErrors = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*

@@ -566,6 +566,18 @@
       ]
     },
     {
+      "id" : "class:scalive.JSCommandBinding",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.JSCommandBinding",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.JSCommandBinding:8050313018e231cb",
+          "signature" : "class JSCommandBinding"
+        }
+      ]
+    },
+    {
       "id" : "class:scalive.KeyHtmlAttrBinding",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.KeyHtmlAttrBinding",
@@ -5402,6 +5414,22 @@
         {
           "id" : "def:scalive.HttpFormDecoder.urlEncodedValue:ce928956f58e0c70",
           "signature" : "def urlEncodedValue[Owner, Domain](definition: FormDefinition[Owner, Domain], maxBytes: Long, csrf: CsrfProtection): HttpFormDecoder[Domain]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.JSCommandBinding.apply",
+      "ownerId" : "class:scalive.JSCommandBinding",
+      "qualifiedName" : "scalive.JSCommandBinding.apply",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.JSCommandBinding.apply:2fa93cc721ccfbbd",
+          "signature" : "def apply[Msg](command: Signal[JSCommands.JSCommand[Msg]]): Mod.Attr[Msg]"
+        },
+        {
+          "id" : "def:scalive.JSCommandBinding.apply:57b6b365cf93a121",
+          "signature" : "def apply[Msg](command: JSCommands.JSCommand[Msg]): Mod.Attr[Msg]"
         }
       ]
     },
@@ -14748,8 +14776,8 @@
       "kind" : "lazyVal",
       "signatures" : [
         {
-          "id" : "lazy-val:scalive.connection.onConnect:8ecf32b86fb98c5c",
-          "signature" : "lazy val onConnect: HtmlAttrBinding"
+          "id" : "lazy-val:scalive.connection.onConnect:c6f368c59878b983",
+          "signature" : "lazy val onConnect: JSCommandBinding"
         }
       ]
     },
@@ -14760,8 +14788,8 @@
       "kind" : "lazyVal",
       "signatures" : [
         {
-          "id" : "lazy-val:scalive.connection.onDisconnect:45c7076818c0c9ef",
-          "signature" : "lazy val onDisconnect: HtmlAttrBinding"
+          "id" : "lazy-val:scalive.connection.onDisconnect:afac08b765a940fa",
+          "signature" : "lazy val onDisconnect: JSCommandBinding"
         }
       ]
     },
@@ -14988,8 +15016,8 @@
       "kind" : "lazyVal",
       "signatures" : [
         {
-          "id" : "lazy-val:scalive.dom.onMount:b9ebd0d8cf74c606",
-          "signature" : "lazy val onMount: HtmlAttrBinding"
+          "id" : "lazy-val:scalive.dom.onMount:ed3b76eb4f7397fe",
+          "signature" : "lazy val onMount: JSCommandBinding"
         }
       ]
     },
@@ -15000,8 +15028,8 @@
       "kind" : "lazyVal",
       "signatures" : [
         {
-          "id" : "lazy-val:scalive.dom.onRemove:9c968373992aa6b2",
-          "signature" : "lazy val onRemove: HtmlAttrBinding"
+          "id" : "lazy-val:scalive.dom.onRemove:be39bbb91c13e251",
+          "signature" : "lazy val onRemove: JSCommandBinding"
         }
       ]
     },
@@ -22057,6 +22085,18 @@
         {
           "id" : "val:scalive.JS:7162a30250adb52f",
           "signature" : "val JS: JSCommands.JSCommand[Nothing]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.JSCommandBinding.name",
+      "ownerId" : "class:scalive.JSCommandBinding",
+      "qualifiedName" : "scalive.JSCommandBinding.name",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.JSCommandBinding.name:81da2bb6fc574443",
+          "signature" : "val name: String"
         }
       ]
     },

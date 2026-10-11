@@ -190,9 +190,9 @@ end BindingPayload
 
 /** Builder for typed server events and declarative browser commands.
   *
-  * Obtain bindings from `on`, `connection`, `dom`, or the relevant feature helper. Configure rate
-  * limits first, then complete the binding with a message, as in
-  * `on.keyUp.debounce(300.millis).withValue(Msg.Search(_))`. See [event
+  * Obtain bindings from `on` or the relevant feature helper; `dom` and `connection` provide
+  * [[JSCommandBinding]]s instead. Configure rate limits first, then complete the binding with a
+  * message, as in `on.keyUp.debounce(300.millis).withValue(Msg.Search(_))`. See [event
   * bindings](https://scalive.dev/guides/html-dsl-and-event-bindings#choose-a-binding).
   *
   * @param name
@@ -434,6 +434,30 @@ final class KeyHtmlAttrBinding private[scalive] (
     */
   def key(value: Key): KeyHtmlAttrBinding = append(Mod.Attr.Static("phx-key", value.value))
 end KeyHtmlAttrBinding
+
+/** Builder for a client lifecycle attribute, such as `phx-mounted`, which runs a `JS` command.
+  *
+  * The Phoenix client runs only `JS` commands for these attributes, so the builder accepts nothing
+  * else. To send a message, push it from the command, as in `dom.onMount(JS.push(Msg.Shown))`.
+  * Obtain one from `dom` or `connection`.
+  *
+  * @param name
+  *   The `phx-*` attribute that the binding renders, such as `phx-mounted`.
+  */
+final class JSCommandBinding private[scalive] (val name: String):
+  /** Runs `command` when the lifecycle point occurs.
+    *
+    * This form runs a constant command.
+    */
+  def apply[Msg](command: JSCommand[Msg]): Mod.Attr[Msg] = Mod.Attr.JsBinding(name, command)
+
+  /** Runs `command` when the lifecycle point occurs.
+    *
+    * This form runs the command that the signal currently holds.
+    */
+  @targetName("applySignalCommand")
+  def apply[Msg](command: Signal[JSCommand[Msg]]): Mod.Attr[Msg] =
+    Mod.Attr.SignalJsBinding(name, command)
 
 /** A typed declarative HTML modifier. */
 sealed trait Mod[+Msg]

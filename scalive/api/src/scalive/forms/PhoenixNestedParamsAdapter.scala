@@ -466,7 +466,7 @@ object PhoenixNestedParamsAdapter:
     controlPath(path, suffix).name
 
   private def validIndex(value: String): Boolean =
-    value.nonEmpty && value.length <= 16 && value.forall(_.isDigit)
+    value.nonEmpty && value.length <= 16 && value.forall(char => char >= '0' && char <= '9')
 
   private def compatibilityKey(ordinal: Int, unavailable: Set[String]): String =
     var candidateOrdinal = ordinal

@@ -151,6 +151,14 @@ object PhoenixNestedParamsAdapterSpec extends ZIOSpecDefault:
         dropErrors("0", "1").nonEmpty
       )
     },
+    test("accepts only ASCII digits as Phoenix row indexes") {
+      val event = Adapter.event(
+        FormData(Vector("basket[items][\u0663][_persistent_id]" -> "key_a")),
+        FormEventKind.Changed
+      )
+
+      assertTrue(event.errors.all.exists(_.code.contains("invalid_phoenix_index")))
+    },
     test("row controls accept only rows of the adapter's definition") {
       val errors = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*

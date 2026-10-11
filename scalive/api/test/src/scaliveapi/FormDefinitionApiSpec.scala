@@ -432,6 +432,15 @@ object FormDefinitionApiSpec extends ZIOSpecDefault:
         event.form.valueOption.isEmpty
       )
     },
+    test("row keys use an ASCII letter, digit, underscore, and hyphen grammar") {
+      val accepted = FormRowKey.from[Unit]("Row_42-a")
+      val rejected = Vector("é", "名", "٣", "a b").map(FormRowKey.from[Unit](_))
+
+      assertTrue(
+        accepted.map(_.value) == Right("Row_42-a"),
+        rejected.forall(_.left.exists(_.isInstanceOf[FormRowKey.Error.InvalidCharacter]))
+      )
+    },
     test("rejects invalid row structure, duplicate schema paths, and reserved names") {
       val invalidRows = ApplicationDefinition.event(
         FormData(

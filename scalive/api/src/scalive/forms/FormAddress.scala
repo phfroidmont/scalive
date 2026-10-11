@@ -116,7 +116,7 @@ object FormRowKey:
       */
     case TooLong(maxLength: Int)
 
-    /** The string contains a character other than a letter, digit, underscore, or hyphen.
+    /** The string contains a character other than an ASCII letter, digit, underscore, or hyphen.
       *
       * @param offset
       *   The index of the first invalid character, in UTF-16 code units.
@@ -129,14 +129,19 @@ object FormRowKey:
       case TooLong(_)          => "row_key_too_long"
       case InvalidCharacter(_) => "invalid_row_key_character"
 
-  /** Validates an external key using the bounded alphanumeric, underscore, and hyphen grammar. */
+  /** Validates an external key: 1 to [[MaxLength]] ASCII letters, digits, underscores, or hyphens.
+    */
   def from[Group](value: String): Either[Error, FormRowKey[Group]] =
     if value == null || value.isEmpty then Left(Error.Empty)
     else if value.length > MaxLength then Left(Error.TooLong(MaxLength))
     else
-      value.indexWhere(char => !char.isLetterOrDigit && char != '_' && char != '-') match
+      value.indexWhere(char => !allowed(char)) match
         case -1     => Right(value)
         case offset => Left(Error.InvalidCharacter(offset))
+
+  private def allowed(char: Char): Boolean =
+    (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || (char >= '0' && char <= '9') ||
+      char == '_' || char == '-'
 
   /** Allocates a UUID-based key suitable for a new client-side row. */
   def random[Group]: UIO[FormRowKey[Group]] =

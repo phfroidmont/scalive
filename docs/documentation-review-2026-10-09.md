@@ -586,6 +586,11 @@ Found while writing, not fixed:
 - Fixed: `RenderError.Unsupported` said the feature "is not supported by the
   minimal render engine", an engine that does not exist. It now says the
   feature requires a LiveView lifecycle.
+- Fixed: `PhoenixNestedParamsAdapter.persistentId` and `sortControl` declared
+  their own `Schema` type parameter, so they accepted row views of another
+  form definition. They now use the adapter's. The drop-entry limit used `<=`
+  where every other limit uses `<`, which let `maxRowsPerGroup + 1` indexes
+  through; empty drop values are now skipped and the limit is exact.
 - Removed dead code: nothing produced `LifecycleFailureStage.Cleanup`,
   `LifecycleTurnKind.ComponentUpdate`, or the internal `RuntimeFailure.Protocol`
   and `RuntimeFailure.Cleanup`. The component-update command behind

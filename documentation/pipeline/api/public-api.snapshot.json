@@ -11466,6 +11466,18 @@
       ]
     },
     {
+      "id" : "enum:scalive.FormWorkflowReset.AlreadySaving",
+      "ownerId" : "enum:scalive.FormWorkflowReset",
+      "qualifiedName" : "scalive.FormWorkflowReset.AlreadySaving",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.FormWorkflowReset.AlreadySaving:40817506475f7eb6",
+          "signature" : "enum AlreadySaving[+Workflow, +Submission](current: Workflow, submission: Submission) extends FormWorkflowReset[Workflow, Submission]"
+        }
+      ]
+    },
+    {
       "id" : "enum:scalive.FormWorkflowReset.Reset",
       "ownerId" : "enum:scalive.FormWorkflowReset",
       "qualifiedName" : "scalive.FormWorkflowReset.Reset",
@@ -11474,18 +11486,6 @@
         {
           "id" : "enum:scalive.FormWorkflowReset.Reset:3140387a433017ad",
           "signature" : "enum Reset[+Workflow, +Submission](workflow: Workflow) extends FormWorkflowReset[Workflow, Submission]"
-        }
-      ]
-    },
-    {
-      "id" : "enum:scalive.FormWorkflowReset.Saving",
-      "ownerId" : "enum:scalive.FormWorkflowReset",
-      "qualifiedName" : "scalive.FormWorkflowReset.Saving",
-      "kind" : "enum",
-      "signatures" : [
-        {
-          "id" : "enum:scalive.FormWorkflowReset.Saving:19c8ea87aa4ee5fc",
-          "signature" : "enum Saving[+Workflow, +Submission](current: Workflow, submission: Submission) extends FormWorkflowReset[Workflow, Submission]"
         }
       ]
     },
@@ -19013,18 +19013,6 @@
       ]
     },
     {
-      "id" : "trait:scalive.LiveComponent.EventlessWithOutput",
-      "ownerId" : "object:scalive.LiveComponent",
-      "qualifiedName" : "scalive.LiveComponent.EventlessWithOutput",
-      "kind" : "trait",
-      "signatures" : [
-        {
-          "id" : "trait:scalive.LiveComponent.EventlessWithOutput:1be952412df1b8c6",
-          "signature" : "trait EventlessWithOutput[Props, Model, Output] extends LiveComponent.WithOutput.Eventless[Props, Model, Output]"
-        }
-      ]
-    },
-    {
       "id" : "trait:scalive.LiveComponent.WithOutput",
       "ownerId" : "object:scalive.LiveComponent",
       "qualifiedName" : "scalive.LiveComponent.WithOutput",
@@ -21833,6 +21821,30 @@
       ]
     },
     {
+      "id" : "val:scalive.FormWorkflowReset.AlreadySaving.current",
+      "ownerId" : "enum:scalive.FormWorkflowReset.AlreadySaving",
+      "qualifiedName" : "scalive.FormWorkflowReset.AlreadySaving.current",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.FormWorkflowReset.AlreadySaving.current:ec4517e124f7d81d",
+          "signature" : "val current: Workflow"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.FormWorkflowReset.AlreadySaving.submission",
+      "ownerId" : "enum:scalive.FormWorkflowReset.AlreadySaving",
+      "qualifiedName" : "scalive.FormWorkflowReset.AlreadySaving.submission",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.FormWorkflowReset.AlreadySaving.submission:6862502a000f42d5",
+          "signature" : "val submission: Submission"
+        }
+      ]
+    },
+    {
       "id" : "val:scalive.FormWorkflowReset.Reset.workflow",
       "ownerId" : "enum:scalive.FormWorkflowReset.Reset",
       "qualifiedName" : "scalive.FormWorkflowReset.Reset.workflow",
@@ -21841,30 +21853,6 @@
         {
           "id" : "val:scalive.FormWorkflowReset.Reset.workflow:333cbab897d43cb5",
           "signature" : "val workflow: Workflow"
-        }
-      ]
-    },
-    {
-      "id" : "val:scalive.FormWorkflowReset.Saving.current",
-      "ownerId" : "enum:scalive.FormWorkflowReset.Saving",
-      "qualifiedName" : "scalive.FormWorkflowReset.Saving.current",
-      "kind" : "val",
-      "signatures" : [
-        {
-          "id" : "val:scalive.FormWorkflowReset.Saving.current:6a1b1de6cfadc340",
-          "signature" : "val current: Workflow"
-        }
-      ]
-    },
-    {
-      "id" : "val:scalive.FormWorkflowReset.Saving.submission",
-      "ownerId" : "enum:scalive.FormWorkflowReset.Saving",
-      "qualifiedName" : "scalive.FormWorkflowReset.Saving.submission",
-      "kind" : "val",
-      "signatures" : [
-        {
-          "id" : "val:scalive.FormWorkflowReset.Saving.submission:7e783bda0d0a71dd",
-          "signature" : "val submission: Submission"
         }
       ]
     },

@@ -52,8 +52,8 @@ final class ProfileSaveLiveView(profiles: Profiles)
     // docs:start forms-workflow-reset
     case Msg.Reset =>
       model.workflow.reset match
-        case FormWorkflowReset.Reset(next)  => ZIO.succeed(model.copy(workflow = next))
-        case FormWorkflowReset.Saving(_, _) => ZIO.succeed(model)
+        case FormWorkflowReset.Reset(next)         => ZIO.succeed(model.copy(workflow = next))
+        case FormWorkflowReset.AlreadySaving(_, _) => ZIO.succeed(model)
     // docs:end forms-workflow-reset
   end handleMessage
 

@@ -81,11 +81,11 @@ the form. Failure storage is the last retained failed attempt, not an audit log.
 ## Reset to the baseline {#reset-to-the-baseline}
 
 Call `workflow.reset` to return to the baseline, and handle
-`FormWorkflowReset.Saving` explicitly:
+`FormWorkflowReset.AlreadySaving` explicitly:
 
 @:sourceRegion(documentation/fixtures/guides/src/forms/ProfileSaveLiveView.scala, forms-workflow-reset)
 
-`reset` returns `FormWorkflowReset.Saving(current, submission)` instead of
+`reset` returns `FormWorkflowReset.AlreadySaving(current, submission)` instead of
 discarding an in-flight save, so cancellation policy remains an application
 decision. Do not replace an active workflow with a fresh one: that discards its
 in-flight correlation state and restarts submission token generation.

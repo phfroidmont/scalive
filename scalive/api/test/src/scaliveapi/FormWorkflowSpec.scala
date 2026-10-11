@@ -354,10 +354,10 @@ object FormWorkflowSpec extends ZIOSpecDefault:
         case FormWorkflowTransition.Stale(_)      => throw new AssertionError("unexpected stale")
       val reset = cancelled.reset match
         case FormWorkflowReset.Reset(next)  => next
-        case FormWorkflowReset.Saving(_, _) => throw new AssertionError("reset remained blocked")
+        case FormWorkflowReset.AlreadySaving(_, _) => throw new AssertionError("reset remained blocked")
 
       assertTrue(
-        blocked.isInstanceOf[FormWorkflowReset.Saving[?, ?]],
+        blocked.isInstanceOf[FormWorkflowReset.AlreadySaving[?, ?]],
         reset.current.valueOption.contains(Draft("Ada")),
         reset.current.interaction == FormInteraction.pristine,
         !reset.isDirty,

@@ -215,7 +215,7 @@ object FormWorkflowExample:
       model.workflow.reset match
         case FormWorkflowReset.Reset(next) =>
           model.copy(workflow = next, notice = Notice.ResetComplete)
-        case FormWorkflowReset.Saving(_, _) => model.copy(notice = Notice.ResetBlocked)
+        case FormWorkflowReset.AlreadySaving(_, _) => model.copy(notice = Notice.ResetBlocked)
 
   private def beginSave(model: Model): Model = model.workflow.beginSave match
     case FormSaveStart.Invalid(next) => model.copy(workflow = next, notice = Notice.InvalidStart)

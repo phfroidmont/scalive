@@ -144,7 +144,7 @@ enum FormWorkflowReset[+Workflow, +Submission]:
     * @param submission
     *   The in-flight submission that blocked the reset.
     */
-  case Saving(current: Workflow, submission: Submission)
+  case AlreadySaving(current: Workflow, submission: Submission)
 
 /** Pure baseline, revision, reset, and one-in-flight-save state.
   *
@@ -211,7 +211,7 @@ final class FormWorkflow[Owner, Schema, Domain, Failure] private[scalive] (
   /** Restores the baseline as a pristine form, unless a save is currently in flight. */
   def reset: FormWorkflowReset[FormWorkflow[Owner, Schema, Domain, Failure], Submission] =
     save match
-      case FormSaveState.Saving(submission) => FormWorkflowReset.Saving(this, submission)
+      case FormSaveState.Saving(submission) => FormWorkflowReset.AlreadySaving(this, submission)
       case _                                =>
         val nextForm = definition
           .fromValues(baseline.asInstanceOf[definition.Values])

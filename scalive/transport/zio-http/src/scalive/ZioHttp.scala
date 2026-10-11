@@ -985,6 +985,18 @@ object ZioHttp:
       }
     case mounted: LiveRouteContext.Mounted[r, A, In, Ctx] =>
       runRoutePipeline(mounted.pipeline, LiveRouteMountRequest(path, request.url), input)
+        .tapError(failure =>
+          val reason = failure match
+            case LiveRouteMountFailure.Unauthorized(reason) => reason
+            case LiveRouteMountFailure.Forbidden(reason)    => reason
+            case LiveRouteMountFailure.NotFound(reason)     => reason
+            case _                                          => None
+          ZIO.foreachDiscard(reason)(reason =>
+            ZIO.logWarning(
+              s"Rejecting disconnected route mount path=${request.url.path.encode}: $reason"
+            )
+          )
+        )
         .mapError(_.disconnectedResponse).map(_ -> SessionMountClaims(Vector.empty))
     case session: LiveRouteContext.SessionMounted[rs, rr, A, sessionCtx, routeIn, routeCtx] =>
       runDisconnectedSessionPipeline(

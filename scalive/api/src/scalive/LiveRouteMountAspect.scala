@@ -36,21 +36,21 @@ enum LiveRouteMountFailure:
   /** Returns HTTP 401 or rejects connected admission as unauthorized.
     *
     * @param reason
-    *   An optional reason, logged when a connected mount is rejected and never sent to the browser.
+    *   An optional reason, logged when the mount is rejected and never sent to the browser.
     */
   case Unauthorized(reason: Option[String])
 
   /** Returns HTTP 403 or rejects connected admission as unauthorized.
     *
     * @param reason
-    *   An optional reason, logged when a connected mount is rejected and never sent to the browser.
+    *   An optional reason, logged when the mount is rejected and never sent to the browser.
     */
   case Forbidden(reason: Option[String])
 
   /** Returns HTTP 404 or rejects connected admission as unauthorized.
     *
     * @param reason
-    *   An optional reason, logged when a connected mount is rejected and never sent to the browser.
+    *   An optional reason, logged when the mount is rejected and never sent to the browser.
     */
   case NotFound(reason: Option[String])
 
@@ -101,7 +101,7 @@ object LiveRouteMountFailure:
 
   /** Rejects the mount with HTTP 401 when disconnected, or as unauthorized when connected.
     *
-    * This form logs `reason` when a connected mount is rejected; it is never sent to the browser.
+    * This form logs `reason` when the mount is rejected; it is never sent to the browser.
     */
   def unauthorized(reason: String): LiveRouteMountFailure = Unauthorized(Some(reason))
 
@@ -113,7 +113,7 @@ object LiveRouteMountFailure:
 
   /** Rejects the mount with HTTP 403 when disconnected, or as unauthorized when connected.
     *
-    * This form logs `reason` when a connected mount is rejected; it is never sent to the browser.
+    * This form logs `reason` when the mount is rejected; it is never sent to the browser.
     */
   def forbidden(reason: String): LiveRouteMountFailure = Forbidden(Some(reason))
 
@@ -127,7 +127,7 @@ object LiveRouteMountFailure:
   /** Rejects the mount with HTTP 404 when disconnected, or as unauthorized when connected.
     *
     * Use it when the response must not reveal whether the resource exists. This form logs `reason`
-    * when a connected mount is rejected; it is never sent to the browser.
+    * when the mount is rejected; it is never sent to the browser.
     */
   def notFound(reason: String): LiveRouteMountFailure = NotFound(Some(reason))
 

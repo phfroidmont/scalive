@@ -745,6 +745,32 @@ object ZioHttpSpec extends ZIOSpecDefault:
         custom.connectedFailure == LiveMountFailure.stale("refresh policy")
       )
     },
+    test("a disconnected route mount rejection logs its reason") {
+      object Account extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        def view(model: Signal[Unit]) = div()
+      val suspended = LiveRouteMountAspect.fromRequest[Any, Unit, Unit](_ =>
+        ZIO.fail(LiveRouteMountFailure.forbidden("account suspended"))
+      )
+      val application =
+        scalive.Live.router((scalive.live / "account").withMountAspect(suspended)(Account))
+
+      for
+        response <- run(
+                      ZioHttp.routes(application, config),
+                      Request.get(URL.decode("/account").toOption.get)
+                    )
+        body <- response.body.asString.orDie
+        logs <- ZTestLogger.logOutput
+      yield assertTrue(
+        response.status == Status.Forbidden,
+        !body.contains("account suspended"),
+        logs.exists(entry =>
+          entry.logLevel == LogLevel.Warning && entry.message().contains("/account") &&
+            entry.message().contains("account suspended")
+        )
+      )
+    },
     test("join admission binds all bootstrap claims before invoking a route factory") {
       val factories = AtomicInteger()
       object View extends LiveView.Eventless[Unit]:

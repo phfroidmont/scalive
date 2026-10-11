@@ -113,6 +113,9 @@ object ComponentApiSpec extends ZIOSpecDefault:
 
         def update(ctx: MessageContext[Unit, Unit]) =
           ctx.components.sendUpdate(counter, "Updated counter")
+
+        def updateByDefinition(ctx: MessageContext[Unit, Unit]) =
+          ctx.components.sendUpdate(CounterComponent, "counter", "Updated counter")
       """)
 
       assertTrue(errors.isEmpty)
@@ -164,8 +167,29 @@ object ComponentApiSpec extends ZIOSpecDefault:
         def update(ctx: MessageContext[Unit, Unit]) =
           ctx.components.sendUpdate(label, 42)
       """)
+      val definitionErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
 
-      assertTrue(errors.nonEmpty)
+        object LabelComponent extends LiveComponent[String, Unit, Unit]:
+          def mount(props: String, ctx: MountContext) = ZIO.succeed(())
+
+          def handleMessage(props: String, model: Unit, ctx: MessageContext) =
+            (_: Unit) => ZIO.succeed(())
+
+          override def view(
+            props: Signal[String],
+            model: Signal[Unit],
+            self: ComponentRef[Unit]
+          ) = div()
+
+        def update(ctx: MessageContext[Unit, Unit]) =
+          ctx.components.sendUpdate(LabelComponent, "label", 42)
+      """)
+
+      assertTrue(
+        errors.nonEmpty,
+        definitionErrors.exists(_.message.contains("Required: String"))
+      )
     },
     test("component outputs map into the owning LiveView message type") {
       val errors = scala.compiletime.testing.typeCheckErrors("""

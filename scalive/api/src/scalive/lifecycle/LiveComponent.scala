@@ -102,10 +102,6 @@ object LiveComponent:
 
   /** Another name for [[LiveComponent.WithOutput.Eventless]]. */
   trait EventlessWithOutput[Props, Model, Output] extends WithOutput.Eventless[Props, Model, Output]
-
-  /** The `Props` type of the component type `C`, as used by `ctx.components.sendUpdate[C]`. */
-  type PropsOf[C] = C match
-    case LiveComponent[props, msg, model] => props
 end LiveComponent
 
 /** Protocol-neutral declaration consumed by the HTML renderer. */

@@ -1,6 +1,5 @@
 package scalive.runtime.connection
 
-import scala.reflect.ClassTag
 import scala.util.Try
 
 import zio.Exit
@@ -533,20 +532,12 @@ final private class JournaledComponentUpdates(journal: RootTurnJournal) extends 
     instance: LiveComponentOutputInstance[Props, Msg, Model, Output],
     props: Props
   ): Task[Unit] = journal.componentUpdates.update(_ :+ ComponentUpdateRequest(instance, props))
-  def sendUpdate[C <: LiveComponent[?, ?, ?]: ClassTag](
+  def sendUpdate[Props, Msg, Model](
+    definition: LiveComponent[Props, Msg, Model],
     id: String,
-    props: LiveComponent.PropsOf[C]
+    props: Props
   ): Task[Unit] =
-    ZIO
-      .attempt {
-        val component = summon[ClassTag[C]].runtimeClass
-          .getField("MODULE$").get(null).asInstanceOf[C]
-        ComponentUpdateRequest(
-          component.asInstanceOf[LiveComponent[LiveComponent.PropsOf[C], Any, Any]],
-          id,
-          props
-        )
-      }.flatMap(request => journal.componentUpdates.update(_ :+ request))
+    journal.componentUpdates.update(_ :+ ComponentUpdateRequest(definition, id, props))
 
 final private class DeferredRootHooks[Msg, Model] extends RootHooks[Msg, Model]:
   val rawEvent: RootRawEventHooks[Msg, Model] = new RootRawEventHooks[Msg, Model]:

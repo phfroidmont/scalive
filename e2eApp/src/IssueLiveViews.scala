@@ -1915,7 +1915,8 @@ class Issue3979LiveView extends LiveView[Issue3979LiveView.Msg, Issue3979LiveVie
       model.components.find(_.id == id) match
         case Some(component) =>
           ctx.components
-            .sendUpdate[CounterComponent.type](
+            .sendUpdate(
+              CounterComponent,
               s"comp-$id",
               CounterProps(id = id, domCounter = component.counter, counter = 10)
             ).as(model)

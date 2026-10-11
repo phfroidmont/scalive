@@ -186,6 +186,28 @@ object ComponentRuntimeSpec extends ZIOSpecDefault:
         yield assertTrue(props.contains(3), model.contains(3))
       }
     },
+    test("root sendUpdate by definition reaches a component defined as a class") {
+      ZIO.scoped {
+        final class ClassCounter extends LiveComponent.Eventless[Int, Int]:
+          def mount(props: Int, ctx: MountContext) = ZIO.succeed(props)
+          override def update(props: Int, model: Int, ctx: UpdateContext) = ZIO.succeed(props)
+          def view(props: Signal[Int], model: Signal[Int], self: ComponentRef[Nothing]) = div()
+        val definition = ClassCounter()
+        val view = new LiveView[Unit, Unit]:
+          def mount(ctx: MountContext) = ZIO.unit
+          def handleMessage(model: Unit, ctx: MessageContext): Unit => Task[Unit] = _ =>
+            ctx.components.sendUpdate(definition, "counter", 3)
+          def view(model: Signal[Unit]) = div(component(definition, "counter").render(1))
+        for
+          sink       <- Queue.unbounded[ConnectionOutput]
+          connection <- RootConnection.start(config, metadata, view, sink.offer(_).unit)
+          _          <- sink.take
+          id         <- connection.inspectComponentIds.map(_.head)
+          _          <- connection.submitInfo(())
+          model      <- connection.inspectComponentModel[Int](id)
+        yield assertTrue(model.contains(3))
+      }
+    },
     test("dynamic component hooks replace in place and raw hooks consume malformed payloads") {
       ZIO.scoped {
         val rawEvent = BrowserToServerEvent[Int]("raw")

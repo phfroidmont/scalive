@@ -2320,16 +2320,16 @@
       "kind" : "def",
       "signatures" : [
         {
+          "id" : "def:scalive.ComponentUpdates.sendUpdate:0443627c82d77fad",
+          "signature" : "def sendUpdate[Props, Msg, Model](definition: LiveComponent[Props, Msg, Model], id: String, props: Props): zio.package.Task[Unit]"
+        },
+        {
           "id" : "def:scalive.ComponentUpdates.sendUpdate:77a2c8358d880313",
           "signature" : "def sendUpdate[Props, Msg, Model, Output](instance: LiveComponentOutputInstance[Props, Msg, Model, Output], props: Props): zio.package.Task[Unit]"
         },
         {
           "id" : "def:scalive.ComponentUpdates.sendUpdate:8984c37ebbb57a76",
           "signature" : "def sendUpdate[Props, Msg, Model](instance: LiveComponentInstance[Props, Msg, Model], props: Props): zio.package.Task[Unit]"
-        },
-        {
-          "id" : "def:scalive.ComponentUpdates.sendUpdate:def820d69e49d678",
-          "signature" : "def sendUpdate[C <: LiveComponent[?, ?, ?]](id: String, props: LiveComponent.PropsOf[C])(using evidence$1: reflect.ClassTag[C]): zio.package.Task[Unit]"
         }
       ]
     },
@@ -19721,18 +19721,6 @@
         {
           "id" : "type-alias:scalive.LiveComponent.MountContext:a4feb6c8e8621b97",
           "signature" : "type MountContext = ComponentMountContext[Props, Msg, Model]"
-        }
-      ]
-    },
-    {
-      "id" : "type-alias:scalive.LiveComponent.PropsOf",
-      "ownerId" : "object:scalive.LiveComponent",
-      "qualifiedName" : "scalive.LiveComponent.PropsOf",
-      "kind" : "typeAlias",
-      "signatures" : [
-        {
-          "id" : "type-alias:scalive.LiveComponent.PropsOf:9c518ff3f433615a",
-          "signature" : "type PropsOf = ([C] =>> (C match { case LiveComponent[props, msg, model] => props }))"
         }
       ]
     },

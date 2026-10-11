@@ -1,7 +1,5 @@
 package scalive
 
-import scala.reflect.ClassTag
-
 import zio.Task
 import zio.UIO
 import zio.json.JsonEncoder
@@ -313,9 +311,13 @@ trait ComponentUpdates:
 
   /** Sends `props` to a mounted component, which receives them in [[LiveComponent.update]].
     *
-    * This form addresses the component of class `C` with logical ID `id`.
+    * This form addresses the instance of `definition` with logical ID `id`, as in
+    * `ctx.components.sendUpdate(CounterComponent, "counter", props)`. `definition` must be the same
+    * value the view rendered.
     */
-  def sendUpdate[C <: LiveComponent[?, ?, ?]: ClassTag](
+  def sendUpdate[Props, Msg, Model](
+    definition: LiveComponent[Props, Msg, Model],
     id: String,
-    props: LiveComponent.PropsOf[C]
+    props: Props
   ): Task[Unit]
+end ComponentUpdates

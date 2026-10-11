@@ -10,10 +10,10 @@ import scalive.codecs.StringAsIsEncoder
 
 /** An immutable element in Scalive's typed, protocol-neutral HTML algebra. */
 final class HtmlElement[+Msg](val tag: HtmlTag, val mods: Vector[Mod[Msg]]):
-  def attrMods: Vector[Mod.Attr[Msg]] =
+  private[scalive] def attrMods: Vector[Mod.Attr[Msg]] =
     mods.collect { case attr: Mod.Attr[Msg] => attr }.flatMap(_.flattened)
 
-  def contentMods: Vector[Mod.Content[Msg]] =
+  private[scalive] def contentMods: Vector[Mod.Content[Msg]] =
     mods.collect { case content: Mod.Content[Msg] => content }
 
   def prepended[Msg2 >: Msg](values: Mod[Msg2]*): HtmlElement[Msg2] =
@@ -72,11 +72,11 @@ object CompositeHtmlAttr:
   def apply(name: String): CompositeHtmlAttr = new CompositeHtmlAttr(name)
 
 /** A protocol-neutral component dispatch selected by a rendered event binding. */
-sealed trait ComponentDispatch:
+sealed private[scalive] trait ComponentDispatch:
   type Message
   def message: Message
 
-object ComponentDispatch:
+private[scalive] object ComponentDispatch:
   final case class Instance[Props, Msg, Model](
     instance: LiveComponentInstance[Props, Msg, Model],
     message: Msg)
@@ -377,26 +377,40 @@ end KeyHtmlAttrBinding
 sealed trait Mod[+Msg]
 
 object Mod:
-  /** A single modifier or one collection of modifiers accepted by HTML and component factories. */
-  type Input[+Msg] = Mod[Msg] | IterableOnce[Mod[Msg]]
+  /** One modifier or element, or a collection of them, accepted by HTML and component factories.
+    *
+    * An `Option` or `Vector` of elements is a valid child, as in
+    * `ul(items.map(item => li(item.name)))`.
+    */
+  type Input[+Msg] = Mod[Msg] | HtmlElement[Msg] | IterableOnce[Mod[Msg] | HtmlElement[Msg]]
 
   /** Normalizes modifier inputs while preserving their encounter order. */
   def flatten[Msg](inputs: IterableOnce[Input[Msg]]): Vector[Mod[Msg]] =
     inputs.iterator.flatMap {
-      case mod: Mod[Msg]                  => Iterator.single(mod)
-      case values: IterableOnce[Mod[Msg]] => values.iterator
+      case mod: Mod[Msg]             => Iterator.single(mod)
+      case element: HtmlElement[Msg] => Iterator.single(Content.Tag(element))
+      case values: IterableOnce[Mod[Msg] | HtmlElement[Msg]] =>
+        values.iterator.map {
+          case mod: Mod[Msg]             => mod
+          case element: HtmlElement[Msg] => Content.Tag(element)
+        }
     }.toVector
 
+  /** An attribute or event binding modifier, as returned by `:=` and the binding builders. */
   enum Attr[+Msg] extends Mod[Msg]:
-    case Static(name: String, value: String)                              extends Attr[Nothing]
-    case StaticValueAsPresence(name: String, value: Boolean)              extends Attr[Nothing]
-    case SignalValue(name: String, value: Signal[String])                 extends Attr[Nothing]
-    case SignalOptionalValue(name: String, value: Signal[Option[String]]) extends Attr[Nothing]
-    case SignalValueAsPresence(name: String, value: Signal[Boolean])      extends Attr[Nothing]
-    case CompositeStatic(name: String, value: String)                     extends Attr[Nothing]
-    case CompositeSignalValue(name: String, value: Signal[String])        extends Attr[Nothing]
-    case CompositeSignalOptionalValue(name: String, value: Signal[Option[String]])
+    private[scalive] case Static(name: String, value: String)                 extends Attr[Nothing]
+    private[scalive] case StaticValueAsPresence(name: String, value: Boolean) extends Attr[Nothing]
+    private[scalive] case SignalValue(name: String, value: Signal[String])    extends Attr[Nothing]
+    private[scalive] case SignalOptionalValue(name: String, value: Signal[Option[String]])
         extends Attr[Nothing]
+    private[scalive] case SignalValueAsPresence(name: String, value: Signal[Boolean])
+        extends Attr[Nothing]
+    private[scalive] case CompositeStatic(name: String, value: String) extends Attr[Nothing]
+    private[scalive] case CompositeSignalValue(name: String, value: Signal[String])
+        extends Attr[Nothing]
+    private[scalive] case CompositeSignalOptionalValue(
+      name: String,
+      value: Signal[Option[String]]) extends Attr[Nothing]
     private[scalive] case Binding[Msg](name: String, operation: BindingPayload => Msg)
         extends Attr[Msg]
     private[scalive] case SignalBinding[A, Msg](
@@ -422,51 +436,60 @@ object Mod:
     private[scalive] case ComponentBinding[Msg](
       name: String,
       target: ComponentRef[Msg],
-      operation: BindingPayload => Msg)                  extends Attr[Msg]
-    case ComponentTarget[Msg](target: ComponentRef[Msg]) extends Attr[Msg]
-    case Group[Msg](attrs: Vector[Attr[Msg]])            extends Attr[Msg]
+      operation: BindingPayload => Msg)                                   extends Attr[Msg]
+    private[scalive] case ComponentTarget[Msg](target: ComponentRef[Msg]) extends Attr[Msg]
+    private[scalive] case Group[Msg](attrs: Vector[Attr[Msg]])            extends Attr[Msg]
 
-    def flattened: Vector[Attr[Msg]] = this match
+    private[scalive] def flattened: Vector[Attr[Msg]] = this match
       case Group(attrs) => attrs.flatMap(_.flattened)
       case attr         => Vector(attr)
   end Attr
 
+  /** A content modifier: text, a child element, or rendered collection, component, or LiveView. */
   enum Content[+Msg] extends Mod[Msg]:
-    case Text(text: String, raw: Boolean = false)                extends Content[Nothing]
-    case SignalText(value: Signal[String], raw: Boolean = false) extends Content[Nothing]
-    case SignalChoice[A, Msg](value: Signal[A], branches: Vector[(A, HtmlElement[Msg])])
+    private[scalive] case Text(text: String, raw: Boolean = false) extends Content[Nothing]
+    private[scalive] case SignalText(value: Signal[String], raw: Boolean = false)
+        extends Content[Nothing]
+    private[scalive] case SignalChoice[A, Msg](
+      value: Signal[A],
+      branches: Vector[(A, HtmlElement[Msg])]) extends Content[Msg]
+    private[scalive] case SignalModChoice[A, Msg](
+      value: Signal[A],
+      branches: Vector[(A, Mod[Msg])]) extends Content[Msg]
+    private[scalive] case SignalOption[A, Msg](
+      value: Signal[Option[A]],
+      project: Signal[A] => HtmlElement[Msg]) extends Content[Msg]
+    private[scalive] case Keyed[Key, Msg](entries: Vector[Content.Keyed.Entry[Key, Msg]])
         extends Content[Msg]
-    case SignalModChoice[A, Msg](value: Signal[A], branches: Vector[(A, Mod[Msg])])
-        extends Content[Msg]
-    case SignalOption[A, Msg](value: Signal[Option[A]], project: Signal[A] => HtmlElement[Msg])
-        extends Content[Msg]
-    case Keyed[Key, Msg](entries: Vector[Content.Keyed.Entry[Key, Msg]]) extends Content[Msg]
-    case SignalKeyed[A, Key, Msg](
+    private[scalive] case SignalKeyed[A, Key, Msg](
       values: Signal[Iterable[A]],
       key: A => Key,
       project: (Key, Signal[A]) => HtmlElement[Msg]) extends Content[Msg]
-    case SignalKeyedByIndex[A, Msg](
+    private[scalive] case SignalKeyedByIndex[A, Msg](
       values: Signal[Iterable[A]],
       project: (Int, Signal[A]) => HtmlElement[Msg]) extends Content[Msg]
-    case Stream[A, Msg](value: streams.LiveStream[A], project: (String, A) => HtmlElement[Msg])
-        extends Content[Msg]
-    case SignalStream[A, Msg](
+    private[scalive] case Stream[A, Msg](
+      value: streams.LiveStream[A],
+      project: (String, A) => HtmlElement[Msg]) extends Content[Msg]
+    private[scalive] case SignalStream[A, Msg](
       value: Signal[streams.LiveStream[A]],
-      project: (String, Signal[A]) => HtmlElement[Msg])                  extends Content[Msg]
-    case Tag[Msg](element: HtmlElement[Msg])                             extends Content[Msg]
-    case Component[Msg](spec: ComponentSpec[Msg])                        extends Content[Msg]
-    case NestedView(spec: NestedViewSpec)                                extends Content[Nothing]
-    case Flash(kind: FlashKind, project: String => HtmlElement[Nothing]) extends Content[Nothing]
+      project: (String, Signal[A]) => HtmlElement[Msg])            extends Content[Msg]
+    private[scalive] case Tag[Msg](element: HtmlElement[Msg])      extends Content[Msg]
+    private[scalive] case Component[Msg](spec: ComponentSpec[Msg]) extends Content[Msg]
+    private[scalive] case NestedView(spec: NestedViewSpec)         extends Content[Nothing]
+    private[scalive] case Flash(kind: FlashKind, project: String => HtmlElement[Nothing])
+        extends Content[Nothing]
+  end Content
 
   object Content:
-    object Keyed:
+    private[scalive] object Keyed:
       final case class Entry[+Key, +Msg](key: Key, element: HtmlElement[Msg])
 end Mod
 
 /** A declarative nested LiveView requirement. */
-sealed trait NestedViewSpec
+sealed private[scalive] trait NestedViewSpec
 
-object NestedViewSpec:
+private[scalive] object NestedViewSpec:
   final case class Static[Msg, Model](
     id: String,
     factory: () => LiveView[Msg, Model],

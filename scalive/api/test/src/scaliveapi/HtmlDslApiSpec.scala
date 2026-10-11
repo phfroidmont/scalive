@@ -19,12 +19,25 @@ object HtmlDslApiSpec extends ZIOSpecDefault:
       val optionalId: Option[Mod[Msg]]  = Some(accountId)
       val bindings: Iterator[Mod[Msg]]  = Iterator(clickBinding)
       val rendered: HtmlElement[Msg]    = panel(optionalId, bindings, "Account")
-      val expected: Vector[Mod[Msg]]    =
-        Vector(cls := "panel", accountId, clickBinding, Mod.Content.Text("Account"))
+      val account: Mod[Nothing]         = "Account"
+      val expected: Vector[Mod[Msg]]    = Vector(cls := "panel", accountId, clickBinding, account)
 
       assertTrue(
         rendered.mods == expected,
         !bindings.hasNext
+      )
+    },
+    test("elements and collections of elements are children") {
+      val first                       = li("first")
+      val second                      = li("second")
+      val note                        = p("note")
+      val list                        = ul(Vector(first, second))
+      val panel                       = div(Option(note), Option.empty[HtmlElement[Nothing]], first)
+      def child(element: HtmlElement[Nothing]): Mod[Nothing] = element
+
+      assertTrue(
+        list.mods == Vector(child(first), child(second)),
+        panel.mods == Vector(child(note), child(first))
       )
     },
     test("Mod.flatten preserves order and consumes collections once") {
@@ -98,33 +111,38 @@ object HtmlDslApiSpec extends ZIOSpecDefault:
         factoryErrors.isEmpty
       )
     },
-    test("composite attributes preserve their behavior through HtmlAttr references") {
-      val custom                            = CompositeHtmlAttr("data-tags")
-      val asHtmlAttr: HtmlAttr[String]      = custom
-      val static: Mod.Attr[Nothing]         = asHtmlAttr := "one two"
-      val signal: Signal[String]            = null.asInstanceOf[Signal[String]]
-      val optional: Signal[Option[String]]  = null.asInstanceOf[Signal[Option[String]]]
-      val dynamic: Mod.Attr[Nothing]        = asHtmlAttr := signal
-      val dynamicOptional: Mod.Attr[Nothing] = asHtmlAttr.optional(optional)
+    test("modifier representations are not public") {
+      val errors = Vector(
+        scala.compiletime.testing.typeCheckErrors("""
+          import scalive.*
+          val attr = Mod.Attr.Static("id", "account")
+        """),
+        scala.compiletime.testing.typeCheckErrors("""
+          import scalive.*
+          val text = Mod.Content.Text("Account")
+        """),
+        scala.compiletime.testing.typeCheckErrors("""
+          import scalive.*
+          val child = Mod.Content.Tag(div())
+        """),
+        scala.compiletime.testing.typeCheckErrors("""
+          import scalive.*
+          def attrs(element: HtmlElement[Nothing]) = element.attrMods
+        """),
+        scala.compiletime.testing.typeCheckErrors("""
+          import scalive.*
+          def spec(spec: NestedViewSpec) = spec
+        """)
+      )
+
+      assertTrue(errors.forall(_.nonEmpty))
+    },
+    test("typed attributes keep their public types") {
+      val typed: HtmlAttr[Boolean]            = inert
+      val asHtmlAttr: HtmlAttr[String]        = CompositeHtmlAttr("data-tags")
       val builtIns: Vector[CompositeHtmlAttr] = Vector(className, cls, rel, role)
 
-      assertTrue(
-        builtIns.size == 4,
-        static == Mod.Attr.CompositeStatic("data-tags", "one two"),
-        dynamic == Mod.Attr.CompositeSignalValue("data-tags", signal),
-        dynamicOptional == Mod.Attr.CompositeSignalOptionalValue("data-tags", optional)
-      )
-    },
-    test("inert is a typed boolean presence attribute") {
-      val typed: HtmlAttr[Boolean]       = inert
-      val present: Mod.Attr[Nothing]     = inert := true
-      val absent: Mod.Attr[Nothing]      = inert := false
-
-      assertTrue(
-        typed.name == "inert",
-        present == Mod.Attr.StaticValueAsPresence("inert", true),
-        absent == Mod.Attr.StaticValueAsPresence("inert", false)
-      )
+      assertTrue(typed.name == "inert", asHtmlAttr.name == "data-tags", builtIns.size == 4)
     }
   )
 end HtmlDslApiSpec

@@ -67,26 +67,22 @@ final private[docs] class DocumentationRenderer(
 
       val previous = pages
         .lift(currentIndex - 1).map { item =>
-          Mod.Content.Tag(progressLink(item, "Previous", "docs-learn-progress-previous"))
+          progressLink(item, "Previous", "docs-learn-progress-previous")
         }.toVector
       val next = pages
         .lift(currentIndex + 1).map { item =>
-          Mod.Content.Tag(progressLink(item, "Next", "docs-learn-progress-next"))
+          progressLink(item, "Next", "docs-learn-progress-next")
         }.toVector
       val separator = Option
         .when(previous.nonEmpty && next.nonEmpty)(
-          Mod.Content.Tag(
-            span(cls := "docs-learn-progress-separator", aria.hidden := true, " ")
-          )
+          span(cls := "docs-learn-progress-separator", aria.hidden := true, " ")
         ).toVector
       Vector(
-        Mod.Content.Tag(
-          navTag(
-            cls        := "docs-learn-progress",
-            aria.label := "Learn progress",
-            p(cls   := "docs-learn-progress-count", s"${currentIndex + 1} of ${pages.size}"),
-            div(cls := "docs-learn-progress-links", previous, separator, next)
-          )
+        navTag(
+          cls        := "docs-learn-progress",
+          aria.label := "Learn progress",
+          p(cls   := "docs-learn-progress-count", s"${currentIndex + 1} of ${pages.size}"),
+          div(cls := "docs-learn-progress-links", previous, separator, next)
         )
       )
 
@@ -118,51 +114,49 @@ final private[docs] class DocumentationRenderer(
         ),
         h1(primary.name)
       ),
-      companionReference(primary).map(Mod.Content.Tag(_)).toVector,
+      companionReference(primary),
       renderApiSymbol(page.route, primary, None),
       Option
         .when(groups.nonEmpty)(
-          Mod.Content.Tag(
-            div(
-              cls                          := "docs-api-member-tools",
-              hidden                       := true,
-              dataAttr("api-member-tools") := "",
-              label(forId := "docs-api-member-filter", "Find a member"),
-              input(
-                idAttr                        := "docs-api-member-filter",
-                typ                           := "search",
-                placeholder                   := "Filter names, signatures, or categories",
-                dataAttr("api-member-filter") := ""
-              ),
-              p(
-                cls                           := "docs-api-member-status",
-                ariaLive                      := "polite",
-                dataAttr("api-member-status") := ""
-              )
+          div(
+            cls                          := "docs-api-member-tools",
+            hidden                       := true,
+            dataAttr("api-member-tools") := "",
+            label(forId := "docs-api-member-filter", "Find a member"),
+            input(
+              idAttr                        := "docs-api-member-filter",
+              typ                           := "search",
+              placeholder                   := "Filter names, signatures, or categories",
+              dataAttr("api-member-filter") := ""
+            ),
+            p(
+              cls                           := "docs-api-member-status",
+              ariaLive                      := "polite",
+              dataAttr("api-member-status") := ""
             )
           )
         ).toVector,
       groups.map { case (category, groupedMembers) =>
-        Mod.Content.Tag(
-          sectionTag(
-            cls                             := "docs-api-member-group",
-            idAttr                          := category.id,
-            dataAttr("api-member-group")    := "",
-            dataAttr("api-member-category") := category.title.toLowerCase,
-            h2(
-              category.title,
-              span(cls := "docs-api-member-count", groupedMembers.size.toString)
-            ),
-            groupedMembers.map(member =>
-              renderApiSymbol(
-                page.route,
-                member,
-                member.fragment,
-                Some(category)
-              )
+
+        sectionTag(
+          cls                             := "docs-api-member-group",
+          idAttr                          := category.id,
+          dataAttr("api-member-group")    := "",
+          dataAttr("api-member-category") := category.title.toLowerCase,
+          h2(
+            category.title,
+            span(cls := "docs-api-member-count", groupedMembers.size.toString)
+          ),
+          groupedMembers.map(member =>
+            renderApiSymbol(
+              page.route,
+              member,
+              member.fragment,
+              Some(category)
             )
           )
         )
+
       },
       pageLinks(page)
     )
@@ -254,7 +248,7 @@ final private[docs] class DocumentationRenderer(
           cls := "docs-callout-heading",
           span(cls   := "docs-callout-icon", aria.hidden := true, calloutIcon(kind)),
           strong(cls := "docs-callout-label", calloutName(kind)),
-          calloutTitle.map(value => Mod.Content.Tag(h3(value))).toVector
+          calloutTitle.map(value => h3(value)).toVector
         ),
         content.map(renderBlock(pageRoute))
       )
@@ -378,17 +372,17 @@ final private[docs] class DocumentationRenderer(
       a(href := location, code(symbol.qualifiedName)),
       Option
         .when(!isFallbackSummary(symbol.summary))(
-          Mod.Content.Tag(p(symbol.summary))
+          p(symbol.summary)
         ).toVector
     )
 
   private[docs] def renderInline(inline: Inline): Mod[Nothing] = inline match
-    case Inline.Text(value)             => Mod.Content.Text(value)
-    case Inline.Emphasis(content)       => Mod.Content.Tag(em(content.map(renderInline)))
-    case Inline.Strong(content)         => Mod.Content.Tag(strong(content.map(renderInline)))
-    case Inline.Strike(content)         => Mod.Content.Tag(del(content.map(renderInline)))
-    case Inline.Code(value)             => Mod.Content.Tag(code(value))
-    case Inline.ApiSymbolRef(id, label) => Mod.Content.Tag(renderInlineApiReference(id, label))
+    case Inline.Text(value)                      => value
+    case Inline.Emphasis(content)                => em(content.map(renderInline))
+    case Inline.Strong(content)                  => strong(content.map(renderInline))
+    case Inline.Strike(content)                  => del(content.map(renderInline))
+    case Inline.Code(value)                      => code(value)
+    case Inline.ApiSymbolRef(id, label)          => renderInlineApiReference(id, label)
     case Inline.Link(content, target, linkTitle) =>
       val titleMods = linkTitle.map(value => title := value).toVector
       target match
@@ -397,10 +391,10 @@ final private[docs] class DocumentationRenderer(
             .fold(application.location(route)) { value =>
               application.location(route).map(_.withFragment(value))
             }.getOrElse(throw new IllegalArgumentException(s"Unknown documentation route: $route"))
-          Mod.Content.Tag(link.pushNavigate(location, titleMods ++ content.map(renderInline)*))
+          link.pushNavigate(location, titleMods ++ content.map(renderInline)*)
         case LinkTarget.External(url) =>
-          Mod.Content.Tag(a(href := url, titleMods, content.map(renderInline)))
-    case Inline.LineBreak => Mod.Content.Tag(br())
+          a(href := url, titleMods, content.map(renderInline))
+    case Inline.LineBreak => br()
 
   private def renderInlineApiReference(id: String, label: String): HtmlElement[Nothing] =
     val symbol = application
@@ -428,20 +422,16 @@ final private[docs] class DocumentationRenderer(
         hidden                            := true,
         signature
           .map(value =>
-            Mod.Content.Tag(
-              span(
-                cls := "docs-api-reference-signature",
-                renderCode(value.signature, value.tokens)
-              )
+            span(
+              cls := "docs-api-reference-signature",
+              renderCode(value.signature, value.tokens)
             )
           ).toVector,
         summary
           .map(value =>
-            Mod.Content.Tag(
-              span(
-                cls := "docs-api-reference-summary",
-                value
-              )
+            span(
+              cls := "docs-api-reference-summary",
+              value
             )
           ).toVector
       )
@@ -463,52 +453,44 @@ final private[docs] class DocumentationRenderer(
       Option.when(expandable)(dataAttr("code-expandable") := "").toVector,
       caption
         .orElse(sourceRegion.map(_ => "Source"))
-        .map(value => Mod.Content.Tag(HtmlTag("figcaption")(value))).toVector,
+        .map(value => HtmlTag("figcaption")(value)).toVector,
       Option
         .when(copyable || expandable)(
-          Mod.Content.Tag(
+          div(
+            cls := "docs-code-toolbar",
+            span(cls := "docs-code-language", language.getOrElse("text")),
             div(
-              cls := "docs-code-toolbar",
-              span(cls := "docs-code-language", language.getOrElse("text")),
-              div(
-                cls := "docs-code-controls",
-                Option
-                  .when(copyable)(
-                    Mod.Content.Tag(
-                      button(
-                        typ                   := "button",
-                        cls                   := "docs-code-control",
-                        dataAttr("code-copy") := "",
-                        hidden                := true,
-                        "Copy"
-                      )
-                    )
-                  ).toVector,
-                Option
-                  .when(expandable)(
-                    Mod.Content.Tag(
-                      button(
-                        typ                     := "button",
-                        cls                     := "docs-code-control",
-                        dataAttr("code-expand") := "",
-                        ariaExpanded            := "true",
-                        hidden                  := true,
-                        "Collapse"
-                      )
-                    )
-                  ).toVector,
-                Option
-                  .when(copyable)(
-                    Mod.Content.Tag(
-                      span(
-                        cls                     := "docs-visually-hidden",
-                        dataAttr("code-status") := "",
-                        role                    := "status",
-                        aria.live               := "polite"
-                      )
-                    )
-                  ).toVector
-              )
+              cls := "docs-code-controls",
+              Option
+                .when(copyable)(
+                  button(
+                    typ                   := "button",
+                    cls                   := "docs-code-control",
+                    dataAttr("code-copy") := "",
+                    hidden                := true,
+                    "Copy"
+                  )
+                ).toVector,
+              Option
+                .when(expandable)(
+                  button(
+                    typ                     := "button",
+                    cls                     := "docs-code-control",
+                    dataAttr("code-expand") := "",
+                    ariaExpanded            := "true",
+                    hidden                  := true,
+                    "Collapse"
+                  )
+                ).toVector,
+              Option
+                .when(copyable)(
+                  span(
+                    cls                     := "docs-visually-hidden",
+                    dataAttr("code-status") := "",
+                    role                    := "status",
+                    aria.live               := "polite"
+                  )
+                ).toVector
             )
           )
         ).toVector,
@@ -518,23 +500,23 @@ final private[docs] class DocumentationRenderer(
       ),
       sourceRegion.map { region =>
         val source = metadata.sourceLink(ApiSource.Repository(region))
-        Mod.Content.Tag(
-          p(
-            cls := "docs-code-source-link",
-            a(href := source.url, "View source"),
-            s" (${source.label})"
-          )
+
+        p(
+          cls := "docs-code-source-link",
+          a(href := source.url, "View source"),
+          s" (${source.label})"
         )
+
       }.toVector
     )
   end codeBlock
 
   private def renderCode(text: String, tokens: Vector[CodeToken]): Vector[Mod[Nothing]] =
-    if tokens.isEmpty then Vector(Mod.Content.Text(text))
+    if tokens.isEmpty then Vector(text)
     else
       tokens.map { token =>
-        if token.styles.isEmpty then Mod.Content.Text(token.text)
-        else Mod.Content.Tag(span(cls := token.styles.mkString(" "), token.text))
+        if token.styles.isEmpty then token.text
+        else span(cls := token.styles.mkString(" "), token.text)
       }
 
   private def renderApiSymbol(
@@ -550,10 +532,10 @@ final private[docs] class DocumentationRenderer(
       dataAttr("api-symbol") := symbol.id,
       fragment.map(idAttr := _).toVector,
       category.map(value => dataAttr("api-member") := apiMemberSearchText(symbol, value)).toVector,
-      fragment.map(_ => Mod.Content.Tag(h3(cls := "docs-visually-hidden", symbol.name))).toVector,
+      fragment.map(_ => h3(cls := "docs-visually-hidden", symbol.name)).toVector,
       symbol.signatures.map(renderApiSignature(pageRoute, _, member = category.nonEmpty)),
       Option
-        .when(showSummary)(Mod.Content.Tag(p(cls := "docs-api-summary", symbol.summary))).toVector
+        .when(showSummary)(p(cls := "docs-api-summary", symbol.summary)).toVector
     )
 
   private def apiMemberSearchText(symbol: ApiSymbol, category: ApiMemberCategory): String =
@@ -583,7 +565,7 @@ final private[docs] class DocumentationRenderer(
         )
       else codeBlock(Some("scala"), signature.signature, signature.tokens, None, copyable = false),
       signature.documentation
-        .map(documentation => Mod.Content.Tag(renderApiDocumentation(pageRoute, documentation)))
+        .map(documentation => renderApiDocumentation(pageRoute, documentation))
         .toVector,
       p(
         cls := "docs-api-source",
@@ -608,14 +590,12 @@ final private[docs] class DocumentationRenderer(
           HtmlTag("dl")(
             tags.flatMap { tag =>
               Vector(
-                Mod.Content.Tag(
-                  HtmlTag("dt")(
-                    tag.subject
-                      .map(subject => Mod.Content.Tag(code(subject)))
-                      .getOrElse(Mod.Content.Text(tagTitle(name)))
-                  )
+                HtmlTag("dt")(
+                  tag.subject
+                    .map(subject => code(subject))
+                    .getOrElse(tagTitle(name))
                 ),
-                Mod.Content.Tag(HtmlTag("dd")(tag.content.map(renderBlock(pageRoute))))
+                HtmlTag("dd")(tag.content.map(renderBlock(pageRoute)))
               )
             }
           )
@@ -728,13 +708,13 @@ final private[docs] class DocumentationRenderer(
         case PageSource.Authored(location) =>
           val editUrl = s"$repositoryUrl/edit/master/${location.path}#L${location.line}"
           Vector[Mod[Nothing]](
-            Mod.Content.Tag(a(href := editUrl, "Edit this page")),
-            Mod.Content.Text(" · "),
-            Mod.Content.Tag(a(href := issueUrl, "Report a documentation issue"))
+            a(href := editUrl, "Edit this page"),
+            " · ",
+            a(href := issueUrl, "Report a documentation issue")
           )
         case PageSource.GeneratedApi(_) =>
           Vector[Mod[Nothing]](
-            Mod.Content.Tag(a(href := issueUrl, "Report a documentation issue"))
+            a(href := issueUrl, "Report a documentation issue")
           )
     )
 

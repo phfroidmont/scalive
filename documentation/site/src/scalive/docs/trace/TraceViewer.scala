@@ -377,9 +377,9 @@ private[docs] object TraceViewer:
         step,
         step
           .map(_.kind).chooseMod(
-            "operation" -> Mod.Content.Tag(traceOperationContext(step)),
-            "message"   -> Mod.Content.Tag(traceMessageContext(step)),
-            "boundary"  -> Mod.Content.Tag(boundaryContext)
+            "operation" -> traceOperationContext(step),
+            "message"   -> traceMessageContext(step),
+            "boundary"  -> boundaryContext
           )
       ),
       traceEvidence(step.map(_.evidence), step.map(_.label))

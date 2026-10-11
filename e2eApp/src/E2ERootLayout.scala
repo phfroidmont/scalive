@@ -35,8 +35,10 @@ final class E2ERootLayout(assets: StaticAssets, navigationGuardAssets: Navigatio
       )
     )
 
-  private def hookOutsideLiveView(ctx: LiveRootLayoutContext[Any, Any]): Mod[Nothing] =
-    if ctx.currentUrl.path.encode == "/issues/4147" then
-      Mod.Content.Tag(div(dom.hook("HookOutside", DomRef("foobar"))))
-    else Mod.Content.Text("")
+  private def hookOutsideLiveView(
+    ctx: LiveRootLayoutContext[Any, Any]
+  ): Option[HtmlElement[Nothing]] =
+    Option.when(ctx.currentUrl.path.encode == "/issues/4147")(
+      div(dom.hook("HookOutside", DomRef("foobar")))
+    )
 end E2ERootLayout

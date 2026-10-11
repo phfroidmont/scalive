@@ -30,12 +30,10 @@ final private[docs] class DocumentationRootLayout(
         metaTag(nameAttr := "description", contentAttr := metadata.description),
         Option
           .when(!metadata.indexable)(
-            Mod.Content.Tag(
-              metaTag(
-                idAttr      := "docs-robots",
-                nameAttr    := "robots",
-                contentAttr := "noindex,follow"
-              )
+            metaTag(
+              idAttr      := "docs-robots",
+              nameAttr    := "robots",
+              contentAttr := "noindex,follow"
             )
           ).toVector,
         linkTag(rel := "canonical", href := origin.absolute(metadata.canonicalPath)),
@@ -309,14 +307,12 @@ final private[docs] class DocumentationLayout(
       p(cls := "docs-nav-title", "Packages and types"),
       Option
         .when(page.metadata.section == Section.Api)(
-          Mod.Content.Tag(
-            input(
-              cls                        := "docs-api-nav-filter",
-              typ                        := "search",
-              placeholder                := "Filter packages and types",
-              aria.label                 := "Filter API packages and types",
-              dataAttr("api-nav-filter") := ""
-            )
+          input(
+            cls                        := "docs-api-nav-filter",
+            typ                        := "search",
+            placeholder                := "Filter packages and types",
+            aria.label                 := "Filter API packages and types",
+            dataAttr("api-nav-filter") := ""
           )
         ).toVector,
       ul(section.toVector.flatMap(_.children).map(item => navigationTree(item, currentRoute, 0)))
@@ -361,7 +357,7 @@ final private[docs] class DocumentationLayout(
       val links = entries.map { case (item, position) =>
         li(editorialNavigationLink[Msg](item, currentRoute, position))
       }
-      val linkMods = links.map(Mod.Content.Tag(_))
+      val linkMods = links
       group.map(value => p(cls := "docs-nav-group", value)).toVector :+
         (if page.metadata.section == Section.Learn then ol(linkMods) else ul(linkMods))
     }
@@ -370,7 +366,7 @@ final private[docs] class DocumentationLayout(
       navTag(
         aria.label := s"${root.title} section navigation",
         p(cls := "docs-nav-title", root.title),
-        lists.map(Mod.Content.Tag(_))
+        lists
       )
     )
   end editorialSectionNavigation
@@ -387,15 +383,15 @@ final private[docs] class DocumentationLayout(
     val mods = Vector.newBuilder[Mod[Msg]]
     if item.route == currentRoute then mods += (ariaCurrent := "page")
     if item.section == Section.Learn then
-      mods += Mod.Content.Tag(
+      mods +=
         span(cls := "docs-section-index-number", aria.hidden := true, f"$position%02d")
-      )
-    mods += Mod.Content.Tag(
+
+    mods +=
       span(
         cls := "docs-section-index-label",
         editorialNavigationLabel(item, position)
       )
-    )
+
     link.pushNavigate(location, mods.result()*)
 
   private def editorialNavigationLabel(item: NavigationItem, position: Int): String =
@@ -489,7 +485,7 @@ final private[docs] class DocumentationLayout(
     mods += (cls                                            := "docs-nav-row")
     if item.route == currentRoute then mods += (ariaCurrent := "page")
     mods ++= apiOwnerKinds.getOrElse(item.route, Vector.empty).map(apiKindBadge)
-    mods += Mod.Content.Tag(span(cls := "docs-api-nav-label", item.title))
+    mods += span(cls := "docs-api-nav-label", item.title)
     link.pushNavigate(location, mods.result()*)
 
   private def navigationLink[Msg](
@@ -546,7 +542,7 @@ final private[docs] class DocumentationLayout(
       link.pushNavigate(location, item.title),
       Option
         .when(showChildren && item.children.nonEmpty)(
-          Mod.Content.Tag(ul(item.children.map(child => outlineItem(route, child, showChildren))))
+          ul(item.children.map(child => outlineItem(route, child, showChildren)))
         ).toVector
     )
 

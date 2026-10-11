@@ -98,9 +98,9 @@ object LiveComponent:
 end LiveComponent
 
 /** Protocol-neutral declaration consumed by the HTML renderer. */
-sealed trait ComponentSpec[+OwnerMsg]
+sealed private[scalive] trait ComponentSpec[+OwnerMsg]
 
-object ComponentSpec:
+private[scalive] object ComponentSpec:
   final case class Plain[Props, Msg, Model](
     component: LiveComponent[Props, Msg, Model],
     id: String,

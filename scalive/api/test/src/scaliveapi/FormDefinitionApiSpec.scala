@@ -535,7 +535,7 @@ object FormDefinitionApiSpec extends ZIOSpecDefault:
         )
       )
       val event      = ProfileDefinition.event(validData, FormEventKind.Submitted)
-      val attributes = ProfileSubmitter.attributes(ProfileIntent.Save).flattened
+      val attributes = ProfileSubmitter.attributes(ProfileIntent.Save)
       val saveButton = ProfileSubmitter.button(ProfileIntent.Save)("Save")
 
       assertTrue(
@@ -555,13 +555,8 @@ object FormDefinitionApiSpec extends ZIOSpecDefault:
             Vector("save", "preview")
           )
         ),
-        attributes == Vector(
-          Mod.Attr.Static("type", "submit"),
-          Mod.Attr.Static("name", ProfileSubmitter.name),
-          Mod.Attr.Static("value", "save")
-        ),
         saveButton.tag.name == "button",
-        saveButton.attrMods == attributes,
+        saveButton.mods.headOption.contains(attributes),
         event.form.valueOption.contains(Profile("Ada", Email("ada@example.com"), Vector.empty))
       )
     },

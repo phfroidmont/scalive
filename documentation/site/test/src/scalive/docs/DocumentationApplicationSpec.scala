@@ -42,11 +42,13 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
     "runtime-disconnected-lifetime.svg",
     "search-index.json"
   )
-  private val authService     = AuthService.inMemory()
-  private val liveConnections = Unsafe.unsafe { implicit unsafe =>
+  // Lazy: Mill initializes spec objects inside its daemon to list tests. Running effects
+  // there makes ZIO Test's shutdown hook spin at exit, so the daemon never exits.
+  private lazy val authService     = AuthService.inMemory()
+  private lazy val liveConnections = Unsafe.unsafe { implicit unsafe =>
     Runtime.default.unsafe.run(LiveConnections.make[PublicSessionId](_ => ZIO.unit)).getOrThrow()
   }
-  private val documentationEnvironment =
+  private lazy val documentationEnvironment =
     ZEnvironment[Reports](reportsFixtureService)
       .add[AuthService](authService)
       .add[LiveConnections[PublicSessionId]](liveConnections)

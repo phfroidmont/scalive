@@ -18,8 +18,10 @@ object AuthFlowSpec extends ZIOSpecDefault:
     secureCookie = true,
     allowedWebSocketOrigins = Set(WebSocketOrigin.https("docs.example.test"))
   ).toOption.get
-  private val security        = LiveSecurity(config)
-  private val liveConnections = Unsafe.unsafe { implicit unsafe =>
+  private val security = LiveSecurity(config)
+  // Lazy: Mill initializes spec objects inside its daemon to list tests. Running effects
+  // there makes ZIO Test's shutdown hook spin at exit, so the daemon never exits.
+  private lazy val liveConnections = Unsafe.unsafe { implicit unsafe =>
     Runtime.default.unsafe.run(LiveConnections.make[PublicSessionId](_ => ZIO.unit)).getOrThrow()
   }
 
@@ -30,7 +32,7 @@ object AuthFlowSpec extends ZIOSpecDefault:
     ZEnvironment[AuthService](auth)
       .add[LiveConnections[PublicSessionId]](connections)
 
-  private val documentationEnvironment =
+  private lazy val documentationEnvironment =
     authEnvironment(AuthService.inMemory()).add[Reports](reportsFixtureService)
 
   private def url(value: String): URL =

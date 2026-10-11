@@ -99,9 +99,6 @@ object LiveComponent:
         model: Model,
         ctx: MessageContext
       ): Nothing => Task[Model] = _ => ZIO.succeed(model)
-
-  /** Another name for [[LiveComponent.WithOutput.Eventless]]. */
-  trait EventlessWithOutput[Props, Model, Output] extends WithOutput.Eventless[Props, Model, Output]
 end LiveComponent
 
 /** Protocol-neutral declaration consumed by the HTML renderer. */

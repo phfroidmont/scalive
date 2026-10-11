@@ -91,7 +91,12 @@ sealed trait LiveHooks[Msg, Model]:
     hook: (Model, Msg, MessageContext[Msg, Model]) => Task[LiveHookResult[Model]]
   ): LiveHooks[Msg, Model] = LiveHooks.Event(this, hook)
 
-  /** Adds a hook that runs with the new URL before `handleParams`. */
+  /** Adds a hook that runs with the new URL before `handleParams`.
+    *
+    * Every LiveView runs it after mount and each time its URL changes; a nested LiveView sees the
+    * URL of its page. A [[LiveView.Routed]] view skips it when the URL does not decode into its
+    * parameters.
+    */
   final def onParams(
     hook: (Model, URL, ParamsContext[Msg, Model]) => Task[LiveHookResult[Model]]
   ): LiveHooks[Msg, Model] = LiveHooks.Params(this, hook)
@@ -185,7 +190,8 @@ object LiveHooks:
 
   /** Adds a hook that runs with the new URL before `handleParams`.
     *
-    * This form starts the declarations with this hook, like `empty.onParams`.
+    * This form starts the declarations with this hook, like `empty.onParams`. Every LiveView runs
+    * it after mount and each time its URL changes.
     */
   def onParams[Msg, Model](
     hook: (Model, URL, ParamsContext[Msg, Model]) => Task[LiveHookResult[Model]]
@@ -432,9 +438,10 @@ trait RootEventHooks[Msg, Model]:
 trait RootParamsHooks[Msg, Model]:
   /** Attaches `hook` under `id`, to run with the new URL before `handleParams`.
     *
-    * Only a [[LiveView.Routed]] view runs these hooks: after mount and after each live patch whose
-    * URL decodes into its parameters. A halt skips later hooks and `handleParams`. Attaching an
-    * `id` that is already attached replaces that hook in place.
+    * Every LiveView runs these hooks after mount and each time its URL changes; a nested LiveView
+    * sees the URL of its page. A [[LiveView.Routed]] view skips them when the URL does not decode
+    * into its parameters. A halt skips later hooks and `handleParams`. Attaching an `id` that is
+    * already attached replaces that hook in place.
     */
   def attach(
     id: String

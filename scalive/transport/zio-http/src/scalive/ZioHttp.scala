@@ -1156,9 +1156,14 @@ object ZioHttp:
                    childLifecycle = Some(turn.lifecycle)
                  )
         credentials <- ZioHttpSecurity.issueNested(config, claims)
-        model       <- liveView.mount(turn.mountContext)
-        navigation  <- turn.navigation
-        child       <- navigation match
+        mounted     <- liveView.mount(turn.mountContext)
+        prepared    <- RootLifecycle.ordinary(liveView, initialUrl).prepareParams(initialUrl)
+        model       <- turn.navigation.flatMap {
+                   case Some(_) => ZIO.succeed(mounted)
+                   case None    => turn.runParams(mounted, initialUrl, prepared)
+                 }
+        navigation <- turn.navigation
+        child      <- navigation match
                    case Some(_) => ZIO.none
                    case None    =>
                      val nested = disconnectedNestedResolver(

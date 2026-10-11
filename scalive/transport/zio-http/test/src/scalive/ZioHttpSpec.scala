@@ -241,6 +241,28 @@ object ZioHttpSpec extends ZIOSpecDefault:
         grandClaims.topic == NestedTopic("lv:grandchild")
       )
     },
+    test("disconnected nested LiveViews run params hooks with the page URL") {
+      object Child extends LiveView.Eventless[String]:
+        override val hooks = LiveHooks.empty[Nothing, String]
+          .onParams((_, url, _) => ZIO.succeed(LiveHookResult.cont(url.encode)))
+        def mount(ctx: MountContext) = ZIO.succeed("mounted")
+        def view(model: Signal[String]) = span(idAttr := "child-url", model)
+
+      object Parent extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        def view(model: Signal[Unit]) = mainTag(liveView("child", Child))
+
+      for
+        response <- run(
+                      ZioHttp.routes(scalive.Live.router(scalive.live(Parent)), config),
+                      Request.get(URL.decode("/?tab=two").toOption.get)
+                    )
+        body <- response.body.asString.orDie
+      yield assertTrue(
+        response.status == Status.Ok,
+        body.contains("<span id=\"child-url\">/?tab=two</span>")
+      )
+    },
     test("a successful disconnected render consumes signed flash into HTML and root claims") {
       val notice = FlashKind("notice")
       object View extends LiveView.Eventless[Unit]:

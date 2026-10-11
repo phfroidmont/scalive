@@ -34,7 +34,7 @@ private[scalive] object RootLifecycle:
       mount = liveView.mount,
       handleMessage = (model, context, message) => liveView.handleMessage(model, context)(message),
       prepareParams =
-        _ => ZIO.succeed(RootParamsHandler(runHooks = false, (model, _) => ZIO.succeed(model))),
+        _ => ZIO.succeed(RootParamsHandler(runHooks = true, (model, _) => ZIO.succeed(model))),
       view = input => liveView.view(input.map(_._1)),
       connectedTurnGuard = connectedTurnGuard
     )

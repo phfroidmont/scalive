@@ -456,6 +456,27 @@ object RootConnectionSpec extends ZIOSpecDefault:
         )
       }
     },
+    test("params hooks run on a LiveView without routed params") {
+      ZIO.scoped {
+        val destination = URL.decode("/next?tab=two").toOption.get
+        for
+          seen    <- Ref.make(Vector.empty[String])
+          outputs <- Queue.unbounded[ConnectionOutput]
+          view = new LiveView.Eventless[Unit]:
+                   override val hooks = LiveHooks.empty[Nothing, Unit]
+                     .onParams((model, url, _) =>
+                       seen.update(_ :+ url.encode).as(LiveHookResult.cont(model))
+                     )
+                   def mount(ctx: MountContext) = ZIO.unit
+                   def view(model: Signal[Unit]) = div()
+          connection <- RootConnection.start(config, metadata, view, outputs.offer(_).unit)
+          _          <- outputs.take
+          _          <- connection.submitPatch(CommandId.fresh().toOption.get, destination)
+          _          <- outputs.take
+          urls       <- seen.get
+        yield assertTrue(urls == Vector("/", "/next?tab=two"))
+      }
+    },
     test("connected-turn guards skip bootstrap and precede every connected handler boundary") {
       ZIO.scoped {
         val destination = URL.decode("/params").toOption.get

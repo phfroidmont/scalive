@@ -11178,18 +11178,6 @@
       ]
     },
     {
-      "id" : "enum:scalive.FormPath.RepresentationError.InvalidLimits",
-      "ownerId" : "enum:scalive.FormPath.RepresentationError",
-      "qualifiedName" : "scalive.FormPath.RepresentationError.InvalidLimits",
-      "kind" : "enum",
-      "signatures" : [
-        {
-          "id" : "enum:scalive.FormPath.RepresentationError.InvalidLimits:90e897fdcb385d07",
-          "signature" : "enum InvalidLimits(maxDepth: Int, maxSegmentLength: Int) extends FormPath.RepresentationError"
-        }
-      ]
-    },
-    {
       "id" : "enum:scalive.FormPath.RepresentationError.PathTooDeep",
       "ownerId" : "enum:scalive.FormPath.RepresentationError",
       "qualifiedName" : "scalive.FormPath.RepresentationError.PathTooDeep",
@@ -21281,30 +21269,6 @@
       ]
     },
     {
-      "id" : "val:scalive.FormPath.RepresentationError.InvalidLimits.maxDepth",
-      "ownerId" : "enum:scalive.FormPath.RepresentationError.InvalidLimits",
-      "qualifiedName" : "scalive.FormPath.RepresentationError.InvalidLimits.maxDepth",
-      "kind" : "val",
-      "signatures" : [
-        {
-          "id" : "val:scalive.FormPath.RepresentationError.InvalidLimits.maxDepth:78c35f99c1511226",
-          "signature" : "val maxDepth: Int"
-        }
-      ]
-    },
-    {
-      "id" : "val:scalive.FormPath.RepresentationError.InvalidLimits.maxSegmentLength",
-      "ownerId" : "enum:scalive.FormPath.RepresentationError.InvalidLimits",
-      "qualifiedName" : "scalive.FormPath.RepresentationError.InvalidLimits.maxSegmentLength",
-      "kind" : "val",
-      "signatures" : [
-        {
-          "id" : "val:scalive.FormPath.RepresentationError.InvalidLimits.maxSegmentLength:f5f261949cfc985f",
-          "signature" : "val maxSegmentLength: Int"
-        }
-      ]
-    },
-    {
       "id" : "val:scalive.FormPath.RepresentationError.MissingRootName",
       "ownerId" : "enum:scalive.FormPath.RepresentationError",
       "qualifiedName" : "scalive.FormPath.RepresentationError.MissingRootName",
@@ -21313,18 +21277,6 @@
         {
           "id" : "val:scalive.FormPath.RepresentationError.MissingRootName:f66ee595663a1996",
           "signature" : "val MissingRootName: FormPath.RepresentationError"
-        }
-      ]
-    },
-    {
-      "id" : "val:scalive.FormPath.RepresentationError.NullLimits",
-      "ownerId" : "enum:scalive.FormPath.RepresentationError",
-      "qualifiedName" : "scalive.FormPath.RepresentationError.NullLimits",
-      "kind" : "val",
-      "signatures" : [
-        {
-          "id" : "val:scalive.FormPath.RepresentationError.NullLimits:673c456e60a82768",
-          "signature" : "val NullLimits: FormPath.RepresentationError"
         }
       ]
     },

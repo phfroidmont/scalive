@@ -58,10 +58,8 @@ object FormPathSpec extends ZIOSpecDefault:
         ),
         FormPath.parse("abcd", shallow) == Left(RepresentationError.SegmentTooLong(0, 3)),
         FormPath.parse("a[b][c]", shallow) == Left(RepresentationError.PathTooDeep(2)),
-        FormPath.parse("a", FormPath.ParseLimits(0, 3)) == Left(
-          RepresentationError.InvalidLimits(0, 3)
-        ),
-        FormPath.parse("a", null) == Left(RepresentationError.NullLimits)
+        scala.util.Try(FormPath.ParseLimits(0, 3)).isFailure,
+        scala.util.Try(FormPath.ParseLimits(1, -1)).isFailure
       )
     },
     test("produces injective DOM-safe ids for formerly colliding paths") {

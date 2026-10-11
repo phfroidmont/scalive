@@ -88,14 +88,16 @@ object FormPath:
 
   /** Resource limits applied while parsing an untrusted browser name.
     *
+    * Both limits must be positive; constructing other limits throws `IllegalArgumentException`.
+    *
     * @param maxDepth
-    *   The maximum number of segments, including the root name. Parsing rejects a non-positive
-    *   value.
+    *   The maximum number of segments, including the root name.
     * @param maxSegmentLength
-    *   The maximum length of one segment, in UTF-16 code units. Parsing rejects a non-positive
-    *   value.
+    *   The maximum length of one segment, in UTF-16 code units.
     */
-  final case class ParseLimits(maxDepth: Int = 32, maxSegmentLength: Int = 256)
+  final case class ParseLimits(maxDepth: Int = 32, maxSegmentLength: Int = 256):
+    require(maxDepth > 0, "maxDepth must be positive")
+    require(maxSegmentLength > 0, "maxSegmentLength must be positive")
 
   /** The companion of [[ParseLimits]], holding the defaults. */
   object ParseLimits:
@@ -157,18 +159,6 @@ object FormPath:
       */
     case SegmentTooLong(segmentIndex: Int, maxLength: Int)
 
-    /** The parse limits are `null`. */
-    case NullLimits
-
-    /** The parse limits are not both positive.
-      *
-      * @param maxDepth
-      *   The supplied maximum number of segments.
-      * @param maxSegmentLength
-      *   The supplied maximum segment length.
-      */
-    case InvalidLimits(maxDepth: Int, maxSegmentLength: Int)
-
     /** Stable machine-readable error code. */
     def code: String = this match
       case NullName                    => "null_name"
@@ -179,8 +169,6 @@ object FormPath:
       case UnterminatedBracket(_)      => "unterminated_bracket"
       case PathTooDeep(_)              => "path_too_deep"
       case SegmentTooLong(_, _)        => "segment_too_long"
-      case NullLimits                  => "null_limits"
-      case InvalidLimits(_, _)         => "invalid_limits"
   end RepresentationError
 
   /** The path with no segments. */
@@ -221,16 +209,13 @@ object FormPath:
 
   /** Parses an untrusted browser field name, such as `user[tags][]`, without normalizing it.
     *
-    * This form applies `limits`. A malformed name, a name over the limits, or `null` or
-    * non-positive limits return a [[RepresentationError]] rather than throwing.
+    * This form applies `limits`. A malformed name or one over the limits returns a
+    * [[RepresentationError]] rather than throwing.
     */
   def parse(name: String, limits: ParseLimits): Either[RepresentationError, FormPath] =
     import RepresentationError.*
 
-    if limits == null then Left(NullLimits)
-    else if limits.maxDepth <= 0 || limits.maxSegmentLength <= 0 then
-      Left(InvalidLimits(limits.maxDepth, limits.maxSegmentLength))
-    else if name == null then Left(NullName)
+    if name == null then Left(NullName)
     else if name.isEmpty then Left(MissingRootName)
     else
       val parsed       = Vector.newBuilder[FormPathSegment]

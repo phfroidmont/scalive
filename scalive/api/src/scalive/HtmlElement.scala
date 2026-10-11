@@ -435,6 +435,17 @@ final class KeyHtmlAttrBinding private[scalive] (
   def key(value: Key): KeyHtmlAttrBinding = append(Mod.Attr.Static("phx-key", value.value))
 end KeyHtmlAttrBinding
 
+/** The transfer progress binding of one upload, as returned by `upload.onProgress`.
+  *
+  * The browser reads `phx-progress` only from the upload's own file input, so this value is not a
+  * modifier: pass it to that upload's `liveFileInput`, as in
+  * `liveFileInput(upload, upload.onProgress(Msg.Progress))`. Passing it to another upload's input
+  * throws `IllegalArgumentException` when the input renders.
+  */
+final class UploadProgress[+Msg] private[scalive] (
+  private[scalive] val upload: Either[UploadRef, Signal[UploadRef]],
+  private[scalive] val binding: Mod.Attr[Msg])
+
 /** Builder for a client lifecycle attribute, such as `phx-mounted`, which runs a `JS` command.
   *
   * The Phoenix client runs only `JS` commands for these attributes, so the builder accepts nothing

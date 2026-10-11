@@ -753,10 +753,11 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
     /** Sends a message each time the browser reports transfer progress for this upload
       * (`phx-progress`).
       *
-      * This form sends a constant message, as in `upload.onProgress(Msg.Progress)`. Put it on the
+      * This form sends a constant message, as in `upload.onProgress(Msg.Progress)`. Pass it to the
       * upload's `liveFileInput`, and read the latest upload snapshot when handling the message.
       */
-    def onProgress[Msg](message: Msg): Mod.Attr[Msg] = on.uploadProgress(message)
+    def onProgress[Msg](message: Msg): UploadProgress[Msg] =
+      UploadProgress(Left(upload.ref), on.uploadProgress(message))
 
     /** Sends a message each time the browser reports transfer progress for this upload
       * (`phx-progress`).
@@ -764,7 +765,8 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
       * This form builds the message from the raw `ref`, `entry_ref`, `progress`, and optional
       * `error` values, which the browser controls.
       */
-    def onProgress[Msg](f: Map[String, String] => Msg): Mod.Attr[Msg] = on.uploadProgress(f)
+    def onProgress[Msg](f: Map[String, String] => Msg): UploadProgress[Msg] =
+      UploadProgress(Left(upload.ref), on.uploadProgress(f))
 
   extension [R](upload: Signal[LiveUpload[R]])
     /** Makes the element a drop zone for this upload's files (`phx-drop-target`).
@@ -778,7 +780,8 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
       *
       * This form, on a signal of the upload, sends a constant message.
       */
-    def onProgress[Msg](message: Msg): Mod.Attr[Msg] = on.uploadProgress(message)
+    def onProgress[Msg](message: Msg): UploadProgress[Msg] =
+      UploadProgress(Right(upload.map(_.ref)), on.uploadProgress(message))
 
     /** Sends a message each time the browser reports transfer progress for this upload
       * (`phx-progress`).
@@ -786,7 +789,8 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
       * This form, on a signal of the upload, builds the message from the raw `ref`, `entry_ref`,
       * `progress`, and optional `error` values, which the browser controls.
       */
-    def onProgress[Msg](f: Map[String, String] => Msg): Mod.Attr[Msg] = on.uploadProgress(f)
+    def onProgress[Msg](f: Map[String, String] => Msg): UploadProgress[Msg] =
+      UploadProgress(Right(upload.map(_.ref)), on.uploadProgress(f))
 
   /** Converts a string to text content, escaped when rendered, so a string can be a child. */
   implicit def stringToMod(value: String): Mod[Nothing] = Mod.Content.Text(value)

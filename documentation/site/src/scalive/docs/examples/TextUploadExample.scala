@@ -43,8 +43,8 @@ final class TextUploadExample extends LiveView[TextUploadExample.Msg, TextUpload
           label(forId := upload.map(_.ref.value), "Text file"),
           liveFileInput(
             upload,
-            dataAttr("text-upload-input") := "",
-            upload.onProgress(Msg.Progress)
+            upload.onProgress(Msg.Progress),
+            dataAttr("text-upload-input") := ""
           ),
           p(cls := "docs-upload-help", "Accepted: .txt and .md. Maximum: one file, 64 KiB."),
           errorList(uploadErrors(upload)),

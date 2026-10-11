@@ -1430,6 +1430,18 @@
       ]
     },
     {
+      "id" : "class:scalive.UploadProgress",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.UploadProgress",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.UploadProgress:ce94f361b515c9cb",
+          "signature" : "class UploadProgress[+Msg]"
+        }
+      ]
+    },
+    {
       "id" : "class:scalive.ValidFormSnapshot",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.ValidFormSnapshot",
@@ -10000,8 +10012,16 @@
           "signature" : "def liveFileInput[Msg, R](upload: Signal[LiveUpload[R]], mods: Mod[Msg]*): HtmlElement[Msg]"
         },
         {
+          "id" : "def:scalive.liveFileInput:5ab2cefed430d0c5",
+          "signature" : "def liveFileInput[Msg, R](upload: LiveUpload[R], progress: UploadProgress[Msg], mods: Mod[Msg]*): HtmlElement[Msg]"
+        },
+        {
           "id" : "def:scalive.liveFileInput:c09740dfc9f12518",
           "signature" : "def liveFileInput[Msg, R](upload: LiveUpload[R], mods: Mod[Msg]*): HtmlElement[Msg]"
+        },
+        {
+          "id" : "def:scalive.liveFileInput:c504d1cf7cc8aef7",
+          "signature" : "def liveFileInput[Msg, R](upload: Signal[LiveUpload[R]], progress: UploadProgress[Msg], mods: Mod[Msg]*): HtmlElement[Msg]"
         }
       ]
     },
@@ -13664,20 +13684,20 @@
       "kind" : "extension",
       "signatures" : [
         {
-          "id" : "extension:scalive.onProgress:1c1894b4074b8e28",
-          "signature" : "extension def onProgress[R](upload: Signal[LiveUpload[R]])[Msg](message: Msg): Mod.Attr[Msg]"
+          "id" : "extension:scalive.onProgress:16c62e4e7e4f7fe9",
+          "signature" : "extension def onProgress[R](upload: LiveUpload[R])[Msg](message: Msg): UploadProgress[Msg]"
         },
         {
-          "id" : "extension:scalive.onProgress:abca07fe690923da",
-          "signature" : "extension def onProgress[R](upload: LiveUpload[R])[Msg](f: Map[String, String] => Msg): Mod.Attr[Msg]"
+          "id" : "extension:scalive.onProgress:421905991249c7d6",
+          "signature" : "extension def onProgress[R](upload: Signal[LiveUpload[R]])[Msg](message: Msg): UploadProgress[Msg]"
         },
         {
-          "id" : "extension:scalive.onProgress:d43d66c916f2e9e6",
-          "signature" : "extension def onProgress[R](upload: LiveUpload[R])[Msg](message: Msg): Mod.Attr[Msg]"
+          "id" : "extension:scalive.onProgress:5e229348e46ac57f",
+          "signature" : "extension def onProgress[R](upload: Signal[LiveUpload[R]])[Msg](f: Map[String, String] => Msg): UploadProgress[Msg]"
         },
         {
-          "id" : "extension:scalive.onProgress:f6762142e1517066",
-          "signature" : "extension def onProgress[R](upload: Signal[LiveUpload[R]])[Msg](f: Map[String, String] => Msg): Mod.Attr[Msg]"
+          "id" : "extension:scalive.onProgress:c19c72dab46c0ebe",
+          "signature" : "extension def onProgress[R](upload: LiveUpload[R])[Msg](f: Map[String, String] => Msg): UploadProgress[Msg]"
         }
       ]
     },

@@ -80,8 +80,8 @@ class Issue2965LiveView extends LiveView[Issue2965LiveView.Msg, Issue2965LiveVie
         sectionTag(
           liveFileInput(
             upload,
-            styleAttr := "display: none;",
-            upload.onProgress(params => Msg.Progress(params.getOrElse("entry_ref", "")))
+            upload.onProgress(params => Msg.Progress(params.getOrElse("entry_ref", ""))),
+            styleAttr := "display: none;"
           ),
           input(
             dom.hook("QueuedUploaderHook", DomRef("fileinput")),
@@ -513,8 +513,8 @@ class Issue3647LiveView extends LiveView[Issue3647LiveView.Msg, Issue3647LiveVie
         ),
         liveFileInput(
           upload,
-          formId := "auto-form",
-          upload.onProgress(params => Msg.Progress(params.getOrElse("entry_ref", "")))
+          upload.onProgress(params => Msg.Progress(params.getOrElse("entry_ref", ""))),
+          formId := "auto-form"
         )
       ),
       form(idAttr := "auto-form", on.change(_ => Msg.Validate)),

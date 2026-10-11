@@ -111,6 +111,24 @@ object HtmlDslApiSpec extends ZIOSpecDefault:
 
       assertTrue(messageErrors.forall(_.nonEmpty), commandErrors.isEmpty)
     },
+    test("upload progress binds only to its upload's file input") {
+      // The browser reads phx-progress only from the upload's own file input.
+      val elsewhere = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+
+        def page(upload: LiveUpload[zio.Chunk[Byte]]) = div(upload.onProgress("progress"))
+      """)
+      val onInput = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+
+        def page(upload: LiveUpload[zio.Chunk[Byte]]) =
+          liveFileInput(upload, upload.onProgress("progress"), cls := "hidden")
+        def live(upload: Signal[LiveUpload[zio.Chunk[Byte]]]) =
+          liveFileInput(upload, upload.onProgress(_ => "progress"))
+      """)
+
+      assertTrue(elsewhere.nonEmpty, onInput.isEmpty)
+    },
     test("event binding builders cannot be publicly constructed") {
       val bindingConstructorErrors = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*

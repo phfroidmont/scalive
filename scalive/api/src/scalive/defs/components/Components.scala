@@ -56,10 +56,81 @@ trait Components:
     * @param upload
     *   the currently allowed upload snapshot to bind to this input
     * @param mods
-    *   additional input attributes and bindings, commonly an upload progress binding; do not pass
-    *   content or duplicate the protocol attributes owned by this helper
+    *   additional input attributes and bindings; do not pass content or duplicate the protocol
+    *   attributes owned by this helper
     */
   def liveFileInput[Msg, R](upload: LiveUpload[R], mods: Mod[Msg]*): HtmlElement[Msg] =
+    fileInput(upload, idAttr := upload.ref.value, mods)
+
+  /** Renders the file input required by the LiveView upload protocol.
+    *
+    * This form also reports the upload's transfer progress with `progress`, from
+    * `upload.onProgress`. It throws `IllegalArgumentException` when `progress` belongs to another
+    * upload.
+    */
+  def liveFileInput[Msg, R](
+    upload: LiveUpload[R],
+    progress: UploadProgress[Msg],
+    mods: Mod[Msg]*
+  ): HtmlElement[Msg] =
+    val id = progress.upload match
+      case Left(ref) =>
+        requireOwnProgress(upload, ref)
+        idAttr := upload.ref.value
+      case Right(refs) =>
+        idAttr := refs.map { ref =>
+          requireOwnProgress(upload, ref)
+          upload.ref.value
+        }
+    fileInput(upload, id, progress.binding +: mods)
+
+  /** Renders the file input required by the LiveView upload protocol.
+    *
+    * This form follows a signal of the upload, such as `model.map(_.upload)`, so the input's
+    * protocol attributes follow the latest snapshot in the model.
+    */
+  def liveFileInput[Msg, R](
+    upload: Signal[LiveUpload[R]],
+    mods: Mod[Msg]*
+  ): HtmlElement[Msg] =
+    signalFileInput(upload, idAttr := upload.map(_.ref.value), mods)
+
+  /** Renders the file input required by the LiveView upload protocol.
+    *
+    * This form follows a signal of the upload and also reports its transfer progress with
+    * `progress`. Rendering fails with `IllegalArgumentException` when `progress` belongs to another
+    * upload.
+    */
+  def liveFileInput[Msg, R](
+    upload: Signal[LiveUpload[R]],
+    progress: UploadProgress[Msg],
+    mods: Mod[Msg]*
+  ): HtmlElement[Msg] =
+    val id = progress.upload match
+      case Left(ref) =>
+        idAttr := upload.map { current =>
+          requireOwnProgress(current, ref)
+          current.ref.value
+        }
+      case Right(refs) =>
+        idAttr := upload.combineWithFn(refs) { (current, ref) =>
+          requireOwnProgress(current, ref)
+          current.ref.value
+        }
+    signalFileInput(upload, id, progress.binding +: mods)
+
+  private def requireOwnProgress[R](upload: LiveUpload[R], progress: UploadRef): Unit =
+    require(
+      progress == upload.ref,
+      s"the progress binding of upload '${progress.value}' was passed to the file input " +
+        s"of upload '${upload.name}'"
+    )
+
+  private def fileInput[Msg, R](
+    upload: LiveUpload[R],
+    id: Mod.Attr[Nothing],
+    mods: Seq[Mod[Msg]]
+  ): HtmlElement[Msg] =
     val activeRefs = upload.entries.map(_.ref.value).mkString(",")
     val doneRefs   = upload.entries
       .filter(_.status == LiveUploadEntryStatus.Completed)
@@ -71,7 +142,7 @@ trait Components:
       .mkString(",")
 
     input(
-      idAttr                           := upload.ref.value,
+      id,
       phx.hook                         := "Phoenix.LiveFileUpload",
       typ                              := "file",
       nameAttr                         := upload.name,
@@ -85,18 +156,15 @@ trait Components:
       multiple                         := upload.maxEntries > 1,
       mods
     )
+  end fileInput
 
-  /** Renders the file input required by the LiveView upload protocol.
-    *
-    * This form follows a signal of the upload, such as `model.map(_.upload)`, so the input's
-    * protocol attributes follow the latest snapshot in the model.
-    */
-  def liveFileInput[Msg, R](
+  private def signalFileInput[Msg, R](
     upload: Signal[LiveUpload[R]],
-    mods: Mod[Msg]*
+    id: Mod.Attr[Nothing],
+    mods: Seq[Mod[Msg]]
   ): HtmlElement[Msg] =
     input(
-      idAttr                      := upload.map(_.ref.value),
+      id,
       phx.hook                    := "Phoenix.LiveFileUpload",
       typ                         := "file",
       nameAttr                    := upload.map(_.name),

@@ -174,7 +174,7 @@ object ApiReferencePipeline:
       ownerExposure: ApiExposure
     ): Unit =
       val key = (owner, qualifiedName, ownerExposure)
-      if visitedOwners.add(key) then
+      if visitedOwners.add(key) && !emptyObject(owner) then
         val kind = classKind(owner)
         val id   = symbolId(kind, qualifiedName)
         addRaw(
@@ -235,6 +235,20 @@ object ApiReferencePipeline:
           }
       end if
     end addOwner
+
+    /** An object without public members, such as a companion that holds only private factories,
+      * adds nothing to the reference. An object that extends a type stays, since it is a value, as
+      * in `LiveUploadAccept.Any`.
+      */
+    private def emptyObject(owner: ClassSymbol): Boolean =
+      owner.isModuleClass &&
+        owner.parents.map(_.showBasic).forall(syntheticParent(owner, _)) &&
+        !owner.declarations.exists {
+          case nested: ClassSymbol      => eligible(nested)
+          case term: TermSymbol         => eligibleTerm(term)
+          case member: TypeMemberSymbol => eligible(member)
+          case _                        => false
+        }
 
     /** Adds a term or type member. An `export` forwarder of a definition outside the documented
       * packages is documented as that definition, under the exported name.
@@ -471,9 +485,10 @@ object ApiReferencePipeline:
           entries.flatMap(_.generatedSummary) ++
             signatures.flatMap(_.documentation.flatMap(ScaladocParser.summary))
         ).distinct.sorted
+        // Overloads share their first paragraph; ApiSnapshot.validateDocumentation rejects the rest.
         val summary = Option
           .when(generatedSummaries.size == 1)(generatedSummaries.head)
-          .getOrElse(fallbackSummary(first))
+          .getOrElse("")
         ApiSymbol(
           id = id,
           ownerId = first.ownerId,
@@ -796,23 +811,6 @@ object ApiReferencePipeline:
         .drop(1)
         .map(_.mkString("."))
         .find(IncludedPackageSet)
-
-    private def fallbackSummary(entry: RawSignature): String =
-      val renderedName = s"`${entry.qualifiedName}`"
-      entry.kind match
-        case ApiSymbolKind.Package    => s"Public APIs in the $renderedName package."
-        case ApiSymbolKind.Class      => s"Public API for the $renderedName class."
-        case ApiSymbolKind.Trait      => s"Public API for the $renderedName trait."
-        case ApiSymbolKind.Object     => s"Public API for the $renderedName object."
-        case ApiSymbolKind.Enum       => s"Public API for the $renderedName enum."
-        case ApiSymbolKind.OpaqueType => s"Public API for the $renderedName opaque type."
-        case ApiSymbolKind.TypeAlias  => s"Public API for the $renderedName type alias."
-        case ApiSymbolKind.Def        => s"The $renderedName method."
-        case ApiSymbolKind.Extension  => s"The $renderedName extension method."
-        case ApiSymbolKind.Val        => s"The $renderedName value."
-        case ApiSymbolKind.LazyVal    => s"The $renderedName lazy value."
-        case ApiSymbolKind.Var        => s"The $renderedName variable."
-        case ApiSymbolKind.Given      => s"The $renderedName given instance."
 
   end Extractor
 end ApiReferencePipeline

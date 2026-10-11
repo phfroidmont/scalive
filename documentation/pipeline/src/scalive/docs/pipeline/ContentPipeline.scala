@@ -896,10 +896,7 @@ object ContentPipeline:
           .filter(member => !owners.exists(owner => member.ownerId.contains(owner.id))).sortBy(
             memberSortKey
           )
-      val symbols     = owners ++ orderedMembers
-      val description = owners
-        .map(_.summary).find(summary => summary.nonEmpty && !isFallbackSummary(summary))
-        .getOrElse(representative.summary)
+      val symbols = owners ++ orderedMembers
       val outline = ApiMemberCategory.group(orderedMembers).map { case (category, groupedMembers) =>
         OutlineItem(
           category.id,
@@ -917,7 +914,7 @@ object ContentPipeline:
             if isCompanionObject(representative, apiReference) then
               s"${representative.qualifiedName} companion object"
             else representative.qualifiedName,
-          description = description,
+          description = representative.summary,
           order = index,
           section = Section.Api
         ),
@@ -947,11 +944,6 @@ object ContentPipeline:
       case ApiSymbolKind.TypeAlias | ApiSymbolKind.OpaqueType                                  => 2
       case _                                                                                   => 3
     (rank, symbol.name.toLowerCase, symbol.id)
-
-  private def isFallbackSummary(summary: String): Boolean =
-    summary.startsWith("Public API for the `") ||
-      summary.startsWith("Public APIs in the `") ||
-      (summary.startsWith("The `") && summary.endsWith("."))
 
   private def isCompanionObject(symbol: ApiSymbol, apiReference: ApiReference): Boolean =
     symbol.kind == ApiSymbolKind.Object && apiReference.symbols.exists(candidate =>

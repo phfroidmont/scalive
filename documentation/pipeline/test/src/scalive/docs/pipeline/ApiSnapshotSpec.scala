@@ -64,10 +64,30 @@ object ApiSnapshotSpec extends ZIOSpecDefault:
         errors.exists(_.contains("changed: def:scalive.changed"))
       )
     },
-    test("requires summaries") {
-      val reference = ApiReference(metadata, Vector(symbol("def:scalive.sample", "def sample: Int", "")))
-      val errors = ApiSnapshot.validateSummaries(reference).left.toOption.toVector.flatMap(_.messages)
-      assertTrue(errors.exists(_.contains("missing summary: def:scalive.sample")))
+    test("requires Scaladoc on every definition except packages") {
+      val documentation = Some(ApiDocumentation(Vector(Block.Paragraph(Vector(Inline.Text("Docs.")))), Vector.empty))
+      val documented    = symbol("def:scalive.documented", "def documented: Int")
+      val overloaded    = symbol("def:scalive.overloaded", "def overloaded: Int", "")
+      val reference = ApiReference(
+        metadata,
+        Vector(
+          symbol("def:scalive.sample", "def sample: Int"),
+          documented.copy(signatures = documented.signatures.map(_.copy(documentation = documentation))),
+          overloaded.copy(signatures =
+            Vector("a", "b").map(suffix =>
+              overloaded.signatures.head.copy(id = s"${overloaded.id}:$suffix", documentation = documentation)
+            )
+          ),
+          symbol("package:scalive", "package scalive").copy(kind = ApiSymbolKind.Package)
+        )
+      )
+      val errors = ApiSnapshot.validateDocumentation(reference).left.toOption.toVector.flatMap(_.messages)
+      assertTrue(
+        errors == Vector(
+          "missing Scaladoc: def:scalive.sample (scalive/src/scalive/Sample.scala:1)",
+          "overloads of def:scalive.overloaded must share the first paragraph of their Scaladoc"
+        )
+      )
     }
   )
 end ApiSnapshotSpec

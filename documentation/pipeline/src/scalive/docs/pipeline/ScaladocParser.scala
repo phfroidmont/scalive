@@ -51,13 +51,26 @@ private[pipeline] object ScaladocParser:
                     })
     yield ApiDocumentation(parsedBody, parsedTags)
 
-  /** The `@param name` text of `comment`, as the comment of the field that parameter defines. */
+  /** The `@param name` text of `comment`, as the comment of the field that parameter defines.
+    *
+    * `@param` text is often a lowercase fragment, so it becomes a sentence: the first letter is
+    * capitalized and a missing final period is added.
+    */
   def parameter(comment: String, name: String): Option[String] =
     splitComment(clean(comment))._2
       .find(tag => tag.name == "param" && tag.subject.contains(name))
-      .map(_.lines)
-      .filter(_.exists(_.trim.nonEmpty))
+      .map(tag => trimBlankLines(tag.lines))
+      .filter(_.nonEmpty)
+      .map(asSentence)
       .map(lines => lines.mkString("/** ", "\n  * ", " */"))
+
+  private def asSentence(lines: Vector[String]): Vector[String] =
+    val first       = lines.head
+    val start       = first.indexWhere(!_.isWhitespace)
+    val capitalized = lines.updated(0, first.updated(start, first(start).toUpper))
+    val last        = capitalized.last
+    val needsPeriod = last.lastOption.exists(char => char.isLetterOrDigit || "`)]".contains(char))
+    if needsPeriod then capitalized.updated(capitalized.size - 1, s"$last.") else capitalized
 
   def summary(documentation: ApiDocumentation): Option[String] =
     documentation.body

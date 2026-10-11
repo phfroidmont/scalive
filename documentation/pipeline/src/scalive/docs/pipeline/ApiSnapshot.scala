@@ -58,9 +58,30 @@ object ApiSnapshot:
     val result = errors.result()
     Either.cond(result.isEmpty, (), ApiReferenceError(result))
 
-  def validateSummaries(reference: ApiReference): Either[ApiReferenceError, Unit] =
-    val missing = reference.symbols.collect {
-      case symbol if symbol.summary.trim.isEmpty => s"missing summary: ${symbol.id}"
+  /** Requires Scaladoc on every public definition. The first paragraph is the reference summary, so
+    * overloads must share it; a field takes its owner's `@param` text. Packages have a generated
+    * summary.
+    */
+  def validateDocumentation(reference: ApiReference): Either[ApiReferenceError, Unit] =
+    val documented   = reference.symbols.filter(_.kind != ApiSymbolKind.Package)
+    val undocumented = documented.flatMap { symbol =>
+      symbol.signatures.collect {
+        case signature if signature.documentation.isEmpty =>
+          s"missing Scaladoc: ${symbol.id} (${location(signature.source)})"
+      }
     }
-    Either.cond(missing.isEmpty, (), ApiReferenceError(missing))
+    val unsummarized = documented.collect {
+      case symbol
+          if symbol.summary.trim.isEmpty && symbol.signatures.forall(_.documentation.nonEmpty) =>
+        if symbol.signatures.sizeIs > 1 then
+          s"overloads of ${symbol.id} must share the first paragraph of their Scaladoc"
+        else s"the Scaladoc of ${symbol.id} needs a summary paragraph"
+    }
+    val errors = undocumented ++ unsummarized
+    Either.cond(errors.isEmpty, (), ApiReferenceError(errors))
+
+  private def location(source: ApiSource): String =
+    source match
+      case ApiSource.Repository(region) => s"${region.path}:${region.startLine}"
+      case ApiSource.GeneratedDom       => "generated DOM definition"
 end ApiSnapshot

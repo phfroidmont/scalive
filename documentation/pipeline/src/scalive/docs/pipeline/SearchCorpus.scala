@@ -143,10 +143,6 @@ private[pipeline] object SearchCorpus:
     val representative = ordered.head
     val documentation  =
       ordered.flatMap(_.signatures).flatMap(_.documentation).map(ScaladocParser.text)
-    val description = ordered
-      .map(_.summary)
-      .find(summary => summary.nonEmpty && !isFallbackSummary(summary))
-      .getOrElse(representative.summary)
     SearchEntry(
       id = s"api:${representative.id}",
       kind = SearchEntryKind.ApiSymbol,
@@ -154,7 +150,7 @@ private[pipeline] object SearchCorpus:
         if companionObjectIds(representative.id) then
           s"${representative.qualifiedName} companion object"
         else representative.qualifiedName,
-      description = description,
+      description = representative.summary,
       route = representative.route,
       fragment = None,
       section = Section.Api,
@@ -176,11 +172,6 @@ private[pipeline] object SearchCorpus:
       case ApiSymbolKind.Package    => 6
       case _                        => 7
     (rank, symbol.id)
-
-  private def isFallbackSummary(summary: String): Boolean =
-    summary.startsWith("Public API for the `") ||
-      summary.startsWith("Public APIs in the `") ||
-      (summary.startsWith("The `") && summary.endsWith("."))
 
   private def validate(entries: Vector[SearchEntry], pages: Vector[Page]): Vector[String] =
     val errors  = ArrayBuffer.empty[String]

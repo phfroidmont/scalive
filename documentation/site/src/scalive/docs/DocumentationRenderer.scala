@@ -371,7 +371,7 @@ final private[docs] class DocumentationRenderer(
       p(cls  := "docs-api-kind", apiKindName(symbol.kind)),
       a(href := location, code(symbol.qualifiedName)),
       Option
-        .when(!isFallbackSummary(symbol.summary))(
+        .unless(generatedSummary(symbol))(
           p(symbol.summary)
         ).toVector
     )
@@ -406,7 +406,7 @@ final private[docs] class DocumentationRenderer(
         application.location(symbol.route).map(_.withFragment(fragment))
       }.getOrElse(throw new IllegalArgumentException(s"Unknown API route: ${symbol.route}"))
     val summary =
-      Option(symbol.summary).filter(value => value.nonEmpty && !isFallbackSummary(value))
+      Option.unless(generatedSummary(symbol))(symbol.summary)
     val signature = symbol.signatures.headOption
     span(
       cls                       := "docs-inline-api-reference",
@@ -526,7 +526,7 @@ final private[docs] class DocumentationRenderer(
     category: Option[ApiMemberCategory] = None
   ): HtmlElement[Nothing] =
     val hasDocumentation = symbol.signatures.exists(_.documentation.nonEmpty)
-    val showSummary      = !hasDocumentation && !isFallbackSummary(symbol.summary)
+    val showSummary      = !hasDocumentation && !generatedSummary(symbol)
     sectionTag(
       cls                    := "docs-api-symbol",
       dataAttr("api-symbol") := symbol.id,
@@ -545,10 +545,8 @@ final private[docs] class DocumentationRenderer(
       ))
       .mkString(" ").toLowerCase
 
-  private def isFallbackSummary(summary: String): Boolean =
-    summary.startsWith("Public API for the `") ||
-      summary.startsWith("Public APIs in the `") ||
-      (summary.startsWith("The `") && summary.endsWith("."))
+  /** A package's summary is generated and only restates its name. */
+  private def generatedSummary(symbol: ApiSymbol): Boolean = symbol.kind == ApiSymbolKind.Package
 
   private def renderApiSignature(
     pageRoute: String,

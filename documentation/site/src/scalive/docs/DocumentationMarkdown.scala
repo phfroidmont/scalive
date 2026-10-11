@@ -87,7 +87,7 @@ final private[docs] class DocumentationMarkdown(
         s"${codeFence(Some("scala"), signature.signature)}\n\n$exposure ${inlineCode(signature.origin.qualifiedName)}. [View source](${destination(source.url)}) (${escape(source.label)})$docs"
       }.mkString("\n\n")
     val summary =
-      if value.signatures.exists(_.documentation.nonEmpty) || fallback(value.summary) then ""
+      if value.signatures.exists(_.documentation.nonEmpty) || generatedSummary(value) then ""
       else s"${escape(value.summary)}\n\n"
     heading + companion + summary + signatures
   end apiSymbol
@@ -191,7 +191,7 @@ final private[docs] class DocumentationMarkdown(
         .mkString("\n\n")
     case Block.ApiSymbolRef(id) =>
       val value   = symbol(id)
-      val summary = if fallback(value.summary) then "" else s" — ${escape(oneLine(value.summary))}"
+      val summary = if generatedSummary(value) then "" else s" — ${escape(oneLine(value.summary))}"
       s"${apiKindName(value.kind)} [${inlineCode(value.qualifiedName)}](${symbolUrl(value)})$summary"
     case Block.CompatibilityRef(id) =>
       s"${anchor(s"compatibility-$id")}\n## ${escape(id)}\n\nThis compatibility entry will be expanded with its curated evidence."
@@ -307,9 +307,9 @@ final private[docs] class DocumentationMarkdown(
         val run = if next == character then current + 1 else 0
         (maximum.max(run), run)
       }._1
-  private def fallback(summary: String): Boolean =
-    summary.startsWith("Public API for the `") || summary.startsWith("Public APIs in the `") ||
-      (summary.startsWith("The `") && summary.endsWith("."))
+
+  /** A package's summary is generated and only restates its name. */
+  private def generatedSummary(symbol: ApiSymbol): Boolean = symbol.kind == ApiSymbolKind.Package
 
   private def apiKindName(kind: ApiSymbolKind): String = kind match
     case ApiSymbolKind.Package    => "Package"

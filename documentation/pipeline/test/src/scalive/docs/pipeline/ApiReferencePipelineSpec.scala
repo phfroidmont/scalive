@@ -349,13 +349,17 @@ object ApiReferencePipelineSpec extends ZIOSpecDefault:
       )
     },
     test("documents fields with their owner's @param text and omits noise members") {
-      val field = symbols.find(_.id == "val:scalive.testing.TastyQueryEnum.Parameterized.value")
+      val field    = symbols.find(_.id == "val:scalive.testing.TastyQueryEnum.Parameterized.value")
+      val fragment = symbols.find(_.id == "val:scalive.testing.TastyQueryEnum.Counted.count")
       val fixtureNames = symbols
         .filter(_.qualifiedName.startsWith("scalive.testing.TastyQueryEnum"))
         .map(_.name)
 
       assertTrue(
+        symbols.exists(_.id == "object:scalive.LiveUploadAccept.Any"),
+        !symbols.exists(_.id == "object:scalive.LiveRoute"),
         field.exists(_.summary == "The text this case carries."),
+        fragment.exists(_.summary == "How many items, in total."),
         !fixtureNames.contains("toString"),
         !fixtureNames.exists(_.contains("CanEqual"))
       )

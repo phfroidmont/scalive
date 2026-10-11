@@ -18,7 +18,7 @@ final class FieldIssues private (val all: Vector[FieldIssue]) derives CanEqual:
   require(all.nonEmpty, "field issues must not be empty")
 
   /** Returns these issues followed by those of `other`. */
-  def ++(other: FieldIssues): FieldIssues = FieldIssues(all ++ other.all)
+  def ++(other: FieldIssues): FieldIssues = new FieldIssues(all ++ other.all)
 
   override def equals(other: Any): Boolean = other match
     case that: FieldIssues => all == that.all
@@ -28,9 +28,14 @@ final class FieldIssues private (val all: Vector[FieldIssue]) derives CanEqual:
 
 /** Constructors for [[FieldIssues]]. */
 object FieldIssues:
-  /** Creates a collection from `issues` in order, throwing when `issues` is empty. */
-  def apply(issues: IterableOnce[FieldIssue]): FieldIssues =
-    new FieldIssues(issues.iterator.toVector)
+  /** Creates a collection holding `first` followed by `rest`, in order. */
+  def apply(first: FieldIssue, rest: FieldIssue*): FieldIssues =
+    new FieldIssues(first +: rest.toVector)
+
+  /** Creates a collection from `issues` in order, or `None` when `issues` is empty. */
+  def from(issues: IterableOnce[FieldIssue]): Option[FieldIssues] =
+    val all = issues.iterator.toVector
+    Option.when(all.nonEmpty)(new FieldIssues(all))
 
   /** Creates a collection holding a single issue.
     *

@@ -432,6 +432,21 @@ object FormDefinitionApiSpec extends ZIOSpecDefault:
         event.form.valueOption.isEmpty
       )
     },
+    test("field issues cannot be built empty") {
+      val first  = FieldIssue("Too short", Some("too_short"))
+      val second = FieldIssue("Needs a digit", Some("digit"))
+      val emptyCollection = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        val issues = FieldIssues(Vector.empty[FieldIssue])
+      """)
+
+      assertTrue(
+        FieldIssues(first, second).all == Vector(first, second),
+        FieldIssues.from(Vector(first, second)).map(_.all) == Some(Vector(first, second)),
+        FieldIssues.from(Vector.empty).isEmpty,
+        emptyCollection.nonEmpty
+      )
+    },
     test("row keys use an ASCII letter, digit, underscore, and hyphen grammar") {
       val accepted = FormRowKey.from[Unit]("Row_42-a")
       val rejected = Vector("é", "名", "٣", "a b").map(FormRowKey.from[Unit](_))

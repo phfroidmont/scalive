@@ -2632,8 +2632,20 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.FieldIssues.apply:dcdefeb94c16c5a0",
-          "signature" : "def apply(issues: IterableOnce[FieldIssue]): FieldIssues"
+          "id" : "def:scalive.FieldIssues.apply:710bf2a79b1e81ee",
+          "signature" : "def apply(first: FieldIssue, rest: FieldIssue*): FieldIssues"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.FieldIssues.from",
+      "ownerId" : "object:scalive.FieldIssues",
+      "qualifiedName" : "scalive.FieldIssues.from",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FieldIssues.from:1b9da445da6442d5",
+          "signature" : "def from(issues: IterableOnce[FieldIssue]): Option[FieldIssues]"
         }
       ]
     },

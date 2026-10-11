@@ -65,10 +65,8 @@ final class FormField[Owner, Input, Value] private[scalive] (
   /** Reports every issue produced for a structurally and semantically decoded value. */
   def validateAll(
     validate: Value => IterableOnce[FieldIssue]
-  ): FormField[Owner, Input, Value] = emap { value =>
-    val issues = validate(value).iterator.toVector
-    if issues.isEmpty then Right(value) else Left(FieldIssues(issues))
-  }
+  ): FormField[Owner, Input, Value] =
+    emap(value => FieldIssues.from(validate(value)).toLeft(value))
 
   /** Rejects an empty refined string while preserving the field's original input type. */
   def required(

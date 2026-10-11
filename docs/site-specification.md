@@ -107,16 +107,20 @@ isolated counter example. The page remains meaningful without JavaScript.
 
 The authored homepage contains, in order:
 
-1. The rendered heading `Live interfaces. Typed end to end.` and a factual
-   description of Scalive as a Scala 3 re-implementation of Phoenix LiveView.
-2. Ordinary internal links to the Quick start and counter example.
-3. One compact, verified Scala code block.
+1. The rendered heading `Live interfaces. Typed end to end.` and a one-paragraph
+   introduction.
+2. Ordinary internal links to the Quick start and the examples catalog.
+3. The quick-start counter as one compiled source region.
 4. One `counter` example reference rendered as a compact nested LiveView.
 5. Three principles covering typed state, Scala HTML rendering, and live
    diffs and effects.
-6. A `Why Scalive` section with the stable `#why-scalive` anchor and a link to
-   the full project origin story.
-7. The alpha-software warning as an information callout.
+6. A `How it works` section with the stable `#how-it-works` anchor: one
+   introductory paragraph and the four-step event loop.
+7. A `Why Scalive` section with the stable `#why-scalive` anchor: two paragraphs,
+   one linking to the full project origin story, and a five-item stack list.
+8. A `Start building` section with the stable `#start-building` anchor that
+   links Learn, Examples, and API.
+9. The alpha-software warning as an information callout.
 
 The browser title for `/` remains `Scalive`. Homepage copy, links, code,
 callouts, and example references remain canonical in
@@ -128,29 +132,39 @@ non-sticky instance rather than introducing homepage-specific behavior.
 
 ### Learn
 
-Learn is a short ordered path that establishes one coherent mental model:
+Learn is a short ordered path that builds one application, starting from the
+quick-start counter, and establishes one coherent mental model. The Learn index
+opens with **Start here**, which defines Scalive as a server-owned state
+machine, separates server and browser responsibilities, introduces the
+message-to-DOM loop, and directs readers to the quick start. The ordered path
+follows:
 
-1. **Start here** defines Scalive as a server-owned state machine, separates
-   server and browser responsibilities, introduces the message-to-DOM loop, and
-   directs readers to either build the counter or study lifecycle details.
-2. **Quick start** builds and runs a complete standalone counter.
-3. **Project anatomy** assigns startup, routing, layout, LiveView, service,
-   asset, and browser responsibilities.
-4. **Models, messages, and effects** introduces immutable state, typed intent,
-   the boundary between server-owned messages and untrusted browser input,
-   effectful transitions, and only the ZIO vocabulary required to understand
-   Scalive callbacks.
-5. **URL state and navigation** introduces typed route parameters, routed
+1. **Quick start** builds and runs a complete standalone counter.
+2. **Models, messages, and effects** gives the counter a model and a Reset
+   message, introduces immutable state, typed intent, the boundary between
+   server-owned messages and untrusted browser input, effectful transitions,
+   and only the ZIO vocabulary required to understand Scalive callbacks.
+3. **Rendering, bindings, and diffs** builds a cart with conditional content,
+   keyed rows, and row-specific messages, and explains typed HTML, event
+   bindings, render purity, tree diffs, DOM patches, and stable collection
+   identity.
+4. **Your first form** builds a form that validates as the visitor types and
+   submits a typed value.
+5. **Loading data and live updates** gives a page a service, loads data once the
+   page connects, and refreshes it on a timer.
+6. **URL state and navigation** introduces typed route parameters, routed
    LiveViews, checked destinations, browser history, and the distinction between
    patching, navigating, and redirecting.
-6. **Rendering, bindings, and diffs** explains typed HTML, event bindings,
-   render purity, tree diffs, DOM patches, and stable collection identity.
 7. **Lifecycle, state ownership, and reconnects** explains disconnected and
    connected mounts through paired HTTP and LiveSocket sequence diagrams, then
    covers commit and failure boundaries, state lifetime, cleanup, and remounting
    from durable inputs.
-8. **Where to go next** maps common application needs to task-oriented guides,
-   executable examples, the API reference, and project compatibility material.
+8. **Testing your LiveView** adds a test module and tests the counter, the form,
+   and the service-backed page.
+9. **How the pieces fit** recaps the startup path and assigns routing, layout,
+   LiveView, service, asset, and browser responsibilities.
+10. **Where to go next** maps common application needs to task-oriented guides,
+    executable examples, the API reference, and project compatibility material.
 
 Start here is the concise application-facing ownership and event-loop overview.
 The lifecycle page owns the complete HTTP request, socket mount, event, cleanup,
@@ -161,20 +175,24 @@ architecture page explains the current implementation for readers who need
 concurrency, commit, protocol, and cleanup details, without treating internal
 types as supported application APIs.
 
-The quick start uses Mill as its primary build tool, provides a complete minimal
-standalone project, and documents the Node/npm client asset setup. It names the
+The quick start uses Mill as its primary build tool, pins the Mill version in
+the build header, names the minimum JDK, provides a complete minimal standalone
+project, and documents the Node/npm client asset setup. It names the
 exact revision-specific Scala snapshot rather than requiring changes inside a
 Scalive source checkout. The site is published only after that snapshot is
 available. The page warns that snapshots later expire, while a source-backed
 repository fixture compiles the same application code. Concise dependency
 equivalents for other common Scala build tools may be included where useful.
 
-The conceptual pages evolve the same small application where practical. When a
+Each Learn page adds a file or a page to the same project, and the
+`documentation.learnFixture` module compiles and tests that project. When a
 richer example replaces a quick-start type or behavior, the transition is
 explicit. Focused excerpts precede complete examples so the learning path does
 not require readers to infer the relevant lines from a large source listing.
 
-By the end of Learn, a reader can explain:
+By the end of Learn, a reader can build a validated form, a service-backed page
+that loads data when it connects, and a connected test for each, without
+piecing together advanced guide sections. They can also explain:
 
 - the complete HTTP-to-socket lifecycle and repeated event-to-DOM loop;
 - which responsibilities belong to the JVM server and browser client;
@@ -192,23 +210,32 @@ By the end of Learn, a reader can explain:
 ### Guides
 
 Guides are task-oriented, with one focused task per page. They are grouped by
-work rather than by skill level or a mirror of the package hierarchy:
+work rather than by skill level or a mirror of the package hierarchy, and the
+guides index describes each page by the reader's task:
 
-- interfaces and input, including typed and ordinary forms and uploads;
-- routing and application structure, including sessions, authentication, and
-  nested LiveViews;
-- state, services, components, and data collections;
-- asynchronous work and lifecycle hooks;
+- orientation, for Phoenix LiveView developers;
+- setup and foundations, including client setup, static assets, and an explicit
+  configuration contract;
+- interfaces and input, including HTML and event bindings, typed and ordinary
+  forms, and uploads;
+- routing and application structure, including layouts, sessions, services,
+  and authentication;
+- state and components, including nested LiveViews and data collections;
+- asynchronous work, subscriptions, connected resources, and lifecycle hooks;
 - browser integration and client events;
 - testing and troubleshooting; and
-- assets and operations, including an explicit configuration contract and
-  provider-neutral deployment.
+- operations, including lifecycle observability and provider-neutral
+  deployment.
 
 Together, the guides and API reference cover every supported public Scalive
 feature. A dedicated Phoenix LiveView orientation guide is supplemented by brief
 comparison callouts where they clarify a concept.
 
-Each guide opens with tailored prerequisites and ends with related tasks. A
+Each guide opens with tailored prerequisites and ends with related tasks. Its
+first task section is the shortest working recipe for the common case;
+variants, alternatives, and exact contracts follow it. A topic too large for
+one such page is split by task, as forms are into building and validation,
+controls, feedback and recovery, repeated rows, and saving. A
 guide reached directly from search must distinguish framework APIs from
 application-owned values and must not rely on a complete source listing to make
 its primary workflow actionable. JavaScript integration includes both the hook
@@ -233,6 +260,15 @@ The documentation application replaces the standalone `examples` application
 as the canonical teaching application. Upstream parity fixtures remain separate
 and are not presented as recommended application style.
 
+The catalog groups examples as Start here, State and rendering, User input,
+Async and effects, and Browser and navigation, following the order of the
+Learn path. Within each group, examples run from simple to advanced; every
+example has its own position in that order. Every example page follows one
+format: what the example shows, **Try it** steps that state the expected result,
+the live example with its complete source, **How it works** naming the key lines
+in prose, and **Related guides**. A step that leaves the page or depends on
+timing says so, or is replaced by an explanation.
+
 ### API
 
 The API section combines curated, human-written guidance with generated symbol
@@ -244,21 +280,33 @@ documentation. Generated pages:
 - do not expose implementation details merely because they are technically
   public in bytecode.
 
+Every public definition has Scaladoc that says when to use it, what it returns,
+and what can fail, and core types link to the guide that teaches them. The
+reference uses the first paragraph as a symbol's summary, so overloads share
+their first paragraph and put their differences in the second. Validation
+fails on an undocumented public definition and on overloads whose first
+paragraphs differ. The API overview maps common tasks to the core types and
+links each package.
+
 Scalive's maturity is described at the project level rather than through
 per-symbol alpha or compatibility badges.
 
 ### Project
 
-The Project section contains:
+The Project section leads with what an evaluator needs:
+
+- project status, alpha expectations, compatibility scope, and non-goals; and
+- a compatibility matrix of supported features, intentional divergences, and
+  known gaps.
+
+The design essays follow:
 
 - the personal and technical journey that led to Scalive;
 - curated design essays that explain consequential user-facing API decisions;
+  and
 - a technical explanation of runtime subsystems, lifecycle flow, rendering,
   concurrency, commit boundaries, resource ownership, protocol projection, and
-  cleanup;
-- project status and alpha expectations; and
-- a compatibility matrix of supported features, intentional divergences, and
-  known gaps.
+  cleanup.
 
 The compatibility matrix is curated, identifies a pinned Phoenix LiveView
 release or commit as its baseline, and links to relevant test evidence where
@@ -283,18 +331,68 @@ Documentation pages follow these conventions:
 
 - use direct, explanatory prose without promotional language;
 - address one task per guide page;
-- open guide pages with tailored prerequisites and close them with related
-  tasks;
+- open guide pages with tailored prerequisites, then lead with the reader's
+  outcome and the shortest working recipe;
+- close guide pages with related tasks, and say how to check that the result
+  worked wherever it is observable;
+- use one model per recipe; when a snippet uses `model`, show the `view`
+  signature around it;
 - introduce the minimum ZIO vocabulary required on the page when Learn does not
   already establish it;
 - show a focused extracted source region before offering the complete executable
-  file; and
+  file;
+- explain each cross-cutting rule once, in one place, and link to it;
+- keep test evidence and maintainer decisions out of user guides;
+- use sentence case for every title and heading, and quote UI labels exactly;
+  and
 - use durable heading anchors, source-edit links, and prefilled issue links.
+
+Use one name per concept: `application` for a `LiveApplication`, `routes` for
+ZIO HTTP routes, and these terms:
+
+| Term | Use it for |
+| --- | --- |
+| Model | Immutable state owned by one LiveView or component lifecycle |
+| Durable state | Data that outlives the connection or process because it is kept in external storage or a longer-lived service |
+| WebSocket connection | The physical browser-to-server transport |
+| LiveView lifecycle | One independently mounted root or nested view, with its own topic on the shared WebSocket |
+| Named live session | A group of routes that share navigation and mount policy |
+| Application session | Login state managed by the application |
+| Subscription | A message-producing `ZStream` managed by a lifecycle |
+| Rendered stream | A collection updated by ID through `LiveStream` |
+| Browser hook | JavaScript attached to an element's browser lifecycle |
+| Lifecycle hook | Server-side interception or observation of a lifecycle stage |
 
 Markdown, directives, headings, internal links, extracted source regions, and
 the search index are validated at build time. Invalid content fails the build.
 External links are checked separately so network failures cannot make normal
-builds flaky.
+builds flaky. A failing external link is acceptable only when the target is
+confirmed to load in a browser and refuses the checker.
+
+Every Scala recipe a reader is expected to copy compiles. A page embeds a
+region of a compiled source file, marked with `// docs:start <name>` and
+`// docs:end <name>`, through `@:sourceRegion(<path>, <name>)`. Regions may
+nest; an outer region drops the inner markers, and every region is dedented.
+Sources are read only from the roots listed in `allowedSourceRoots` in
+`documentation/package.mill`, so a new fixture directory needs an entry there
+and a compiled module whose tests `documentation.check` runs, as
+`quickStartFixture`, `learnFixture`, and `guideFixtures` are. An inline Scala
+block must carry a label: `scala fragment` for code that is not meant to compile
+on its own, which renders with a fragment caption, or `scala mill` for a Mill
+build file, which the check cannot compile. A bare `scala` block fails the
+build.
+
+Every heading carries an explicit `{#id}` anchor. Links depend on that ID, so a
+heading's text may change freely, but changing its ID breaks the links to it,
+which the internal link check reports.
+
+An example page lives at `/examples/<id>`, where `<id>` is its entry in
+`documentation/model/src/scalive/docs/model/ExampleCatalog.scala`. Its
+front-matter title and description must equal that entry, or the site refuses
+to start, and its `order` sets its catalog and sidebar position. Labels shown by
+an example come from its Scala source under
+`documentation/site/src/scalive/docs/examples`, and site unit tests and the
+Playwright specs in `documentation/site/test/xray` may assert them.
 
 The homepage adds no public content type or Markdown directive. Its authored
 block shape is validated by the site when loading the generated bundle, while
@@ -303,6 +401,10 @@ source locations, and sitemap coverage.
 
 Public API drift also fails validation. A change to the supported public boundary
 must update affected generated or curated documentation in the same change.
+`documentation/pipeline/api/public-api.snapshot.json` records public signatures
+only, so a Scaladoc edit leaves it unchanged; after an intended signature
+change, regenerate it with `mill documentation.pipeline.updateApiSnapshot` in
+the same commit.
 
 Existing public material, including the public API reference and compatibility
 matrix, moves into the documentation content tree and becomes canonical there.
@@ -574,7 +676,8 @@ application. Its main boundaries are:
 
 The site does not introduce Scala.js or a separate frontend component framework.
 Detailed module types, directive grammar, routes, build tasks, and tracing
-interfaces belong in the later implementation plan.
+interfaces belong in the later implementation plan. The content model names only
+the files and tasks a page author needs.
 
 ## Operations And Quality
 

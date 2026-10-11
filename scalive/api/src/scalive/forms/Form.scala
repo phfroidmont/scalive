@@ -314,13 +314,12 @@ object Form:
 
   /** Renders an ordinary HTTP form with action, method, and CSRF policy from `target`.
     *
-    * Caller-supplied `action` or `method` attributes are rejected to keep routing policy coherent.
+    * `target` owns the `action` and `method` attributes. Setting either in `mods`, in any letter
+    * case and even inside a conditional modifier, throws `IllegalArgumentException`.
     */
   def http[Msg](target: FormAction)(mods: Mod.Input[Msg]*): HtmlElement[Msg] =
     val flattened = Mod.flatten(mods)
-    val overrides = flattened.flatMap(attributeName).filter { name =>
-      httpAttributes.exists(_.equalsIgnoreCase(name))
-    }
+    val overrides = overriddenAttributes(flattened, httpAttributes)
     require(
       overrides.isEmpty,
       s"ordinary HTTP forms own the ${overrides.distinct.mkString(" and ")} attribute"
@@ -331,6 +330,20 @@ object Form:
       Option.when(target.protectFromCsrf)(csrfMarker := "true"),
       flattened
     )
+
+  /** Returns the names in `owned` that `mods` set, in any letter case, including inside attribute
+    * groups and conditional modifiers.
+    */
+  private[scalive] def overriddenAttributes(
+    mods: Vector[Mod[?]],
+    owned: Set[String]
+  ): Vector[String] =
+    def attributeNames(mod: Mod[?]): Vector[String] = mod match
+      case attr: Mod.Attr[?]                        => attr.flattened.flatMap(attributeName)
+      case Mod.Content.SignalModChoice(_, branches) =>
+        branches.flatMap { case (_, branch) => attributeNames(branch) }
+      case _ => Vector.empty
+    mods.flatMap(attributeNames).filter(name => owned.exists(_.equalsIgnoreCase(name)))
 
   private[scalive] def attributeName(mod: Mod[?]): Option[String] = mod match
     case Mod.Attr.Static(name, _)                       => Some(name)

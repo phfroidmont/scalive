@@ -194,14 +194,7 @@ end FormBinding
 
 private[scalive] object FormBinding:
   private[scalive] def checked[Msg](mods: Vector[Mod[Msg]], owned: Set[String]): Vector[Mod[Msg]] =
-    def attributeNames(mod: Mod[Msg]): Vector[String] = mod match
-      case attr: Mod.Attr[Msg]                      => attr.flattened.flatMap(Form.attributeName)
-      case Mod.Content.SignalModChoice(_, branches) =>
-        branches.flatMap { case (_, branch) => attributeNames(branch) }
-      case _ => Vector.empty
-
-    val overrides =
-      mods.flatMap(attributeNames).filter(name => owned.exists(_.equalsIgnoreCase(name)))
+    val overrides = Form.overriddenAttributes(mods, owned)
     require(
       overrides.isEmpty,
       s"form binding owns attributes: ${overrides.distinct.mkString(", ")}"

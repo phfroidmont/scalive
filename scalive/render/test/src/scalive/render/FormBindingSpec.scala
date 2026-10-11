@@ -782,6 +782,30 @@ object FormBindingSpec extends ZIOSpecDefault:
 
       assertTrue(results.forall(identity))
     },
+    test("ordinary HTTP forms reject action and method through groups and conditionals") {
+      val target  = FormAction.from(zio.http.Method.POST / "submit")
+      val results = for
+        name  <- Vector("action", "METHOD")
+        shape <- Vector("direct", "group", "conditional", "nested")
+      yield
+        val compiled = RenderProgram.compile[Boolean, Nothing] { flag =>
+          val attr     = Mod.Attr.Static(name, "override")
+          val grouped  = Mod.Attr.Group(Vector(cls := "allowed", Mod.Attr.Group(Vector(attr))))
+          val modifier = shape match
+            case "direct"      => attr
+            case "group"       => grouped
+            case "conditional" => flag.chooseMod(cls := "allowed", attr)
+            case _             =>
+              flag.chooseMod(cls := "allowed", flag.chooseMod(cls := "allowed", grouped))
+          Form.http(target)(modifier)
+        }
+        shape -> compiled.left.exists {
+          case RenderError.EvaluationFailed(_: IllegalArgumentException) => true
+          case _                                                         => false
+        }
+
+      assertTrue(results.filterNot(_._2).isEmpty)
+    },
     test("checkbox items allow ordinary attributes, modifier collections, and focus messages") {
       val compiled = RenderProgram.compile[ProfileDefinition.Form, ProfileMsg] { source =>
         val binding = source.bind(DomRef("profile"), ProfileMsg.Updated(_), ProfileMsg.Submitted(_))

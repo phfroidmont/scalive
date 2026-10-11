@@ -143,8 +143,9 @@ A `RootConnection` contains:
 
 Browser events, typed application messages, parameter patches, async and
 subscription completions, component work, and upload mutations all become
-epoch-qualified `SessionCommand` values. The epoch prevents delayed work from an
-older lifecycle generation from mutating a replacement lifecycle.
+epoch-qualified `SessionCommand` values. A lifecycle that replaces another on the
+same connection, after a crash or a live navigation, gets a new lifecycle ID, so
+delayed work from the older lifecycle cannot mutate its replacement.
 
 The kernel dequeues and processes one command at a time:
 

@@ -572,8 +572,13 @@ accepts only `JS` commands.
 
 Found while writing, not fixed:
 
-- `ConnectedLifecycleContext.epoch` is always 1, and a root LiveView keeps its
-  `lifecycleId` across reconnects.
+- Fixed: every connected lifecycle reused the lifecycle ID from the page's
+  disconnected render, and `ConnectedLifecycleContext.epoch` was always 1. A
+  rejoin after a crash and a page reached by live navigation reported the same
+  context as the lifecycle they replaced. The connection now gives each
+  lifecycle an ID it has not used before; only the first claim keeps the
+  disconnected ID. `epoch` is removed, and `JoinRejected` reports the ID the
+  failed lifecycle actually had.
 - Fixed: `ctx.components.sendUpdate[C](id, props)` found the component through
   `MODULE$` by reflection, so for a component defined as a class it failed the
   handler with `NoSuchFieldException` and the session ended. It is replaced by

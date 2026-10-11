@@ -579,6 +579,9 @@ Found while writing, not fixed:
   lifecycle an ID it has not used before; only the first claim keeps the
   disconnected ID. `epoch` is removed, and `JoinRejected` reports the ID the
   failed lifecycle actually had.
+- Fixed: the reason of a `LiveRouteMountFailure` was logged only when a
+  connected mount was rejected. A direct GET returned the 401, 403, or 404 and
+  dropped it. The disconnected rejection now logs the reason with the path.
 - Fixed: nested LiveViews mounted during a disconnected render reported no
   `MountSucceeded` or `MountFailed`, unlike connected nested mounts. Each now
   reports its mount under its own lifecycle ID.

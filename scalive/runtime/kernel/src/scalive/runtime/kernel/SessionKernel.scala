@@ -1216,19 +1216,9 @@ final private[scalive] class SessionKernel[Msg, Model] private (
               LifecycleFailure.Stage(LifecycleFailureStage.Handler),
               Some(failure)
             )
-            Clock.nanoTime.flatMap { handlerEnded =>
-              observer.observeLifecycle(
-                LifecycleEvent.HandlerFailed(
-                  connectedLifecycleContext,
-                  Some(tracked.id.value),
-                  observedTurnKind(Some(tracked)),
-                  math.max(0L, handlerEnded - handlerStarted),
-                  error
-                )
-              ) *> observeNewTurnFailed(Some(tracked), handlerStarted, error) *>
-                response.fail(SessionRejection.SessionFailed(failure)).unit *>
-                navigationCrash(state, failure)
-            }
+            observeNewTurnFailed(Some(tracked), handlerStarted, error) *>
+              response.fail(SessionRejection.SessionFailed(failure)).unit *>
+              navigationCrash(state, failure)
         }
       }
     }
@@ -1252,18 +1242,8 @@ final private[scalive] class SessionKernel[Msg, Model] private (
       LifecycleFailure.Stage(LifecycleFailureStage.Handler),
       Some(failure)
     )
-    Clock.nanoTime.flatMap { handlerEnded =>
-      observer.observeLifecycle(
-        LifecycleEvent.HandlerFailed(
-          connectedLifecycleContext,
-          response.map(_.id.value),
-          observedTurnKind(response),
-          math.max(0L, handlerEnded - startedAtNanos),
-          error
-        )
-      ) *> observeNewTurnFailed(response, startedAtNanos, error) *>
-        failActiveTurn(state, response, failure)
-    }
+    observeNewTurnFailed(response, startedAtNanos, error) *>
+      failActiveTurn(state, response, failure)
 
   private def executeTurn(
     state: SessionState.Active[Msg, Model],
@@ -1480,15 +1460,43 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     error: LifecycleError
   ): UIO[Unit] =
     Clock.nanoTime.flatMap(ended =>
-      observer.observeLifecycle(
-        LifecycleEvent.TurnFailed(
-          connectedLifecycleContext,
-          turnId.value,
-          response.map(_.id.value),
-          kind,
-          math.max(0L, ended - startedAtNanos),
-          error
+      observeTurnFailure(
+        turnId,
+        response.map(_.id),
+        kind,
+        math.max(0L, ended - startedAtNanos),
+        error
+      )
+    )
+
+  /** Reports a failed turn, preceded by a handler failure when application code failed. */
+  private def observeTurnFailure(
+    turnId: TurnId,
+    command: Option[CommandId],
+    kind: LifecycleTurnKind,
+    durationNanos: Long,
+    error: LifecycleError
+  ): UIO[Unit] =
+    val handlerFailed = error.failure match
+      case LifecycleFailure.Stage(stage) if HandlerStages.contains(stage) =>
+        observer.observeLifecycle(
+          LifecycleEvent.HandlerFailed(
+            connectedLifecycleContext,
+            command.map(_.value),
+            kind,
+            durationNanos,
+            error
+          )
         )
+      case _ => ZIO.unit
+    handlerFailed *> observer.observeLifecycle(
+      LifecycleEvent.TurnFailed(
+        connectedLifecycleContext,
+        turnId.value,
+        command.map(_.value),
+        kind,
+        durationNanos,
+        error
       )
     )
 
@@ -1543,15 +1551,12 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     error: LifecycleError
   ): UIO[Unit] =
     Clock.nanoTime.flatMap(ended =>
-      observer.observeLifecycle(
-        LifecycleEvent.TurnFailed(
-          connectedLifecycleContext,
-          candidate.id.value,
-          candidate.observedCommand.map(_.value),
-          candidate.observedKind,
-          math.max(0L, ended - candidate.startedAtNanos),
-          error
-        )
+      observeTurnFailure(
+        candidate.id,
+        candidate.observedCommand,
+        candidate.observedKind,
+        math.max(0L, ended - candidate.startedAtNanos),
+        error
       )
     )
 
@@ -1664,16 +1669,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                        LifecycleFailure.Stage(LifecycleFailureStage.Runtime),
                        cause.defects.headOption
                      )
-                 observer.observeLifecycle(
-                   LifecycleEvent.TurnFailed(
-                     connectedLifecycleContext,
-                     turnId.value,
-                     commandId.map(_.value),
-                     kind,
-                     duration,
-                     error
-                   )
-                 )
+                 observeTurnFailure(turnId, commandId, kind, duration, error)
         result <- ZIO.suspendSucceed(outcome)
       yield result
     }
@@ -4138,6 +4134,17 @@ final private[scalive] class SessionKernel[Msg, Model] private (
 end SessionKernel
 
 private[scalive] object SessionKernel:
+  /** Stages in which application callbacks run, other than the LiveView's own `mount`. */
+  private val HandlerStages: Set[LifecycleFailureStage] = Set(
+    LifecycleFailureStage.Handler,
+    LifecycleFailureStage.AfterRender,
+    LifecycleFailureStage.ComponentMount,
+    LifecycleFailureStage.ComponentUpdate,
+    LifecycleFailureStage.ComponentMessage,
+    LifecycleFailureStage.ComponentAsync,
+    LifecycleFailureStage.ComponentAfterRender
+  )
+
   final private case class TrackedCommand(
     id: CommandId,
     kind: RuntimeCommandKind,

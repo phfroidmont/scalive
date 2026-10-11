@@ -343,7 +343,7 @@ object LifecycleMetricsSpec extends ZIOSpecDefault:
         "stage" -> "handler"
       )
       val handler = tagged(
-        Metric.counter("scalive_handler_failures_total", "LiveView handler failures"),
+        Metric.counter("scalive_handler_failures_total", "LiveView and LiveComponent handler failures"),
         handlerLabels
       )
       val handlerDuration = tagged(

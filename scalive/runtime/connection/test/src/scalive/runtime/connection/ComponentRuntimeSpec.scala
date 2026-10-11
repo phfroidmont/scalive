@@ -208,6 +208,77 @@ object ComponentRuntimeSpec extends ZIOSpecDefault:
         yield assertTrue(model.contains(3))
       }
     },
+    test("component and bootstrap callback failures are reported as handler failures") {
+      ZIO.scoped {
+        val failing = new LiveComponent.Eventless[Int, Int]:
+          def mount(props: Int, ctx: MountContext) = ZIO.succeed(props)
+          override def update(props: Int, model: Int, ctx: UpdateContext) =
+            if props == 2 then ZIO.fail(Exception("component update failed"))
+            else ZIO.succeed(props)
+          def view(props: Signal[Int], model: Signal[Int], self: ComponentRef[Nothing]) = div()
+        val parent = new LiveView[Unit, Unit]:
+          def mount(ctx: MountContext) = ZIO.unit
+          def handleMessage(model: Unit, ctx: MessageContext): Unit => Task[Unit] = _ =>
+            ctx.components.sendUpdate(failing, "failing", 2)
+          def view(model: Signal[Unit]) = div(component(failing, "failing").render(1))
+        val failingParams = new LiveView.Eventless[Unit]:
+          override val hooks = LiveHooks.empty[Nothing, Unit]
+            .onParams((_, _, _) => ZIO.fail(Exception("params hook failed")))
+          def mount(ctx: MountContext) = ZIO.unit
+          def view(model: Signal[Unit]) = div()
+        def handlerFailures(events: Ref[Vector[LifecycleEvent]]) =
+          events.get.map(_.collect { case event: LifecycleEvent.HandlerFailed =>
+            event.kind -> event.error.failure
+          })
+        for
+          componentEvents <- Ref.make(Vector.empty[LifecycleEvent])
+          bootstrapEvents <- Ref.make(Vector.empty[LifecycleEvent])
+          sink            <- Queue.unbounded[ConnectionOutput]
+          crashed <- ZIO.scoped {
+                       for
+                         connection <- RootConnection.start(
+                                         config,
+                                         metadata,
+                                         parent,
+                                         sink.offer(_).unit,
+                                         observer = RuntimeObserver.withLifecycleObserver(
+                                           LifecycleObserver.fromFunction(event =>
+                                             componentEvents.update(_ :+ event)
+                                           )
+                                         )
+                                       )
+                         _ <- sink.take
+                         _ <- connection.submitInfo(())
+                       yield ()
+                     }.exit
+          bootstrap <- ZIO.scoped {
+                         RootConnection.start(
+                           config,
+                           metadata,
+                           failingParams,
+                           sink.offer(_).unit,
+                           observer = RuntimeObserver.withLifecycleObserver(
+                             LifecycleObserver.fromFunction(event =>
+                               bootstrapEvents.update(_ :+ event)
+                             )
+                           )
+                         )
+                       }.exit
+          component <- handlerFailures(componentEvents)
+          params    <- handlerFailures(bootstrapEvents)
+        yield assertTrue(
+          crashed.isFailure,
+          bootstrap.isFailure,
+          component == Vector(
+            LifecycleTurnKind.Message ->
+              LifecycleFailure.Stage(LifecycleFailureStage.ComponentUpdate)
+          ),
+          params == Vector(
+            LifecycleTurnKind.Bootstrap -> LifecycleFailure.Stage(LifecycleFailureStage.Handler)
+          )
+        )
+      }
+    },
     test("dynamic component hooks replace in place and raw hooks consume malformed payloads") {
       ZIO.scoped {
         val rawEvent = BrowserToServerEvent[Int]("raw")

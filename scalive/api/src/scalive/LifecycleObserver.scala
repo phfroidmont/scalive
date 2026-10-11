@@ -452,11 +452,12 @@ enum LifecycleEvent:
     durationNanos: Long,
     error: LifecycleError)
 
-  /** A LiveView handler or hook failed during a connected turn after bootstrap.
+  /** A LiveView or LiveComponent handler or hook failed during a connected turn.
     *
-    * Scalive also reports the enclosing turn as [[LifecycleEvent.TurnFailed]] and stops the
-    * lifecycle. Failures in the bootstrap turn or in LiveComponent callbacks appear only as
-    * [[LifecycleEvent.TurnFailed]].
+    * This covers every application callback a turn runs, including the bootstrap turn, except the
+    * LiveView's own `mount`, which [[LifecycleEvent.MountFailed]] reports. Scalive also reports the
+    * enclosing turn as [[LifecycleEvent.TurnFailed]], with the same failure, and stops the
+    * lifecycle.
     *
     * @param lifecycle
     *   The lifecycle whose handler failed.
@@ -466,10 +467,11 @@ enum LifecycleEvent:
     * @param kind
     *   The source of the work the handler was processing.
     * @param durationNanos
-    *   The time spent in the handler, in nanoseconds.
+    *   The time from the start of the turn until the handler failed, in nanoseconds.
     * @param error
-    *   The failure, classified as the [[LifecycleFailureStage.Handler]] stage, with the handler
-    *   error as its cause.
+    *   The failure, classified by the stage of the callback, such as
+    *   [[LifecycleFailureStage.Handler]] or [[LifecycleFailureStage.ComponentMessage]], with the
+    *   callback's error as its cause.
     */
   case HandlerFailed(
     lifecycle: ConnectedLifecycleContext,

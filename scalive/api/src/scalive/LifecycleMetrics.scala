@@ -60,7 +60,7 @@ object LifecycleMetrics:
   )
   private val handlerFailures = Metric.counter(
     "scalive_handler_failures_total",
-    "LiveView handler failures"
+    "LiveView and LiveComponent handler failures"
   )
   private val handlerFailureDuration = Metric.histogram(
     "scalive_handler_failure_duration_seconds",

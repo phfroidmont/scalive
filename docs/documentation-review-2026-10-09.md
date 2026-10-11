@@ -574,8 +574,11 @@ Found while writing, not fixed:
 
 - `ConnectedLifecycleContext.epoch` is always 1, and a root LiveView keeps its
   `lifecycleId` across reconnects.
-- `ctx.components.sendUpdate[C]` finds the component through `MODULE$` by
-  reflection, which likely fails for a component defined as a class.
+- Fixed: `ctx.components.sendUpdate[C](id, props)` found the component through
+  `MODULE$` by reflection, so for a component defined as a class it failed the
+  handler with `NoSuchFieldException` and the session ended. It is replaced by
+  `sendUpdate(definition, id, props)`, which addresses the definition value the
+  view rendered.
 - `upload.onProgress` ignores its receiver.
 - `LiveUploadError.fromReason` never produces `Custom`, so a custom error comes
   back as `Unknown` after a JSON round trip.

@@ -586,6 +586,15 @@ Found while writing, not fixed:
 - Fixed: `RenderError.Unsupported` said the feature "is not supported by the
   minimal render engine", an engine that does not exist. It now says the
   feature requires a LiveView lifecycle.
+- Changed: `LiveAsyncEvent` reused `LiveAsyncResult` with a different meaning:
+  `Succeeded` held the message built by `toMsg`, not the task's value, and on
+  failure or cancellation the hook could not see the message. It is now
+  `LiveAsyncEvent(key, result, message)`: `result` is the task's outcome as
+  everywhere else, and `message` is what `handleMessage` receives. The unused
+  raw async-completion commands that relied on the old meaning are gone.
+- Follow-up, not done: nothing in production builds
+  `SessionCommand.ComponentMessage`, so `LifecycleTurnKind.ComponentMessage` is
+  only reported in tests, which use that command as an injection point.
 - Added: the connected mount context has `components`, like the params and
   message contexts, so `mount` can send props to a component of the first
   render, as Phoenix allows `send_update` in `mount`. Only mount keeps

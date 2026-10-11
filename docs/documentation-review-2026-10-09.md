@@ -579,7 +579,11 @@ Found while writing, not fixed:
   handler with `NoSuchFieldException` and the session ended. It is replaced by
   `sendUpdate(definition, id, props)`, which addresses the definition value the
   view rendered.
-- `upload.onProgress` ignores its receiver.
+- Fixed: `upload.onProgress` returned an ordinary modifier that ignored its
+  upload. The browser reads `phx-progress` only from the upload's own file
+  input, so the binding did nothing elsewhere and reported the wrong upload's
+  progress on another upload's input. It now returns an `UploadProgress` that
+  only `liveFileInput` accepts, and the input rejects another upload's binding.
 - Not a bug: `LiveUploadError.fromReason` never produces `Custom`, but Scalive
   never decodes upload errors. It only encodes them for the browser, and a
   custom reason on the wire is a bare string that a decoder cannot tell apart

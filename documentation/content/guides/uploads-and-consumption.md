@@ -64,8 +64,11 @@ entry references, accepted values, multiplicity, automatic-upload marker, and
 Phoenix upload hook. A drop target only routes dropped files to that input; it
 does not relax acceptance, count, or size checks.
 
-`upload.onProgress(Msg.Progress)` is a DOM event binding. Handle the message by
-fetching the latest snapshot rather than trusting raw browser metadata:
+`upload.onProgress(Msg.Progress)` is the upload's progress binding. Pass it to
+that upload's `liveFileInput`, right after the upload: the browser reports
+progress only from that input, so the binding is accepted nowhere else. Handle
+the message by fetching the latest snapshot rather than trusting raw browser
+metadata:
 
 @:sourceRegion(documentation/fixtures/guides/src/uploads/TextUploadLiveView.scala, uploads-progress)
 

@@ -586,6 +586,10 @@ Found while writing, not fixed:
 - Fixed: `RenderError.Unsupported` said the feature "is not supported by the
   minimal render engine", an engine that does not exist. It now says the
   feature requires a LiveView lifecycle.
+- Added: the connected mount context has `components`, like the params and
+  message contexts, so `mount` can send props to a component of the first
+  render, as Phoenix allows `send_update` in `mount`. Only mount keeps
+  `resources`, deliberately.
 - Removed: `LiveComponent.EventlessWithOutput`, an unused second name for
   `LiveComponent.WithOutput.Eventless`.
 - Renamed: `FormWorkflowReset.Saving` is now `AlreadySaving`, the name

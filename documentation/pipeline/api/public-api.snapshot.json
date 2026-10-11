@@ -398,6 +398,18 @@
       ]
     },
     {
+      "id" : "class:scalive.FormPathSegment.Name",
+      "ownerId" : "object:scalive.FormPathSegment",
+      "qualifiedName" : "scalive.FormPathSegment.Name",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.FormPathSegment.Name:47ac51fa772beb30",
+          "signature" : "class Name extends FormPathSegment"
+        }
+      ]
+    },
+    {
       "id" : "class:scalive.FormRoot",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.FormRoot",
@@ -4666,6 +4678,18 @@
         {
           "id" : "def:scalive.FormPath.toString:cb360879ad27265a",
           "signature" : "def toString: String"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.FormPathSegment.Name.apply",
+      "ownerId" : "object:scalive.FormPathSegment.Name",
+      "qualifiedName" : "scalive.FormPathSegment.Name.apply",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FormPathSegment.Name.apply:f4bf36c124d66fde",
+          "signature" : "def apply(value: String): FormPathSegment.Name"
         }
       ]
     },
@@ -11262,30 +11286,6 @@
       ]
     },
     {
-      "id" : "enum:scalive.FormPathSegment",
-      "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.FormPathSegment",
-      "kind" : "enum",
-      "signatures" : [
-        {
-          "id" : "enum:scalive.FormPathSegment:42703812b169ca86",
-          "signature" : "enum FormPathSegment"
-        }
-      ]
-    },
-    {
-      "id" : "enum:scalive.FormPathSegment.Name",
-      "ownerId" : "enum:scalive.FormPathSegment",
-      "qualifiedName" : "scalive.FormPathSegment.Name",
-      "kind" : "enum",
-      "signatures" : [
-        {
-          "id" : "enum:scalive.FormPathSegment.Name:bb61c722856ca0eb",
-          "signature" : "enum Name(value: String) extends FormPathSegment"
-        }
-      ]
-    },
-    {
       "id" : "enum:scalive.FormRowKey.Error",
       "ownerId" : "object:scalive.FormRowKey",
       "qualifiedName" : "scalive.FormRowKey.Error",
@@ -17586,6 +17586,42 @@
       ]
     },
     {
+      "id" : "object:scalive.FormPathSegment",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.FormPathSegment",
+      "kind" : "object",
+      "signatures" : [
+        {
+          "id" : "object:scalive.FormPathSegment:e69cdc023ecc90ff",
+          "signature" : "object FormPathSegment"
+        }
+      ]
+    },
+    {
+      "id" : "object:scalive.FormPathSegment.Array",
+      "ownerId" : "object:scalive.FormPathSegment",
+      "qualifiedName" : "scalive.FormPathSegment.Array",
+      "kind" : "object",
+      "signatures" : [
+        {
+          "id" : "object:scalive.FormPathSegment.Array:56056f857b2020ad",
+          "signature" : "object Array extends FormPathSegment"
+        }
+      ]
+    },
+    {
+      "id" : "object:scalive.FormPathSegment.Name",
+      "ownerId" : "object:scalive.FormPathSegment",
+      "qualifiedName" : "scalive.FormPathSegment.Name",
+      "kind" : "object",
+      "signatures" : [
+        {
+          "id" : "object:scalive.FormPathSegment.Name:4e32a79f555c4b95",
+          "signature" : "object Name"
+        }
+      ]
+    },
+    {
       "id" : "object:scalive.FormRevision",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.FormRevision",
@@ -18973,6 +19009,18 @@
         {
           "id" : "trait:scalive.FormPart:08eaa977b689e6cf",
           "signature" : "trait FormPart[Owner, Value]"
+        }
+      ]
+    },
+    {
+      "id" : "trait:scalive.FormPathSegment",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.FormPathSegment",
+      "kind" : "trait",
+      "signatures" : [
+        {
+          "id" : "trait:scalive.FormPathSegment:3ff3c6b7b148aa7a",
+          "signature" : "trait FormPathSegment"
         }
       ]
     },
@@ -21401,20 +21449,8 @@
       ]
     },
     {
-      "id" : "val:scalive.FormPathSegment.Array",
-      "ownerId" : "enum:scalive.FormPathSegment",
-      "qualifiedName" : "scalive.FormPathSegment.Array",
-      "kind" : "val",
-      "signatures" : [
-        {
-          "id" : "val:scalive.FormPathSegment.Array:82a09544e43c6bc1",
-          "signature" : "val Array: FormPathSegment"
-        }
-      ]
-    },
-    {
       "id" : "val:scalive.FormPathSegment.Name.value",
-      "ownerId" : "enum:scalive.FormPathSegment.Name",
+      "ownerId" : "class:scalive.FormPathSegment.Name",
       "qualifiedName" : "scalive.FormPathSegment.Name.value",
       "kind" : "val",
       "signatures" : [

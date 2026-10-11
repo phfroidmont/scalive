@@ -1,16 +1,31 @@
 package scalive
 
 /** One component of a browser form field name. */
-enum FormPathSegment derives CanEqual:
+sealed trait FormPathSegment derives CanEqual
+
+/** The two kinds of [[FormPathSegment]]. */
+object FormPathSegment:
   /** A literal, non-empty name component.
     *
     * @param value
-    *   The component text. Path constructors reject an empty value or one containing `[` or `]`.
+    *   The component text, never empty and never containing `[` or `]`.
     */
-  case Name(value: String)
+  final case class Name private (value: String) extends FormPathSegment
+
+  /** Constructs [[Name]] segments. */
+  object Name:
+    /** Creates a name segment, throwing `IllegalArgumentException` when `value` is empty or
+      * contains `[` or `]`. Use [[FormPath.parse]] for untrusted browser input.
+      */
+    def apply(value: String): Name =
+      require(
+        value != null && value.nonEmpty && !value.exists(char => char == '[' || char == ']'),
+        "a form path name segment must be non-empty and contain no brackets"
+      )
+      new Name(value)
 
   /** An empty bracket component (`[]`). */
-  case Array
+  case object Array extends FormPathSegment
 
 /** A structured form field path rendered with browser bracket notation.
   *
@@ -29,7 +44,7 @@ final case class FormPath private (segments: Vector[FormPathSegment]):
     * use [[FormPath.parse]] for untrusted browser input.
     */
   def /(segment: String): FormPath =
-    FormPath.create(segments :+ FormPath.trustedName(segment))
+    FormPath.create(segments :+ Name(segment))
 
   /** Appends an explicit array segment. */
   def array: FormPath =
@@ -180,7 +195,7 @@ object FormPath:
     * non-empty and contain no brackets. Use [[FormPath.parse]] for untrusted browser input.
     */
   def apply(first: String, rest: String*): FormPath =
-    create((first +: rest).map(trustedName).toVector)
+    create((first +: rest).map(Name(_)).toVector)
 
   /** Creates a path from trusted segments, throwing `IllegalArgumentException` if one is invalid.
     *
@@ -273,22 +288,11 @@ object FormPath:
     end if
   end parse
 
-  private def trustedName(value: String): FormPathSegment.Name =
-    if value == null || value.isEmpty || value.exists(char => char == '[' || char == ']') then
-      throw new IllegalArgumentException(
-        "a form path name segment must be non-empty and contain no brackets"
-      )
-    Name(value)
-
   private def validateTrustedSegments(segments: Vector[FormPathSegment]): Unit =
     segments.headOption.foreach {
       case Array =>
         throw new IllegalArgumentException("a form path cannot begin with an array segment")
       case Name(_) => ()
-    }
-    segments.foreach {
-      case Name(value) => trustedName(value)
-      case Array       => ()
     }
 
   private def create(segments: Vector[FormPathSegment]): FormPath =

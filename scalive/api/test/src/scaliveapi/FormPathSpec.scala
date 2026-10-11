@@ -27,6 +27,14 @@ object FormPathSpec extends ZIOSpecDefault:
         explicit.array.name == "user[tags][][]"
       )
     },
+    test("name segments reject an empty value or brackets when built") {
+      assertTrue(
+        Name("user").value == "user",
+        scala.util.Try(Name("")).isFailure,
+        scala.util.Try(Name("a[b")).isFailure,
+        scala.util.Try(Name("a]")).isFailure
+      )
+    },
     test("rejects malformed bracket syntax without normalization") {
       val malformed = Vector(
         "[user]"      -> RepresentationError.MissingRootName,

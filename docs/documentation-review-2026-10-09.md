@@ -570,7 +570,7 @@ as a bare binding ID such as `b1:1`, and `JS.exec` then called `exec_null`,
 which throws in the browser. They now return a `JSCommandBinding`, which
 accepts only `JS` commands.
 
-Found while writing, not fixed:
+Found while writing:
 
 - Fixed: every connected lifecycle reused the lifecycle ID from the page's
   disconnected render, and `ConnectedLifecycleContext.epoch` was always 1. A
@@ -592,9 +592,11 @@ Found while writing, not fixed:
   `LiveAsyncEvent(key, result, message)`: `result` is the task's outcome as
   everywhere else, and `message` is what `handleMessage` receives. The unused
   raw async-completion commands that relied on the old meaning are gone.
-- Follow-up, not done: nothing in production builds
-  `SessionCommand.ComponentMessage`, so `LifecycleTurnKind.ComponentMessage` is
-  only reported in tests, which use that command as an injection point.
+- Fixed: nothing in production builds `SessionCommand.ComponentMessage`, so
+  `LifecycleTurnKind.ComponentMessage` was only ever reported in tests. The
+  public case is removed. The command stays as a documented test seam, about
+  30 kernel and connection tests drive component turns with it, and it is
+  observed as the component browser event it stands in for.
 - Added: the connected mount context has `components`, like the params and
   message contexts, so `mount` can send props to a component of the first
   render, as Phoenix allows `send_update` in `mount`. Only mount keeps
@@ -620,11 +622,12 @@ Found while writing, not fixed:
   to the form. The owner type already rules out another form root, `emap`
   replaces errors at undeclared addresses with one root error, and the
   Scaladoc points to the checked `FormDefinition.errors`.
-- Not fixed: `Form.http` looks only at the first attribute of an attribute
-  group when it rejects `action` and `method`. A second `action` or `method`
-  still fails the render through the duplicate-attribute check.
-- Not fixed: `FormPathSegment.Name("")` can be built, but every path
-  constructor rejects it, so no `FormPath` contains it.
+- Fixed: `Form.http` rejected `action` and `method` only when set directly. In
+  an attribute group or a `chooseMod` branch they passed the check. It now
+  uses the same check as the bound form controls.
+- Fixed: `FormPathSegment.Name("")` and names containing brackets could be
+  built; only path constructors rejected them. `FormPathSegment` is now a
+  sealed trait whose `Name` rejects such values when it is built.
 - Fixed: `FormRowKey.from` accepted any letter or digit that fits in one UTF-16
   code unit, such as `é` or `٣`, but not one outside that range or a decomposed
   accent, and it allowed lookalike keys. Row keys are now ASCII letters,

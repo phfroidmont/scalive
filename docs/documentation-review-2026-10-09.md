@@ -579,6 +579,9 @@ Found while writing, not fixed:
   lifecycle an ID it has not used before; only the first claim keeps the
   disconnected ID. `epoch` is removed, and `JoinRejected` reports the ID the
   failed lifecycle actually had.
+- Fixed: nested LiveViews mounted during a disconnected render reported no
+  `MountSucceeded` or `MountFailed`, unlike connected nested mounts. Each now
+  reports its mount under its own lifecycle ID.
 - Fixed: `HandlerFailed`, and so `scalive_handler_failures_total`, missed
   failures in the bootstrap turn and in LiveComponent callbacks, which appeared
   only as `TurnFailed`. Every `TurnFailed` whose stage is an application

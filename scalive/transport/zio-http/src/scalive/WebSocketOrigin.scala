@@ -8,13 +8,17 @@ import java.util.Locale
   * Origins contain an HTTP or HTTPS scheme, a canonical lowercase host, and an effective port.
   * Default ports are normalized, so `https://example.com` and `https://example.com:443` describe
   * the same origin.
+  *
+  * @param scheme
+  *   The canonical `http` or `https` scheme.
+  * @param host
+  *   The canonical lowercase ASCII host, without IPv6 brackets.
+  * @param port
+  *   The effective port, including `80` or `443` when omitted from the serialized origin.
   */
 final class WebSocketOrigin private (
-  /** The canonical `http` or `https` scheme. */
   val scheme: String,
-  /** The canonical lowercase ASCII host, without IPv6 brackets. */
   val host: String,
-  /** The effective port, including `80` or `443` when omitted from the serialized origin. */
   val port: Int):
   override def equals(other: Any): Boolean = other match
     case that: WebSocketOrigin =>
@@ -41,13 +45,21 @@ object WebSocketOrigin:
     /** The value is not a serialized origin. */
     case Malformed
 
-    /** Only browser HTTP and HTTPS origins are supported. */
+    /** Only browser HTTP and HTTPS origins are supported.
+      *
+      * @param scheme
+      *   The rejected scheme, as written in the parsed value.
+      */
     case UnsupportedScheme(scheme: String)
 
     /** The host is absent or invalid. */
     case InvalidHost
 
-    /** The port is outside the usable TCP port range. */
+    /** The port is outside the usable TCP port range.
+      *
+      * @param port
+      *   The rejected port.
+      */
     case InvalidPort(port: Int)
 
     /** A human-readable description of the validation failure. */
@@ -57,7 +69,11 @@ object WebSocketOrigin:
       case InvalidHost               => "WebSocket origins require a valid ASCII host"
       case InvalidPort(port) => s"WebSocket origin port must be between 1 and 65535, got $port"
 
-  /** Exception thrown by the ergonomic HTTP and HTTPS constructors. */
+  /** Exception thrown by the ergonomic HTTP and HTTPS constructors.
+    *
+    * @param error
+    *   The validation failure.
+    */
   final class ValidationException(val error: Error) extends IllegalArgumentException(error.message)
 
   /** Creates an HTTP origin from trusted program input.

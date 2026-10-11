@@ -81,6 +81,7 @@ trait LiveView[Msg, Model]:
   def view(model: Signal[Model]): HtmlElement[Msg]
 end LiveView
 
+/** Variants of [[LiveView]]: eventless and routed views. */
 object LiveView:
   /** A LiveView that renders no bindings that send it messages.
     *
@@ -88,6 +89,7 @@ object LiveView:
     * the view handles a click, form, async result, or subscription.
     */
   trait Eventless[Model] extends LiveView[Nothing, Model]:
+    /** Returns a handler that is never called, because an eventless view gets no messages. */
     final def handleMessage(model: Model, ctx: MessageContext): Nothing => Task[Model] =
       _ => ZIO.succeed(model)
 
@@ -156,9 +158,11 @@ object LiveView:
     def view(model: Signal[Model]): HtmlElement[Msg]
   end Routed
 
+  /** Variants of [[LiveView.Routed]]. */
   object Routed:
     /** A routed LiveView that renders no bindings that send it messages. */
     trait Eventless[Model, Params] extends Routed[Nothing, Model, Params]:
+      /** Returns a handler that is never called, because an eventless view gets no messages. */
       final def handleMessage(model: Model, ctx: MessageContext): Nothing => Task[Model] =
         _ => ZIO.succeed(model)
 end LiveView

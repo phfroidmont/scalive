@@ -88,42 +88,122 @@ trait Flash:
   /** Returns every current message. */
   def snapshot: Task[Map[FlashKind, String]]
 
+/** Allows, inspects, cancels, and consumes the file uploads of one LiveView or component.
+  *
+  * Each operation returns a fresh [[LiveUpload]] snapshot; keep it in the model, since rendering an
+  * older snapshot renders old status. Failures caused by the current upload state are
+  * [[LiveUploadOperationError]] values. See the [file uploads
+  * guide](https://scalive.dev/guides/uploads-and-consumption#complete-a-bounded-in-memory-upload).
+  */
 trait Uploads:
+  /** Allows uploads for `definition` and returns the upload's snapshot.
+    *
+    * Call it during every mount; the disconnected and connected mounts own independent uploads.
+    * Allowing the same definition again returns the current snapshot. Allowing a different
+    * definition with the same name replaces the upload, and fails with
+    * [[LiveUploadOperationError.ActiveEntries]] while it still tracks entries.
+    */
   def allow[R](definition: LiveUploadDef[R]): Task[LiveUpload[R]]
+
+  /** Removes the upload for `definition`, cancelling its entries and releasing every result the
+    * runtime still owns.
+    *
+    * Allow the definition again to start over.
+    */
   def disallow[R](definition: LiveUploadDef[R]): Task[Unit]
+
+  /** Returns the current snapshot of the upload for `definition`, or `None` when it is not allowed.
+    *
+    * Call it when a progress message arrives to refresh the snapshot kept in the model.
+    */
   def get[R](definition: LiveUploadDef[R]): Task[Option[LiveUpload[R]]]
+
+  /** Cancels `entry` and returns the replacement upload snapshot.
+    *
+    * A stale or already removed entry fails with a [[LiveUploadOperationError]].
+    */
   def cancel[R](entry: LiveUploadEntry[R]): Task[LiveUpload[R]]
+
+  /** Passes the completed `entry` to `callback` and returns its value with the replacement upload
+    * snapshot.
+    *
+    * The callback's [[ConsumeDecision]] decides whether the application takes ownership of the
+    * result. An invalid or unfinished entry fails with
+    * [[LiveUploadOperationError.EntryNotCompleted]].
+    */
   def consume[R, A](
     entry: LiveUploadEntry[R]
   )(
     callback: CompletedUpload[R] => Task[ConsumeDecision[A]]
   ): Task[(A, LiveUpload[R])]
+
+  /** Passes each completed entry of `definition` to `callback`, in selection order, and returns
+    * their values with the replacement upload snapshot.
+    *
+    * Invalid entries are skipped. It fails with [[LiveUploadOperationError.EntriesInProgress]]
+    * while a valid entry is still in progress. Entries are consumed one at a time, so if a callback
+    * fails, the entries consumed before it stay consumed.
+    */
   def consumeCompleted[R, A](
     definition: LiveUploadDef[R]
   )(
     callback: CompletedUpload[R] => Task[ConsumeDecision[A]]
   ): Task[(List[A], LiveUpload[R])]
+end Uploads
 
+/** Creates and updates the rendered streams of one LiveView or component.
+  *
+  * Each operation returns a replacement [[LiveStream]] handle; keep it in the model and render that
+  * exact value, since an older handle loses the pending operations. Every operation after `create`
+  * must use the definition that created the stream.
+  */
 trait Streams:
+  /** Creates the stream for `definition` with `items` as its initial entries.
+    *
+    * Call it once per lifecycle, usually in mount; creating the same name twice for one owner
+    * fails. The disconnected render keeps every item, whatever the definition's retention limit.
+    */
   def create[A, Id](definition: LiveStreamDef[A, Id], items: Iterable[A]): Task[LiveStream[A]]
+
+  /** Inserts `items` at `at`, like repeated [[insert]] calls at the same position.
+    *
+    * Repeatedly inserting at [[StreamAt.First]] or at one fixed index reverses the order of
+    * `items`.
+    */
   def insertAll[A, Id](
     definition: LiveStreamDef[A, Id],
     items: Iterable[A],
     at: StreamAt = StreamAt.Last
   ): Task[LiveStream[A]]
+
+  /** Replaces every entry with `items` and makes the browser rebuild the stream container. */
   def reset[A, Id](
     definition: LiveStreamDef[A, Id],
     items: Iterable[A],
     at: StreamAt = StreamAt.Last
   ): Task[LiveStream[A]]
+
+  /** Inserts `item` at `at`, or updates its row in place when an entry with the same ID exists.
+    *
+    * With `updateOnly = true`, an item whose ID is absent is ignored instead of inserted.
+    */
   def insert[A, Id](
     definition: LiveStreamDef[A, Id],
     item: A,
     at: StreamAt = StreamAt.Last,
     updateOnly: Boolean = false
   ): Task[LiveStream[A]]
+
+  /** Removes the entry whose domain ID is `id`. */
   def delete[A, Id](definition: LiveStreamDef[A, Id], id: Id): Task[LiveStream[A]]
+
+  /** Removes the entry whose rendered DOM ID is `domId`.
+    *
+    * Prefer [[delete]] with a typed ID. Pass only a trusted DOM ID that belongs to this stream,
+    * never untrusted browser input.
+    */
   def deleteByDomId[A, Id](definition: LiveStreamDef[A, Id], domId: String): Task[LiveStream[A]]
+end Streams
 
 /** Runs finite background tasks owned by a connected LiveView or component.
   *

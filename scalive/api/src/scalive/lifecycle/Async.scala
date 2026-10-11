@@ -4,15 +4,35 @@ import scala.annotation.targetName
 
 /** How one task started with [[Async.start]] ended. Carry it in a message to the owner. */
 enum LiveAsyncResult[+A]:
-  /** The task succeeded with `value`. */
+  /** The task succeeded with `value`.
+    *
+    * @param value
+    *   The value the task produced.
+    */
   case Succeeded(value: A)
 
-  /** The task failed with `cause`. Show stable copy to the visitor rather than the message. */
+  /** The task failed with `cause`. Show stable copy to the visitor rather than the message.
+    *
+    * @param cause
+    *   The error the task failed with.
+    */
   case Failed(cause: Throwable)
 
-  /** [[Async.cancel]] interrupted the task, with the reason it was given. */
+  /** The task was interrupted by [[Async.cancel Async.cancel]], with the reason it was given.
+    *
+    * @param reason
+    *   The reason passed to [[Async.cancel]], if any.
+    */
   case Cancelled(reason: Option[String])
 
+/** A task that ended, as passed to `async` lifecycle hooks before the owner handles its message.
+  *
+  * @param name
+  *   The key the task was started under.
+  * @param result
+  *   How the task ended. A success carries the message built by the task's `toMsg`, not the task's
+  *   value.
+  */
 final case class LiveAsyncEvent[+Msg](
   name: AsyncKey[Any],
   result: LiveAsyncResult[Msg])
@@ -28,17 +48,38 @@ enum AsyncValue[+A]:
   /** No work has started. */
   case Empty
 
-  /** Work is running; `previous` is the last successful value, if any. */
+  /** Work is running; `previous` is the last successful value, if any.
+    *
+    * @param previous
+    *   The last successful value, if any.
+    */
   case Loading(previous: Option[A])
 
-  /** The last work succeeded with `value`. */
+  /** The last work succeeded with `value`.
+    *
+    * @param value
+    *   The result of the last work.
+    */
   case Ok(value: A)
 
-  /** The last work failed; `previous` is the last successful value, if any. */
+  /** The last work failed; `previous` is the last successful value, if any.
+    *
+    * @param previous
+    *   The last successful value, if any.
+    * @param cause
+    *   The error the last work failed with.
+    */
   case Failed(previous: Option[A], cause: Throwable)
 
-  /** The last work was cancelled; `previous` is the last successful value, if any. */
+  /** The last work was cancelled; `previous` is the last successful value, if any.
+    *
+    * @param previous
+    *   The last successful value, if any.
+    * @param reason
+    *   The reason passed to [[Async.cancel]], if any.
+    */
   case Cancelled(previous: Option[A], reason: Option[String])
+end AsyncValue
 
 /** Constructors and operations for [[AsyncValue]].
   *

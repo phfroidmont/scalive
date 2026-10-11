@@ -73,6 +73,11 @@ final private[scalive] case class FormProjection[Owner, Schema](
   * In a LiveView, keep the current `Form` in the model, bind the `<form>` element with [[onChange]]
   * and [[onSubmit]], and store each event's form in the model. See [typed
   * forms](https://scalive.dev/guides/typed-forms-and-validation).
+  *
+  * @param root
+  *   The browser path of the [[FormRoot]] that declares this definition's fields.
+  * @param limits
+  *   The bounds applied when projecting an untrusted payload; change them with [[withLimits]].
   */
 final class FormDefinition[Owner, Domain] private[scalive] (
   val root: FormPath,

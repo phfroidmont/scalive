@@ -9,8 +9,29 @@ import org.jsoup.select.Selector.SelectorParseException
 
 /** Describes why a CSS query could not select rendered elements. */
 enum HtmlQueryError:
+  /** The selector is not valid Jsoup CSS syntax, for example because it is blank.
+    *
+    * @param selector
+    *   The selector that failed to parse.
+    * @param message
+    *   Jsoup's description of the parse error.
+    */
   case InvalidSelector(selector: String, message: String)
+
+  /** No element matches a selector that must match exactly one.
+    *
+    * @param selector
+    *   The selector that matched nothing.
+    */
   case NotFound(selector: String)
+
+  /** More than one element matches a selector that must match exactly one.
+    *
+    * @param selector
+    *   The ambiguous selector.
+    * @param count
+    *   The number of matching elements.
+    */
   case MultipleMatches(selector: String, count: Int)
 
 /** An immutable semantic snapshot parsed from retained HTML.
@@ -18,9 +39,11 @@ enum HtmlQueryError:
   * Queries inspect rendered markup, not browser properties or successful form controls. Each query
   * is isolated from other queries, including Jsoup selectors that modify their working document.
   * Snapshots and selected elements have no live-view, HTTP, or scope ownership.
+  *
+  * @param html
+  *   The exact input string, before parsing or markup repair.
   */
 final class RenderedHtml private (
-  /** The exact input string, before parsing or markup repair. */
   val html: String,
   document: Document):
   /** The parsed document's decoded, combined text with whitespace normalized by Jsoup. */
@@ -58,6 +81,7 @@ final class RenderedHtml private (
     })
 end RenderedHtml
 
+/** Constructors for [[RenderedHtml]] snapshots. */
 object RenderedHtml:
   /** Parses an HTML document or ordinary body content while retaining the exact input string.
     *
@@ -67,17 +91,21 @@ object RenderedHtml:
     */
   def parse(html: String): RenderedHtml = new RenderedHtml(html, Jsoup.parse(html))
 
-/** Immutable values captured from one selected rendered element. */
+/** Immutable values captured from one selected rendered element.
+  *
+  * @param tagName
+  *   The Jsoup-normalized HTML tag name.
+  * @param text
+  *   Decoded, combined text with whitespace handled according to Jsoup's HTML tag rules.
+  * @param value
+  *   The same Jsoup value used by [[RenderedField.value]]: textarea text with outer whitespace
+  *   trimmed and internal whitespace preserved, otherwise the element's own `value` attribute or an
+  *   empty string. Does not infer selected options, checkbox defaults, native-input sanitization,
+  *   or browser submission values.
+  */
 final class RenderedElement private[testing] (
-  /** The Jsoup-normalized HTML tag name. */
   val tagName: String,
-  /** Decoded, combined text with whitespace handled according to Jsoup's HTML tag rules. */
   val text: String,
-  /** The same Jsoup value used by [[RenderedField.value]]: textarea text with outer whitespace
-    * trimmed and internal whitespace preserved, otherwise the element's own `value` attribute or an
-    * empty string. Does not infer selected options, checkbox defaults, native-input sanitization,
-    * or browser submission values.
-    */
   val value: String,
   private val attributes: Map[String, String]):
 

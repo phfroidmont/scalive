@@ -6,6 +6,13 @@ import scalive.codecs.StringAsIsEncoder
   *
   * Obtain instances from [[FormDefinition.initial]] or [[FormDefinition.event]]. Raw values are
   * retained in [[values]] so invalid user input can be rendered without lossy round trips.
+  *
+  * @param values
+  *   The current editable values, kept as raw strings so invalid input survives.
+  * @param result
+  *   The decoded domain value, or every validation error, including hidden ones.
+  * @param interaction
+  *   The used fields, blurred fields, and feedback policy that decide which errors are visible.
   */
 final class Form[Owner, Schema, Domain] private[scalive] (
   private[scalive] val owningDefinition: FormDefinition[Owner, Domain],
@@ -22,16 +29,20 @@ final class Form[Owner, Schema, Domain] private[scalive] (
   /** All validation errors, including errors currently hidden by interaction state. */
   def errors: FormErrors[Owner] = result.left.getOrElse(FormErrors.empty)
 
-  /** Returns the renderable view of a static field declared by this form's definition. */
+  /** Returns the renderable view of a field declared by this form's definition.
+    *
+    * This form takes a static field.
+    */
   def field[Input, Value](
     definition: FormField[Owner, Input, Value]
   ): FormFieldView[Owner, Input, Value] =
     require(owningDefinition.owns(definition), "field is not declared by this form definition")
     FormFieldView(this, definition, definition.address, definition.path)
 
-  /** Returns the current view of a schema-bound repeated-row field.
+  /** Returns the renderable view of a field declared by this form's definition.
     *
-    * The bound row must still exist in this form's current values.
+    * This form takes a row-bound field from [[FormRowView.bind]]. The bound row must still exist in
+    * this form's current values; use [[fieldOption]] when it may have been removed.
     */
   def field[Group, Input, Value](
     definition: BoundFormField[Owner, Schema, Group, Input, Value]
@@ -75,14 +86,21 @@ final class Form[Owner, Schema, Domain] private[scalive] (
       new FormRowView(this, definition, row)
     }
 
-  /** Replaces a static field from typed editable input and immediately revalidates the form. */
+  /** Replaces one field's value with typed editable input and revalidates the form.
+    *
+    * This form updates a static field declared by this form's definition.
+    */
   def updated[Input, Value](
     field: FormField[Owner, Input, Value],
     input: Input
   ): Form[Owner, Schema, Domain] =
     updatedRaw(field, field.inputCodec.encode(input))
 
-  /** Replaces a static field with explicit raw values, preserving invalid control input. */
+  /** Replaces one field's raw values and revalidates the form, preserving invalid input.
+    *
+    * This form updates a static field declared by this form's definition. `raw` may hold at most
+    * [[FormLimits.maxValuesPerField]] values.
+    */
   def updatedRaw[Input, Value](
     field: FormField[Owner, Input, Value],
     raw: Vector[String]
@@ -116,16 +134,21 @@ final class Form[Owner, Schema, Domain] private[scalive] (
       )
     updatedRaw(field, raw.patch(index, Nil, 1))
 
-  /** Updates the row identified by a schema-bound field handle from typed editable input. */
+  /** Replaces one field's value with typed editable input and revalidates the form.
+    *
+    * This form updates one field of the keyed row bound by `field`, which must still exist.
+    */
   def updated[Group, Input, Value](
     field: BoundFormField[Owner, Schema, Group, Input, Value],
     input: Input
   ): Form[Owner, Schema, Domain] =
     updatedRaw(field, field.field.inputCodec.encode(input))
 
-  /** Replaces a bound row field's raw values.
+  /** Replaces one field's raw values and revalidates the form, preserving invalid input.
     *
-    * The handle must come from this exact definition and its keyed row must still exist.
+    * This form updates one field of the keyed row bound by `field`. The handle must come from this
+    * exact definition and its keyed row must still exist. `raw` may hold at most
+    * [[FormLimits.maxValuesPerField]] values.
     */
   def updatedRaw[Group, Input, Value](
     field: BoundFormField[Owner, Schema, Group, Input, Value],
@@ -336,6 +359,13 @@ end Form
   *
   * Create one with [[FormRowView.bind]]. Its hidden schema identity prevents applying it to an
   * unrelated definition, while [[key]] keeps updates independent of row order.
+  *
+  * @param key
+  *   The stable key of the bound row.
+  * @param address
+  *   The stable logical address of the field in that row.
+  * @param path
+  *   The browser path of the field in that row.
   */
 final class BoundFormField[Owner, Schema, Group, Input, Value] private[scalive] (
   private[scalive] val schemaIdentity: AnyRef,
@@ -349,6 +379,11 @@ final class BoundFormField[Owner, Schema, Group, Input, Value] private[scalive] 
   *
   * Rendering reads [[rawValues]], not the decoded result, preserving malformed input where the
   * native control permits it. Browser sanitization can make invalid raw dates appear empty.
+  *
+  * @param address
+  *   The field's stable logical address, which its DOM [[id]] and errors derive from.
+  * @param path
+  *   The field's browser path, which its [[name]] derives from.
   */
 final class FormFieldView[Owner, Input, Value] private[scalive] (
   private val form: Form[Owner, ?, ?],
@@ -474,10 +509,16 @@ final class FormFieldView[Owner, Input, Value] private[scalive] (
       Mod.flatten(mods)
     )
 
-  /** Renders a checkbox whose checked value defaults to `"true"`. */
+  /** Renders a checkbox that is checked when the retained raw values contain its value.
+    *
+    * This form submits `"true"` when checked.
+    */
   def checkbox[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg] = checkbox("true", mods*)
 
-  /** Renders a checkbox checked when raw values contain `checkedValue`. */
+  /** Renders a checkbox that is checked when the retained raw values contain its value.
+    *
+    * This form submits `checkedValue` when checked.
+    */
   def checkbox[Msg](checkedValue: String, mods: Mod.Input[Msg]*): HtmlElement[Msg] =
     _root_.scalive.input(
       typ      := "checkbox",
@@ -631,10 +672,16 @@ object FormFieldView:
         Mod.flatten(mods)
       )
 
-    /** Renders a signal-backed checkbox whose checked value defaults to `"true"`. */
+    /** Renders a signal-backed checkbox that is checked when the raw values contain its value.
+      *
+      * This form submits `"true"` when checked.
+      */
     def checkbox[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg] = checkbox("true", mods*)
 
-    /** Renders a signal-backed checkbox checked when raw values contain `checkedValue`. */
+    /** Renders a signal-backed checkbox that is checked when the raw values contain its value.
+      *
+      * This form submits `checkedValue` when checked.
+      */
     def checkbox[Msg](checkedValue: String, mods: Mod.Input[Msg]*): HtmlElement[Msg] =
       input(
         typ      := "checkbox",
@@ -781,12 +828,18 @@ object FormRowView:
       )
 
 extension [Owner, Schema, Domain](form: Signal[Form[Owner, Schema, Domain]])
-  /** Resolves a declared static field for each current form value. */
+  /** Resolves the view of a declared field for each current form value.
+    *
+    * This form takes a static field.
+    */
   def field[Input, Value](
     definition: FormField[Owner, Input, Value]
   ): Signal[FormFieldView[Owner, Input, Value]] = form.map(_.field(definition))
 
-  /** Resolves a keyed repeated-row field from each current form value, requiring the row to exist.
+  /** Resolves the view of a declared field for each current form value.
+    *
+    * This form takes a field of the row with `key` in `rows`. The row must exist in every form
+    * value; use [[fieldOption]] when it may be removed.
     */
   def field[Group, Row, Input, Value](
     rows: RepeatedRows[Owner, Group, Row],

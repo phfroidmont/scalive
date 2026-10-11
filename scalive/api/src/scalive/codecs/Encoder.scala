@@ -1,3 +1,5 @@
+/** Encoders that turn Scala values into attribute text, for custom attributes made with `htmlAttr`.
+  */
 package scalive.codecs
 
 /** Converts a Scala value into the representation expected by a DOM definition.

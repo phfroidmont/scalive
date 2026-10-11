@@ -14,7 +14,11 @@ enum StreamAt:
   /** Appends a new item after the current last item. */
   case Last
 
-  /** Inserts a new item at the zero-based `value`, appending when it is beyond the current end. */
+  /** Inserts a new item at the zero-based `value`, appending when it is beyond the current end.
+    *
+    * @param value
+    *   The zero-based insertion index, which must not be negative.
+    */
   case Index(value: Int)
 
 /** Retention limit applied to the stream snapshot after stream insertions.
@@ -25,10 +29,18 @@ enum StreamAt:
   * stream patching.
   */
 enum StreamLimit:
-  /** Retains at most the first `count` items, pruning items from the end. */
+  /** Retains at most the first `count` items, pruning items from the end.
+    *
+    * @param count
+    *   The maximum number of items to retain, which must be positive.
+    */
   case KeepFirst(count: Int)
 
-  /** Retains at most the last `count` items, pruning items from the beginning. */
+  /** Retains at most the last `count` items, pruning items from the beginning.
+    *
+    * @param count
+    *   The maximum number of items to retain, which must be positive.
+    */
   case KeepLast(count: Int)
 
 /** Defines the identity and optional retention policy of a LiveView stream.

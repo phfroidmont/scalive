@@ -220,6 +220,12 @@ object LiveRoute:
 
 /** A completed route or typed group of routes accepted by application assembly. */
 sealed trait LiveRouteFragment[-R]:
+  /** The context this fragment needs from an enclosing named live session, `Any` when it needs
+    * none.
+    *
+    * The router accepts only fragments whose input is `Any`. A route that reads session context,
+    * through `context` or a route mount aspect, must be passed to a session that produces it.
+    */
   type Input
 
   private[scalive] def declarations: Vector[LiveRoute[?, ?]] = this match
@@ -1288,6 +1294,9 @@ object LiveRouteParamsBuilder:
     )
 
 /** A [[LiveRouteParamsBuilder]] that can also encode its parameters into links with [[location]].
+  *
+  * @param codec
+  *   The codec that decodes the route's parameters from a URL and encodes them back into links.
   */
 final class LiveEncodableRouteParamsBuilder[A, Params] private[scalive] (
   pathCodec: PathCodec[A],
@@ -1388,11 +1397,16 @@ object LiveEncodableRouteParamsBuilder:
       connectedResourceInitializers
     )
 
-/** A named, environment-typed group of declarative routes. */
+/** A named, environment-typed group of declarative routes.
+  *
+  * @param name
+  *   The name passed to `Live.session`, unique within an application.
+  */
 final class LiveSession[-R] private[scalive] (
   val name: String,
   private[scalive] val routes: Vector[LiveRouteFragment[R] { type Input = Any }])
     extends LiveRouteFragment[R]:
+  /** The context a session needs from outside, always `Any`, so the router accepts it directly. */
   type Input = Any
   private[scalive] def attachSession[RS, SessionCtx](
     pipeline: LiveSessionMountPipeline[RS, Any, SessionCtx],
@@ -1422,6 +1436,8 @@ object LiveSession:
   *   the services the session's mount aspects need
   * @tparam Ctx
   *   the context the session's mount aspects produce for its routes
+  * @param name
+  *   The name passed to `Live.session`.
   */
 final class LiveSessionBuilder[R, Ctx] private[scalive] (
   val name: String,
@@ -1569,6 +1585,7 @@ final class LiveSessionBuilder[R, Ctx] private[scalive] (
     LiveSession(name, attached)
 end LiveSessionBuilder
 
+/** The companion of [[LiveSessionBuilder]], which holds the builder returned by `withAdmission`. */
 object LiveSessionBuilder:
   private[scalive] def apply[R, Ctx](
     name: String,
@@ -1587,7 +1604,11 @@ object LiveSessionBuilder:
       rootLayout
     )
 
-  /** Session construction after its one admission boundary has been declared. */
+  /** Session construction after its one admission boundary has been declared.
+    *
+    * @param name
+    *   The name passed to `Live.session`.
+    */
   final class Admitted[R, Ctx] private[scalive] (
     val name: String,
     private val pipeline: LiveSessionMountPipeline[R, Any, Ctx],
@@ -1608,6 +1629,10 @@ object LiveSessionBuilder:
         rootLayout
       )
 
+    /** Runs `aspect` before every route in this session mounts and adds its output to the context.
+      *
+      * The aspect runs after the admission aspect and receives its context.
+      */
     def withMountAspect[R1, Claims, Out, Result](
       aspect: LiveSessionMountAspect[R1, Ctx, Claims, Out]
     )(using append: ContextAppend.Aux[Ctx, Out, Result]
@@ -1621,6 +1646,11 @@ object LiveSessionBuilder:
         rootLayout.map(_.forContext(append.left))
       )
 
+    /** Wraps every route in this session in a layout.
+      *
+      * Session layouts sit inside the router's layout and around route layouts, and nest in
+      * installation order.
+      */
     def withLayout(value: LiveLayout[Any, Ctx]): Admitted[R, Ctx] =
       Admitted(
         name,
@@ -1631,7 +1661,9 @@ object LiveSessionBuilder:
         rootLayout
       )
 
-    /** Appends a layout, selecting its input from the context available at this declaration. The
+    /** Wraps every route in this session in a layout.
+      *
+      * This form selects the layout's input from the context available at this declaration. The
       * pure selector adapts only the layout; later aspects preserve this context selection.
       */
     def withLayout[LayoutContext](
@@ -1639,6 +1671,7 @@ object LiveSessionBuilder:
       select: Ctx => LayoutContext
     ): Admitted[R, Ctx] = withLayout(layout.forContext(select))
 
+    /** Renders the document of every route in this session, replacing the router's root layout. */
     def withRootLayout(value: LiveRootLayout[Any, Ctx]): Admitted[R, Ctx] =
       Admitted(
         name,
@@ -1649,8 +1682,10 @@ object LiveSessionBuilder:
         Some(value)
       )
 
-    /** Replaces the session root, selecting its input from this declaration's context. Key and
-      * render select independently, so the selector must be pure and deterministic.
+    /** Renders the document of every route in this session, replacing the router's root layout.
+      *
+      * This form selects the layout's input from this declaration's context. Key and view select
+      * independently, so the selector must be pure and deterministic.
       */
     def withRootLayout[LayoutContext](
       layout: LiveRootLayout[Any, LayoutContext],
@@ -1677,6 +1712,11 @@ object LiveSessionBuilder:
         rootLayout
       )
 
+    /** Puts `routes` in this session and returns it for the router.
+      *
+      * A route registered with `context` compiles only when this session produces the context it
+      * reads.
+      */
     def apply[R1](routes: (LiveRouteFragment[R1] { type Input >: Ctx })*): LiveSession[R & R1] =
       val attached = routes.toVector.flatMap { route =>
         route.attachSession(
@@ -1716,6 +1756,16 @@ end LiveSessionBuilder
   *
   * @tparam R
   *   the services the routes need from the server's environment
+  * @param routes
+  *   The routes and named live sessions passed to the router, in declaration order.
+  * @param socketPath
+  *   The path of the LiveView WebSocket, `/live` unless set with [[LiveRouter.withSocketPath]].
+  * @param layout
+  *   The router's layout, which wraps every route outside session and route layouts, if one was
+  *   installed.
+  * @param rootLayout
+  *   The root layout used by routes whose session or route installs none; without
+  *   [[LiveRouter.withRootLayout]], it is [[LiveRootLayout.identity]].
   */
 final class LiveApplication[-R] private[scalive] (
   val routes: Vector[LiveRouteFragment[R]],

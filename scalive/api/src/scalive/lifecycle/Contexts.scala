@@ -98,21 +98,41 @@ trait ParamsContext[Msg, Model] extends LifecycleContext[RootParamsConnected[Msg
   /** Installs or removes lifecycle hooks for this lifecycle only. */
   def hooks: RootHooks[Msg, Model]
 
+/** Capabilities available to the after-render hooks of a [[LiveView]].
+  *
+  * After-render hooks run after the disconnected HTTP render and after each connected render. The
+  * browser client is reached through [[connection]] once connected.
+  */
 trait AfterRenderContext[Msg, Model] extends LifecycleContext[RootAfterRenderConnected]:
+  /** Installs or removes lifecycle hooks for this lifecycle only. */
   def hooks: RootHooks[Msg, Model]
 
 /** Capabilities available while a [[LiveComponent]] mounts. */
 trait ComponentMountContext[Props, Msg, Model] extends LifecycleContext[ComponentConnected[Msg]]:
+  /** Reads and writes the flash messages of the LiveView that renders this component. */
   def flash: Flash
+
+  /** Allows file uploads owned by this component instance. */
   def uploads: Uploads
+
+  /** Creates rendered streams owned by this component instance. */
   def streams: Streams
+
+  /** Installs lifecycle hooks for this component instance only. */
   def hooks: ComponentHooks[Props, Msg, Model]
 
 /** Capabilities available while a [[LiveComponent]] receives new props. */
 trait ComponentUpdateContext[Props, Msg, Model] extends LifecycleContext[ComponentConnected[Msg]]:
+  /** Reads and writes the flash messages of the LiveView that renders this component. */
   def flash: Flash
+
+  /** Allows, cancels, and consumes file uploads owned by this component instance. */
   def uploads: Uploads
+
+  /** Inserts, deletes, and resets items of rendered streams owned by this component instance. */
   def streams: Streams
+
+  /** Installs or removes lifecycle hooks for this component instance only. */
   def hooks: ComponentHooks[Props, Msg, Model]
 
 /** Capabilities available while a [[LiveComponent]] handles a message.
@@ -121,19 +141,48 @@ trait ComponentUpdateContext[Props, Msg, Model] extends LifecycleContext[Compone
   * navigation act on the LiveView that renders it.
   */
 trait ComponentMessageContext[Props, Msg, Model] extends ConnectedMetadata:
+  /** Patches the URL, navigates to another LiveView, or redirects, acting on the LiveView that
+    * renders this component.
+    */
   def nav: Navigation
+
+  /** Reads and writes the flash messages of the LiveView that renders this component. */
   def flash: Flash
+
+  /** Allows, cancels, and consumes file uploads owned by this component instance. */
   def uploads: Uploads
+
+  /** Inserts, deletes, and resets items of rendered streams owned by this component instance. */
   def streams: Streams
+
+  /** Starts and cancels finite background tasks owned by this component instance, whose results
+    * return as messages.
+    */
   def async: Async[Msg]
+
+  /** Starts, replaces, and cancels message streams owned by this component instance. */
   def subscriptions: Subscriptions[Msg]
+
+  /** Pushes events and JavaScript commands to the browser. */
   def client: Client
+
+  /** Sends new props to stateful components mounted in the LiveView that renders this component. */
   def components: ComponentUpdates
+
+  /** Installs or removes lifecycle hooks for this component instance only. */
   def hooks: ComponentHooks[Props, Msg, Model]
   private[scalive] def emit[Output](
     channel: ComponentOutputChannel[Output],
     output: Output
   ): Task[Unit]
+end ComponentMessageContext
 
+/** Capabilities available to the after-render hooks of a [[LiveComponent]].
+  *
+  * It exposes connection metadata, reached through [[connection]], and this instance's hooks, but
+  * no client operations, navigation, async work, uploads, or streams. Use mount, update, or message
+  * handling for those.
+  */
 trait ComponentAfterRenderContext[Props, Msg, Model] extends LifecycleContext[ConnectedMetadata]:
+  /** Installs or removes lifecycle hooks for this component instance only. */
   def hooks: ComponentHooks[Props, Msg, Model]

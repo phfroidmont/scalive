@@ -142,10 +142,18 @@ enum ConnectedJoinFailure:
   /** The physical transport closed while the join was pending. */
   case Disconnected
 
-  /** Connected mount requested a redirect instead of installing a view. */
+  /** Connected mount requested a redirect instead of installing a view.
+    *
+    * @param to
+    *   The redirect destination.
+    */
   case Redirect(to: URL)
 
-  /** The in-process transport failed outside a protocol-visible join outcome. */
+  /** The in-process transport failed outside a protocol-visible join outcome.
+    *
+    * @param error
+    *   The underlying failure.
+    */
   case Transport(error: Throwable)
 
   private[testing] def toThrowable: Throwable = this match
@@ -154,22 +162,37 @@ enum ConnectedJoinFailure:
     case Disconnected     => Exception("Connected LiveView transport closed during join.")
     case Redirect(to)     => Exception(s"Connected LiveView join redirected to ${to.encode}.")
     case Transport(error) => error
+end ConnectedJoinFailure
 
 /** The semantic result of one connected browser or server-message action. */
 enum ConnectedAction:
   /** The action completed without terminal navigation. */
   case Rendered
 
-  /** The action requested a same-session route replacement that may be followed explicitly. */
+  /** The action requested a same-session route replacement that may be followed explicitly.
+    *
+    * @param navigation
+    *   The requested navigation, which [[ConnectedNavigation.follow]] joins.
+    */
   case LiveNavigation(navigation: ConnectedNavigation)
 
-  /** The action requested a full redirect and closed the test transport. */
+  /** The action requested a full redirect and closed the test transport.
+    *
+    * @param to
+    *   The redirect destination.
+    */
   case Redirect(to: URL)
 
   /** The physical transport closed before the action received a reply. */
   case Disconnected
 
-/** A same-session route replacement emitted by a connected action. */
+/** A same-session route replacement emitted by a connected action.
+  *
+  * @param destination
+  *   The URL to navigate to.
+  * @param replace
+  *   Whether the navigation replaces the current browser-history entry instead of adding one.
+  */
 final class ConnectedNavigation private[testing] (
   val destination: URL,
   val replace: Boolean,

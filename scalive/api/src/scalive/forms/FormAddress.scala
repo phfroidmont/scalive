@@ -11,10 +11,18 @@ import zio.ZIO
   * `Row` is distinct from `Name`, so a stable row key cannot collide with a schema segment.
   */
 enum FormAddressSegment derives CanEqual:
-  /** A schema-declared name. */
+  /** A schema-declared name.
+    *
+    * @param value
+    *   The declared name.
+    */
   case Name(value: String)
 
-  /** A stable repeated-row identity. */
+  /** A stable repeated-row identity.
+    *
+    * @param key
+    *   The row's stable key, as given by [[FormRowKey.value]].
+    */
   case Row(key: String)
 
 /** A stable, owner-scoped logical address used by validation and interaction state.
@@ -98,8 +106,21 @@ object FormRowKey:
 
   /** Why an external string cannot be represented as a row key. */
   enum Error derives CanEqual:
+    /** The string is empty or `null`. */
     case Empty
+
+    /** The string is longer than [[MaxLength]] UTF-16 code units.
+      *
+      * @param maxLength
+      *   The maximum accepted length, not the length of the rejected string.
+      */
     case TooLong(maxLength: Int)
+
+    /** The string contains a character other than a letter, digit, underscore, or hyphen.
+      *
+      * @param offset
+      *   The index of the first invalid character, in UTF-16 code units.
+      */
     case InvalidCharacter(offset: Int)
 
     /** Stable machine-readable error code. */

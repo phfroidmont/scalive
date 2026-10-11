@@ -4,6 +4,11 @@ import scalive.FormBinding.controlModifiers
 
 /** Rendering and event wiring for one form instance. Feedback updates are applied in the handler,
   * against the current model, rather than against the form sampled during rendering.
+  *
+  * @param ref
+  *   The form's DOM reference. It supplies the form's `id` and scopes the ids of bound controls.
+  * @param feedback
+  *   The policy that decides when field errors become visible.
   */
 final class FormBinding[Owner, Schema, Domain, Msg] private[scalive] (
   source: Signal[Form[Owner, Schema, Domain]],
@@ -70,7 +75,10 @@ final class FormBinding[Owner, Schema, Domain, Msg] private[scalive] (
       )
     )
 
-  /** Binds a declared field without imposing a particular control renderer. */
+  /** Binds one field to a [[FormControl]] whose ids are scoped to this form instance.
+    *
+    * This form takes a field declared on the form root.
+    */
   def field[Input, Value](field: FormField[Owner, Input, Value])
     : FormControl[Owner, Input, Value, Msg] =
     new FormControl(
@@ -82,8 +90,10 @@ final class FormBinding[Owner, Schema, Domain, Msg] private[scalive] (
       None
     )
 
-  /** Binds an existing schema- and key-owned repeated field. Render only while its row exists; use
-    * [[optionalField]] for a control outside keyed row rendering.
+  /** Binds one field to a [[FormControl]] whose ids are scoped to this form instance.
+    *
+    * This form takes an existing schema- and key-owned repeated field. Render it only while its row
+    * exists; use [[optionalField]] for a control outside keyed row rendering.
     */
   def field[Group, Input, Value](field: BoundFormField[Owner, Schema, Group, Input, Value])
     : FormControl[Owner, Input, Value, Msg] =
@@ -96,8 +106,10 @@ final class FormBinding[Owner, Schema, Domain, Msg] private[scalive] (
       None
     )
 
-  /** Binds a stable row key inside a signal's keyed rendering callback. The row must exist whenever
-    * this control is evaluated; use [[optionalField]] outside keyed rendering.
+  /** Binds one field to a [[FormControl]] whose ids are scoped to this form instance.
+    *
+    * This form takes a stable row key inside a signal's keyed rendering callback. The row must
+    * exist whenever this control is evaluated; use [[optionalField]] outside keyed rendering.
     */
   def field[Group, Row, Input, Value](
     rows: RepeatedRows[Owner, Group, Row],
@@ -120,8 +132,10 @@ final class FormBinding[Owner, Schema, Domain, Msg] private[scalive] (
       None
     )
 
-  /** Renders a captured repeated field only while its row exists. This installs an optional signal
-    * scope so a later row removal never evaluates a stale control.
+  /** Renders one repeated-row field with `render`, or nothing while its row is absent.
+    *
+    * This form takes a captured [[BoundFormField]]. It installs an optional signal scope so a later
+    * row removal never evaluates a stale control.
     */
   def optionalField[Group, Input, Value](
     field: BoundFormField[Owner, Schema, Group, Input, Value]
@@ -141,7 +155,11 @@ final class FormBinding[Owner, Schema, Domain, Msg] private[scalive] (
       )
     }
 
-  /** Renders one keyed field outside a keyed row loop, omitting it when the row is absent. */
+  /** Renders one repeated-row field with `render`, or nothing while its row is absent.
+    *
+    * This form takes the row group, a stable row key, and a row field, for use outside a keyed row
+    * loop.
+    */
   def optionalField[Group, Row, Input, Value](
     rows: RepeatedRows[Owner, Group, Row],
     key: FormRowKey[Group],
@@ -199,6 +217,13 @@ private[scalive] object FormBinding:
 /** A reusable field rendering handle. Its ids are scoped to the owning form instance. [[view]]
   * exposes read-only field data; use this handle's ids and ARIA attributes when rendering feedback
   * so multiple instances of the same definition do not share DOM identities.
+  *
+  * @param view
+  *   The field's current read-only data. Its ids are not scoped to the form instance; render with
+  *   this control's ids instead.
+  * @param blurred
+  *   The update message that marks this field as blurred. A composite widget sends it when focus
+  *   leaves the whole widget; under [[FormFeedback.AfterBlur]] it makes the field's errors visible.
   */
 final class FormControl[Owner, Input, Value, Msg] private[scalive] (
   val view: Signal[FormFieldView[Owner, Input, Value]],
@@ -208,24 +233,42 @@ final class FormControl[Owner, Input, Value, Msg] private[scalive] (
   val blurred: Msg,
   blurHandler: Option[String => Msg]):
 
-  def id: Signal[String]                              = view.id.map(id => s"${formRef.value}-$id")
-  def name: Signal[String]                            = view.name
-  def errorId: Signal[String]                         = id.map(_ + "_errors")
-  def fieldValue: Signal[String]                      = view.map(_.fieldValue)
-  def rawValues: Signal[Vector[String]]               = view.map(_.rawValues)
-  def visibleErrors: Signal[Vector[FormError[Owner]]] = view.map(_.visibleErrors)
-  def hasVisibleErrors: Signal[Boolean]               = view.hasVisibleErrors
+  /** The control's DOM id, scoped to the form instance. Use it for a label's `forId`. */
+  def id: Signal[String] = view.id.map(id => s"${formRef.value}-$id")
 
-  /** Adds an application scalar blur handler after feedback dispatch. The browser value is passed
-    * as with `on.blur.withValue`. Commands are ordered but do not wait for server acknowledgements;
-    * this does not guarantee race-free normalization against later full-form snapshots. Missing
-    * values (including unchecked checkboxes) become an empty string. A multi-select supplies only
-    * its native scalar value here; use the form update for its complete value vector.
+  /** The browser field name, such as `profile[name]`. */
+  def name: Signal[String] = view.name
+
+  /** The DOM id of this control's error feedback container, scoped to the form instance. */
+  def errorId: Signal[String] = id.map(_ + "_errors")
+
+  /** The value a scalar control renders: the last retained raw value, or empty when absent. */
+  def fieldValue: Signal[String] = view.map(_.fieldValue)
+
+  /** Every raw value retained for this field, before decoding. */
+  def rawValues: Signal[Vector[String]] = view.map(_.rawValues)
+
+  /** The field's errors that the feedback policy currently makes visible. */
+  def visibleErrors: Signal[Vector[FormError[Owner]]] = view.map(_.visibleErrors)
+
+  /** Whether at least one field error is currently visible. */
+  def hasVisibleErrors: Signal[Boolean] = view.hasVisibleErrors
+
+  /** Returns a copy of this control that also sends an application message when the field blurs.
+    *
+    * This form passes the browser value to `f`, as with `on.blur.withValue`. The message follows
+    * feedback dispatch. Commands are ordered but do not wait for server acknowledgements; this does
+    * not guarantee race-free normalization against later full-form snapshots. Missing values
+    * (including unchecked checkboxes) become an empty string. A multi-select supplies only its
+    * native scalar value here; use the form update for its complete value vector.
     */
   def onBlur(f: String => Msg): FormControl[Owner, Input, Value, Msg] =
     new FormControl(view, formRef, trigger, feedback, blurred, Some(f))
 
-  /** Adds a message-only application blur handler after feedback dispatch. */
+  /** Returns a copy of this control that also sends an application message when the field blurs.
+    *
+    * This form sends `message` after feedback dispatch and ignores the browser value.
+    */
   def onBlur(message: Msg): FormControl[Owner, Input, Value, Msg] =
     onBlur((_: String) => message)
 
@@ -253,14 +296,21 @@ final class FormControl[Owner, Input, Value, Msg] private[scalive] (
   def inputAttributes: Vector[Mod.Attr[Msg]] =
     Vector(idAttr := id, nameAttr := name, value := fieldValue) ++ blurAttributes
 
+  /** ARIA attributes linking the control to its error feedback and exposing visible invalidity.
+    *
+    * The control helpers do not add them; pass them explicitly, as in
+    * `control.text(control.validationAttributes)`.
+    */
   def validationAttributes: Vector[Mod.Attr[Nothing]] = Vector(
     aria.describedby := errorId,
     aria.invalid.optional(hasVisibleErrors.map(value => Option.when(value)("true")))
   )
 
+  /** Renders a text input from the retained raw scalar value. */
   def text(mods: Mod.Input[Msg]*): HtmlElement[Msg] =
     input(typ := "text", inputAttributes, controlModifiers(mods))
 
+  /** Renders an email input from the retained raw scalar value. */
   def email(mods: Mod.Input[Msg]*): HtmlElement[Msg] =
     input(typ := "email", inputAttributes, controlModifiers(mods))
 
@@ -278,6 +328,7 @@ final class FormControl[Owner, Input, Value, Msg] private[scalive] (
   def search(mods: Mod.Input[Msg]*): HtmlElement[Msg] =
     input(typ := "search", inputAttributes, controlModifiers(mods))
 
+  /** Renders a password input from the retained raw scalar value. */
   def password(mods: Mod.Input[Msg]*): HtmlElement[Msg] =
     input(typ := "password", inputAttributes, controlModifiers(mods))
 
@@ -291,8 +342,19 @@ final class FormControl[Owner, Input, Value, Msg] private[scalive] (
       controlModifiers(mods)
     )
 
+  /** Renders a checkbox, checked when the retained raw values contain its checked value.
+    *
+    * This form uses the checked value `"true"`, matching `FieldInput.checkbox()`. No hidden
+    * unchecked input is rendered.
+    */
   def checkbox(mods: Mod.Input[Msg]*): HtmlElement[Msg] = checkbox("true", mods*)
 
+  /** Renders a checkbox, checked when the retained raw values contain its checked value.
+    *
+    * This form uses `checkedValue`, which must match the token the field's codec expects, as in
+    * `FieldInput.checkbox("yes")` with `control.checkbox("yes")`. No hidden unchecked input is
+    * rendered.
+    */
   def checkbox(checkedValue: String, mods: Mod.Input[Msg]*): HtmlElement[Msg] =
     input(
       typ      := "checkbox",
@@ -318,6 +380,7 @@ final class FormControl[Owner, Input, Value, Msg] private[scalive] (
     val encoded = key.iterator.map(char => f"${char.toInt}%04x").mkString
     new FormControlItem(id.map(_ + s"_item_$encoded"), name, rawValues, blurAttributes)
 
+  /** Renders a textarea from the retained raw scalar value. */
   def textarea(mods: Mod.Input[Msg]*): HtmlElement[Msg] =
     Form.textareaTag(
       idAttr   := id,
@@ -327,6 +390,10 @@ final class FormControl[Owner, Input, Value, Msg] private[scalive] (
       fieldValue
     )
 
+  /** Renders a select from `(value, label)` options, selecting each one in the retained raw values.
+    *
+    * For a `multiple` select, use a repeated-value field such as `Root.texts`.
+    */
   def select(options: Iterable[(String, String)], mods: Mod.Input[Msg]*): HtmlElement[Msg] =
     _root_.scalive.select(
       idAttr   := id,
@@ -338,6 +405,11 @@ final class FormControl[Owner, Input, Value, Msg] private[scalive] (
       }
     )
 
+  /** Renders the visible errors in an ARIA live feedback container whose id is [[errorId]].
+    *
+    * `render` draws one error; the container and its `form-errors` and `form-error` wrappers are
+    * supplied. Overriding `id`, `phx-feedback-for`, or `aria-live` through `mods` is rejected.
+    */
   def errorFeedback(
     render: Signal[FormError[Owner]] => Mod[Nothing],
     mods: Mod.Input[Nothing]*
@@ -371,8 +443,10 @@ final class FormControlItem[Msg] private[scalive] (
   /** The parent's exact browser field name, shared by every item. */
   def name: Signal[String] = fieldName
 
-  /** Renders a checkbox checked when the parent's raw values contain the explicit token. ARIA
-    * remains opt-in through the parent control's validation attributes.
+  /** Renders this item's checkbox, checked when the parent's raw values contain `checkedValue`.
+    *
+    * This form takes a fixed token. ARIA remains opt-in through the parent control's validation
+    * attributes.
     */
   def checkbox(checkedValue: String, mods: Mod.Input[Msg]*): HtmlElement[Msg] =
     input(
@@ -385,8 +459,10 @@ final class FormControlItem[Msg] private[scalive] (
       controlModifiers(mods)
     )
 
-  /** Renders a reactive token without changing item identity. Both token and raw-value changes
-    * update checked state; changing the token never rewrites the field's retained values.
+  /** Renders this item's checkbox, checked when the parent's raw values contain `checkedValue`.
+    *
+    * This form takes a reactive token without changing item identity. Both token and raw-value
+    * changes update checked state; changing the token never rewrites the field's retained values.
     */
   def checkbox(checkedValue: Signal[String], mods: Mod.Input[Msg]*): HtmlElement[Msg] =
     input(

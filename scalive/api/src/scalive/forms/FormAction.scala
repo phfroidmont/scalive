@@ -40,10 +40,18 @@ object FormAction:
 
   /** A typed failure to convert a route pattern and parameters into a [[FormAction]]. */
   enum EncodeError:
-    /** The route uses a method other than GET or POST. */
+    /** The route uses a method other than GET or POST.
+      *
+      * @param method
+      *   The route's HTTP method.
+      */
     case UnsupportedMethod(method: HttpMethod)
 
-    /** The route pattern rejected its path parameters. */
+    /** The route pattern rejected its path parameters.
+      *
+      * @param details
+      *   Diagnostic text from the route pattern; its wording is not a stable error code.
+      */
     case Path(details: String)
 
     /** Returns a human-readable description of this encoding failure. */
@@ -62,11 +70,12 @@ object FormAction:
   final class EncodingException(val error: EncodeError)
       extends IllegalArgumentException(error.message)
 
-  /** Encodes a checked action from a parameterized route pattern.
+  /** Encodes a checked action from a route pattern, throwing when it cannot.
     *
-    * Only GET and POST patterns are accepted. Typed path parameters are formatted by `pattern`, a
-    * leading slash is added, and the resulting URL is encoded. Checked POST actions request CSRF
-    * token injection when rendered with [[Form.http]].
+    * This form formats the typed path parameters `params` with `pattern`.
+    *
+    * Only GET and POST patterns are accepted. A leading slash is added and the resulting URL is
+    * encoded. Checked POST actions request CSRF token injection when rendered with [[Form.http]].
     *
     * @param pattern
     *   the typed route pattern that owns the method and path shape
@@ -78,7 +87,9 @@ object FormAction:
   def from[A](pattern: RoutePattern[A], params: A): FormAction =
     fromEither(pattern, params).fold(error => throw new EncodingException(error), identity)
 
-  /** Encodes a checked action from a route pattern without parameters.
+  /** Encodes a checked action from a route pattern, throwing when it cannot.
+    *
+    * This form takes a pattern without path parameters.
     *
     * @throws FormAction.EncodingException
     *   if the method is unsupported or the path cannot be encoded
@@ -86,11 +97,12 @@ object FormAction:
   def from(pattern: RoutePattern[Unit]): FormAction =
     from(pattern, ())
 
-  /** Encodes a checked action from a parameterized route pattern without throwing.
+  /** Encodes a checked action from a route pattern, returning any failure as an [[EncodeError]].
     *
-    * Only GET and POST patterns are accepted. Typed path parameters are formatted by `pattern`, a
-    * leading slash is added, and the resulting URL is encoded. Checked POST actions request CSRF
-    * token injection when rendered with [[Form.http]].
+    * This form formats the typed path parameters `params` with `pattern`.
+    *
+    * Only GET and POST patterns are accepted. A leading slash is added and the resulting URL is
+    * encoded. Checked POST actions request CSRF token injection when rendered with [[Form.http]].
     *
     * @return
     *   an [[EncodeError]] or the encoded action
@@ -108,7 +120,10 @@ object FormAction:
       protectFromCsrf = method == Method.Post
     )
 
-  /** Encodes a checked action from a route pattern without parameters and without throwing. */
+  /** Encodes a checked action from a route pattern, returning any failure as an [[EncodeError]].
+    *
+    * This form takes a pattern without path parameters.
+    */
   def fromEither(pattern: RoutePattern[Unit]): Either[EncodeError, FormAction] =
     fromEither(pattern, ())
 

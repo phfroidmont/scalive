@@ -33,11 +33,17 @@ final case class FormData private (raw: Vector[(String, String)]):
   lazy val fields: Map[String, FormFieldValues] =
     raw.groupMap(_._1)(_._2).view.mapValues(values => FormFieldValues(values.toVector)).toMap
 
-  /** Returns the last value submitted under `name`, including an empty string, if present. */
+  /** Returns the last value submitted for a field, including an empty string, if present.
+    *
+    * This form looks up the exact field name `name`.
+    */
   def get(name: String): Option[String] =
     values(name).lastOption
 
-  /** Returns the last value submitted under the rendered [[FormPath.name path name]]. */
+  /** Returns the last value submitted for a field, including an empty string, if present.
+    *
+    * This form looks up the rendered [[FormPath.name path name]].
+    */
   def get(path: FormPath): Option[String] =
     get(path.name)
 
@@ -47,11 +53,17 @@ final case class FormData private (raw: Vector[(String, String)]):
   /** Alias for [[get get]]. */
   def string(path: FormPath): Option[String] = get(path)
 
-  /** Returns every value submitted under `name`, in encounter order. */
+  /** Returns every value submitted for a field, in encounter order.
+    *
+    * This form looks up the exact field name `name`.
+    */
   def values(name: String): Vector[String] =
     fields.get(name).map(_.values).getOrElse(Vector.empty)
 
-  /** Returns every value submitted under the rendered [[FormPath.name path name]]. */
+  /** Returns every value submitted for a field, in encounter order.
+    *
+    * This form looks up the rendered [[FormPath.name path name]].
+    */
   def values(path: FormPath): Vector[String] =
     values(path.name)
 
@@ -59,10 +71,16 @@ final case class FormData private (raw: Vector[(String, String)]):
   def getOrElse(name: String, fallback: String): String =
     get(name).getOrElse(fallback)
 
-  /** Whether at least one pair has the exact field name `name`, regardless of its value. */
+  /** Returns whether at least one pair was submitted for a field, regardless of its value.
+    *
+    * This form matches the exact field name `name`.
+    */
   def contains(name: String): Boolean = fields.contains(name)
 
-  /** Whether at least one pair has the rendered [[FormPath.name path name]]. */
+  /** Returns whether at least one pair was submitted for a field, regardless of its value.
+    *
+    * This form matches the rendered [[FormPath.name path name]].
+    */
   def contains(path: FormPath): Boolean = contains(path.name)
 
   /** Returns a lossy map containing only the last value for each exact field name. */
@@ -186,10 +204,18 @@ object FormData:
 
   /** Distinguishes body acquisition failures from representation failures. */
   enum DecodeError:
-    /** The bounded body could not be obtained. */
+    /** The bounded body could not be obtained.
+      *
+      * @param error
+      *   Why the body could not be read.
+      */
     case Body(error: BodyError)
 
-    /** The obtained input was not a supported textual form representation. */
+    /** The obtained input was not a supported textual form representation.
+      *
+      * @param error
+      *   Why the input is not supported textual form data.
+      */
     case Representation(error: RepresentationError)
 
   /** Empty form data. */

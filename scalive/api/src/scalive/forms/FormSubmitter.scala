@@ -59,13 +59,29 @@ end FormSubmitter
 object FormSubmitter:
   /** Why a browser payload could not select one declared action. */
   enum DecodeError derives CanEqual:
-    /** No value used the submitter's browser field name. */
+    /** No value used the submitter's browser field name.
+      *
+      * @param name
+      *   The submitter's browser field name.
+      */
     case Missing(name: String)
 
-    /** One value was submitted, but it is not declared by this submitter. */
+    /** One value was submitted, but it is not declared by this submitter.
+      *
+      * @param name
+      *   The submitter's browser field name.
+      * @param value
+      *   The untrusted submitted value, which matches no declared action.
+      */
     case Unknown(name: String, value: String)
 
-    /** Several values used the submitter's browser field name. */
+    /** Several values used the submitter's browser field name.
+      *
+      * @param name
+      *   The submitter's browser field name.
+      * @param values
+      *   Every value submitted under that name, in encounter order.
+      */
     case Duplicate(name: String, values: Vector[String])
 
   private val DefaultSegment = "_scalive_submitter"

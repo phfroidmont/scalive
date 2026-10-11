@@ -27,6 +27,7 @@ final case class StaticAssetConfig(
   mountPath: Path = Path.empty / "static",
   cache: StaticAssetCache = StaticAssetCache.default)
 
+/** Constructors for [[StaticAssetConfig]], one for each kind of asset source. */
 object StaticAssetConfig:
   /** Configures an ordinary classpath tree from its complete relative file list.
     *
@@ -95,8 +96,19 @@ end StaticAssetConfig
   */
 sealed trait StaticAssetSource
 
+/** The asset sources that a [[StaticAssetConfig]] can describe. */
 object StaticAssetSource:
-  /** Complete ordinary classpath tree and optional unversioned serving policy. */
+  /** Complete ordinary classpath tree and optional unversioned serving policy.
+    *
+    * @param resourcePrefix
+    *   The classpath prefix below which the tree is stored, such as `public`.
+    * @param assets
+    *   The relative path of every file in the tree.
+    * @param serveOriginals
+    *   Whether the unversioned original paths are also served, with revalidating cache headers.
+    * @param classLoader
+    *   The class loader that reads the resources.
+    */
   final case class Classpath(
     resourcePrefix: String,
     assets: Set[String],
@@ -104,19 +116,42 @@ object StaticAssetSource:
     classLoader: ClassLoader)
       extends StaticAssetSource
 
-  /** Complete or recursively discovered ordinary filesystem tree. */
+  /** Complete or recursively discovered ordinary filesystem tree.
+    *
+    * @param root
+    *   The directory that contains the tree.
+    * @param assets
+    *   The relative paths to serve, or `None` to serve every regular file below `root`.
+    * @param serveOriginals
+    *   Whether the unversioned original paths are also served, with revalidating cache headers.
+    */
   final case class Directory(root: NioPath, assets: Option[Set[String]], serveOriginals: Boolean)
       extends StaticAssetSource
 
-  /** Classpath source whose final files and aliases come from a deployment manifest. */
+  /** Classpath source whose final files and aliases come from a deployment manifest.
+    *
+    * @param resourcePrefix
+    *   The classpath prefix below which the manifest and its files are stored.
+    * @param manifest
+    *   The manifest's path relative to `resourcePrefix`.
+    * @param classLoader
+    *   The class loader that reads the resources.
+    */
   final case class DeploymentClasspath(
     resourcePrefix: String,
     manifest: String,
     classLoader: ClassLoader)
       extends StaticAssetSource
 
-  /** Filesystem source whose final files and aliases come from a deployment manifest. */
+  /** Filesystem source whose final files and aliases come from a deployment manifest.
+    *
+    * @param root
+    *   The directory that contains the manifest and its files.
+    * @param manifest
+    *   The manifest's path relative to `root`.
+    */
   final case class DeploymentDirectory(root: NioPath, manifest: String) extends StaticAssetSource
+end StaticAssetSource
 
 /** Cache-control headers for immutable canonical paths and mutable revalidating paths.
   *
@@ -129,7 +164,11 @@ final case class StaticAssetCache(
   immutable: Header.CacheControl,
   revalidating: Header.CacheControl)
 
+/** The default [[StaticAssetCache]]. */
 object StaticAssetCache:
+  /** The default headers: `public, max-age=31536000, immutable` for immutable paths and `no-cache`
+    * for revalidating paths.
+    */
   val default: StaticAssetCache = StaticAssetCache(
     immutable = Header.CacheControl.Multiple(
       NonEmptyChunk(
@@ -293,6 +332,7 @@ final class StaticAssets private (
   end serve
 end StaticAssets
 
+/** The startup loader for [[StaticAssets]]. */
 object StaticAssets:
   final private case class LoadedAsset(path: String, bytes: Array[Byte], digest: String)
 

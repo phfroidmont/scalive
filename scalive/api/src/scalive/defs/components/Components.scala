@@ -86,7 +86,11 @@ trait Components:
       mods
     )
 
-  /** Renders a signal-backed upload input from the committed upload snapshot. */
+  /** Renders the file input required by the LiveView upload protocol.
+    *
+    * This form follows a signal of the upload, such as `model.map(_.upload)`, so the input's
+    * protocol attributes follow the latest snapshot in the model.
+    */
   def liveFileInput[Msg, R](
     upload: Signal[LiveUpload[R]],
     mods: Mod[Msg]*
@@ -119,13 +123,17 @@ trait Components:
       mods
     )
 
-  /** Returns upload-wide errors, such as selecting more files than the definition permits.
+  /** Returns the errors to show for an upload or one of its entries.
     *
-    * Entry-specific validation or transfer errors are available from an entry overload.
+    * This form returns upload-wide errors, such as selecting more files than the definition
+    * permits. Entry-specific validation or transfer errors are available from an entry overload.
     */
   def uploadErrors[R](upload: LiveUpload[R]): List[LiveUploadError] = upload.errors
 
-  /** Returns upload-wide errors from a signal-backed upload value. */
+  /** Returns the errors to show for an upload or one of its entries.
+    *
+    * This form returns the upload-wide errors of a signal of the upload.
+    */
   def uploadErrors[R](upload: Signal[LiveUpload[R]]): Signal[List[LiveUploadError]] =
     upload.map(_.errors)
 
@@ -145,21 +153,26 @@ trait Components:
     val entryRefs = upload.entries.filter(_.errors.nonEmpty).map(_.ref.value)
     (uploadRef ++ entryRefs).distinct.mkString(",")
 
-  /** Returns current errors for `entry` as recorded in `upload`.
+  /** Returns the errors to show for an upload or one of its entries.
     *
-    * Matching is by upload entry reference. `Nil` is returned when the reference is absent from
-    * this upload snapshot, including after that entry has been removed.
+    * This form returns the current errors for `entry` as recorded in `upload`, matched by upload
+    * entry reference. `Nil` is returned when the reference is absent from this upload snapshot,
+    * including after that entry has been removed.
     */
   def uploadErrors[R](upload: LiveUpload[R], entry: LiveUploadEntry[R]): List[LiveUploadError] =
     upload.entries.find(_.ref == entry.ref).map(_.errors).getOrElse(Nil)
 
-  /** Returns validation or transfer errors attached to this upload entry.
+  /** Returns the errors to show for an upload or one of its entries.
     *
-    * An entry that is not in the invalid state has no errors and returns `Nil`.
+    * This form returns the validation or transfer errors attached to `entry`. An entry that is not
+    * in the invalid state has no errors and returns `Nil`.
     */
   def uploadErrors[R](entry: LiveUploadEntry[R]): List[LiveUploadError] = entry.errors
 
-  /** Returns entry errors from a signal-backed upload-entry value. */
+  /** Returns the errors to show for an upload or one of its entries.
+    *
+    * This form returns the errors of a signal of an upload entry.
+    */
   @targetName("uploadEntryErrorsSignal")
   def uploadErrors[R](entry: Signal[LiveUploadEntry[R]]): Signal[List[LiveUploadError]] =
     entry.map(_.errors)

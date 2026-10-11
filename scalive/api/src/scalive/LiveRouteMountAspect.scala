@@ -9,27 +9,58 @@ import zio.http.{Response, URL}
   * and same-session live navigation. Original HTTP cookies and headers are intentionally absent;
   * extract HTTP-only identity in a [[LiveSessionMountAspect]] and pass its typed context into the
   * route aspect instead.
+  *
+  * @param params
+  *   The decoded path values of the route being mounted.
+  * @param url
+  *   The URL being mounted, including its query.
   */
 final case class LiveRouteMountRequest[+A](params: A, url: URL)
 
 /** A route-mount rejection with safe HTTP and connected-admission semantics. */
 enum LiveRouteMountFailure:
-  /** Redirects to a location produced by a typed Live route. */
+  /** Redirects to a location produced by a typed Live route.
+    *
+    * @param to
+    *   The destination.
+    */
   case Redirect(to: LiveLocation)
 
-  /** Redirects to an unchecked URL without same-origin or local-path validation. */
+  /** Redirects to an unchecked URL without same-origin or local-path validation.
+    *
+    * @param to
+    *   The destination, used as given.
+    */
   case RedirectUnsafe(to: URL)
 
-  /** Returns HTTP 401 or rejects connected admission as unauthorized. */
+  /** Returns HTTP 401 or rejects connected admission as unauthorized.
+    *
+    * @param reason
+    *   An optional reason, logged when a connected mount is rejected and never sent to the browser.
+    */
   case Unauthorized(reason: Option[String])
 
-  /** Returns HTTP 403 or rejects connected admission as unauthorized. */
+  /** Returns HTTP 403 or rejects connected admission as unauthorized.
+    *
+    * @param reason
+    *   An optional reason, logged when a connected mount is rejected and never sent to the browser.
+    */
   case Forbidden(reason: Option[String])
 
-  /** Returns HTTP 404 or rejects connected admission as unauthorized. */
+  /** Returns HTTP 404 or rejects connected admission as unauthorized.
+    *
+    * @param reason
+    *   An optional reason, logged when a connected mount is rejected and never sent to the browser.
+    */
   case NotFound(reason: Option[String])
 
-  /** Supplies explicit HTTP and connected outcomes for uncommon policies. */
+  /** Supplies explicit HTTP and connected outcomes for uncommon policies.
+    *
+    * @param disconnected
+    *   The HTTP response returned when the disconnected render fails.
+    * @param connected
+    *   The failure that ends a connected mount.
+    */
   case Custom(disconnected: Response, connected: LiveMountFailure)
 
   private[scalive] def disconnectedResponse: Response = this match
@@ -53,22 +84,59 @@ end LiveRouteMountFailure
 
 /** Constructors for route mount failures. */
 object LiveRouteMountFailure:
+  /** Redirects to a typed location: 303 See Other when disconnected, a redirect when connected. */
   def redirect(to: LiveLocation): LiveRouteMountFailure = Redirect(to)
-  def redirectUnsafe(to: URL): LiveRouteMountFailure    = RedirectUnsafe(to)
 
-  def unauthorized: LiveRouteMountFailure                 = Unauthorized(None)
+  /** Redirects to an unchecked URL without same-origin or local-path validation.
+    *
+    * Use it only for trusted destinations; never build `to` from untrusted input.
+    */
+  def redirectUnsafe(to: URL): LiveRouteMountFailure = RedirectUnsafe(to)
+
+  /** Rejects the mount with HTTP 401 when disconnected, or as unauthorized when connected.
+    *
+    * This form gives no reason.
+    */
+  def unauthorized: LiveRouteMountFailure = Unauthorized(None)
+
+  /** Rejects the mount with HTTP 401 when disconnected, or as unauthorized when connected.
+    *
+    * This form logs `reason` when a connected mount is rejected; it is never sent to the browser.
+    */
   def unauthorized(reason: String): LiveRouteMountFailure = Unauthorized(Some(reason))
 
-  def forbidden: LiveRouteMountFailure                 = Forbidden(None)
+  /** Rejects the mount with HTTP 403 when disconnected, or as unauthorized when connected.
+    *
+    * This form gives no reason.
+    */
+  def forbidden: LiveRouteMountFailure = Forbidden(None)
+
+  /** Rejects the mount with HTTP 403 when disconnected, or as unauthorized when connected.
+    *
+    * This form logs `reason` when a connected mount is rejected; it is never sent to the browser.
+    */
   def forbidden(reason: String): LiveRouteMountFailure = Forbidden(Some(reason))
 
-  def notFound: LiveRouteMountFailure                 = NotFound(None)
+  /** Rejects the mount with HTTP 404 when disconnected, or as unauthorized when connected.
+    *
+    * Use it when the response must not reveal whether the resource exists. This form gives no
+    * reason.
+    */
+  def notFound: LiveRouteMountFailure = NotFound(None)
+
+  /** Rejects the mount with HTTP 404 when disconnected, or as unauthorized when connected.
+    *
+    * Use it when the response must not reveal whether the resource exists. This form logs `reason`
+    * when a connected mount is rejected; it is never sent to the browser.
+    */
   def notFound(reason: String): LiveRouteMountFailure = NotFound(Some(reason))
 
+  /** Rejects the mount with an explicit HTTP response and connected failure. */
   def custom(
     disconnected: Response,
     connected: LiveMountFailure
   ): LiveRouteMountFailure = Custom(disconnected, connected)
+end LiveRouteMountFailure
 
 /** Derives fresh typed route context before every disconnected or connected route mount.
   *

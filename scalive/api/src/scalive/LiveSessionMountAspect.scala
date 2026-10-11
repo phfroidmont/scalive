@@ -10,6 +10,10 @@ import zio.json.JsonCodec
   * Scalive synthesizes it from the URL in the socket join, so it does not retain the original
   * request's cookies, headers, method, or body. Transfer only the minimum data needed by connected
   * mount through the aspect's signed claims, and revalidate mutable authorization state there.
+  *
+  * @param request
+  *   The request for this mount phase: the browser's HTTP request when disconnected, or a GET
+  *   request built from the join URL when connected.
   */
 final case class LiveSessionMountRequest(request: Request):
   /** The request URL for this mount phase. */

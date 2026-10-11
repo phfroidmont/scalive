@@ -21,7 +21,10 @@ opaque type UploadRef = String
 object UploadRef:
   private[scalive] def apply(value: String): UploadRef = value
   extension (ref: UploadRef)
-    /** Returns the raw protocol value, for example when an upload DOM attribute requires it. */
+    /** Returns the raw protocol value of an upload or upload entry reference.
+      *
+      * This form reads an [[UploadRef]], for example when an upload DOM attribute requires it.
+      */
     @targetName("uploadRefValue")
     def value: String = ref
 
@@ -40,7 +43,10 @@ opaque type UploadEntryRef = String
 object UploadEntryRef:
   private[scalive] def apply(value: String): UploadEntryRef = value
   extension (ref: UploadEntryRef)
-    /** Returns the raw protocol value used to correlate this entry with browser events. */
+    /** Returns the raw protocol value of an upload or upload entry reference.
+      *
+      * This form reads an [[UploadEntryRef]], which correlates one entry with browser events.
+      */
     @targetName("uploadEntryRefValue")
     def value: String = ref
 
@@ -137,17 +143,35 @@ enum LiveUploadError:
   /** External upload preflight failed without a structured external error. */
   case ExternalClientFailure
 
-  /** A hosted writer failed; `reason` is the protocol-facing writer error code. */
+  /** A hosted writer failed; `reason` is the protocol-facing writer error code.
+    *
+    * @param reason
+    *   The error code sent to the browser, such as a [[LiveUploadWriterError]] reason, or
+    *   `writer_error` for any other writer failure.
+    */
   case WriterFailure(reason: String)
 
-  /** Structured metadata returned for an external upload failure. */
+  /** Structured metadata returned for an external upload failure.
+    *
+    * @param meta
+    *   The error object, from [[LiveExternalUploadResult.Error]] or decoded from protocol JSON.
+    */
   case External(meta: Json.Obj)
 
-  /** An application-defined metadata validation error code. */
+  /** An application-defined metadata validation error code.
+    *
+    * @param reason
+    *   The reason returned by the [[LiveUploadDef]] validator.
+    */
   case Custom(reason: String)
 
-  /** An error code not recognized by this Scalive version. */
+  /** An error code not recognized by this Scalive version.
+    *
+    * @param code
+    *   The unrecognized code, or the text of an unrecognized JSON value.
+    */
   case Unknown(code: String)
+end LiveUploadError
 
 /** Conversion helpers for upload errors carried by the LiveView protocol. */
 object LiveUploadError:
@@ -232,6 +256,9 @@ enum LiveUploadEntryStatus:
     * Hosted chunk receipt can compute this value, while browser progress messages can report it.
     * The percentage is normalized to the range 0 through 100. It is status information, not proof
     * that the destination contains valid or complete content.
+    *
+    * @param progress
+    *   The upload progress as a percentage.
     */
   case Uploading(progress: Int)
 
@@ -242,8 +269,13 @@ enum LiveUploadEntryStatus:
     */
   case Completed
 
-  /** The entry is unusable because validation or its destination failed. */
+  /** The entry is unusable because validation or its destination failed.
+    *
+    * @param errors
+    *   The validation or destination errors that made the entry unusable.
+    */
   case Invalid(errors: List[LiveUploadError])
+end LiveUploadEntryStatus
 
 /** Immutable runtime snapshot of one selected upload entry.
   *
@@ -372,12 +404,18 @@ enum ConsumeDecision[+A]:
     *
     * Destination `discard` is not called. Complete any required persistence or verification before
     * returning this decision.
+    *
+    * @param value
+    *   The callback's output, returned by the consume operation.
     */
   case Consume(value: A)
 
   /** Returns `value` but retains the completed entry under framework ownership for a later consume
     * attempt. Returning or retaining a reference to the destination result does not transfer its
     * ownership.
+    *
+    * @param value
+    *   The callback's output, returned by the consume operation.
     */
   case Postpone(value: A)
 
@@ -395,7 +433,11 @@ enum LiveUploadAbortReason:
   /** The owning LiveView socket shut down. */
   case SocketShutdown
 
-  /** The entry failed while uploading; `reason` is a diagnostic protocol reason. */
+  /** The entry failed while uploading; `reason` is a diagnostic protocol reason.
+    *
+    * @param reason
+    *   The protocol reason for the failure, such as a [[LiveUploadWriterError]] reason.
+    */
   case Failed(reason: String)
 
 /** Expected failure of an operation against the current upload runtime state. */
@@ -405,36 +447,62 @@ sealed abstract class LiveUploadOperationError(message: String) extends Exceptio
 object LiveUploadOperationError:
   /** A new definition cannot replace `name` while the current upload still tracks entries,
     * including completed entries that have not been consumed.
+    *
+    * @param name
+    *   The name of the upload that still tracks entries.
     */
   final case class ActiveEntries(name: String)
       extends LiveUploadOperationError(s"Upload $name still has active entries")
 
   /** An operation used a definition whose destination identity differs from the allowed definition
     * with the same name.
+    *
+    * @param name
+    *   The upload name the two definitions share.
     */
   final case class DefinitionMismatch(name: String)
       extends LiveUploadOperationError(s"Upload $name has a different definition")
 
-  /** No matching upload named `name` is currently allowed. */
+  /** No matching upload named `name` is currently allowed.
+    *
+    * @param name
+    *   The name of the upload that is not allowed.
+    */
   final case class NotAllowed(name: String)
       extends LiveUploadOperationError(s"Upload $name is not allowed")
 
-  /** The supplied entry snapshot no longer identifies an active entry. */
+  /** The supplied entry snapshot no longer identifies an active entry.
+    *
+    * @param ref
+    *   The reference of the entry that is no longer active.
+    */
   final case class EntryNotActive(ref: UploadEntryRef)
       extends LiveUploadOperationError(s"Upload entry ${ref.value} is not active")
 
-  /** A consume operation targeted an entry that is invalid or has not completed. */
+  /** A consume operation targeted an entry that is invalid or has not completed.
+    *
+    * @param ref
+    *   The reference of the entry that cannot be consumed.
+    */
   final case class EntryNotCompleted(ref: UploadEntryRef)
       extends LiveUploadOperationError(s"Upload entry ${ref.value} is not completed")
 
-  /** Batch consumption was requested while at least one valid entry had not completed. */
+  /** Batch consumption was requested while at least one valid entry had not completed.
+    *
+    * @param name
+    *   The name of the upload with entries still in progress.
+    */
   final case class EntriesInProgress(name: String)
       extends LiveUploadOperationError(s"Upload $name has entries in progress")
+end LiveUploadOperationError
 
 /** A controlled, protocol-facing failure from a hosted upload writer.
   *
   * Use a stable, non-sensitive `reason`. Other writer failures are reported as `writer_error` so
   * exception details are never exposed to the browser.
+  *
+  * @param reason
+  *   The error code sent to the browser and reported as [[LiveUploadError.WriterFailure]].
   */
 final case class LiveUploadWriterError(reason: String) extends Exception(reason)
 
@@ -543,6 +611,11 @@ enum LiveExternalUploadResult[+Result]:
     *
     * `clientConfig` is sent to the browser. `result` remains server-side under framework ownership
     * and is exposed through [[CompletedUpload]] after the browser reports completion.
+    *
+    * @param clientConfig
+    *   The configuration sent to the browser's external uploader.
+    * @param result
+    *   The server-side handle for the prepared upload.
     */
   case Ready(clientConfig: ExternalUploadClientConfig, result: Result)
 
@@ -550,6 +623,9 @@ enum LiveExternalUploadResult[+Result]:
     *
     * This metadata becomes [[LiveUploadError.External]] and may be sent to the browser, so it must
     * not contain secrets.
+    *
+    * @param meta
+    *   The error metadata.
     */
   case Error(meta: Json.Obj)
 

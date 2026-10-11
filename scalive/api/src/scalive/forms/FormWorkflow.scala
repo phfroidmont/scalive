@@ -3,6 +3,7 @@ package scalive
 /** Monotonic version of a workflow's editable values. */
 opaque type FormRevision = Long
 
+/** The initial revision and accessors for [[FormRevision]]. */
 object FormRevision:
   /** Revision assigned when a workflow is created. */
   val initial: FormRevision = 0L
@@ -18,6 +19,7 @@ object FormRevision:
 /** Opaque correlation token for exactly one save attempt. */
 opaque type FormSubmissionToken = (AnyRef, Long)
 
+/** The companion of [[FormSubmissionToken]]. Only [[FormWorkflow.beginSave]] creates tokens. */
 object FormSubmissionToken:
   private[scalive] def apply(workflowIdentity: AnyRef, value: Long): FormSubmissionToken =
     workflowIdentity -> value
@@ -25,6 +27,11 @@ object FormSubmissionToken:
 /** A definition-owned proof that values decoded successfully.
   *
   * The schema parameter ties [[values]] and [[value]] to the definition that validated them.
+  *
+  * @param values
+  *   The editable values that decoded successfully.
+  * @param value
+  *   The domain value decoded from `values`.
   */
 final class ValidFormSnapshot[Owner, Schema, Domain] private[scalive] (
   val values: FormValues[Owner, Schema],
@@ -34,34 +41,109 @@ final class ValidFormSnapshot[Owner, Schema, Domain] private[scalive] (
   *
   * Completion must return [[token]] to the workflow; [[revision]] records whether edits occurred
   * while persistence was in flight.
+  *
+  * @param token
+  *   The token to pass to `saveSucceeded`, `saveFailed`, or `saveCancelled` when persistence ends.
+  * @param revision
+  *   The workflow revision when the save started.
+  * @param snapshot
+  *   The valid editable values and domain value to persist.
   */
 final class FormSubmission[Owner, Schema, Domain] private[scalive] (
   val token: FormSubmissionToken,
   val revision: FormRevision,
   val snapshot: ValidFormSnapshot[Owner, Schema, Domain]):
+
+  /** The editable values to persist, taken from [[snapshot]]. */
   def values: FormValues[Owner, Schema] = snapshot.values
-  def value: Domain                     = snapshot.value
+
+  /** The domain value to persist, taken from [[snapshot]]. */
+  def value: Domain = snapshot.value
 
 /** Current persistence state; at most one submission may be in flight. */
 enum FormSaveState[+Submission, +Failure]:
+  /** No save is in flight and no failure is stored. */
   case Idle
+
+  /** A save is in flight.
+    *
+    * @param submission
+    *   The submission being persisted.
+    */
   case Saving(submission: Submission)
+
+  /** The last save failed.
+    *
+    * The failure stays until the next save starts, a reset, or [[FormWorkflow.dismissFailure]].
+    *
+    * @param submission
+    *   The submission that failed.
+    * @param failure
+    *   The failure passed to `saveFailed`.
+    */
   case Failed(submission: Submission, failure: Failure)
 
 /** Exhaustive result of attempting to begin a save. */
 enum FormSaveStart[+Workflow, +Submission]:
+  /** The current form is invalid, so no save started.
+    *
+    * @param next
+    *   The workflow with every error of the current form visible. Store it so the errors render.
+    */
   case Invalid(next: Workflow)
+
+  /** A save is already in flight, so no new save started.
+    *
+    * @param current
+    *   The unchanged workflow.
+    * @param submission
+    *   The submission already in flight.
+    */
   case AlreadySaving(current: Workflow, submission: Submission)
+
+  /** A save started.
+    *
+    * @param next
+    *   The workflow in the saving state. Store it in the same turn that starts persistence.
+    * @param submission
+    *   The new submission. Persist its value and return its token when persistence ends.
+    */
   case Started(next: Workflow, submission: Submission)
 
 /** Result of applying a token-correlated asynchronous completion. */
 enum FormWorkflowTransition[+Workflow]:
+  /** The token matched the save in flight, and the completion was applied.
+    *
+    * @param workflow
+    *   The updated workflow to store.
+    */
   case Applied(workflow: Workflow)
+
+  /** The token does not match the save in flight, so nothing changed.
+    *
+    * Completions for an earlier attempt, for another workflow, or arriving twice end up here.
+    *
+    * @param workflow
+    *   The unchanged workflow.
+    */
   case Stale(workflow: Workflow)
 
 /** Result of requesting reset; an in-flight save blocks reset. */
 enum FormWorkflowReset[+Workflow, +Submission]:
+  /** The form was restored to the baseline.
+    *
+    * @param workflow
+    *   The workflow with a pristine form of the baseline values and no stored failure.
+    */
   case Reset(workflow: Workflow)
+
+  /** A save is in flight, so nothing was reset.
+    *
+    * @param current
+    *   The unchanged workflow.
+    * @param submission
+    *   The in-flight submission that blocked the reset.
+    */
   case Saving(current: Workflow, submission: Submission)
 
 /** Pure baseline, revision, reset, and one-in-flight-save state.
@@ -69,6 +151,16 @@ enum FormWorkflowReset[+Workflow, +Submission]:
   * Create with [[FormDefinition.workflow]]. Legal transitions are represented by the result enums;
   * callers should store the returned workflow. Completion tokens reject stale callbacks, while a
   * successful save always advances [[baseline]] to the acknowledged snapshot.
+  *
+  * @param current
+  *   The form being edited.
+  * @param baseline
+  *   The last saved values: the values the workflow was created with, or those acknowledged by the
+  *   latest successful save.
+  * @param revision
+  *   The revision of the editable values. It advances each time the current values change.
+  * @param save
+  *   The save state: idle, saving, or failed.
   */
 final class FormWorkflow[Owner, Schema, Domain, Failure] private[scalive] (
   private val definition: FormDefinition[Owner, Domain],
@@ -79,6 +171,7 @@ final class FormWorkflow[Owner, Schema, Domain, Failure] private[scalive] (
   val save: FormSaveState[FormSubmission[Owner, Schema, Domain], Failure],
   private val nextSubmissionGeneration: Long):
 
+  /** The type of the submissions this workflow starts. */
   type Submission = FormSubmission[Owner, Schema, Domain]
 
   /** Whether current editable values differ from the last acknowledged baseline. */
@@ -160,9 +253,11 @@ final class FormWorkflow[Owner, Schema, Domain, Failure] private[scalive] (
               submission
             )
 
-  /** Acknowledges the submitted snapshot as baseline when `token` is current.
+  /** Applies a successful save when `token` belongs to the save in flight.
     *
-    * Edits made after submission remain current; only an unchanged revision is replaced.
+    * This form makes the submitted values the new baseline. If the values were not edited since the
+    * save started, the current form becomes a pristine form of them; otherwise the newer edits stay
+    * current. Any other token returns [[FormWorkflowTransition.Stale]].
     */
   def saveSucceeded(
     token: FormSubmissionToken
@@ -172,10 +267,12 @@ final class FormWorkflow[Owner, Schema, Domain, Failure] private[scalive] (
         succeed(submission, submission.snapshot)
       case _ => FormWorkflowTransition.Stale(this)
 
-  /** Acknowledges a persistence-supplied canonical snapshot when `token` is current.
+  /** Applies a successful save when `token` belongs to the save in flight.
     *
-    * The canonical snapshot becomes baseline. It replaces current values only if no edit occurred
-    * since the corresponding submission.
+    * This form makes `canonical`, a snapshot supplied by persistence, the new baseline. If the
+    * values were not edited since the save started, the current form becomes a pristine form of
+    * `canonical`; otherwise the newer edits stay current. Any other token returns
+    * [[FormWorkflowTransition.Stale]].
     */
   def saveSucceeded(
     token: FormSubmissionToken,

@@ -16,6 +16,7 @@ final class NavigationGuardAssets private (assets: StaticAssets):
   def script: HtmlElement[Nothing] =
     assets.trackedScript(NavigationGuardAssets.runtimeFile, defer := true)
 
+/** The loader and default mount path for [[NavigationGuardAssets]]. */
 object NavigationGuardAssets:
   /** Default HTTP mount for the isolated navigation-guard asset graph. */
   val defaultMountPath: Path = Path.empty / "_scalive" / "assets"

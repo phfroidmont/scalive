@@ -22,17 +22,24 @@ object Signal:
     * when their runtime value happens to be a tuple.
     */
   sealed trait TupleShape[A]:
+    /** The elements that a value of type `A` contributes to [[combineWith]]: `A` itself for a
+      * tuple, otherwise `Tuple1[A]`.
+      */
     type Out <: Tuple
     private[Signal] def apply(value: A): Out
 
+  /** The two shapes: a tuple type contributes its elements, and any other type one element. */
   object TupleShape:
+    /** A [[TupleShape]] for `A` whose [[TupleShape.Out]] is `O`. */
     type Aux[A, O <: Tuple] = TupleShape[A] { type Out = O }
 
+    /** The shape of a type that is not statically a tuple: one element, `Tuple1[A]`. */
     given scalar[A](using scala.util.NotGiven[A <:< Tuple]): Aux[A, Tuple1[A]] =
       new TupleShape[A]:
         type Out = Tuple1[A]
         private[Signal] def apply(value: A): Tuple1[A] = Tuple1(value)
 
+    /** The shape of a tuple type: its own elements, which join the combined tuple. */
     given tuple[A <: Tuple]: Aux[A, A] =
       new TupleShape[A]:
         type Out = A

@@ -55,9 +55,33 @@ end HttpFormDecoder
 object HttpFormDecoder:
   /** Failure category exposed without embedding sensitive details in default HTTP responses. */
   enum Error:
+    /** The body exceeds `maxBytes` or could not be read.
+      *
+      * @param error
+      *   The body failure.
+      */
     case Body(error: FormData.BodyError)
+
+    /** The body is not a supported URL-encoded form: its content type is wrong, its URL encoding is
+      * invalid, or a field has an unsupported representation.
+      *
+      * @param error
+      *   The representation failure.
+      */
     case Representation(error: FormData.RepresentationError)
+
+    /** The CSRF cookie or submitted token is missing or invalid.
+      *
+      * @param error
+      *   The reason CSRF validation failed.
+      */
     case Csrf(error: CsrfProtection.ValidationError)
+
+    /** The form passed the body, representation, and CSRF checks but failed semantic decoding.
+      *
+      * @param errors
+      *   The typed form's validation errors.
+      */
     case Validation(errors: FormErrors[?])
 
     /** Stable machine-readable category code for logging or metrics. */

@@ -244,96 +244,140 @@ object JSCommands:
         )
       )
 
-    /** Appends a live navigation to a typed location and pushes a browser history entry.
+    /** Appends a live navigation that mounts the LiveView at `to` and adds a browser history entry.
       *
-      * This changes LiveViews rather than patching the current one. Requiring [[LiveLocation]]
-      * keeps normal navigation tied to route-derived, encoded destinations; use
-      * [[pushNavigateUnsafe]] only when no typed location can represent the destination.
+      * This form takes a typed location. Navigation replaces the current LiveView, while a patch
+      * keeps it. Use [[pushNavigateUnsafe]] only when no typed location can represent the
+      * destination.
       */
     def pushNavigate(to: LiveLocation) =
       pushNavigateUnsafe(to.href)
 
-    /** Builds a signal-backed command for a navigation destination. */
+    /** Appends a live navigation that mounts the LiveView at `to` and adds a browser history entry.
+      *
+      * This form follows a signal of the destination and returns a signal of the command, which
+      * bindings such as `on.click` accept.
+      */
     def pushNavigate(to: Signal[LiveLocation]): Signal[JSCommand[Msg]] =
       to.map(location => ops.pushNavigate(location))
 
-    /** Appends a live navigation to the raw `href` and pushes a browser history entry.
+    /** Appends a live navigation that mounts the LiveView at the raw `href` and adds a browser
+      * history entry.
       *
-      * The string is passed through without route typing, validation, or normalization. "Unsafe"
-      * denotes that explicit escape from typed outbound navigation; it does not apply a different
-      * client navigation mechanism.
+      * This form takes a URL that no route checks. Whitespace, control characters, and schemes
+      * other than HTTP(S) throw `IllegalArgumentException`.
       */
     def pushNavigateUnsafe(href: String) =
       ops.addOp("navigate", Args.Href(liveDestination(href), None))
 
-    /** Builds a signal-backed command for a raw navigation destination. */
+    /** Appends a live navigation that mounts the LiveView at the raw `href` and adds a browser
+      * history entry.
+      *
+      * This form follows a signal of the URL and returns a signal of the command.
+      */
     def pushNavigateUnsafe(href: Signal[String]): Signal[JSCommand[Msg]] =
       href.map(value => ops.pushNavigateUnsafe(value))
 
-    /** Appends a live navigation to a typed location and replaces the current history entry.
+    /** Appends a live navigation that mounts the LiveView at `to`, replacing the current history
+      * entry.
       *
-      * This changes LiveViews rather than patching the current one. Use [[replaceNavigateUnsafe]]
-      * only for a destination which cannot be represented by a [[LiveLocation]].
+      * This form takes a typed location. Use [[replaceNavigateUnsafe]] only when no typed location
+      * can represent the destination.
       */
     def replaceNavigate(to: LiveLocation) =
       replaceNavigateUnsafe(to.href)
 
-    /** Builds a signal-backed command for replacement navigation. */
+    /** Appends a live navigation that mounts the LiveView at `to`, replacing the current history
+      * entry.
+      *
+      * This form follows a signal of the destination and returns a signal of the command.
+      */
     def replaceNavigate(to: Signal[LiveLocation]): Signal[JSCommand[Msg]] =
       to.map(location => ops.replaceNavigate(location))
 
-    /** Appends a live navigation to raw `href` and replaces the current browser history entry.
+    /** Appends a live navigation that mounts the LiveView at the raw `href`, replacing the current
+      * history entry.
       *
-      * The string is passed through without route typing, validation, or normalization.
+      * This form takes a URL that no route checks. Whitespace, control characters, and schemes
+      * other than HTTP(S) throw `IllegalArgumentException`.
       */
     def replaceNavigateUnsafe(href: String) =
       ops.addOp("navigate", Args.Href(liveDestination(href), Some(true)))
 
-    /** Builds a signal-backed command for raw replacement navigation. */
+    /** Appends a live navigation that mounts the LiveView at the raw `href`, replacing the current
+      * history entry.
+      *
+      * This form follows a signal of the URL and returns a signal of the command.
+      */
     def replaceNavigateUnsafe(href: Signal[String]): Signal[JSCommand[Msg]] =
       href.map(value => ops.replaceNavigateUnsafe(value))
 
-    /** Appends a live patch to a typed location and pushes a browser history entry.
+    /** Appends a live patch that changes this LiveView's URL to `to` and adds a browser history
+      * entry.
       *
-      * A patch updates the current LiveView without replacing it. Use [[pushPatchUnsafe]] for raw
-      * destinations such as query-only references which cannot be represented by a full typed
-      * location.
+      * This form takes a typed location. A patch keeps the current LiveView mounted. Use
+      * [[pushPatchUnsafe]] for a destination, such as `"?page=2"`, that no typed location
+      * represents.
       */
     def pushPatch(to: LiveLocation) =
       pushPatchUnsafe(to.href)
 
-    /** Builds a signal-backed command for a patch destination. */
+    /** Appends a live patch that changes this LiveView's URL to `to` and adds a browser history
+      * entry.
+      *
+      * This form follows a signal of the destination and returns a signal of the command.
+      */
     def pushPatch(to: Signal[LiveLocation]): Signal[JSCommand[Msg]] =
       to.map(location => ops.pushPatch(location))
 
-    /** Appends a live patch to raw `href` and pushes a browser history entry.
+    /** Appends a live patch that changes this LiveView's URL to the raw `href` and adds a browser
+      * history entry.
       *
-      * The string is passed through without route typing, validation, or normalization. This is the
-      * explicit escape hatch for destinations such as `"?page=2"`.
+      * This form takes a URL that no route checks, such as `"?page=2"`. Whitespace, control
+      * characters, and schemes other than HTTP(S) throw `IllegalArgumentException`.
       */
     def pushPatchUnsafe(href: String) =
       ops.addOp("patch", Args.Href(liveDestination(href), None))
 
-    /** Builds a signal-backed command for a raw patch destination. */
+    /** Appends a live patch that changes this LiveView's URL to the raw `href` and adds a browser
+      * history entry.
+      *
+      * This form follows a signal of the URL and returns a signal of the command.
+      */
     def pushPatchUnsafe(href: Signal[String]): Signal[JSCommand[Msg]] =
       href.map(value => ops.pushPatchUnsafe(value))
 
-    /** Appends a live patch to a typed location and replaces the current browser history entry. */
+    /** Appends a live patch that changes this LiveView's URL to `to`, replacing the current history
+      * entry.
+      *
+      * This form takes a typed location. Use [[replacePatchUnsafe]] only when no typed location can
+      * represent the destination.
+      */
     def replacePatch(to: LiveLocation) =
       replacePatchUnsafe(to.href)
 
-    /** Builds a signal-backed command for replacement patching. */
+    /** Appends a live patch that changes this LiveView's URL to `to`, replacing the current history
+      * entry.
+      *
+      * This form follows a signal of the destination and returns a signal of the command.
+      */
     def replacePatch(to: Signal[LiveLocation]): Signal[JSCommand[Msg]] =
       to.map(location => ops.replacePatch(location))
 
-    /** Appends a live patch to raw `href` and replaces the current browser history entry.
+    /** Appends a live patch that changes this LiveView's URL to the raw `href`, replacing the
+      * current history entry.
       *
-      * The string is passed through without route typing, validation, or normalization.
+      * This form takes a URL that no route checks. Whitespace, control characters, and schemes
+      * other than HTTP(S) throw `IllegalArgumentException`.
       */
     def replacePatchUnsafe(href: String) =
       ops.addOp("patch", Args.Href(liveDestination(href), Some(true)))
 
-    /** Builds a signal-backed command for raw replacement patching. */
+    /** Appends a live patch that changes this LiveView's URL to the raw `href`, replacing the
+      * current history entry.
+      *
+      * This form follows a signal of the URL and returns a signal of the command.
+      */
     def replacePatchUnsafe(href: Signal[String]): Signal[JSCommand[Msg]] =
       href.map(value => ops.replacePatchUnsafe(value))
 

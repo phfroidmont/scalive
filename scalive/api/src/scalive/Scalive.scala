@@ -7,11 +7,16 @@ import scalive.defs.complex.ComplexHtmlKeys
 import scalive.defs.components.Components
 import scalive.defs.tags.HtmlTags
 
-/** Ergonomic API imported with `scalive.*`. */
+/** Scalive's application API: typed HTML, event bindings, and LiveView helpers, imported with
+  * `scalive.*`.
+  */
 package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with Components:
   export _root_.scalive.streams.api.*
   export _root_.scalive.upload.api.*
 
+  /** The `defer` attribute of a `<script>` with a `src`, which runs the script once the document
+    * has been parsed while assigned `true`.
+    */
   lazy val defer = htmlAttr("defer", BooleanAsAttrPresenceEncoder)
 
   /** Makes this element and its flat-tree descendants inert while assigned `true`.
@@ -59,30 +64,54 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
   ): LiveComponentOutputInstance[Props, Msg, Model, Output] =
     LiveComponentOutputInstance(value, id)
 
+  /** Renders one instance of a stateful component, identified by its class and `id`.
+    *
+    * This form passes constant `props`, like `component(value, id).render(props)`. Keep `id` stable
+    * so the instance keeps its model.
+    */
   def liveComponent[Props, Msg, Model](
     value: LiveComponent[Props, Msg, Model],
     id: String,
     props: Props
   ): Mod[Nothing] = Mod.Content.Component(ComponentSpec.Plain(value, id, props))
 
+  /** Renders one instance of a stateful component, identified by its class and `id`.
+    *
+    * This form passes props that follow a signal; changed props reach the instance's `update`.
+    */
   def liveComponent[Props, Msg, Model](
     value: LiveComponent[Props, Msg, Model],
     id: String,
     props: Signal[Props]
   ): Mod[Nothing] = Mod.Content.Component(ComponentSpec.PlainSignal(value, id, props))
 
+  /** Renders one instance of a stateful component, identified by its class and `id`.
+    *
+    * This form also follows a signal of the ID: a new ID renders a different instance, with its own
+    * model.
+    */
   def liveComponent[Props, Msg, Model](
     value: LiveComponent[Props, Msg, Model],
     id: Signal[String],
     props: Signal[Props]
   ): Mod[Nothing] = Mod.Content.Component(ComponentSpec.Dynamic(value, id, props))
 
+  /** Renders one instance of a stateful component, identified by its class and `id`.
+    *
+    * This form follows a signal of the ID with constant props: a new ID renders a different
+    * instance, with its own model.
+    */
   def liveComponent[Props, Msg, Model](
     value: LiveComponent[Props, Msg, Model],
     id: Signal[String],
     props: Props
   ): Mod[Nothing] = liveComponent(value, id, id.map(_ => props))
 
+  /** Renders one instance of a stateful component, identified by its class and `id`.
+    *
+    * This form renders a component that emits outputs and maps each one to an owner message with
+    * `onOutput`, like `component(value, id).render(props, onOutput)`.
+    */
   def liveComponent[Props, Msg, Model, Output, OwnerMsg](
     value: LiveComponent.WithOutput[Props, Msg, Model, Output],
     id: String,
@@ -91,6 +120,10 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
   ): Mod[OwnerMsg] =
     Mod.Content.Component(ComponentSpec.Output(value, id, props, onOutput))
 
+  /** Renders one instance of a stateful component, identified by its class and `id`.
+    *
+    * This form renders a component that emits outputs, with props that follow a signal.
+    */
   def liveComponent[Props, Msg, Model, Output, OwnerMsg](
     value: LiveComponent.WithOutput[Props, Msg, Model, Output],
     id: String,
@@ -99,6 +132,11 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
   ): Mod[OwnerMsg] =
     Mod.Content.Component(ComponentSpec.OutputSignal(value, id, props, onOutput))
 
+  /** Renders one instance of a stateful component, identified by its class and `id`.
+    *
+    * This form renders a component that emits outputs, following signals of both the ID and the
+    * props.
+    */
   def liveComponent[Props, Msg, Model, Output, OwnerMsg](
     value: LiveComponent.WithOutput[Props, Msg, Model, Output],
     id: Signal[String],
@@ -107,6 +145,13 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
   ): Mod[OwnerMsg] =
     Mod.Content.Component(ComponentSpec.OutputDynamic(value, id, props, onOutput))
 
+  /** Embeds a nested LiveView with its own lifecycle, identified by `id`.
+    *
+    * This form builds the child from `value` when its lifecycle starts. Keep `id` stable and unique
+    * in the page. Set `sticky` to keep the child running when live navigation leaves the parent,
+    * and `linkParentOnCrash` to make a crash of the child crash the parent too. See [nested
+    * LiveViews](https://scalive.dev/guides/nested-liveviews#render-a-stable-child).
+    */
   def liveView[Msg, Model](
     id: String,
     value: => LiveView[Msg, Model],
@@ -115,6 +160,11 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
   ): Mod[Nothing] =
     Mod.Content.NestedView(NestedViewSpec.Static(id, () => value, sticky, linkParentOnCrash))
 
+  /** Embeds a nested LiveView with its own lifecycle, identified by `id`.
+    *
+    * This form builds the child with `factory` from the signal's current value when the child's
+    * lifecycle starts, and decides `linkParentOnCrash` from that value too.
+    */
   def liveView[A, Msg, Model](
     id: String,
     value: Signal[A],
@@ -127,6 +177,11 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
       NestedViewSpec.Dynamic(id, value, factory, sticky, linkParentOnCrash)
     )
 
+  /** Embeds a nested LiveView with its own lifecycle, identified by `id`.
+    *
+    * This form builds the child with `factory` from the signal's current value when the child's
+    * lifecycle starts. The child is not sticky and does not crash the parent.
+    */
   def liveView[A, Msg, Model](
     id: String,
     value: Signal[A]
@@ -137,6 +192,14 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
   private lazy val portalTemplateTag = HtmlTag("template")
   private lazy val phxPortal         = dataAttr("phx-portal")
 
+  /** Renders `mods` in a wrapper that the browser moves into the element matching `target`.
+    *
+    * The content stays owned by this LiveView, with its events, hooks, and components, so a dialog
+    * can appear inside a root-level container. Keep `id` stable and unique. `container` is the
+    * wrapper's tag and `wrapperClass` its class. [[DomSelector.current]] and an invalid `container`
+    * throw `IllegalArgumentException`; whether the target exists is not checked. See
+    * [portals](https://scalive.dev/guides/html-dsl-and-event-bindings#move-content-and-wrap-focus).
+    */
   def portal[Msg](
     id: String,
     target: DomSelector,
@@ -223,6 +286,9 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
   def liveTitle(pageTitle: Signal[Option[String]], default: String): HtmlElement[Nothing] =
     liveTitle(pageTitle, default, "", "")
 
+  /** Helpers that ask the visitor to confirm before leaving a page with unsaved changes. See
+    * [navigation guards](https://scalive.dev/guides/navigation-guards#render-a-guard).
+    */
   object navigation:
     private lazy val guardMessage = dataAttr("scalive-navigation-guard")
 
@@ -354,46 +420,187 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
     private[scalive] lazy val link      = data("link")
     private[scalive] lazy val linkState = data("link-state")
 
-    lazy val click         = attr("click")
-    lazy val clickAway     = attr("click-away")
-    lazy val blur          = attr("blur")
-    lazy val focus         = attr("focus")
-    lazy val windowBlur    = attr("window-blur")
-    lazy val windowFocus   = attr("window-focus")
-    lazy val keyDown       = attr("keydown")
-    lazy val keyUp         = attr("keyup")
+    /** The raw `phx-click` attribute, naming the event sent by a click on the element or inside it.
+      * Prefer [[on.click]], which sends a typed message.
+      */
+    lazy val click = attr("click")
+
+    /** The raw `phx-click-away` attribute, naming the event sent by a click that starts outside the
+      * visible element. Prefer [[on.clickAway]], which sends a typed message.
+      */
+    lazy val clickAway = attr("click-away")
+
+    /** The raw `phx-blur` attribute, naming the event sent when the element loses focus. Prefer
+      * [[on.blur]], which sends a typed message.
+      */
+    lazy val blur = attr("blur")
+
+    /** The raw `phx-focus` attribute, naming the event sent when the element gains focus. Prefer
+      * [[on.focus]], which sends a typed message.
+      */
+    lazy val focus = attr("focus")
+
+    /** The raw `phx-window-blur` attribute, naming the event sent when the browser window loses
+      * focus. Prefer [[on.windowBlur]], which sends a typed message.
+      */
+    lazy val windowBlur = attr("window-blur")
+
+    /** The raw `phx-window-focus` attribute, naming the event sent when the browser window gains
+      * focus. Prefer [[on.windowFocus]], which sends a typed message.
+      */
+    lazy val windowFocus = attr("window-focus")
+
+    /** The raw `phx-keydown` attribute, naming the event sent by a key press while the element has
+      * focus. Prefer [[on.keyDown]], which sends a typed message.
+      */
+    lazy val keyDown = attr("keydown")
+
+    /** The raw `phx-keyup` attribute, naming the event sent by a key release while the element has
+      * focus. Prefer [[on.keyUp]], which sends a typed message.
+      */
+    lazy val keyUp = attr("keyup")
+
+    /** The raw `phx-window-keydown` attribute, naming the event sent by a key press anywhere in the
+      * window. Prefer [[on.windowKeyDown]], which sends a typed message.
+      */
     lazy val windowKeyDown = attr("window-keydown")
-    lazy val windowKeyUp   = attr("window-keyup")
-    lazy val change        = attr("change")
-    lazy val submit        = attr("submit")
-    lazy val autoRecover   = attr("auto-recover")
-    lazy val feedbackFor   = attr("feedback-for")
+
+    /** The raw `phx-window-keyup` attribute, naming the event sent by a key release anywhere in the
+      * window. Prefer [[on.windowKeyUp]], which sends a typed message.
+      */
+    lazy val windowKeyUp = attr("window-keyup")
+
+    /** The raw `phx-change` attribute, naming the event sent when a form or control changes. Prefer
+      * `FormDefinition.onChange` for a typed form, or [[on.change]].
+      */
+    lazy val change = attr("change")
+
+    /** The raw `phx-submit` attribute, naming the event sent when a form is submitted. Prefer
+      * `FormDefinition.onSubmit` for a typed form, or [[on.submit]].
+      */
+    lazy val submit = attr("submit")
+
+    /** The `phx-auto-recover` attribute of a form, naming the event that restores its values after
+      * a reconnect, or `"ignore"` to skip recovery.
+      *
+      * `FormDefinition.onChange` already renders this attribute to recover a typed form.
+      */
+    lazy val autoRecover = attr("auto-recover")
+
+    /** The `phx-feedback-for` attribute, naming the field that an error container reports on.
+      *
+      * The bundled Phoenix LiveView client does not act on it. Scalive's form error helpers render
+      * it with the field's name.
+      */
+    lazy val feedbackFor = attr("feedback-for")
+
+    /** The `phx-trigger-action` switch, which hands a form to the browser for an ordinary HTTP
+      * submission once it renders as `true`.
+      *
+      * The form needs an ordinary `action` and `method`, and the HTTP handler must validate the
+      * request again. See [validate, then submit over
+      * HTTP](https://scalive.dev/guides/http-forms-and-redirects#validate-live-then-trigger-http).
+      */
     lazy val triggerAction = boolAttr("trigger-action")
+
+    /** The `phx-no-unused-field` switch, which stops the client from marking unused fields in a
+      * form or control, so every received field counts as used for error feedback.
+      */
     lazy val noUnusedField = boolAttr("no-unused-field")
-    lazy val patchFocused  = boolAttr("patch-focused")
-    lazy val disableWith   = attr("disable-with")
-    lazy val connected     = attr("connected")
-    lazy val disconnected  = attr("disconnected")
-    lazy val mounted       = attr("mounted")
-    lazy val remove        = attr("remove")
-    lazy val hook          = attr("hook")
-    lazy val update        = HtmlAttr[PhxUpdate]("phx-update", Encoder(_.value))
-    lazy val dropTarget    = HtmlAttr[UploadRef]("phx-drop-target", Encoder(_.value))
-    lazy val debounce      = HtmlAttr["blur" | Int](
+
+    /** The `phx-patch-focused` switch, which lets patches update an editable control while it has
+      * focus. Without it, a focused control keeps its browser-managed state during a patch.
+      */
+    lazy val patchFocused = boolAttr("patch-focused")
+
+    /** The raw `phx-disable-with` attribute: while its event awaits the server's reply, the element
+      * is disabled and shows this text instead of its content. Prefer
+      * [[submission.replaceTextWith]] or [[submission.disable]].
+      */
+    lazy val disableWith = attr("disable-with")
+
+    /** The raw `phx-connected` attribute: an encoded `JS` command run each time the LiveView
+      * connects. Prefer [[connection.onConnect]], which takes a `JS` command.
+      */
+    lazy val connected = attr("connected")
+
+    /** The raw `phx-disconnected` attribute: an encoded `JS` command run when the LiveView loses
+      * its connection. Prefer [[connection.onDisconnect]], which takes a `JS` command.
+      */
+    lazy val disconnected = attr("disconnected")
+
+    /** The raw `phx-mounted` attribute: an encoded `JS` command run when the element appears on the
+      * page. Prefer [[dom.onMount]], which takes a `JS` command.
+      */
+    lazy val mounted = attr("mounted")
+
+    /** The raw `phx-remove` attribute: an encoded `JS` command run when a patch removes the
+      * element. Prefer [[dom.onRemove]], which takes a `JS` command.
+      */
+    lazy val remove = attr("remove")
+
+    /** The raw `phx-hook` attribute, naming the client hook that manages the element. Prefer
+      * [[dom.hook]], which also sets the `id` a hook requires.
+      */
+    lazy val hook = attr("hook")
+
+    /** The `phx-update` attribute, which chooses how patches treat the element's children.
+      *
+      * Prefer [[dom.ignoreUpdates]] for [[PhxUpdate.Ignore]] and a stream's `renderIn` for
+      * [[PhxUpdate.Stream]]; both also set the `id` these modes require.
+      */
+    lazy val update = HtmlAttr[PhxUpdate]("phx-update", Encoder(_.value))
+
+    /** The raw `phx-drop-target` attribute, naming the upload that receives files dropped on the
+      * element. Prefer `upload.dropTarget`.
+      */
+    lazy val dropTarget = HtmlAttr[UploadRef]("phx-drop-target", Encoder(_.value))
+
+    /** The `phx-debounce` attribute: how many milliseconds to wait for events to stop before
+      * sending the latest one, or `"blur"` to wait until the element loses focus.
+      *
+      * Put it on a form control to limit that control's change events. Elsewhere, prefer
+      * [[HtmlAttrBinding.debounce]] on the binding.
+      */
+    lazy val debounce = HtmlAttr["blur" | Int](
       "phx-debounce",
       Encoder {
         case _: "blur"  => "blur"
         case value: Int => value.toString
       }
     )
-    lazy val throttle    = intAttr("throttle")
+
+    /** The `phx-throttle` attribute: how many milliseconds to ignore further events after sending
+      * one. Prefer [[HtmlAttrBinding.throttle]] on the binding.
+      */
+    lazy val throttle = intAttr("throttle")
+
+    /** The `phx-track-static` switch for a `<script>` or stylesheet `<link>` whose URL the browser
+      * reports when it connects, so [[ConnectedMetadata.staticChanged]] can reveal a new
+      * deployment. Prefer `StaticAssets.trackedScript` and `trackedStylesheet`.
+      */
     lazy val trackStatic = boolAttr("track-static")
 
+    /** Chooses the LiveView or component that receives the element's events (`phx-target`).
+      *
+      * This form targets a stateful component, usually `self` inside its `view`, together with a
+      * binding such as `on.click.to(self)(message)`.
+      */
     def target[Msg](ref: ComponentRef[Msg]): Mod.Attr[Msg] =
       Mod.Attr.ComponentTarget(ref)
 
+    /** Chooses the LiveView or component that receives the element's events (`phx-target`).
+      *
+      * This form targets the LiveView or components that own the elements matching `selector`.
+      * [[DomSelector.current]] throws `IllegalArgumentException`.
+      */
     def target(selector: DomSelector): Mod.Attr[Nothing] = attr("target") := selector.requiredValue
 
+    /** Returns the `phx-value-<key>` attribute, whose value the element's events carry under `key`.
+      *
+      * Read it from the payload of a binding's function form. A message that carries the value
+      * itself, such as a signal of a message, is usually simpler.
+      */
     def value(key: String) = attr(s"value-$key")
   end phx
 
@@ -486,34 +693,108 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
       onDisconnect(JS.removeAttribute("hidden"))
     )
 
+  /** Client-side behavior for one element: hooks, ignored updates, and commands that run when the
+    * element is added or removed.
+    */
   object dom:
-    lazy val onMount  = HtmlAttrBinding("phx-mounted")
+    /** Runs a `JS` command when the element appears on the page (`phx-mounted`).
+      *
+      * It runs once per element, when the LiveView connects or when a patch adds the element. Use
+      * `JS.push` inside the command to send a message.
+      */
+    lazy val onMount = HtmlAttrBinding("phx-mounted")
+
+    /** Runs a `JS` command when a patch removes the element (`phx-remove`), as for an exit
+      * transition.
+      */
     lazy val onRemove = HtmlAttrBinding("phx-remove")
 
+    /** Attaches the client hook registered as `name` to the element, with the `id` a hook requires.
+      *
+      * Register the hook under the same name in the `LiveSocket` options, and derive `id` from the
+      * LiveView or component instance so it stays unique. An empty `name` throws
+      * `IllegalArgumentException`. See [hook
+      * identity](https://scalive.dev/guides/browser-integration#give-every-hook-stable-identity).
+      */
     def hook(name: String, id: DomRef): Vector[Mod.Attr[Nothing]] =
       require(name.nonEmpty, "hook name must not be empty")
       Vector(id.attr, phx.hook := name)
 
+    /** Keeps patches from changing the element's content, for content that JavaScript manages.
+      *
+      * Renders `phx-update="ignore"` with the `id` that mode requires. The element's `data-*`
+      * attributes still update.
+      */
     def ignoreUpdates(id: DomRef): Vector[Mod.Attr[Nothing]] =
       Vector(id.attr, phx.update := PhxUpdate.Ignore)
+  end dom
 
+  /** Feedback on a button or other control while its event awaits the server's reply. */
   object submission:
+    /** Disables the element, keeping its content, while its event awaits the server's reply
+      * (`phx-disable-with`).
+      */
     lazy val disable: Mod.Attr[Nothing] =
       htmlAttr("phx-disable-with", BooleanAsAttrPresenceEncoder) := true
+
+    /** Disables the element and shows `text` instead of its content while its event awaits the
+      * server's reply (`phx-disable-with`), as in `submission.replaceTextWith("Saving...")`.
+      */
     def replaceTextWith(text: String): Mod.Attr[Nothing] = phx.disableWith := text
 
   extension [R](upload: LiveUpload[R])
-    def dropTarget: Mod.Attr[Nothing]                                 = phx.dropTarget := upload.ref
-    def onProgress[Msg](message: Msg): Mod.Attr[Msg]                  = on.uploadProgress(message)
+    /** Makes the element a drop zone for this upload's files (`phx-drop-target`).
+      *
+      * This form takes an upload snapshot. Dropped files go to the upload's `liveFileInput` and get
+      * the same acceptance, count, and size checks as selected ones.
+      */
+    def dropTarget: Mod.Attr[Nothing] = phx.dropTarget := upload.ref
+
+    /** Sends a message each time the browser reports transfer progress for this upload
+      * (`phx-progress`).
+      *
+      * This form sends a constant message, as in `upload.onProgress(Msg.Progress)`. Put it on the
+      * upload's `liveFileInput`, and read the latest upload snapshot when handling the message.
+      */
+    def onProgress[Msg](message: Msg): Mod.Attr[Msg] = on.uploadProgress(message)
+
+    /** Sends a message each time the browser reports transfer progress for this upload
+      * (`phx-progress`).
+      *
+      * This form builds the message from the raw `ref`, `entry_ref`, `progress`, and optional
+      * `error` values, which the browser controls.
+      */
     def onProgress[Msg](f: Map[String, String] => Msg): Mod.Attr[Msg] = on.uploadProgress(f)
 
   extension [R](upload: Signal[LiveUpload[R]])
-    def dropTarget: Mod.Attr[Nothing]                = phx.dropTarget := upload.map(_.ref)
+    /** Makes the element a drop zone for this upload's files (`phx-drop-target`).
+      *
+      * This form follows a signal of the upload, such as `model.map(_.upload)`.
+      */
+    def dropTarget: Mod.Attr[Nothing] = phx.dropTarget := upload.map(_.ref)
+
+    /** Sends a message each time the browser reports transfer progress for this upload
+      * (`phx-progress`).
+      *
+      * This form, on a signal of the upload, sends a constant message.
+      */
     def onProgress[Msg](message: Msg): Mod.Attr[Msg] = on.uploadProgress(message)
+
+    /** Sends a message each time the browser reports transfer progress for this upload
+      * (`phx-progress`).
+      *
+      * This form, on a signal of the upload, builds the message from the raw `ref`, `entry_ref`,
+      * `progress`, and optional `error` values, which the browser controls.
+      */
     def onProgress[Msg](f: Map[String, String] => Msg): Mod.Attr[Msg] = on.uploadProgress(f)
 
-  implicit def stringToMod(value: String): Mod[Nothing]               = Mod.Content.Text(value)
+  /** Converts a string to text content, escaped when rendered, so a string can be a child. */
+  implicit def stringToMod(value: String): Mod[Nothing] = Mod.Content.Text(value)
+
+  /** Converts a signal of a string to text content that follows it, escaped when rendered. */
   implicit def signalStringToMod(value: Signal[String]): Mod[Nothing] =
     Mod.Content.SignalText(value)
+
+  /** Converts an element to child content where a [[Mod]] is expected, as in `appended`. */
   implicit def htmlElementToMod[Msg](value: HtmlElement[Msg]): Mod[Msg] = Mod.Content.Tag(value)
 end scalive

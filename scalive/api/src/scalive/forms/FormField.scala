@@ -127,12 +127,19 @@ sealed trait FormInitial[Owner]
   * and the definition produced by [[product]]. A form starts as `FormRoot("profile")`, declares
   * fields such as `Root.text("name")`, and ends with `Root.product[Profile](...)`. See [define a
   * rooted form](https://scalive.dev/guides/typed-forms-and-validation#define-a-rooted-form).
+  *
+  * @param path
+  *   The root's browser path, which prefixes every field name, such as `profile` in
+  *   `profile[name]`.
   */
 final class FormRoot private (val path: FormPath):
   self =>
 
+  /** The type of a field declared by this root, with editable `Input` and refined `Value`. */
   type Field[Input, Value] = FormField[self.type, Input, Value]
-  type Initial             = FormInitial[self.type]
+
+  /** The type of an initial assignment owned by this root, for [[FormDefinition.initial]]. */
+  type Initial = FormInitial[self.type]
 
   /** Declares a field at a trusted relative path with a custom editable-input codec. */
   def field[Input](relative: String, input: FieldInput[Input]): Field[Input, Input] =
@@ -243,15 +250,25 @@ end FormRoot
 /** A row-field namespace tied to one exact repeated group value.
   *
   * Its singleton type prevents fields and [[FormRowKey]] values from being mixed across groups.
+  *
+  * @param root
+  *   The form root that declares this group.
+  * @param path
+  *   The group's browser path, such as `contact[phones]`.
   */
 final class RepeatedGroup[Owner] private[scalive] (
   val root: FormRoot,
   val path: FormPath):
   self =>
 
-  type Key                 = FormRowKey[self.type]
+  /** The type of a row key for this group. */
+  type Key = FormRowKey[self.type]
+
+  /** The type of a row field declared by this group, with editable `Input` and refined `Value`. */
   type Field[Input, Value] = FormField[self.type, Input, Value]
-  type Initial             = FormInitial[self.type]
+
+  /** The type of an initial assignment for one row of this group, for [[RepeatedRows.row]]. */
+  type Initial = FormInitial[self.type]
 
   /** Logical group address used for group-level validation. */
   val address: FormAddress[Owner] = FormAddress.fromPath(path)
@@ -325,6 +342,7 @@ final class RepeatedRows[Owner, Group, Row] private[scalive] (
   private[scalive] val mirror: Mirror.ProductOf[Row])
     extends FormPart[Owner, Vector[Row]]:
 
+  /** The type of a row key for this schema's repeated group. */
   type Key = FormRowKey[Group]
 
   /** Logical group address; concrete row addresses add a keyed row segment. */

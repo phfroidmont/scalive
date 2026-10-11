@@ -38,6 +38,15 @@ final case class FormEventMeta[Owner](
   *
   * Prefer this over [[RawFormEvent]] for schema-defined forms. [[data]] is the original untrusted
   * payload; [[form]] is the bounded, canonical projection and validation result.
+  *
+  * @param form
+  *   The form rebuilt and validated from the payload; store it in the model.
+  * @param data
+  *   The original untrusted payload, as received and before any compatibility translation.
+  * @param kind
+  *   Whether the payload is a change, a submission, or a recovery.
+  * @param meta
+  *   The resolved target, submitter, and other protocol context of the event.
   */
 final class FormEvent[Owner, Schema, Domain] private[scalive] (
   val form: Form[Owner, Schema, Domain],
@@ -64,6 +73,21 @@ final class FormEvent[Owner, Schema, Domain] private[scalive] (
   *
   * Unlike [[FormEvent]], this has no definition identity, typed address ownership, projection
   * limits, or interaction-aware error visibility. Its [[raw]] payload is preserved verbatim.
+  *
+  * @param raw
+  *   The untrusted payload, exactly as received.
+  * @param value
+  *   The codec's result: the decoded value or its errors.
+  * @param target
+  *   The browser path of the control that triggered the event, when the client reported one.
+  * @param rawSubmitter
+  *   The untrusted submit control the client reported, when available.
+  * @param recovery
+  *   Whether the event is the browser's recovery of the form after a reconnect.
+  * @param submitted
+  *   Whether the event is a submission.
+  * @param metadata
+  *   Additional event metadata supplied by the client protocol.
   */
 final class RawFormEvent[+A] private[scalive] (
   val raw: FormData,

@@ -2,15 +2,31 @@ package scalive
 
 /** Semantic lifecycle classification after applying a form update. */
 enum FormUpdateKind derives CanEqual:
+  /** An ordinary change from the browser. */
   case Changed
+
+  /** Focus left a field, either alone or together with a change from the browser. */
   case Blurred
+
+  /** A submission, after which every error is visible. */
   case Submitted
+
+  /** The browser's recovery of the form after a reconnect. */
   case Recovered
 
 /** The form and metadata produced by applying a [[FormUpdate]]. A semantic blur for a removed row
   * is ignored: its kind remains [[FormUpdateKind.Blurred]], but [[target]] is empty and no field is
   * recorded as blurred. Check the target when counting accepted field interactions rather than
   * received messages.
+  *
+  * @param form
+  *   The updated form; store it in the model.
+  * @param valuesChanged
+  *   Whether the update changed the form's values; false for feedback-only updates such as a blur.
+  * @param kind
+  *   What kind of interaction the update applied.
+  * @param target
+  *   The logical address of the field the update concerns, when it resolves to an existing field.
   */
 final case class AppliedFormUpdate[Owner, Schema, Domain](
   form: Form[Owner, Schema, Domain],

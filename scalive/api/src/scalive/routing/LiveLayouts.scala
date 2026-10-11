@@ -2,14 +2,39 @@ package scalive
 
 import zio.http.{Request, URL}
 
-/** Signal-backed values available to an ordinary Live layout. */
+/** Signal-backed values available to an ordinary Live layout.
+  *
+  * @param params
+  *   The route's decoded path values, as a signal that follows the current URL.
+  * @param request
+  *   The mount request, as a signal whose URL follows the current URL. During a connected mount it
+  *   is a GET request without the browser's headers or cookies.
+  * @param currentUrl
+  *   The page's current URL, as a signal that follows live patches.
+  * @param context
+  *   The context produced by the session's or route's mount aspects, or the part of it selected
+  *   with [[LiveLayout.forContext]].
+  */
 final case class LiveLayoutContext[+A, +Ctx](
   params: Signal[A],
   request: Signal[Request],
   currentUrl: Signal[URL],
   context: Ctx)
 
-/** Value-backed inputs available while rendering a root document. */
+/** Value-backed inputs available while rendering a root document.
+  *
+  * @param params
+  *   The route's decoded path values.
+  * @param request
+  *   The mount request. [[LiveRootLayout.view]] receives the browser's HTTP request, but
+  *   [[LiveRootLayout.key]] also runs during connected mount with a GET request that has no browser
+  *   headers or cookies, so a key must not depend on them.
+  * @param currentUrl
+  *   The URL being mounted.
+  * @param context
+  *   The context produced by the session's or route's mount aspects, or the part of it selected
+  *   with [[LiveRootLayout.forContext]].
+  */
 final case class LiveRootLayoutContext[+A, +Ctx](
   params: A,
   request: Request,
@@ -30,6 +55,11 @@ final case class LiveRootLayoutContext[+A, +Ctx](
   * See the [layouts guide](https://scalive.dev/guides/layouts).
   */
 trait LiveLayout[-A, -Ctx]:
+  /** Renders this layout around `content`.
+    *
+    * `content` is the LiveView, already wrapped in the layouts installed inside this one. Read the
+    * URL, path values, and request from the signals in `context`.
+    */
   def view[Msg](content: HtmlElement[Msg], context: LiveLayoutContext[A, Ctx]): HtmlElement[Msg]
 
   final private[scalive] def forPathParams[B](select: B => A): LiveLayout[B, Ctx] =
@@ -64,7 +94,9 @@ trait LiveLayout[-A, -Ctx]:
         )
 end LiveLayout
 
+/** Predefined [[LiveLayout]] values. */
 object LiveLayout:
+  /** A layout that returns its content unchanged. */
   val identity: LiveLayout[Any, Any] = new LiveLayout[Any, Any]:
     def view[Msg](content: HtmlElement[Msg], context: LiveLayoutContext[Any, Any]) = content
 
@@ -152,7 +184,13 @@ trait LiveRootLayout[-A, -Ctx]:
         ) = LiveRootLayout.this.view(content, pageTitle, project(context))
 end LiveRootLayout
 
+/** Predefined [[LiveRootLayout]] values. */
 object LiveRootLayout:
+  /** A root layout that renders the LiveView with no document around it.
+    *
+    * It is the router's default, so a page has no `<html>`, `<head>`, or client scripts until a
+    * root layout is installed. All routes that use it share one document key.
+    */
   val identity: LiveRootLayout[Any, Any] = new LiveRootLayout[Any, Any]:
     override def key(context: LiveRootLayoutContext[Any, Any]) = "scalive:identity-root"
     def view[Msg](

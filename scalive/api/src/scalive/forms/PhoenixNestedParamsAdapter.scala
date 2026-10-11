@@ -8,6 +8,13 @@ import scala.reflect.Enum
   * Use only at a Phoenix compatibility boundary. Phoenix row indexes are positional; this adapter
   * requires `_persistent_id` controls and translates them to core [[FormRowKey]] identity before
   * projection. The original payload and browser target remain available on the resulting event.
+  *
+  * @param definition
+  *   The form definition that projects and validates the translated payload.
+  * @param rows
+  *   The repeated rows submitted in Phoenix's indexed nested-parameter shape.
+  * @param maxNewRows
+  *   The maximum number of rows that `"new"` sort entries may add per payload; always positive.
   */
 final class PhoenixNestedParamsAdapter[Owner, Schema, Domain, Group, Row] private (
   val definition: FormDefinition[Owner, Domain],
@@ -18,8 +25,11 @@ final class PhoenixNestedParamsAdapter[Owner, Schema, Domain, Group, Row] privat
 
   require(maxNewRows > 0, "maxNewRows must be positive")
 
+  /** The typed event this adapter produces, the same type as the definition's `Event`. */
   type Event = FormEvent[Owner, Schema, Domain]
-  type Key   = FormRowKey[Group]
+
+  /** The type of a stable row key for the adapted repeated group. */
+  type Key = FormRowKey[Group]
 
   /** Phoenix array-control name used to submit row order and `"new"` placeholders. */
   val sortName: String = PhoenixNestedParamsAdapter.arrayName(rows.path, "_sort")
@@ -27,15 +37,25 @@ final class PhoenixNestedParamsAdapter[Owner, Schema, Domain, Group, Row] privat
   /** Phoenix array-control name used to submit row indexes to remove. */
   val dropName: String = PhoenixNestedParamsAdapter.arrayName(rows.path, "_drop")
 
-  /** Translates and projects a Phoenix-compatible payload as a typed event. */
+  /** Translates a Phoenix-compatible payload into keyed rows and projects it as a typed event.
+    *
+    * This form has no browser target.
+    */
   def event(data: FormData, kind: FormEventKind): Event =
     decode(data, kind, RawFormEvent.Meta.empty)
 
-  /** Translates a payload and positional browser target as a typed event. */
+  /** Translates a Phoenix-compatible payload into keyed rows and projects it as a typed event.
+    *
+    * This form also translates the positional browser `target` to its keyed row and keeps the
+    * original in [[FormEventMeta.browserTarget]].
+    */
   def event(data: FormData, kind: FormEventKind, target: Option[FormPath]): Event =
     decode(data, kind, RawFormEvent.Meta(target = target))
 
-  /** Handles translated LiveView `phx-change` and recovery with one callback. */
+  /** Handles translated LiveView `phx-change` and recovery payloads as typed events.
+    *
+    * This form sends both to `f`.
+    */
   def onChange[Msg](f: Event => Msg): Mod.Attr[Msg] =
     Mod.Attr.Group(
       Vector(
@@ -44,7 +64,10 @@ final class PhoenixNestedParamsAdapter[Owner, Schema, Domain, Group, Row] privat
       )
     )
 
-  /** Handles translated LiveView `phx-change` and recovery with separate callbacks. */
+  /** Handles translated LiveView `phx-change` and recovery payloads as typed events.
+    *
+    * This form sends changes to `changed` and recoveries after a reconnect to `recovered`.
+    */
   def onChange[Msg](changed: Event => Msg, recovered: Event => Msg): Mod.Attr[Msg] =
     Mod.Attr.Group(
       Vector(
@@ -53,11 +76,18 @@ final class PhoenixNestedParamsAdapter[Owner, Schema, Domain, Group, Row] privat
       )
     )
 
-  /** Handles a translated Phoenix-compatible submission. */
+  /** Handles a translated Phoenix-compatible submission (`phx-submit`) as a typed event.
+    *
+    * This form sends only the event.
+    */
   def onSubmit[Msg](f: Event => Msg): Mod.Attr[Msg] =
     on.submit.formWith((data, kind, meta) => decode(data, kind, meta))(f)
 
-  /** Handles a translated submission and decodes one definition-owned submit action. */
+  /** Handles a translated Phoenix-compatible submission (`phx-submit`) as a typed event.
+    *
+    * This form also decodes which of the `submitter`'s buttons submitted the form. `submitter` must
+    * belong to this adapter's definition.
+    */
   def onSubmit[Action <: Enum, Msg](
     submitter: FormSubmitter[Owner, Schema, Action]
   )(

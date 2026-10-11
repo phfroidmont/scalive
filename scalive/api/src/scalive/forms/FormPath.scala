@@ -2,7 +2,11 @@ package scalive
 
 /** One component of a browser form field name. */
 enum FormPathSegment derives CanEqual:
-  /** A literal, non-empty name component. */
+  /** A literal, non-empty name component.
+    *
+    * @param value
+    *   The component text. Path constructors reject an empty value or one containing `[` or `]`.
+    */
   case Name(value: String)
 
   /** An empty bracket component (`[]`). */
@@ -12,6 +16,9 @@ enum FormPathSegment derives CanEqual:
   *
   * This is a wire/rendering path and may contain array segments. Use [[FormAddress]] for stable,
   * owner-scoped validation identity, especially inside repeated rows.
+  *
+  * @param segments
+  *   The segments in order. A non-empty path always starts with a name segment.
   */
 final case class FormPath private (segments: Vector[FormPathSegment]):
   import FormPathSegment.*
@@ -79,23 +86,87 @@ end FormPath
 object FormPath:
   import FormPathSegment.*
 
-  /** Resource limits applied while parsing an untrusted browser name. */
+  /** Resource limits applied while parsing an untrusted browser name.
+    *
+    * @param maxDepth
+    *   The maximum number of segments, including the root name. Parsing rejects a non-positive
+    *   value.
+    * @param maxSegmentLength
+    *   The maximum length of one segment, in UTF-16 code units. Parsing rejects a non-positive
+    *   value.
+    */
   final case class ParseLimits(maxDepth: Int = 32, maxSegmentLength: Int = 256)
 
+  /** The companion of [[ParseLimits]], holding the defaults. */
   object ParseLimits:
+    /** The limits [[FormPath.parse]] applies when none are given.
+      *
+      * They allow 32 segments of at most 256 UTF-16 code units each.
+      */
     val default: ParseLimits = ParseLimits()
 
   /** A stable description of why a browser name has no `FormPath` representation. */
   enum RepresentationError derives CanEqual:
+    /** The name is `null`. */
     case NullName
+
+    /** The name is empty or starts with `[`, so it has no root name. */
     case MissingRootName
+
+    /** A `[` appears inside a bracketed segment.
+      *
+      * @param offset
+      *   The zero-based offset of the unexpected `[`.
+      */
     case UnexpectedOpeningBracket(offset: Int)
+
+    /** A `]` appears without a matching `[`.
+      *
+      * @param offset
+      *   The zero-based offset of the unexpected `]`.
+      */
     case UnexpectedClosingBracket(offset: Int)
+
+    /** A character other than `[` follows a closing `]`.
+      *
+      * @param offset
+      *   The zero-based offset of the unexpected character.
+      */
     case ExpectedOpeningBracket(offset: Int)
+
+    /** A `[` has no matching `]` before the end of the name.
+      *
+      * @param offset
+      *   The zero-based offset of the unterminated `[`.
+      */
     case UnterminatedBracket(offset: Int)
+
+    /** The name has more segments than the depth limit allows.
+      *
+      * @param maxDepth
+      *   The maximum number of segments that was exceeded.
+      */
     case PathTooDeep(maxDepth: Int)
+
+    /** A segment is longer than the segment length limit allows.
+      *
+      * @param segmentIndex
+      *   The zero-based index of the segment that is too long, where 0 is the root name.
+      * @param maxLength
+      *   The maximum segment length that was exceeded.
+      */
     case SegmentTooLong(segmentIndex: Int, maxLength: Int)
+
+    /** The parse limits are `null`. */
     case NullLimits
+
+    /** The parse limits are not both positive.
+      *
+      * @param maxDepth
+      *   The supplied maximum number of segments.
+      * @param maxSegmentLength
+      *   The supplied maximum segment length.
+      */
     case InvalidLimits(maxDepth: Int, maxSegmentLength: Int)
 
     /** Stable machine-readable error code. */
@@ -110,15 +181,25 @@ object FormPath:
       case SegmentTooLong(_, _)        => "segment_too_long"
       case NullLimits                  => "null_limits"
       case InvalidLimits(_, _)         => "invalid_limits"
+  end RepresentationError
 
   /** The path with no segments. */
   val empty: FormPath = create(Vector.empty)
 
-  /** Constructs a path from trusted literal name segments. */
+  /** Creates a path from trusted segments, throwing `IllegalArgumentException` if one is invalid.
+    *
+    * This form takes literal names, as in `FormPath("user", "address")`. Each name must be
+    * non-empty and contain no brackets. Use [[FormPath.parse]] for untrusted browser input.
+    */
   def apply(first: String, rest: String*): FormPath =
     create((first +: rest).map(trustedName).toVector)
 
-  /** Constructs a path from trusted, explicit segment values. */
+  /** Creates a path from trusted segments, throwing `IllegalArgumentException` if one is invalid.
+    *
+    * This form takes explicit segments, so it can include array segments, as in
+    * `FormPath(Name("user"), Name("tags"), Array)`. The first segment must be a name. Use
+    * [[FormPath.parse]] for untrusted browser input.
+    */
   def apply(first: FormPathSegment, rest: FormPathSegment*): FormPath =
     val segments = (first +: rest).toVector
     validateTrustedSegments(segments)
@@ -130,11 +211,19 @@ object FormPath:
     validateTrustedSegments(values)
     create(values)
 
-  /** Strictly parses a browser field name using conservative default limits. */
+  /** Parses an untrusted browser field name, such as `user[tags][]`, without normalizing it.
+    *
+    * This form applies [[ParseLimits.default]]. A malformed name or one over the limits returns a
+    * [[RepresentationError]] rather than throwing.
+    */
   def parse(name: String): Either[RepresentationError, FormPath] =
     parse(name, ParseLimits.default)
 
-  /** Strictly parses a browser field name using caller-provided resource limits. */
+  /** Parses an untrusted browser field name, such as `user[tags][]`, without normalizing it.
+    *
+    * This form applies `limits`. A malformed name, a name over the limits, or `null` or
+    * non-positive limits return a [[RepresentationError]] rather than throwing.
+    */
   def parse(name: String, limits: ParseLimits): Either[RepresentationError, FormPath] =
     import RepresentationError.*
 

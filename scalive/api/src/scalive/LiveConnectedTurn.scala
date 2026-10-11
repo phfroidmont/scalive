@@ -12,25 +12,40 @@ enum LiveConnectedTurnFailure:
   /** Skips the turn without rendering or running after-render hooks. */
   case Halt
 
-  /** Performs a full browser redirect to a typed Live route. */
+  /** Performs a full browser redirect to a typed Live route.
+    *
+    * @param to
+    *   The location to redirect to.
+    */
   case Redirect(to: LiveLocation)
 
   /** Performs a full browser redirect to an unchecked URL.
     *
     * No same-origin or local-path validation is performed. Validate untrusted input before using
     * this escape hatch.
+    *
+    * @param to
+    *   The URL to redirect to, used as given.
     */
   case RedirectUnsafe(to: URL)
 
-  /** Closes the physical socket and every lifecycle sharing it. */
+  /** Closes the physical socket and every lifecycle sharing it.
+    *
+    * @param reason
+    *   An optional reason, logged server-side and never sent to the browser.
+    */
   case Disconnect(reason: Option[String])
 
   /** Performs a full HTTP reload of the URL governing the guarded turn.
     *
     * During patch acknowledgement this is the pending patch destination; otherwise it is the
     * lifecycle's current committed URL.
+    *
+    * @param reason
+    *   An optional reason, logged server-side and never sent to the browser.
     */
   case Reload(reason: Option[String])
+end LiveConnectedTurnFailure
 
 /** Constructors for controlled connected-turn outcomes. */
 object LiveConnectedTurnFailure:
@@ -43,17 +58,30 @@ object LiveConnectedTurnFailure:
   /** Redirects to an unchecked URL without validating its origin or locality. */
   def redirectUnsafe(to: URL): LiveConnectedTurnFailure = RedirectUnsafe(to)
 
-  /** Disconnects the physical socket without logging an application reason. */
+  /** Closes the WebSocket and every lifecycle sharing it.
+    *
+    * This form logs no application reason.
+    */
   def disconnect: LiveConnectedTurnFailure = Disconnect(None)
 
-  /** Disconnects the physical socket and logs `reason` server-side. */
+  /** Closes the WebSocket and every lifecycle sharing it.
+    *
+    * This form logs `reason` server-side; it is not sent to the browser.
+    */
   def disconnect(reason: String): LiveConnectedTurnFailure = Disconnect(Some(reason))
 
-  /** Reloads the URL governing the guarded turn without logging an application reason. */
+  /** Reloads the URL governing the guarded turn with a full HTTP request.
+    *
+    * This form logs no application reason.
+    */
   def reload: LiveConnectedTurnFailure = Reload(None)
 
-  /** Reloads the URL governing the guarded turn and logs `reason` server-side. */
+  /** Reloads the URL governing the guarded turn with a full HTTP request.
+    *
+    * This form logs `reason` server-side; it is not sent to the browser.
+    */
   def reload(reason: String): LiveConnectedTurnFailure = Reload(Some(reason))
+end LiveConnectedTurnFailure
 
 /** An ordered, model-independent connected-turn guard declaration. */
 final private[scalive] case class LiveConnectedTurnGuard[-Ctx](

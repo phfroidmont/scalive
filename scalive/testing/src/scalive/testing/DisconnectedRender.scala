@@ -58,6 +58,12 @@ end DisconnectedRender
   *
   * Each `None` is a wildcard. When both fields are defined, both must match. An empty query matches
   * every form and succeeds only when the page contains exactly one form.
+  *
+  * @param action
+  *   The exact, unresolved `action` attribute the form must have; a form without one never matches
+  *   a defined value.
+  * @param method
+  *   The method the form must use, as reported by [[RenderedForm.method]].
   */
 final case class FormQuery(
   action: Option[String] = None,
@@ -65,7 +71,20 @@ final case class FormQuery(
 
 /** Describes why [[RenderedPage.form]] could not select exactly one form. */
 enum FormQueryError:
+  /** No form matches the query.
+    *
+    * @param query
+    *   The query that matched nothing.
+    */
   case NotFound(query: FormQuery)
+
+  /** More than one form matches the query.
+    *
+    * @param query
+    *   The ambiguous query.
+    * @param count
+    *   The number of matching forms.
+    */
   case MultipleMatches(query: FormQuery, count: Int)
 
 /** A response and semantic view of its Jsoup-parsed HTML. */
@@ -161,11 +180,18 @@ final class RenderedForm private[testing] (
   /** Returns every selected field name, retaining duplicates and DOM order. */
   def names: Vector[String] = fields.map(_.name)
 
-  /** Returns Jsoup values for fields whose parsed name exactly equals `name`. */
+  /** Returns the values of the named fields, in DOM order.
+    *
+    * This form selects fields whose parsed name exactly equals `name`. Each value is
+    * [[RenderedField.value]].
+    */
   def values(name: String): Vector[String] =
     fields.collect { case field if field.name == name => field.value }
 
-  /** Returns [[values]] for the browser-style name rendered by `path`. */
+  /** Returns the values of the named fields, in DOM order.
+    *
+    * This form selects fields by the browser-style name that `path` renders.
+    */
   def values(path: FormPath): Vector[String] =
     values(path.name)
 

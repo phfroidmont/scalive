@@ -29,14 +29,18 @@ final private[scalive] case class UploadCredentialClaims(
 /** Validated security configuration for the ZIO HTTP transport.
   *
   * This is intentionally a top-level type until [[ZioHttp]] can expose it as `ZioHttp.Config`.
+  *
+  * @param sessionMaxAge
+  *   The maximum accepted age for framework-issued session and CSRF values.
+  * @param secureCookie
+  *   Whether framework cookies carry the `Secure` attribute.
+  * @param allowedWebSocketOrigins
+  *   The exact canonical browser origins admitted at the WebSocket upgrade boundary.
   */
 final class ZioHttpConfig private (
   private[scalive] val signingSecretBytes: Array[Byte],
-  /** Maximum accepted age for framework-issued session and CSRF values. */
   val sessionMaxAge: Duration,
-  /** Whether framework cookies carry the `Secure` attribute. */
   val secureCookie: Boolean,
-  /** Exact canonical browser origins admitted at the WebSocket upgrade boundary. */
   val allowedWebSocketOrigins: Set[WebSocketOrigin]):
   override def equals(other: Any): Boolean = other match
     case that: ZioHttpConfig =>
@@ -56,9 +60,15 @@ final class ZioHttpConfig private (
   override def toString: String =
     s"ZioHttpConfig(signingSecret=<redacted>, sessionMaxAge=$sessionMaxAge, secureCookie=$secureCookie, allowedWebSocketOrigins=$allowedWebSocketOrigins)"
 
+/** The validating constructor for [[ZioHttpConfig]] and its errors. */
 object ZioHttpConfig:
+  /** Why [[ZioHttpConfig.apply]] rejected the settings. */
   enum Error:
-    /** The signing secret contains fewer than 32 UTF-8 bytes. */
+    /** The signing secret contains fewer than 32 UTF-8 bytes.
+      *
+      * @param actualUtf8Bytes
+      *   The length of the rejected secret in UTF-8 bytes.
+      */
     case SecretTooShort(actualUtf8Bytes: Int)
 
     /** Session and CSRF values require a positive maximum age. */
@@ -67,6 +77,13 @@ object ZioHttpConfig:
     /** The WebSocket policy contains no usable allowed origin. */
     case NoAllowedWebSocketOrigins
 
+  /** Validates the settings and creates a [[ZioHttpConfig]].
+    *
+    * `signingSecret` signs framework-issued values and must contain at least 32 UTF-8 bytes; every
+    * replica must use the same secret, and changing it invalidates outstanding signed values.
+    * `sessionMaxAge` must be positive, and `allowedWebSocketOrigins` must not be empty. A failed
+    * check returns the matching [[Error]].
+    */
   def apply(
     signingSecret: String,
     sessionMaxAge: Duration,

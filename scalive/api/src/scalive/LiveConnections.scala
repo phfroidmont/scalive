@@ -6,6 +6,13 @@ import zio.*
 final class LiveConnections[Id] private[scalive] (
   state: Ref[LiveConnections.State[Id]],
   publish: Id => Task[Unit]):
+  /** Closes every connection registered under `id`, so each browser must pass admission again.
+    *
+    * Connections register under the ID that [[LiveSessionBuilder.withAdmission]] extracts from
+    * signed session claims. Connections on this node close first; with
+    * [[LiveConnections.distributed]], the ID is then published to the other nodes, and the call
+    * fails only when that publication fails. Disconnecting an ID with no connections succeeds.
+    */
   def disconnect(id: Id): Task[Unit] =
     disconnectLocal(id) *> publish(id)
 
@@ -86,13 +93,29 @@ final class LiveConnections[Id] private[scalive] (
       .flatMap(controls => ZIO.foreachDiscard(controls)(_.exit)).uninterruptible
 end LiveConnections
 
+/** Layers that provide [[LiveConnections]], and an accessor for its `disconnect`. */
 object LiveConnections:
+  /** Closes every connection registered under `id`, so each browser must pass admission again.
+    *
+    * This form uses the `LiveConnections[Id]` service from the ZIO environment.
+    */
   def disconnect[Id: Tag](id: Id): ZIO[LiveConnections[Id], Throwable, Unit] =
     ZIO.serviceWithZIO[LiveConnections[Id]](_.disconnect(id))
 
+  /** Provides connection control for a single backend instance.
+    *
+    * `disconnect` closes connections on this node only. Use [[distributed]] when several instances
+    * serve the same sessions.
+    */
   def local[Id: Tag]: ULayer[LiveConnections[Id]] =
     ZLayer.fromZIO(make(_ => ZIO.unit))
 
+  /** Provides connection control that also reaches other nodes through a [[LiveDisconnectBus]].
+    *
+    * `disconnect` closes connections on this node and then publishes the ID on the bus. IDs
+    * received from the bus close matching connections on this node without being published again.
+    * The layer stays subscribed for as long as its scope is open.
+    */
   def distributed[Id: Tag]: ZLayer[LiveDisconnectBus[Id], Throwable, LiveConnections[Id]] =
     ZLayer.scoped {
       for

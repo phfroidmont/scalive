@@ -21,6 +21,7 @@ final class LiveViewClientAssets private (assets: StaticAssets):
   def liveViewScript: HtmlElement[Nothing] =
     assets.trackedScript(LiveViewClientAssets.liveViewFile, defer := true)
 
+/** The loader and default mount path for [[LiveViewClientAssets]]. */
 object LiveViewClientAssets:
   /** Default HTTP mount for the isolated client asset graph. */
   val defaultMountPath: Path = Path.empty / "_scalive" / "live-view"

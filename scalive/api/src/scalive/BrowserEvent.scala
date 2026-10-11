@@ -2,7 +2,24 @@ package scalive
 
 import zio.json.ast.Json
 
-/** The complete client event envelope visible to raw lifecycle hooks. */
+/** The complete client event envelope visible to raw lifecycle hooks.
+  *
+  * @param kind
+  *   The client's event type, such as `click`, `keyup`, `form`, or `hook` for an event pushed from
+  *   JavaScript.
+  * @param bindingId
+  *   The event name: the rendered binding's ID for a Scalive binding, or the name itself for an
+  *   event pushed from JavaScript or set with a raw `phx` attribute.
+  * @param value
+  *   The event's unmodified JSON value.
+  * @param params
+  *   The value as string parameters, such as the fields of a form event. Empty when the value has
+  *   none that can be read.
+  * @param cid
+  *   The numeric ID of the component that the event targets, or `None` for the LiveView itself.
+  * @param meta
+  *   The optional JSON metadata sent with a form event, such as `_target`, the changed field.
+  */
 final case class LiveEvent(
   kind: String,
   bindingId: String,

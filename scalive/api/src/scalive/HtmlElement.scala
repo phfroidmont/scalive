@@ -8,7 +8,13 @@ import scalive.codecs.BooleanAsAttrPresenceEncoder
 import scalive.codecs.Encoder
 import scalive.codecs.StringAsIsEncoder
 
-/** An immutable element in Scalive's typed, protocol-neutral HTML algebra. */
+/** An immutable element in Scalive's typed, protocol-neutral HTML algebra.
+  *
+  * @param tag
+  *   The tag that names the element.
+  * @param mods
+  *   The element's attributes, bindings, and children, in the order they were given.
+  */
 final class HtmlElement[+Msg](val tag: HtmlTag, val mods: Vector[Mod[Msg]]):
   private[scalive] def attrMods: Vector[Mod.Attr[Msg]] =
     mods.collect { case attr: Mod.Attr[Msg] => attr }.flatMap(_.flattened)
@@ -16,37 +22,80 @@ final class HtmlElement[+Msg](val tag: HtmlTag, val mods: Vector[Mod[Msg]]):
   private[scalive] def contentMods: Vector[Mod.Content[Msg]] =
     mods.collect { case content: Mod.Content[Msg] => content }
 
+  /** Returns a copy of the element with `values` before its modifiers, so any children among them
+    * come first.
+    */
   def prepended[Msg2 >: Msg](values: Mod[Msg2]*): HtmlElement[Msg2] =
     HtmlElement(tag, mods.prependedAll(values))
 
+  /** Returns a copy of the element with `values` after its modifiers, so any children among them
+    * come last.
+    */
   def appended[Msg2 >: Msg](values: Mod[Msg2]*): HtmlElement[Msg2] =
     HtmlElement(tag, mods.appendedAll(values))
 
+/** Direct construction of [[HtmlElement]] values from a tag and modifiers. */
 object HtmlElement:
+  /** Creates an element from `tag` and `mods`.
+    *
+    * Calling the tag, as in `div(...)`, is usually simpler and also accepts elements and
+    * collections.
+    */
   def apply[Msg](tag: HtmlTag, mods: Vector[Mod[Msg]]): HtmlElement[Msg] =
     new HtmlElement(tag, mods)
 
-/** A reusable, validated HTML tag factory. */
+/** A reusable, validated HTML tag factory.
+  *
+  * @param name
+  *   The tag name, such as `div` or `mwc-input`. An invalid name throws `IllegalArgumentException`.
+  * @param void
+  *   Whether the tag is a void element, such as `input`, rendered without a closing tag. Rendering
+  *   a void element with children fails.
+  */
 class HtmlTag(val name: String, val void: Boolean = false):
   require(Escaping.validTag(name), s"invalid HTML tag name '$name'")
 
+  /** Creates an element of this tag from `mods`, in document order.
+    *
+    * Pass attributes, bindings, strings, child elements, and `Option`s or collections of them, as
+    * in `ul(cls := "items", items.map(item => li(item.name)))`.
+    */
   def apply[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg] =
     HtmlElement(this, Mod.flatten(mods))
 
-/** A typed, validated HTML attribute definition. */
+/** A typed, validated HTML attribute definition.
+  *
+  * @param name
+  *   The attribute name, as rendered. An invalid name throws `IllegalArgumentException`.
+  * @param codec
+  *   The encoder that turns an assigned value into the attribute's text.
+  */
 class HtmlAttr[V](val name: String, val codec: Encoder[V, String]):
   require(Escaping.validAttrName(name), s"invalid HTML attribute name '$name'")
 
   private inline def presence = codec == BooleanAsAttrPresenceEncoder
 
+  /** Sets the attribute to `value`.
+    *
+    * This form sets a constant value. A boolean presence attribute, such as `disabled`, is rendered
+    * bare when `true` and omitted when `false`. Setting one attribute twice on an element fails
+    * rendering, except for a [[CompositeHtmlAttr]] such as `cls`.
+    */
   def :=(value: V): Mod.Attr[Nothing] =
     if presence then Mod.Attr.StaticValueAsPresence(name, codec.encode(value) != null)
     else Mod.Attr.Static(name, codec.encode(value))
 
+  /** Sets the attribute to `value`.
+    *
+    * This form follows a signal, as in `disabled := model.map(_.lines.isEmpty)`, and updates the
+    * attribute when the value changes.
+    */
   def :=(value: Signal[V]): Mod.Attr[Nothing] =
     if presence then Mod.Attr.SignalValueAsPresence(name, value.map(codec.encode(_) != null))
     else Mod.Attr.SignalValue(name, value.map(codec.encode))
 
+  /** Sets the attribute to the value the signal holds, and omits it while the signal holds `None`.
+    */
   def optional(value: Signal[Option[V]]): Mod.Attr[Nothing] =
     Mod.Attr.SignalOptionalValue(name, value.map(_.map(codec.encode)))
 
@@ -58,15 +107,25 @@ class HtmlAttr[V](val name: String, val codec: Encoder[V, String]):
   * definitions remain scalar rather than composing.
   */
 final class CompositeHtmlAttr(name: String) extends HtmlAttr[String](name, StringAsIsEncoder):
+  /** Adds the whitespace-separated tokens of `value` to the attribute.
+    *
+    * This form adds constant tokens, as in `cls := "card featured"`.
+    */
   override def :=(value: String): Mod.Attr[Nothing] =
     Mod.Attr.CompositeStatic(name, value)
 
+  /** Adds the whitespace-separated tokens of `value` to the attribute.
+    *
+    * This form adds the tokens that the signal currently holds.
+    */
   override def :=(value: Signal[String]): Mod.Attr[Nothing] =
     Mod.Attr.CompositeSignalValue(name, value)
 
+  /** Adds the tokens that the signal holds, and none while it holds `None`. */
   override def optional(value: Signal[Option[String]]): Mod.Attr[Nothing] =
     Mod.Attr.CompositeSignalOptionalValue(name, value)
 
+/** Constructors for custom [[CompositeHtmlAttr]] definitions. */
 object CompositeHtmlAttr:
   /** Creates a reusable composite definition for a space-separated token attribute. */
   def apply(name: String): CompositeHtmlAttr = new CompositeHtmlAttr(name)
@@ -135,6 +194,9 @@ end BindingPayload
   * limits first, then complete the binding with a message, as in
   * `on.keyUp.debounce(300.millis).withValue(Msg.Search(_))`. See [event
   * bindings](https://scalive.dev/guides/html-dsl-and-event-bindings#choose-a-binding).
+  *
+  * @param name
+  *   The `phx-*` attribute that the binding renders, such as `phx-click`.
   */
 class HtmlAttrBinding private[scalive] (
   val name: String,
@@ -376,6 +438,7 @@ end KeyHtmlAttrBinding
 /** A typed declarative HTML modifier. */
 sealed trait Mod[+Msg]
 
+/** The kinds of [[Mod]], and helpers for passing modifiers through reusable functions. */
 object Mod:
   /** One modifier or element, or a collection of them, accepted by HTML and component factories.
     *

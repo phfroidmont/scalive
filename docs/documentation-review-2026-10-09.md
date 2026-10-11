@@ -579,6 +579,9 @@ Found while writing, not fixed:
   lifecycle an ID it has not used before; only the first claim keeps the
   disconnected ID. `epoch` is removed, and `JoinRejected` reports the ID the
   failed lifecycle actually had.
+- Not a bug: `Streams.delete` with an ID that is not in the stream still sends
+  a delete. Phoenix's `stream_delete` does the same, the browser finds no row
+  to remove, and `StreamStoreSpec` asserts it. The Scaladoc now says so.
 - Fixed: the reason of a `LiveRouteMountFailure` was logged only when a
   connected mount was rejected. A direct GET returned the 401, 403, or 404 and
   dropped it. The disconnected rejection now logs the reason with the path.

@@ -192,7 +192,11 @@ trait Streams:
     updateOnly: Boolean = false
   ): Task[LiveStream[A]]
 
-  /** Removes the entry whose domain ID is `id`. */
+  /** Removes the entry whose domain ID is `id`.
+    *
+    * An `id` that is not in the stream is not an error: as in Phoenix, the delete still reaches the
+    * browser, which removes nothing when no element has that row's DOM ID.
+    */
   def delete[A, Id](definition: LiveStreamDef[A, Id], id: Id): Task[LiveStream[A]]
 
   /** Removes the entry whose rendered DOM ID is `domId`.

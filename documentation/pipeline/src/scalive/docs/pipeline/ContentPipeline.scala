@@ -448,8 +448,9 @@ object ContentPipeline:
   end validateBody
 
   /** Inline Scala is never compiled, so each block must say what it is. Recipes a reader copies
-    * belong in compiled `@:sourceRegion` files; `scala fragment` marks a partial snippet for
-    * readers, and `scala unverified` marks a block that still has to be moved or relabeled.
+    * belong in compiled `@:sourceRegion` files; `scala fragment` marks a partial or illustrative
+    * snippet, and `scala mill` marks a Mill build definition, which `documentation.check` cannot
+    * compile.
     */
   private def scalaFenceLanguage(
     sourcePath: String,
@@ -462,9 +463,9 @@ object ContentPipeline:
         errors +=
           s"$sourcePath:$lineNumber: inline Scala must be a compiled @:sourceRegion or a `scala fragment` block."
         None
-      case Vector("scala", "fragment")   => Some(CodeHighlighter.ScalaFragment)
-      case Vector("scala", "unverified") => Some("scala")
-      case Vector("scala", label*)       =>
+      case Vector("scala", "fragment") => Some(CodeHighlighter.ScalaFragment)
+      case Vector("scala", "mill")     => Some("scala")
+      case Vector("scala", label*)     =>
         errors += s"$sourcePath:$lineNumber: unknown Scala code block label '${label.mkString(" ")}'."
         None
       case _ => None

@@ -22,7 +22,7 @@ Scalive uses a Scala HTML DSL instead. By the time an HTML constructor receives
 a `String`, the string does not say whether it is a constant or a value read
 from the current model. Both of these expressions have the same type:
 
-```scala unverified
+```scala fragment
 h1("Products")
 h1(model.title)
 ```
@@ -51,7 +51,7 @@ The first prototype represented a dynamic value as a function from the model.
 Stripped only of its throwaway example names, its API was small enough to show
 directly:
 
-```scala unverified
+```scala fragment
 trait LiveView[Model]:
   val model = Dyn[Model, Model](identity)
   def render: HtmlTag[Model]
@@ -88,7 +88,7 @@ the corresponding projections as dirty. In another, more Laminar-inspired
 version, a root `Var` owned the current model and mapped `Dyn` values retained
 their previous result:
 
-```scala unverified
+```scala fragment
 val model = Var(initialModel)
 
 mainTag(
@@ -127,7 +127,7 @@ like application values. That state belonged in the renderer.
 
 The cleanest way to remove the problems around `Dyn` was to remove `Dyn` itself:
 
-```scala unverified
+```scala fragment
 def view(model: Products): HtmlElement =
   mainTag(
     h1(model.title),
@@ -174,7 +174,7 @@ the renderer was doing more guessing.
 
 The current API returns to an explicit dynamic value:
 
-```scala unverified
+```scala fragment
 def view(model: Signal[Products]): HtmlElement[Msg] =
   mainTag(
     h1(model.map(_.title)),
@@ -222,13 +222,13 @@ graph. Keeping that information is the point of returning to an explicit type.
 The signal API gives up some of the plain-model version's freedom. This ordinary
 Scala conditional cannot inspect a signal:
 
-```scala unverified
+```scala fragment
 if model.showDetails then details(model) else summary(model)
 ```
 
 The staged equivalent must state that the branch follows the model:
 
-```scala unverified
+```scala fragment
 model.map(_.showDetails).choose(
   details(model),
   summary(model)

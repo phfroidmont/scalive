@@ -128,7 +128,8 @@ object ContentPipelineSpec extends ZIOSpecDefault:
     ("rejects unclosed fenced code", "unclosed-fence", Vector("unclosed fenced code block")),
     ("rejects unlabeled and unknown inline Scala blocks", "inline-scala", Vector(
       "index.md:10: inline Scala must be a compiled @:sourceRegion",
-      "index.md:14: unknown Scala code block label 'snippet'"
+      "index.md:14: unknown Scala code block label 'snippet'",
+      "index.md:18: unknown Scala code block label 'unverified'"
     ))
   )
 
@@ -145,6 +146,9 @@ object ContentPipelineSpec extends ZIOSpecDefault:
           val heading = home.content.collectFirst { case value: Block.Heading => value }.get
           val source = home.content.collectFirst { case value: Block.SourceCode => value }.get
           val code = home.content.collectFirst { case value: Block.Code => value }.get
+          val millBuild = home.content.collectFirst {
+            case value: Block.Code if value.text.startsWith("//| mill-version") => value
+          }
           val links = home.content.collect { case Block.Paragraph(content) => content }.flatten
             .collect { case value: Inline.Link => value }
           val inlines = home.content.collect { case Block.Paragraph(content) => content }.flatten
@@ -211,6 +215,7 @@ object ContentPipelineSpec extends ZIOSpecDefault:
             code.language.contains("scala"),
             code.fragment,
             code.tokens.exists(_.styles.contains("keyword")),
+            millBuild.exists(block => block.language.contains("scala") && !block.fragment),
             source.region == SourceRegion("examples/Sample.scala", 3, 4),
             source.language.contains("scala"),
             source.text == "val greeting = \"hello\"\nprintln(greeting)",

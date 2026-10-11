@@ -236,7 +236,7 @@ Generate and commit `package-lock.json`. Add the following members to the
 application's `ScalaModule` to track the npm inputs, build in Mill's task output,
 and add the complete `dist` tree below the `public` classpath prefix:
 
-```scala unverified
+```scala mill
 def packageJson = Task.Source(moduleDir / "package.json")
 def packageLock = Task.Source(moduleDir / "package-lock.json")
 def assetSources = Task.Sources(moduleDir / "assets")

@@ -20,15 +20,7 @@ reversible, an outbound location builder. Keep important declarations as named
 values so mounting, links, and navigation effects cannot drift onto different
 paths or query names:
 
-```scala unverified
-object Routes:
-  val search =
-    (live / "search").queryOptional[String]("q")
-
-val application = Live.router(
-  Routes.search -> SearchLiveView()
-)
-```
+@:sourceRegion(documentation/fixtures/guides/src/routing/Search.scala, routing-declarations)
 
 Path codecs decode path segments. `query`, `queryOptional`, and schema-derived
 query codecs decode query values. A routed view receives the final value through
@@ -46,16 +38,7 @@ larger parameter tuple to the earlier layout.
 Use @:apiSymbol(def:scalive.LiveEncodableRouteParamsBuilder.mapParams)`mapParams`@:@ when the codec-facing shape is not the shape the
 application should use. Supply both directions:
 
-```scala unverified
-final case class SearchParams(query: Option[SearchTerm])
-
-val search =
-  (live / "search")
-    .queryOptional[String]("q")
-    .mapParams(raw => SearchParams(raw.flatMap(SearchTerm.from)))(
-      params => params.query.map(_.value)
-    )
-```
+@:sourceRegion(documentation/fixtures/guides/src/routing/Search.scala, routing-map-params)
 
 The reverse function preserves outbound location construction. If a
 transformation is genuinely irreversible, use `mapParamsDecodeOnly`; the
@@ -69,16 +52,7 @@ that it discarded.
 again for the fresh connected lifecycle. @:apiSymbol(def:scalive.LiveView.Routed.handleParams)`handleParams`@:@ runs after mount and after
 each successful live patch:
 
-```scala unverified
-final class SearchLiveView
-    extends LiveView.Routed.Eventless[Model, Option[String]]:
-
-  def mount(params: Option[String], ctx: MountContext) =
-    ZIO.succeed(search(params))
-
-  override def handleParams(model: Model, params: Option[String], url: URL, ctx: ParamsContext) =
-    ZIO.succeed(search(params))
-```
+@:sourceRegion(documentation/fixtures/guides/src/routing/Search.scala, routing-eventless-view)
 
 Choose `LiveView.Routed.Eventless` when the view reacts to typed route parameters
 but renders no server-handled browser messages. Choose `LiveView.Eventless` for
@@ -150,10 +124,7 @@ They are additive, do not change context or the page model, and fail through
 Call @:apiSymbol(def:scalive.LiveEncodableRouteParamsBuilder.location)`location(params)`@:@ to create a
 @:apiSymbol(class:scalive.LiveLocation)`LiveLocation`@:@:
 
-```scala unverified
-val destination = Routes.search.location(Some("LiveView"))
-// destination.href == "/search?q=LiveView"
-```
+@:sourceRegion(documentation/fixtures/guides/src/routing/Search.scala, routing-location)
 
 `location` is concise for total codecs and domain invariants. Use
 `locationEither` when encoding can legitimately fail and the caller should
@@ -163,10 +134,7 @@ encoder.
 
 Add an in-page fragment after building the typed path and query:
 
-```scala unverified
-val heading = Routes.search.location(Some("LiveView")).withFragment("results")
-// heading.href == "/search?q=LiveView#results"
-```
+@:sourceRegion(documentation/fixtures/guides/src/routing/Search.scala, routing-fragment)
 
 Pass percent-encoded URI-fragment syntax without the leading `#`; the method
 validates but does not encode decoded text, so a space must already be `%20`.

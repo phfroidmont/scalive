@@ -21,6 +21,11 @@ enum Answer:
 val answer: Int = 42
 ```
 
+```scala mill
+//| mill-version: 1.1.8
+package build
+```
+
 - first
 - second
 

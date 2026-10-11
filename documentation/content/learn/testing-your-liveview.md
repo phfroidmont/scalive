@@ -11,7 +11,7 @@ Scalive's test support is the optional `dev.scalive::scalive-testing` artifact.
 Add a test module inside `app` in `build.mill`. It uses the same snapshot
 repository and version as the application:
 
-```scala unverified
+```scala mill
 //| mill-version: 1.1.8
 package build
 

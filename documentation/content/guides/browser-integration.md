@@ -28,38 +28,22 @@ JavaScript should not become a second application model.
 
 ## Compose browser tasks {#compose-client-only-commands}
 
-Commands are immutable values executed in composition order:
+Commands are immutable values executed in composition order. This confirmation
+dialog opens, confirms, and closes without a server round trip, except for the
+confirmation itself:
 
-```scala unverified
-private val openDialog =
-  JS.pushFocus()
-    .show(to = dialogRef.selector)
-    .addClass("is-open", to = dialogRef.selector)
-    .setAttribute("data-state" -> "open", to = dialogRef.selector)
-    .transition(("ease-out", "opacity-0", "opacity-100"), to = dialogRef.selector)
-    .focusFirst(to = dialogRef.selector)
-    .dispatch("dialog:opened", to = dialogRef.selector)
+@:sourceRegion(documentation/fixtures/guides/src/browser/ConfirmDialogLiveView.scala, browser-dialog-commands)
 
-private val confirm =
-  JS.push(ConfirmDialog).toggleClass("is-pending", to = dialogRef.selector)
+Bind each command like any other event value:
 
-private val closeDialog =
-  JS.hide(to = dialogRef.selector)
-    .removeClass("is-open", to = dialogRef.selector)
-    .removeAttribute("data-state", to = dialogRef.selector)
-    .popFocus()
-
-button(on.click(openDialog), "Open")
-button(on.click(confirm), "Confirm")
-button(on.click(closeDialog), "Close")
-```
+@:sourceRegion(documentation/fixtures/guides/src/browser/ConfirmDialogLiveView.scala, browser-dialog-buttons)
 
 This task uses the stable command families without making JavaScript a second
 state model: `focus` and `focusFirst` move focus, while `pushFocus`/`popFocus`
 restore it; class and attribute commands retain client mutations across
 compatible patches; `transition`, `show`, `hide`, and `toggle` provide visual
-effects; and `dispatch` notifies browser-owned code. `JS.push(ConfirmDialog)` is
-a typed Scala message push and must remain on a rendered event binding. Prefer
+effects; and `dispatch` notifies browser-owned code. `JS.push(Msg.ConfirmDialog)`
+is a typed Scala message push and must remain on a rendered event binding. Prefer
 typed @:apiSymbol(opaque-type:scalive.DomRef)`DomRef`@:@ selectors over handwritten CSS strings; consult the `JS` API for each
 command's timing and targeting options rather than treating this overview as an
 exhaustive reference.
@@ -70,16 +54,15 @@ binding, where Scalive can encode that binding correctly.
 
 ## Push typed server events {#push-typed-server-events}
 
-Name the direction explicitly and derive JSON codecs for the payload:
+Name the direction explicitly and derive JSON codecs for the payload. The
+[browser integration example](../examples/browser-integration.md) asks its hook
+to copy text:
 
-```scala unverified
-final case class CopyRequest(requestId: String, text: String) derives JsonEncoder
+@:sourceRegion(documentation/site/src/scalive/docs/examples/BrowserInteropExample.scala, browser-integration-server-event)
 
-private val CopyRequestEvent =
-  ServerToBrowserEvent[CopyRequest]("browser-copy-request")
+Push the event from a message handler:
 
-ctx.client.push(CopyRequestEvent, CopyRequest(requestId, SampleText))
-```
+@:sourceRegion(documentation/site/src/scalive/docs/examples/BrowserInteropExample.scala, browser-integration-push)
 
 @:apiSymbol(def:scalive.Client.push)`push`@:@ is connected-only: disconnected rendering has no browser transport. Encoding can
 still fail, so keep payloads small and model failure in the surrounding effect.
@@ -87,19 +70,13 @@ Do not put secrets in browser events or traces.
 
 ## Handle typed browser results {#return-typed-hook-results}
 
-Declare the reverse direction and install it once on the LiveView:
+Declare the reverse direction:
 
-```scala unverified
-final case class CopyResult(requestId: String, ok: Boolean) derives JsonDecoder
+@:sourceRegion(documentation/site/src/scalive/docs/examples/BrowserInteropExample.scala, browser-integration-browser-event)
 
-private val CopyResultEvent =
-  BrowserToServerEvent[CopyResult]("browser-copy-result")
+Then install its handler once on the LiveView:
 
-override def hooks: LiveHooks[Msg, Model] =
-  LiveHooks.onBrowserEvent(CopyResultEvent) { (model, result, _) =>
-    ZIO.succeed(applyCopyResult(model, result))
-  }
-```
+@:sourceRegion(documentation/site/src/scalive/docs/examples/BrowserInteropExample.scala, browser-integration-root-hook)
 
 @:apiSymbol(def:scalive.LiveHooks.onBrowserEvent)`onBrowserEvent`@:@ decodes a matching root event before invoking the handler. A
 malformed matching payload is rejected without changing the model.
@@ -114,12 +91,7 @@ protect nothing.
 For an event targeted at a stateful component, declare the same boundary on the
 component instead. The static handler also receives current props:
 
-```scala unverified
-override def hooks: ComponentLiveHooks[Props, Msg, Model] =
-  ComponentLiveHooks.onBrowserEvent(CopyResultEvent) {
-    (props, model, result, _) => ZIO.succeed(applyCopyResult(props, model, result))
-  }
-```
+@:sourceRegion(documentation/fixtures/guides/src/browser/CopyButtonComponent.scala, browser-component-hook)
 
 Dynamic component hooks use
 `ctx.hooks.browserEvent.attach(id, CopyResultEvent) { (props, model, result, ctx) => ... }`
@@ -233,16 +205,15 @@ with `Phoenix.Socket`, without adding npm dependencies.
 
 ## Give every hook stable identity {#give-every-hook-stable-identity}
 
-Phoenix hooks require an element ID. @:apiSymbol(def:scalive.dom.hook)`dom.hook`@:@ renders the hook name and typed ID together:
+Phoenix hooks require an element ID. Derive it from the LiveView's instance:
 
-```scala unverified
-private val hookRef = DomRef(s"$instanceId-hook")
+@:sourceRegion(documentation/site/src/scalive/docs/examples/BrowserInteropExample.scala, browser-integration-hook-ref)
 
-div(
-  dom.hook("BrowserInterop", hookRef),
-  // Hook-owned content
-)
-```
+@:apiSymbol(def:scalive.dom.hook)`dom.hook`@:@ then renders the hook name and
+typed ID together on the element the hook owns. `HookName` is
+`"BrowserInterop"`, the name registered with `LiveSocket` above:
+
+@:sourceRegion(documentation/site/src/scalive/docs/examples/BrowserInteropExample.scala, browser-integration-hook-element)
 
 Derive IDs from the component or nested LiveView instance. Fixed IDs collide
 when a page renders the same example twice. Keep hook selectors scoped to

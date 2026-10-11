@@ -49,7 +49,7 @@ scalive-quick-start/
 
 Create `build.mill` at the project root:
 
-```scala unverified
+```scala mill
 //| mill-version: 1.1.8
 package build
 

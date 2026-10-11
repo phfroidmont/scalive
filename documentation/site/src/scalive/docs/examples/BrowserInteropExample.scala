@@ -10,7 +10,9 @@ final class BrowserInteropExample(instanceId: String)
     extends LiveView[BrowserInteropExample.Msg, BrowserInteropExample.Model]:
   import BrowserInteropExample.*
 
-  private val hookRef        = DomRef(s"$instanceId-hook")
+  // docs:start browser-integration-hook-ref
+  private val hookRef = DomRef(s"$instanceId-hook")
+  // docs:end browser-integration-hook-ref
   private val panelRef       = DomRef(s"$instanceId-panel")
   private val placeholderRef = DomRef(s"$instanceId-placeholder")
   private val detailRef      = DomRef(s"$instanceId-detail")
@@ -26,25 +28,31 @@ final class BrowserInteropExample(instanceId: String)
       .hide(to = detailRef.selector)
       .show(to = placeholderRef.selector)
 
+  // docs:start browser-integration-root-hook
   override def hooks: LiveHooks[Msg, Model] =
     LiveHooks.onBrowserEvent(CopyResultEvent) { (model, result, _) =>
       ZIO.succeed(applyCopyResult(model, result))
     }
+  // docs:end browser-integration-root-hook
 
   def mount(ctx: MountContext): Task[Model] = ZIO.succeed(Model())
 
   def handleMessage(model: Model, ctx: MessageContext) =
+    // docs:start browser-integration-push
     case Msg.CopySample =>
       val requestNumber = model.requestNumber + 1
       val requestId     = s"copy-$requestNumber"
       ctx.client
         .push(CopyRequestEvent, CopyRequest(requestId, SampleText))
         .as(model.copy(requestNumber = requestNumber, operation = CopyOperation.Pending(requestId)))
+    // docs:end browser-integration-push
     case Msg.Reset => ZIO.succeed(Model())
 
   def view(model: Signal[Model]): HtmlElement[Msg] =
     div(
+      // docs:start browser-integration-hook-element
       dom.hook(HookName, hookRef),
+      // docs:end browser-integration-hook-element
       cls := "docs-browser-integration",
       sectionTag(
         dataAttr("example-controls") := "",
@@ -91,8 +99,17 @@ final class BrowserInteropExample(instanceId: String)
 end BrowserInteropExample
 
 object BrowserInteropExample:
+  // docs:start browser-integration-server-event
   final case class CopyRequest(requestId: String, text: String) derives JsonEncoder
+
+  private val CopyRequestEvent = ServerToBrowserEvent[CopyRequest]("browser-copy-request")
+  // docs:end browser-integration-server-event
+
+  // docs:start browser-integration-browser-event
   final case class CopyResult(requestId: String, ok: Boolean) derives JsonDecoder
+
+  private val CopyResultEvent = BrowserToServerEvent[CopyResult]("browser-copy-result")
+  // docs:end browser-integration-browser-event
 
   final case class Model(
     requestNumber: Long = 0,
@@ -115,10 +132,8 @@ object BrowserInteropExample:
 
   val SampleText = "Scalive keeps server-to-browser event payloads typed."
 
-  private val HookName         = "BrowserInterop"
-  private val CopyResultEvent  = BrowserToServerEvent[CopyResult]("browser-copy-result")
-  private val CopyRequestEvent = ServerToBrowserEvent[CopyRequest]("browser-copy-request")
-  private val codeTag          = HtmlTag("code")
+  private val HookName = "BrowserInterop"
+  private val codeTag  = HtmlTag("code")
 
   def applyCopyResult(model: Model, result: CopyResult): Model =
     val nextOperation = model.operation match

@@ -38,18 +38,11 @@ separate lifecycle is needed.
 
 ## Render a stable child {#render-a-stable-child}
 
-Embed the child with @:apiSymbol(def:scalive.liveView)`liveView`@:@:
+Embed the child with @:apiSymbol(def:scalive.liveView)`liveView`@:@. This
+support page receives `conversationId` as a constructor argument and passes it
+to its chat panel:
 
-```scala unverified
-def view(model: Signal[Model]) =
-  sectionTag(
-    liveView(
-      id = "support-chat",
-      value = SupportChatLiveView(conversationId),
-      sticky = true
-    )
-  )
-```
+@:sourceRegion(documentation/fixtures/guides/src/nested/NestedPages.scala, nested-sticky-child)
 
 The `id` is application identity and determines the child topic. Keep it stable
 across parent graph evaluations, and derive repeated IDs from stable domain
@@ -131,13 +124,7 @@ generic join or `phx_error` behavior and may rejoin independently.
 
 Set `linkParentOnCrash = true` when the parent is invalid without that child:
 
-```scala unverified
-liveView(
-  id = "required-editor",
-  value = RequiredEditorLiveView(documentId),
-  linkParentOnCrash = true
-)
-```
+@:sourceRegion(documentation/fixtures/guides/src/nested/NestedPages.scala, nested-linked-child)
 
 Then a connected child join failure or later child crash also crashes the
 parent, causing parent error and rejoin handling. This is failure propagation,

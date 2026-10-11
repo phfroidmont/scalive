@@ -487,6 +487,42 @@ Left for later:
 - 22 `scala unverified` blocks, as listed in phase 5.
 - About 1,000 fallback summaries in the API reference.
 
+### Phase 7 (2026-10-11): the last unverified blocks
+
+Every inline Scala block is now either compiled or labeled for what it is, and
+the content pipeline no longer accepts `scala unverified`.
+
+- **Compiled (12 blocks):**
+  - Browser integration (5): the push event, the root browser-event hook, and
+    the hook `DomRef` are regions of the site's `BrowserInteropExample`, whose
+    companion now keeps each payload next to its event name. The dialog
+    commands and the component hook come from new `browser` guide fixtures.
+    The guide now writes `JS.push(Msg.ConfirmDialog)`.
+  - Routes and navigation (5): a new `routing` fixture holds the route
+    declaration, the `mapParams` route (with a `SearchTerm` it previously left
+    undefined), the eventless routed view, and both locations. A test checks
+    the `href` values the guide states.
+  - Nested LiveViews (2): a new `nested` fixture renders the sticky and the
+    crash-linked child.
+- **Relabeled (10 blocks):** the seven dynamic HTML essay blocks are
+  `scala fragment`; five of them show rejected prototypes that cannot compile.
+  The two `build.mill` files and the client-setup `bundle` task use the new
+  `scala mill` label, which renders like plain Scala. `documentation.check`
+  cannot compile a separate Mill build; the quick-start build was checked by
+  hand in phase 1.
+- **Pipeline:** `ContentPipeline.scalaFenceLanguage` accepts `fragment` and
+  `mill` and rejects every other label, including `unverified`. Pipeline tests
+  cover both.
+
+Verification: `mill documentation.check`, `mill __.checkFormat`, and
+`npm run test:xray` pass. With `--no-daemon`, Mill finished every task of
+`documentation.check` (its profile records the result) but the process did not
+exit; this happened twice and not in daemon mode.
+
+Left for later:
+
+- About 1,000 fallback summaries in the API reference.
+
 ## How this was verified
 
 - I read all 56 authored pages and every embedded example source they

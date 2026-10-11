@@ -206,6 +206,11 @@ enum SessionCommand[+Msg]:
     message: Any) extends SessionCommand[Nothing]
   private[kernel] case ManagedSubscriptionEnded(epoch: Epoch, token: ResourceToken)
       extends SessionCommand[Nothing]
+
+  /** Test seam: delivers `message` to one component as if one of its bindings had sent it.
+    * Production component messages arrive as [[ComponentClientEvent]]; this command lets tests
+    * drive a component turn without rendering a binding, and it is observed the same way.
+    */
   private[scalive] case ComponentMessage(
     epoch: Epoch,
     component: ComponentInstanceId,

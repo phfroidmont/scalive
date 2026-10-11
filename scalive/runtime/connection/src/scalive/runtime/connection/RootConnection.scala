@@ -148,13 +148,6 @@ final private[scalive] class RootConnection[Msg, Model] private (
   ): IO[ConnectionError, Unit] =
     enqueue(command, Event.ComponentMessage(command, component, message)).flatMap(_.await)
 
-  private[scalive] def offerComponentMessage[M](
-    command: CommandId,
-    component: ComponentInstanceId,
-    message: M
-  ): IO[ConnectionError, Unit] =
-    enqueue(command, Event.ComponentMessage(command, component, message)).unit
-
   def submitPatch(command: CommandId, destination: URL): IO[ConnectionError, Unit] =
     enqueuePatch(command, destination).flatMap(_.await)
 

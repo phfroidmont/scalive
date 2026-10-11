@@ -23369,18 +23369,6 @@
       ]
     },
     {
-      "id" : "val:scalive.LifecycleTurnKind.ComponentMessage",
-      "ownerId" : "enum:scalive.LifecycleTurnKind",
-      "qualifiedName" : "scalive.LifecycleTurnKind.ComponentMessage",
-      "kind" : "val",
-      "signatures" : [
-        {
-          "id" : "val:scalive.LifecycleTurnKind.ComponentMessage:6335e4bbe5b4e502",
-          "signature" : "val ComponentMessage: LifecycleTurnKind"
-        }
-      ]
-    },
-    {
       "id" : "val:scalive.LifecycleTurnKind.Internal",
       "ownerId" : "enum:scalive.LifecycleTurnKind",
       "qualifiedName" : "scalive.LifecycleTurnKind.Internal",

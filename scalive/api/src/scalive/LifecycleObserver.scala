@@ -119,9 +119,6 @@ enum LifecycleTurnKind:
   /** A value from a managed subscription, or the end of its stream. */
   case Subscription
 
-  /** A message submitted directly to one LiveComponent. */
-  case ComponentMessage
-
   /** An upload control step, such as a preflight or progress update. */
   case Upload
 

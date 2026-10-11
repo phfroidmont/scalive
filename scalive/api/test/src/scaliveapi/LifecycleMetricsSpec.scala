@@ -94,7 +94,7 @@ object LifecycleMetricsSpec extends ZIOSpecDefault:
     test("isolates built-in metrics from ambient and colliding metric tags") {
       val labels = Vector(
         "outcome" -> "succeeded",
-        "kind"    -> "component_message",
+        "kind"    -> "component_browser_event",
         "failure" -> "none",
         "stage"   -> "none"
       )
@@ -115,7 +115,7 @@ object LifecycleMetricsSpec extends ZIOSpecDefault:
                    lifecycle,
                    turnId = 114L,
                    commandId = Some(115L),
-                   LifecycleTurnKind.ComponentMessage,
+                   LifecycleTurnKind.ComponentBrowserEvent,
                    durationNanos = 1L
                  )
                ) @@ ZIOAspect.tagged("request_id" -> "runtime-identifier") @@

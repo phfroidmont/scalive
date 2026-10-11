@@ -246,7 +246,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     case _: SessionCommand.ManagedSubscriptionEnded =>
       RuntimeCommandKind.ManagedSubscriptionEnded -> RuntimeInitiator.ManagedResource
     case _: SessionCommand.ComponentMessage =>
-      RuntimeCommandKind.ComponentMessage -> RuntimeInitiator.Application
+      RuntimeCommandKind.ComponentClientEvent -> RuntimeInitiator.Browser
     case _: SessionCommand.Upload      => RuntimeCommandKind.Upload -> RuntimeInitiator.Browser
     case _: SessionCommand.ParamsPatch =>
       RuntimeCommandKind.ParamsPatch -> RuntimeInitiator.Browser

@@ -159,7 +159,7 @@ snake case.
 | `reconnect` | `true` only when the untrusted `_mounts` join counter is a positive integer; otherwise `false`. |
 | `retry` | `true` only when the untrusted `_mount_attempts` join counter is a positive integer; otherwise `false`. |
 | `phase` | `disconnected` or `connected`. |
-| `kind` | `bootstrap`, `browser_event`, `component_browser_event`, `message`, `async_completion`, `subscription`, `component_message`, `upload`, `params_patch`, or `internal`. |
+| `kind` | `bootstrap`, `browser_event`, `component_browser_event`, `message`, `async_completion`, `subscription`, `upload`, `params_patch`, or `internal`. |
 | `delivery` | `lossless` or `latest`. |
 | `queue` | `connection_ingress`, `connection_pending_commands`, `kernel_mailbox`, or `writer`. |
 | `status` | `sampled` for an ordinary depth observation or `saturated` for a rejected offer. |

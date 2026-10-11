@@ -27,7 +27,6 @@ private[scalive] enum RuntimeCommandKind:
   case ManagedAsync
   case ManagedSubscription
   case ManagedSubscriptionEnded
-  case ComponentMessage
   case Upload
   case ParamsPatch
   case Internal
@@ -758,7 +757,7 @@ final private[scalive] class RuntimeObserver private (
     case RuntimeCommandKind.Upload       => RuntimeTraceOperationKind.Upload
     case RuntimeCommandKind.ParamsPatch  => RuntimeTraceOperationKind.LivePatch
     case RuntimeCommandKind.Message | RuntimeCommandKind.ManagedSubscription |
-        RuntimeCommandKind.ManagedSubscriptionEnded | RuntimeCommandKind.ComponentMessage =>
+        RuntimeCommandKind.ManagedSubscriptionEnded =>
       RuntimeTraceOperationKind.ServerMessage
     case RuntimeCommandKind.Internal => RuntimeTraceOperationKind.Other
 
@@ -841,8 +840,7 @@ private[scalive] object RuntimeObserver:
     case RuntimeCommandKind.ManagedAsync         => LifecycleTurnKind.AsyncCompletion
     case RuntimeCommandKind.ManagedSubscription | RuntimeCommandKind.ManagedSubscriptionEnded =>
       LifecycleTurnKind.Subscription
-    case RuntimeCommandKind.ComponentMessage => LifecycleTurnKind.ComponentMessage
-    case RuntimeCommandKind.Upload           => LifecycleTurnKind.Upload
-    case RuntimeCommandKind.ParamsPatch      => LifecycleTurnKind.ParamsPatch
-    case RuntimeCommandKind.Internal         => LifecycleTurnKind.Internal
+    case RuntimeCommandKind.Upload      => LifecycleTurnKind.Upload
+    case RuntimeCommandKind.ParamsPatch => LifecycleTurnKind.ParamsPatch
+    case RuntimeCommandKind.Internal    => LifecycleTurnKind.Internal
 end RuntimeObserver

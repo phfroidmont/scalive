@@ -22865,18 +22865,6 @@
       ]
     },
     {
-      "id" : "val:scalive.LifecycleFailureStage.Cleanup",
-      "ownerId" : "enum:scalive.LifecycleFailureStage",
-      "qualifiedName" : "scalive.LifecycleFailureStage.Cleanup",
-      "kind" : "val",
-      "signatures" : [
-        {
-          "id" : "val:scalive.LifecycleFailureStage.Cleanup:81f89389a149295e",
-          "signature" : "val Cleanup: LifecycleFailureStage"
-        }
-      ]
-    },
-    {
       "id" : "val:scalive.LifecycleFailureStage.Commit",
       "ownerId" : "enum:scalive.LifecycleFailureStage",
       "qualifiedName" : "scalive.LifecycleFailureStage.Commit",
@@ -23389,18 +23377,6 @@
         {
           "id" : "val:scalive.LifecycleTurnKind.ComponentMessage:6335e4bbe5b4e502",
           "signature" : "val ComponentMessage: LifecycleTurnKind"
-        }
-      ]
-    },
-    {
-      "id" : "val:scalive.LifecycleTurnKind.ComponentUpdate",
-      "ownerId" : "enum:scalive.LifecycleTurnKind",
-      "qualifiedName" : "scalive.LifecycleTurnKind.ComponentUpdate",
-      "kind" : "val",
-      "signatures" : [
-        {
-          "id" : "val:scalive.LifecycleTurnKind.ComponentUpdate:7a12b1332bd25c51",
-          "signature" : "val ComponentUpdate: LifecycleTurnKind"
         }
       ]
     },

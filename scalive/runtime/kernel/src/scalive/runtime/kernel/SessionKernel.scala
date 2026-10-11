@@ -81,11 +81,6 @@ final private[scalive] class SessionKernel[Msg, Model] private (
       )
     )
 
-  private[scalive] def requestComponentUpdate(
-    component: ComponentInstanceId
-  ): ZIO[Any, SessionRejection, TurnResult] =
-    submit(SessionCommand.ComponentUpdate(epoch, component))
-
   private[scalive] def submit(
     id: CommandId,
     command: SessionCommand[Msg]
@@ -266,8 +261,6 @@ final private[scalive] class SessionKernel[Msg, Model] private (
       RuntimeCommandKind.ManagedSubscriptionEnded -> RuntimeInitiator.ManagedResource
     case _: SessionCommand.ComponentMessage =>
       RuntimeCommandKind.ComponentMessage -> RuntimeInitiator.Application
-    case _: SessionCommand.ComponentUpdate =>
-      RuntimeCommandKind.ComponentUpdate -> RuntimeInitiator.Runtime
     case _: SessionCommand.ComponentAsyncCompletion =>
       RuntimeCommandKind.ComponentAsyncCompletion -> RuntimeInitiator.Application
     case _: SessionCommand.Upload      => RuntimeCommandKind.Upload -> RuntimeInitiator.Browser
@@ -726,14 +719,6 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                 work,
                 component,
                 ComponentAction.Async(event),
-                Some(tracked)
-              )
-            case SessionCommand.ComponentUpdate(_, component) =>
-              executeComponentTurn(
-                state,
-                work,
-                component,
-                ComponentAction.Update,
                 Some(tracked)
               )
             case SessionCommand.Upload(_, uploadCommand, mutation, publish) =>
@@ -2317,7 +2302,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                            recordComponentDraft(draft, updates, mounted.draft)
                     needsUpdate =
                       old.isEmpty || old.exists(_.inputProps != requirement.props) ||
-                        initialRequest.nonEmpty || action.contains(id -> ComponentAction.Update)
+                        initialRequest.nonEmpty
                     updated <-
                       if needsUpdate then
                         restore(
@@ -4177,7 +4162,6 @@ private[scalive] object SessionKernel:
     case Message(value: Any)
     case Async(event: LiveAsyncEvent[Any])
     case ManagedAsync(completion: ManagedAsyncCompletion)
-    case Update
     case Browser(command: SessionCommand.ComponentClientEvent)
 
   private enum ResolvedClient[+Owner]:

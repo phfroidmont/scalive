@@ -29,7 +29,6 @@ private[scalive] enum RuntimeCommandKind:
   case ManagedSubscription
   case ManagedSubscriptionEnded
   case ComponentMessage
-  case ComponentUpdate
   case ComponentAsyncCompletion
   case Upload
   case ParamsPatch
@@ -48,8 +47,6 @@ private[scalive] enum RuntimeFailure:
   case IngressSaturated
   case Writer
   case UploadEntry
-  case Protocol
-  case Cleanup
   case RuntimeDefect
 
 private[scalive] enum RuntimeTerminal:
@@ -765,7 +762,7 @@ final private[scalive] class RuntimeObserver private (
     case RuntimeCommandKind.ParamsPatch => RuntimeTraceOperationKind.LivePatch
     case RuntimeCommandKind.Message | RuntimeCommandKind.ManagedSubscription |
         RuntimeCommandKind.ManagedSubscriptionEnded | RuntimeCommandKind.ComponentMessage |
-        RuntimeCommandKind.ComponentUpdate | RuntimeCommandKind.ComponentAsyncCompletion =>
+        RuntimeCommandKind.ComponentAsyncCompletion =>
       RuntimeTraceOperationKind.ServerMessage
     case RuntimeCommandKind.Internal => RuntimeTraceOperationKind.Other
 
@@ -820,9 +817,7 @@ private[scalive] object RuntimeObserver:
     case RuntimeFailure.IngressSaturated => LifecycleFailure.IngressSaturated
     case RuntimeFailure.Writer           => LifecycleFailure.Stage(LifecycleFailureStage.Writer)
     case RuntimeFailure.UploadEntry      => LifecycleFailure.Stage(LifecycleFailureStage.Upload)
-    case RuntimeFailure.Protocol | RuntimeFailure.RuntimeDefect =>
-      LifecycleFailure.Stage(LifecycleFailureStage.Runtime)
-    case RuntimeFailure.Cleanup => LifecycleFailure.Stage(LifecycleFailureStage.Cleanup)
+    case RuntimeFailure.RuntimeDefect    => LifecycleFailure.Stage(LifecycleFailureStage.Runtime)
 
   def lifecycleStage(stage: SessionStage): LifecycleFailureStage = stage match
     case SessionStage.BootstrapHandler     => LifecycleFailureStage.Handler
@@ -853,8 +848,7 @@ private[scalive] object RuntimeObserver:
       LifecycleTurnKind.Subscription
     case RuntimeCommandKind.ComponentMessage | RuntimeCommandKind.ComponentAsyncCompletion =>
       LifecycleTurnKind.ComponentMessage
-    case RuntimeCommandKind.ComponentUpdate => LifecycleTurnKind.ComponentUpdate
-    case RuntimeCommandKind.Upload          => LifecycleTurnKind.Upload
-    case RuntimeCommandKind.ParamsPatch     => LifecycleTurnKind.ParamsPatch
-    case RuntimeCommandKind.Internal        => LifecycleTurnKind.Internal
+    case RuntimeCommandKind.Upload      => LifecycleTurnKind.Upload
+    case RuntimeCommandKind.ParamsPatch => LifecycleTurnKind.ParamsPatch
+    case RuntimeCommandKind.Internal    => LifecycleTurnKind.Internal
 end RuntimeObserver

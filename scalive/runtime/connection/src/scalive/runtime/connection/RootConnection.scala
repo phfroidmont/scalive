@@ -169,18 +169,6 @@ final private[scalive] class RootConnection[Msg, Model] private (
   ): IO[ConnectionError, Unit] =
     enqueue(command, Event.ComponentAsync(command, component, event)).unit
 
-  private[connection] def submitComponentUpdate(
-    command: CommandId,
-    component: ComponentInstanceId
-  ): IO[ConnectionError, Unit] =
-    enqueue(command, Event.ComponentUpdate(command, component)).flatMap(_.await)
-
-  private[scalive] def offerComponentUpdate(
-    command: CommandId,
-    component: ComponentInstanceId
-  ): IO[ConnectionError, Unit] =
-    enqueue(command, Event.ComponentUpdate(command, component)).unit
-
   def submitPatch(command: CommandId, destination: URL): IO[ConnectionError, Unit] =
     enqueuePatch(command, destination).flatMap(_.await)
 
@@ -844,8 +832,6 @@ final private[scalive] class RootConnection[Msg, Model] private (
               component,
               event.asInstanceOf[LiveAsyncEvent[Any]]
             )
-          case Event.ComponentUpdate(_, component) =>
-            SessionCommand.ComponentUpdate(epoch, component)
           case Event.Upload(command, mutation) =>
             SessionCommand.Upload(epoch, command, mutation)
           case Event.Patch(_, destination) => SessionCommand.ParamsPatch(epoch, destination)
@@ -1142,7 +1128,6 @@ private[scalive] object RootConnection:
       command: CommandId,
       component: ComponentInstanceId,
       event: LiveAsyncEvent[?])
-    case ComponentUpdate(command: CommandId, component: ComponentInstanceId)
     case Upload(command: CommandId, mutation: UploadMutation[?])
     case Patch(command: CommandId, destination: URL)
 
@@ -1152,10 +1137,8 @@ private[scalive] object RootConnection:
       case Message(command, _)                   => command
       case ComponentMessage(command, _, _)       => command
       case ComponentAsync(command, _, _)         => command
-      case ComponentUpdate(command, _)           => command
       case Upload(command, _)                    => command
       case Patch(command, _)                     => command
-  end Event
 
   def start[Msg, Model](
     config: ConnectionConfig,

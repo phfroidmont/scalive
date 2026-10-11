@@ -122,9 +122,6 @@ enum LifecycleTurnKind:
   /** A message or async result submitted directly to one LiveComponent. */
   case ComponentMessage
 
-  /** A request to rerun the `update` callback of one LiveComponent. */
-  case ComponentUpdate
-
   /** An upload control step, such as a preflight or progress update. */
   case Upload
 
@@ -201,9 +198,6 @@ enum LifecycleFailureStage:
 
   /** Processing an upload failed. */
   case Upload
-
-  /** Releasing the resources of the lifecycle failed. */
-  case Cleanup
 
   /** An unexpected runtime or protocol defect that no other stage covers. */
   case Runtime

@@ -211,8 +211,6 @@ enum SessionCommand[+Msg]:
     epoch: Epoch,
     component: ComponentInstanceId,
     message: Any) extends SessionCommand[Nothing]
-  private[scalive] case ComponentUpdate(epoch: Epoch, component: ComponentInstanceId)
-      extends SessionCommand[Nothing]
   private[scalive] case ComponentAsyncCompletion(
     epoch: Epoch,
     component: ComponentInstanceId,
@@ -233,7 +231,6 @@ enum SessionCommand[+Msg]:
     case ManagedSubscription(epoch, _, _)        => epoch
     case ManagedSubscriptionEnded(epoch, _)      => epoch
     case ComponentMessage(epoch, _, _)           => epoch
-    case ComponentUpdate(epoch, _)               => epoch
     case ComponentAsyncCompletion(epoch, _, _)   => epoch
     case Upload(epoch, _, _, _)                  => epoch
     case ParamsPatch(epoch, _)                   => epoch

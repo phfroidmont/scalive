@@ -232,15 +232,6 @@ sealed trait LiveRouteFragment[-R]:
     case route: LiveRoute[?, ?]  => Vector(route)
     case session: LiveSession[?] => session.routes.flatMap(_.declarations)
 
-  private[scalive] def attachSession[RS, SessionCtx](
-    pipeline: LiveSessionMountPipeline[RS, Any, SessionCtx],
-    guards: LiveConnectedTurnGuard[SessionCtx],
-    initializers: LiveConnectedResourceInitializers[SessionCtx],
-    layouts: Vector[LiveLayout[Any, SessionCtx]],
-    rootLayout: Option[LiveRootLayout[Any, SessionCtx]],
-    supplies: SessionCtx <:< Input
-  ): Vector[LiveRouteFragment[R & RS] { type Input = Any }]
-
 /** Declares a LiveView route: its path, how its LiveView is built, and the layouts around it.
   *
   * Start from `live`, add path segments with `/`, and finish with `->` for a LiveView that needs
@@ -1408,15 +1399,6 @@ final class LiveSession[-R] private[scalive] (
     extends LiveRouteFragment[R]:
   /** The context a session needs from outside, always `Any`, so the router accepts it directly. */
   type Input = Any
-  private[scalive] def attachSession[RS, SessionCtx](
-    pipeline: LiveSessionMountPipeline[RS, Any, SessionCtx],
-    guards: LiveConnectedTurnGuard[SessionCtx],
-    initializers: LiveConnectedResourceInitializers[SessionCtx],
-    layouts: Vector[LiveLayout[Any, SessionCtx]],
-    rootLayout: Option[LiveRootLayout[Any, SessionCtx]],
-    supplies: SessionCtx <:< Any
-  ): Vector[LiveRouteFragment[R & RS] { type Input = Any }] =
-    routes.flatMap(_.attachSession(pipeline, guards, initializers, layouts, rootLayout, supplies))
 
 object LiveSession:
   private[scalive] def apply[R](
@@ -1569,9 +1551,9 @@ final class LiveSessionBuilder[R, Ctx] private[scalive] (
   /** Puts `routes` in this session and returns it for the router.
     *
     * A route registered with `context` compiles only when this session produces the context it
-    * reads.
+    * reads. Sessions do not nest, so `routes` cannot include another session.
     */
-  def apply[R1](routes: (LiveRouteFragment[R1] { type Input >: Ctx })*): LiveSession[R & R1] =
+  def apply[R1](routes: (LiveRoute[? >: R1, ?] { type Input >: Ctx })*): LiveSession[R & R1] =
     val attached = routes.toVector.flatMap { route =>
       route.attachSession(
         pipeline,
@@ -1715,9 +1697,9 @@ object LiveSessionBuilder:
     /** Puts `routes` in this session and returns it for the router.
       *
       * A route registered with `context` compiles only when this session produces the context it
-      * reads.
+      * reads. Sessions do not nest, so `routes` cannot include another session.
       */
-    def apply[R1](routes: (LiveRouteFragment[R1] { type Input >: Ctx })*): LiveSession[R & R1] =
+    def apply[R1](routes: (LiveRoute[? >: R1, ?] { type Input >: Ctx })*): LiveSession[R & R1] =
       val attached = routes.toVector.flatMap { route =>
         route.attachSession(
           pipeline,

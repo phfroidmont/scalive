@@ -96,6 +96,33 @@ object RoutedConstructionSpec extends ZIOSpecDefault:
 
       assertTrue(errors.isEmpty)
     },
+    test("live sessions cannot be nested") {
+      // A nested session's routes joined the outer session and its name disappeared.
+      val separate = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        import zio.*
+
+        final class Home extends LiveView.Eventless[Unit]:
+          def mount(ctx: MountContext) = ZIO.unit
+          def view(model: Signal[Unit]) = div()
+
+        val inner = Live.session("inner")((live / "inner") -> Home())
+        val application = Live.router(inner, Live.session("outer")((live / "outer") -> Home()))
+      """)
+      val nested = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        import zio.*
+
+        final class Home extends LiveView.Eventless[Unit]:
+          def mount(ctx: MountContext) = ZIO.unit
+          def view(model: Signal[Unit]) = div()
+
+        val inner = Live.session("inner")((live / "inner") -> Home())
+        val application = Live.router(Live.session("outer")(inner))
+      """)
+
+      assertTrue(separate.isEmpty, nested.nonEmpty)
+    },
     test("session and route mount aspects stay on their respective boundaries") {
       val sessionOnRoute = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*

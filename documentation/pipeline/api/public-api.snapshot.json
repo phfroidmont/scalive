@@ -7160,8 +7160,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.LiveSessionBuilder.Admitted.apply:c6b1114a68a3ba64",
-          "signature" : "def apply[R1](routes: (LiveRouteFragment[R1] { type Input >: Ctx })*): LiveSession[&[R, R1]]"
+          "id" : "def:scalive.LiveSessionBuilder.Admitted.apply:4d18c77525bc1b08",
+          "signature" : "def apply[R1](routes: (LiveRoute[? >: R1, ?] { type Input >: Ctx })*): LiveSession[&[R, R1]]"
         }
       ]
     },
@@ -7240,8 +7240,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.LiveSessionBuilder.apply:4cb2a4d587618ee7",
-          "signature" : "def apply[R1](routes: (LiveRouteFragment[R1] { type Input >: Ctx })*): LiveSession[&[R, R1]]"
+          "id" : "def:scalive.LiveSessionBuilder.apply:d263ada3fd00cb31",
+          "signature" : "def apply[R1](routes: (LiveRoute[? >: R1, ?] { type Input >: Ctx })*): LiveSession[&[R, R1]]"
         }
       ]
     },

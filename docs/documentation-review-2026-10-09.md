@@ -586,6 +586,11 @@ Found while writing, not fixed:
 - Fixed: `RenderError.Unsupported` said the feature "is not supported by the
   minimal render engine", an engine that does not exist. It now says the
   feature requires a LiveView lifecycle.
+- Removed: `LiveComponent.EventlessWithOutput`, an unused second name for
+  `LiveComponent.WithOutput.Eventless`.
+- Renamed: `FormWorkflowReset.Saving` is now `AlreadySaving`, the name
+  `FormSaveStart` uses for the same outcome. `FormSaveState.Saving` is again
+  the only `Saving`, and it names a state.
 - Fixed: `FormPath.ParseLimits` accepted zero or negative limits and `parse`
   reported them as `RepresentationError.InvalidLimits`, mixing a programmer
   error with untrusted-input errors. `ParseLimits` now rejects them when built,

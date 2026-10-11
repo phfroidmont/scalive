@@ -131,6 +131,46 @@ object PhoenixNestedParamsAdapterSpec extends ZIOSpecDefault:
         event.errors.all.exists(_.code.contains("too_many_rows"))
       )
     },
+    test("bounds Phoenix drop entries by the row limit, not counting the empty marker") {
+      val limited = PhoenixNestedParamsAdapter(
+        Definition.withLimits(FormLimits(maxRowsPerGroup = 1)),
+        ItemRows
+      )
+      def dropErrors(drops: String*) =
+        limited
+          .event(
+            FormData(
+              Vector("basket[items][0][_persistent_id]" -> "key_a") ++
+                drops.map(limited.dropName -> _)
+            ),
+            FormEventKind.Changed
+          ).errors.all.flatMap(_.code).filter(_ == "too_many_phoenix_drop_entries")
+
+      assertTrue(
+        dropErrors("", "0").isEmpty,
+        dropErrors("0", "1").nonEmpty
+      )
+    },
+    test("row controls accept only rows of the adapter's definition") {
+      val errors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+
+        final case class Item(name: String)
+        final case class Basket(items: Vector[Item])
+        val Root       = FormRoot("basket")
+        val Items      = Root.rows("items")
+        val Name       = Items.text("name")
+        val ItemRows   = Items.product[Item](Name)
+        val Definition = Root.product[Basket](ItemRows)
+        val Other      = Definition.withLimits(FormLimits())
+        val Adapter    = PhoenixNestedParamsAdapter(Definition, ItemRows)
+
+        val own   = Definition.initial(ItemRows.initial()).rows(ItemRows).map(Adapter.persistentId(_, 0))
+        val other = Other.initial(ItemRows.initial()).rows(ItemRows).map(Adapter.persistentId(_, 0))
+      """)
+
+      assertTrue(errors.size == 1, errors.head.lineContent.contains("Other.initial"))
+    },
     test("translates indexed recovery targets and unused markers to stable addresses") {
       val target = FormPath("basket", "items", "0", "name")
       val event = Adapter.event(

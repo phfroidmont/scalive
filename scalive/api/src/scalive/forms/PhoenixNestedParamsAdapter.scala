@@ -34,7 +34,11 @@ final class PhoenixNestedParamsAdapter[Owner, Schema, Domain, Group, Row] privat
   /** Phoenix array-control name used to submit row order and `"new"` placeholders. */
   val sortName: String = PhoenixNestedParamsAdapter.arrayName(rows.path, "_sort")
 
-  /** Phoenix array-control name used to submit row indexes to remove. */
+  /** Phoenix array-control name used to submit row indexes to remove.
+    *
+    * Empty values, such as the one from the hidden control that keeps the array present, are
+    * ignored. A payload may carry at most `maxRowsPerGroup` indexes to remove.
+    */
   val dropName: String = PhoenixNestedParamsAdapter.arrayName(rows.path, "_drop")
 
   /** Translates a Phoenix-compatible payload into keyed rows and projects it as a typed event.
@@ -136,7 +140,7 @@ final class PhoenixNestedParamsAdapter[Owner, Schema, Domain, Group, Row] privat
       .mkString("_")
 
   /** Renders the required mapping from a positional index to a row's stable key. */
-  def persistentId[Schema](
+  def persistentId(
     row: FormRowView[Owner, Schema, Group, Row],
     index: Int
   ): HtmlElement[Nothing] =
@@ -147,7 +151,7 @@ final class PhoenixNestedParamsAdapter[Owner, Schema, Domain, Group, Row] privat
     )
 
   /** Renders a Phoenix sort entry for a row at its current positional index. */
-  def sortControl[Schema](
+  def sortControl(
     row: FormRowView[Owner, Schema, Group, Row],
     index: Int
   ): HtmlElement[Nothing] =
@@ -223,7 +227,8 @@ final class PhoenixNestedParamsAdapter[Owner, Schema, Domain, Group, Row] privat
             sortOverflow = true
             addError("Too many Phoenix sort entries", "too_many_phoenix_sort_entries")
         case Right(path) if path == dropPath =>
-          if drop.size <= definition.limits.maxRowsPerGroup then drop += value
+          if value.isEmpty then ()
+          else if drop.size < definition.limits.maxRowsPerGroup then drop += value
           else if !dropOverflow then
             dropOverflow = true
             addError("Too many Phoenix drop entries", "too_many_phoenix_drop_entries")
@@ -256,7 +261,7 @@ final class PhoenixNestedParamsAdapter[Owner, Schema, Domain, Group, Row] privat
       valid
     }.toVector
     val validIndexSet = validIndexes.toSet
-    val dropped       = drop.iterator.filter(_.nonEmpty).toVector
+    val dropped       = drop.toVector
     dropped.iterator.filterNot(validIndexSet).toVector.distinct.foreach { index =>
       addError(s"Unknown Phoenix drop index '$index'", "unknown_phoenix_drop")
     }

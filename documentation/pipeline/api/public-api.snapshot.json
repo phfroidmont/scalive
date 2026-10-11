@@ -8568,8 +8568,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.PhoenixNestedParamsAdapter.persistentId:e9f88f20f120d07d",
-          "signature" : "def persistentId[Schema](row: FormRowView[Owner, Schema, Group, Row], index: Int): HtmlElement[Nothing]"
+          "id" : "def:scalive.PhoenixNestedParamsAdapter.persistentId:6f6c9882c9d8abfb",
+          "signature" : "def persistentId(row: FormRowView[Owner, Schema, Group, Row], index: Int): HtmlElement[Nothing]"
         }
       ]
     },
@@ -8592,8 +8592,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.PhoenixNestedParamsAdapter.sortControl:31b25b062204a186",
-          "signature" : "def sortControl[Schema](row: FormRowView[Owner, Schema, Group, Row], index: Int): HtmlElement[Nothing]"
+          "id" : "def:scalive.PhoenixNestedParamsAdapter.sortControl:307bb0a198c76825",
+          "signature" : "def sortControl(row: FormRowView[Owner, Schema, Group, Row], index: Int): HtmlElement[Nothing]"
         }
       ]
     },

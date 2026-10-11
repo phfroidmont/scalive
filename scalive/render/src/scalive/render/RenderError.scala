@@ -20,7 +20,7 @@ object RenderError:
     *   A description of the rejected feature, such as `Flash content in static HTML`.
     */
   final case class Unsupported(feature: String)
-      extends RenderError(s"$feature is not supported by the minimal render engine")
+      extends RenderError(s"$feature requires a LiveView lifecycle")
 
   /** The tree does not describe valid HTML.
     *

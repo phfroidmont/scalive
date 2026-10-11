@@ -76,7 +76,10 @@ object StaticHtmlSpec extends ZIOSpecDefault:
         binding.left.exists(_.isInstanceOf[StaticHtmlError.Unsupported]),
         component.left.exists(_.isInstanceOf[StaticHtmlError.UnresolvedComponents]),
         nested.left.exists(_.isInstanceOf[StaticHtmlError.UnresolvedNested]),
-        flashContent.left.exists(_.isInstanceOf[StaticHtmlError.Unsupported])
+        flashContent.left.exists(_.isInstanceOf[StaticHtmlError.Unsupported]),
+        flashContent.left.exists(
+          _.getMessage == "Flash content in static HTML requires a LiveView lifecycle"
+        )
       )
     },
     test("requires message-free HTML") {

@@ -580,10 +580,13 @@ Found while writing, not fixed:
   `sendUpdate(definition, id, props)`, which addresses the definition value the
   view rendered.
 - `upload.onProgress` ignores its receiver.
-- `LiveUploadError.fromReason` never produces `Custom`, so a custom error comes
-  back as `Unknown` after a JSON round trip.
-- A `LiveSession` can be passed into another `Live.session`, which silently
-  drops the inner session's name.
+- Not a bug: `LiveUploadError.fromReason` never produces `Custom`, but Scalive
+  never decodes upload errors. It only encodes them for the browser, and a
+  custom reason on the wire is a bare string that a decoder cannot tell apart
+  from an unknown code.
+- Fixed: a `LiveSession` could be passed into another `Live.session`. Its routes
+  joined the outer session with both mount pipelines, and its name disappeared
+  from the duplicate-name check. Session builders now accept only routes.
 
 ## How this was verified
 

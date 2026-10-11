@@ -432,7 +432,8 @@ object ZioHttp:
                                                          mountClaims,
                                                          selectedRootLayout,
                                                          turn,
-                                                         model
+                                                         model,
+                                                         observer
                                                        )
                                      yield response
                    yield response).exit
@@ -464,7 +465,8 @@ object ZioHttp:
       mountClaims: SessionMountClaims,
       selectedRootLayout: LiveRootLayout[PathParams, Any],
       turn: DisconnectedRootTurn[Msg, Model],
-      model: Model
+      model: Model,
+      observer: LifecycleObserver
     ): Task[Response] =
       for
         rootId <- randomRootId
@@ -487,6 +489,7 @@ object ZioHttp:
                            request.url,
                            rootId,
                            turn.lifecycle,
+                           observer,
                            (applicationId, lifecycle) =>
                              nestedLifecycles.update(_.updated(applicationId, lifecycle.value))
                          )
@@ -1133,6 +1136,7 @@ object ZioHttp:
     initialUrl: URL,
     parentDomId: String,
     parentLifecycle: LifecycleId,
+    observer: LifecycleObserver,
     recordChildLifecycle: (String, LifecycleId) => UIO[Unit] = (_, _) => ZIO.unit
   ): DisconnectedNestedResolver = new DisconnectedNestedResolver:
     def resolve(requirement: NestedRequirement): Task[NestedResolution] =
@@ -1155,10 +1159,23 @@ object ZioHttp:
                    topic,
                    childLifecycle = Some(turn.lifecycle)
                  )
-        credentials <- ZioHttpSecurity.issueNested(config, claims)
-        mounted     <- liveView.mount(turn.mountContext)
-        prepared    <- RootLifecycle.ordinary(liveView, initialUrl).prepareParams(initialUrl)
-        model       <- turn.navigation.flatMap {
+        credentials  <- ZioHttpSecurity.issueNested(config, claims)
+        mountStarted <- monotonicNanos
+        mountExit    <- liveView.mount(turn.mountContext).exit
+        mountEnded   <- monotonicNanos
+        mount         = LifecycleMount.Disconnected(turn.lifecycle.value)
+        mountDuration = math.max(0L, mountEnded - mountStarted)
+        _ <- observer.safely(mountExit match
+               case Exit.Success(_)     => LifecycleEvent.MountSucceeded(mount, mountDuration)
+               case Exit.Failure(cause) =>
+                 LifecycleEvent.MountFailed(
+                   mount,
+                   mountDuration,
+                   lifecycleError(LifecycleFailureStage.Mount, cause)
+                 ))
+        mounted  <- ZIO.suspendSucceed(mountExit)
+        prepared <- RootLifecycle.ordinary(liveView, initialUrl).prepareParams(initialUrl)
+        model    <- turn.navigation.flatMap {
                    case Some(_) => ZIO.succeed(mounted)
                    case None    => turn.runParams(mounted, initialUrl, prepared)
                  }
@@ -1170,7 +1187,8 @@ object ZioHttp:
                        config,
                        initialUrl,
                        requirement.applicationId,
-                       turn.lifecycle
+                       turn.lifecycle,
+                       observer
                      )
                      DisconnectedComponentRenderer
                        .renderTurnWith[Model, Msg, Option[EvaluatedTree]](

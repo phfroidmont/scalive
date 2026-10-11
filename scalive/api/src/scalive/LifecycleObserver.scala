@@ -55,7 +55,8 @@ enum LifecycleMount:
   /** A mount during the disconnected HTTP render.
     *
     * @param lifecycleId
-    *   The ID of the lifecycle, as reported by the matching disconnected render event.
+    *   The ID of the lifecycle. For the root LiveView of the page, the matching disconnected render
+    *   event reports the same ID; each nested LiveView in the render has its own.
     */
   case Disconnected(lifecycleId: Long)
 

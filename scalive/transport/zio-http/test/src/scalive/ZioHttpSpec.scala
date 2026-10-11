@@ -241,6 +241,63 @@ object ZioHttpSpec extends ZIOSpecDefault:
         grandClaims.topic == NestedTopic("lv:grandchild")
       )
     },
+    test("disconnected nested LiveViews report their mounts") {
+      object Grandchild extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        def view(model: Signal[Unit]) = span("grand")
+
+      object Child extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        def view(model: Signal[Unit]) = span(liveView("grandchild", Grandchild))
+
+      object BrokenChild extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ZIO.fail(Exception("child mount failed"))
+        def view(model: Signal[Unit]) = span()
+
+      object Parent extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        def view(model: Signal[Unit]) = mainTag(liveView("child", Child))
+
+      object BrokenParent extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        def view(model: Signal[Unit]) = mainTag(liveView("broken", BrokenChild))
+
+      def render(view: LiveView.Eventless[Unit]) =
+        for
+          events <- Ref.make(Vector.empty[LifecycleEvent])
+          observer = LifecycleObserver.fromFunction(event => events.update(_ :+ event))
+          response <- run(
+                        ZioHttp.routes(scalive.Live.router(scalive.live(view)), config, observer),
+                        Request.get(URL.root)
+                      )
+          body     <- response.body.asString.orDie
+          observed <- events.get
+        yield (response, body, observed)
+
+      for
+        (response, body, observed) <- render(Parent)
+        (broken, _, brokenEvents)  <- render(BrokenParent)
+        rootToken <- ZIO
+                       .fromOption(attribute(body, "data-phx-session"))
+                       .orElseFail(AssertionError("missing root session token"))
+        rootClaims <- ZioHttpSecurity.verifySession(config, rootToken)
+        mounted = observed.collect {
+                    case LifecycleEvent.MountSucceeded(LifecycleMount.Disconnected(lifecycle), _) =>
+                      lifecycle
+                  }
+        failed = brokenEvents.collect {
+                   case LifecycleEvent.MountFailed(LifecycleMount.Disconnected(_), _, error) =>
+                     error.failure
+                 }
+      yield assertTrue(
+        response.status == Status.Ok,
+        mounted.distinct.size == 3,
+        mounted.head == rootClaims.lifecycle,
+        rootClaims.nestedLifecycles.get("child").exists(mounted.contains),
+        broken.status == Status.InternalServerError,
+        failed == Vector(LifecycleFailure.Stage(LifecycleFailureStage.Mount))
+      )
+    },
     test("disconnected nested LiveViews run params hooks with the page URL") {
       object Child extends LiveView.Eventless[String]:
         override val hooks = LiveHooks.empty[Nothing, String]

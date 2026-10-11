@@ -563,13 +563,15 @@ Verification: `mill __.test` (1,227 passed) after `mill clean`,
 `mill __.compile`, `mill documentation.check`, `mill __.checkFormat`, and
 `npm run test:xray` (32 passed) pass.
 
+Fixed in a follow-up (`feat(api)!`): `dom.onMount`, `dom.onRemove`,
+`connection.onConnect`, and `connection.onDisconnect` accepted messages, but the
+Phoenix client only runs `JS` commands for these attributes. A message rendered
+as a bare binding ID such as `b1:1`, and `JS.exec` then called `exec_null`,
+which throws in the browser. They now return a `JSCommandBinding`, which
+accepts only `JS` commands.
+
 Found while writing, not fixed:
 
-- `dom.onMount`, `dom.onRemove`, `connection.onConnect`, and
-  `connection.onDisconnect` accept messages, but the Phoenix client only runs
-  `JS` commands for these attributes. A message renders as an event ID, and
-  `JS.exec` then calls `exec_null`, which throws in the browser. A binding type
-  that accepts only `JS` commands would rule this out.
 - `ConnectedLifecycleContext.epoch` is always 1, and a root LiveView keeps its
   `lifecycleId` across reconnects.
 - `ctx.components.sendUpdate[C]` finds the component through `MODULE$` by

@@ -126,7 +126,8 @@ when behavior must run in the browser.
 
 Each row binds one family of browser events. Every binding accepts a message, a
 `Signal` of a message, or a client-side
-[`JS` command](browser-integration.md#compose-client-only-commands).
+[`JS` command](browser-integration.md#compose-client-only-commands), except the
+connection bindings in the last row, which accept only `JS` commands.
 
 | Binds | Use | Example |
 | --- | --- | --- |
@@ -138,8 +139,8 @@ Each row binds one family of browser events. Every binding accepts a message, a
 | The browser window gaining or losing focus | @:apiSymbol(lazy-val:scalive.on.windowFocus)`on.windowFocus`@:@, @:apiSymbol(lazy-val:scalive.on.windowBlur)`on.windowBlur`@:@ | `div(on.windowBlur(Msg.Pause))` |
 | A form changing or being submitted | @:apiSymbol(lazy-val:scalive.on.change)`on.change`@:@, @:apiSymbol(lazy-val:scalive.on.submit)`on.submit`@:@ | `form(on.submit(Msg.Save), button("Save"))` |
 | The element's first or last child reaching the top or bottom of the viewport | @:apiSymbol(lazy-val:scalive.on.viewportTop)`on.viewportTop`@:@, @:apiSymbol(lazy-val:scalive.on.viewportBottom)`on.viewportBottom`@:@ | `ul(idAttr := "results", on.viewportBottom(Msg.LoadMore))` |
-| The LiveView connecting or losing its connection | @:apiSymbol(lazy-val:scalive.connection.onConnect)`connection.onConnect`@:@, @:apiSymbol(lazy-val:scalive.connection.onDisconnect)`connection.onDisconnect`@:@ | `p(connection.onDisconnect(JS.addClass("offline")))` |
 | Fewer events from any binding above | @:apiSymbol(def:scalive.HtmlAttrBinding.debounce)`debounce`@:@, @:apiSymbol(def:scalive.HtmlAttrBinding.throttle)`throttle`@:@, @:apiSymbol(def:scalive.HtmlAttrBinding.debounceOnBlur)`debounceOnBlur`@:@ | `on.keyUp.debounce(300.millis).withValue(Msg.Search(_))` |
+| The LiveView connecting or losing its connection | @:apiSymbol(lazy-val:scalive.connection.onConnect)`connection.onConnect`@:@, @:apiSymbol(lazy-val:scalive.connection.onDisconnect)`connection.onDisconnect`@:@ | `p(connection.onDisconnect(JS.addClass("offline")))` |
 
 ### Combine bindings in one view {#combine-bindings-in-one-view}
 
@@ -269,9 +270,10 @@ a client-side `JS` command. For example,
 `connection.onConnect(JS.removeClass("offline"))` removes it.
 
 `onConnect` runs each time the LiveView joins, including after a reconnect.
-`onDisconnect` runs shortly after the connection is lost. Give these bindings
-`JS` commands rather than messages: a disconnected page cannot send a message
-to the server. To start server work when the page connects, use `mount` as in
+`onDisconnect` runs shortly after the connection is lost. Both accept only `JS`
+commands, because the Phoenix client runs nothing else for them, and a
+disconnected page cannot reach the server anyway. To start server work when the
+page connects, use `mount` as in
 [Load data when the page connects](../learn/loading-data-and-live-updates.md#load-data-when-the-page-connects).
 To show or hide an element by connection state, use
 @:apiSymbol(lazy-val:scalive.connection.visibleWhenConnected)`connection.visibleWhenConnected`@:@

@@ -134,7 +134,7 @@ The adapter publishes these metric families:
 | `scalive_mount_duration_seconds` | `outcome`, `phase`, `failure`, `stage` | Mount duration histogram. |
 | `scalive_turn_total` | `outcome`, `kind`, `failure`, `stage` | Completed connected turns. |
 | `scalive_turn_duration_seconds` | `outcome`, `kind`, `failure`, `stage` | Connected turn duration histogram. |
-| `scalive_handler_failures_total` | `kind`, `failure`, `stage` | Handler failures, also represented by failed turns. |
+| `scalive_handler_failures_total` | `kind`, `failure`, `stage` | LiveView and LiveComponent handler and hook failures, also represented by failed turns. |
 | `scalive_handler_failure_duration_seconds` | `kind`, `failure`, `stage` | Failed handler duration histogram. |
 | `scalive_subscription_failures_total` | `delivery`, `failure`, `stage` | Managed subscription defects. |
 | `scalive_queue_depth` | `queue`, `status` | Observed bounded queue depth histogram. |

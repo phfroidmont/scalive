@@ -579,6 +579,11 @@ Found while writing, not fixed:
   lifecycle an ID it has not used before; only the first claim keeps the
   disconnected ID. `epoch` is removed, and `JoinRejected` reports the ID the
   failed lifecycle actually had.
+- Fixed: `HandlerFailed`, and so `scalive_handler_failures_total`, missed
+  failures in the bootstrap turn and in LiveComponent callbacks, which appeared
+  only as `TurnFailed`. Every `TurnFailed` whose stage is an application
+  callback other than the LiveView's `mount` is now preceded by a
+  `HandlerFailed`.
 - Fixed: `onParams` hooks never ran on a LiveView that is not
   `LiveView.Routed`, connected or disconnected, nested or not. The Scaladoc
   from this phase described that as intended. They now run on every LiveView

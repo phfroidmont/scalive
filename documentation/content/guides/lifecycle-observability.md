@@ -159,13 +159,13 @@ snake case.
 | `reconnect` | `true` only when the untrusted `_mounts` join counter is a positive integer; otherwise `false`. |
 | `retry` | `true` only when the untrusted `_mount_attempts` join counter is a positive integer; otherwise `false`. |
 | `phase` | `disconnected` or `connected`. |
-| `kind` | `bootstrap`, `browser_event`, `component_browser_event`, `message`, `async_completion`, `subscription`, `component_message`, `component_update`, `upload`, `params_patch`, or `internal`. |
+| `kind` | `bootstrap`, `browser_event`, `component_browser_event`, `message`, `async_completion`, `subscription`, `component_message`, `upload`, `params_patch`, or `internal`. |
 | `delivery` | `lossless` or `latest`. |
 | `queue` | `connection_ingress`, `connection_pending_commands`, `kernel_mailbox`, or `writer`. |
 | `status` | `sampled` for an ordinary depth observation or `saturated` for a rejected offer. |
 | `reason` | `closed`, `redirected`, `disconnected`, or `failed`. Disconnect strings are deliberately collapsed to `disconnected`. |
 | `failure` | `none`, `stage`, `join_rejected`, `mailbox_saturated`, `ingress_saturated`, `subscription_defect`, or `interrupted`. |
-| `stage` | `none`, `mount`, `connected_turn_guard`, `handler`, `resource_preparation`, `topology_preparation`, `render`, `output_reservation`, `after_render`, `validation`, `identity`, `retirement`, `component_mount`, `component_update`, `component_message`, `component_async`, `component_after_render`, `commit`, `navigation`, `writer`, `upload`, `cleanup`, or `runtime`. |
+| `stage` | `none`, `mount`, `connected_turn_guard`, `handler`, `resource_preparation`, `topology_preparation`, `render`, `output_reservation`, `after_render`, `validation`, `identity`, `retirement`, `component_mount`, `component_update`, `component_message`, `component_async`, `component_after_render`, `commit`, `navigation`, `writer`, `upload`, or `runtime`. |
 
 Successful observations use `failure="none"` and `stage="none"`. A stage failure
 uses `failure="stage"` and its specific `stage`; every other failure uses its

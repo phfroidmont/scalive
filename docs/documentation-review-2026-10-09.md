@@ -586,6 +586,12 @@ Found while writing, not fixed:
 - Fixed: `RenderError.Unsupported` said the feature "is not supported by the
   minimal render engine", an engine that does not exist. It now says the
   feature requires a LiveView lifecycle.
+- Removed dead code: nothing produced `LifecycleFailureStage.Cleanup`,
+  `LifecycleTurnKind.ComponentUpdate`, or the internal `RuntimeFailure.Protocol`
+  and `RuntimeFailure.Cleanup`. The component-update command behind
+  `ComponentUpdate`, from `offerComponentUpdate` down to the kernel, had no
+  caller. The metric label lists no longer show `component_update` as a turn
+  kind or `cleanup` as a stage.
 - Not reachable: `StaticHtml` evaluates a stream before rejecting it, so a
   stream with duplicate DOM IDs reports `DuplicateStreamDomId` rather than
   `Unsupported`. Applications cannot build such a stream: `LiveStream` has no

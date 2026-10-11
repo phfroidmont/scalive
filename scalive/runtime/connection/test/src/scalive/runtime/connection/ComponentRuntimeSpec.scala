@@ -208,6 +208,27 @@ object ComponentRuntimeSpec extends ZIOSpecDefault:
         yield assertTrue(model.contains(3))
       }
     },
+    test("a connected mount sends props to a component of the first render") {
+      ZIO.scoped {
+        val definition = new LiveComponent.Eventless[Int, Int]:
+          def mount(props: Int, ctx: MountContext) = ZIO.succeed(props)
+          override def update(props: Int, model: Int, ctx: UpdateContext) = ZIO.succeed(props)
+          def view(props: Signal[Int], model: Signal[Int], self: ComponentRef[Nothing]) = div()
+        val view = new LiveView.Eventless[Unit]:
+          def mount(ctx: MountContext) = ctx.connection match
+            case Connection.Connected(connected) =>
+              connected.components.sendUpdate(definition, "counter", 5)
+            case Connection.Disconnected => ZIO.unit
+          def view(model: Signal[Unit]) = div(component(definition, "counter").render(1))
+        for
+          sink       <- Queue.unbounded[ConnectionOutput]
+          connection <- RootConnection.start(config, metadata, view, sink.offer(_).unit)
+          _          <- sink.take
+          id         <- connection.inspectComponentIds.map(_.head)
+          model      <- connection.inspectComponentModel[Int](id)
+        yield assertTrue(model.contains(5))
+      }
+    },
     test("component and bootstrap callback failures are reported as handler failures") {
       ZIO.scoped {
         val failing = new LiveComponent.Eventless[Int, Int]:

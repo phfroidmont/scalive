@@ -70,6 +70,12 @@ trait RootMountConnected[Msg] extends ConnectedMetadata:
   /** Pushes events and JavaScript commands to the browser. */
   def client: Client
 
+  /** Sends new props to stateful components rendered by this view.
+    *
+    * An update sent here reaches a component rendered by the first connected render.
+    */
+  def components: ComponentUpdates
+
 /** Capabilities that a [[LiveView.Routed LiveView.Routed]] can use only when it handles route
   * parameters in a connected lifecycle.
   *

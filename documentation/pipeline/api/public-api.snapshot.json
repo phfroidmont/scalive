@@ -9074,6 +9074,18 @@
       ]
     },
     {
+      "id" : "def:scalive.RootMountConnected.components",
+      "ownerId" : "trait:scalive.RootMountConnected",
+      "qualifiedName" : "scalive.RootMountConnected.components",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.RootMountConnected.components:cc6759bb35a4c8d3",
+          "signature" : "def components: ComponentUpdates"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.RootMountConnected.resources",
       "ownerId" : "trait:scalive.RootMountConnected",
       "qualifiedName" : "scalive.RootMountConnected.resources",

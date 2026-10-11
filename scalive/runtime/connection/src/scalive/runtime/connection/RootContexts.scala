@@ -759,6 +759,7 @@ final private class RootConnected[Msg](
   val subscriptions: Subscriptions[Msg] = JournaledSubscriptions(journal)
   val resources: ConnectedResources     = resourcesCapability
   val client: Client                    = JournaledClient(journal)
+  val components: ComponentUpdates      = JournaledComponentUpdates(journal)
 
 final private[connection] class RootMountContext[Msg, Model] private (
   val connection: Connection[RootMountConnected[Msg]],

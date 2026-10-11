@@ -77,10 +77,9 @@ final class CsrfProtection private (config: ZioHttpConfig):
     */
   def validate(request: Request, data: FormData): IO[ValidationError, Unit] =
     data.values(ParamName) match
-      case Vector()                                        => ZIO.fail(ValidationError.MissingToken)
-      case Vector(token) if token.length <= MaxTokenLength => validateToken(request, token)
-      case Vector(_)                                       => ZIO.fail(ValidationError.InvalidToken)
-      case _ => ZIO.fail(ValidationError.DuplicateToken)
+      case Vector()      => ZIO.fail(ValidationError.MissingToken)
+      case Vector(token) => validateToken(request, token)
+      case _             => ZIO.fail(ValidationError.DuplicateToken)
 
   private def validateToken(request: Request, token: String): IO[ValidationError, Unit] =
     request.cookie(CookieName) match
@@ -88,9 +87,11 @@ final class CsrfProtection private (config: ZioHttpConfig):
       case Some(cookie) =>
         ZioHttpSecurity
           .refreshCsrf(config, cookie.content).mapError(_ => ValidationError.InvalidCookie) *>
-          ZioHttpSecurity
-            .verifyCsrf(config, token, cookie.content)
-            .mapError(_ => ValidationError.InvalidToken).unit
+          (if token.length > MaxTokenLength then ZIO.fail(ValidationError.InvalidToken)
+           else
+             ZioHttpSecurity
+               .verifyCsrf(config, token, cookie.content)
+               .mapError(_ => ValidationError.InvalidToken).unit)
 
 /** The names and validation errors used by [[CsrfProtection]]. */
 object CsrfProtection:

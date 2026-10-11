@@ -64,6 +64,20 @@ object HttpSecuritySpec extends ZIOSpecDefault:
         noCookie == Left(CsrfProtection.ValidationError.MissingCookie)
       )
     },
+    test("reports a missing CSRF cookie whatever the token length") {
+      val oversized = FormData(Vector(CsrfProtection.ParamName -> "x" * 4097))
+      for
+        csrf <- ZioHttpSecurity.issueCsrf(config)
+        withCookie = Request
+                       .post(URL.root, Body.empty)
+                       .addCookie(Cookie.Request(CsrfProtection.CookieName, csrf.cookieToken))
+        noCookie  <- security.csrf.validate(Request.post(URL.root, Body.empty), oversized).either
+        tooLong   <- security.csrf.validate(withCookie, oversized).either
+      yield assertTrue(
+        noCookie == Left(CsrfProtection.ValidationError.MissingCookie),
+        tooLong == Left(CsrfProtection.ValidationError.InvalidToken)
+      )
+    },
     test("issues transport-compatible signed flash redirects") {
       val kind = FlashKind("notice")
       for

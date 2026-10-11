@@ -676,8 +676,8 @@ application. Its main boundaries are:
 
 The site does not introduce Scala.js or a separate frontend component framework.
 Detailed module types, directive grammar, routes, build tasks, and tracing
-interfaces belong in the later implementation plan. The content model names only
-the files and tasks a page author needs.
+interfaces are defined by the code rather than this specification. The content
+model names only the files and tasks a page author needs.
 
 ## Operations And Quality
 

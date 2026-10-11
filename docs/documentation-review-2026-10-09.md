@@ -579,6 +579,10 @@ Found while writing, not fixed:
   lifecycle an ID it has not used before; only the first claim keeps the
   disconnected ID. `epoch` is removed, and `JoinRejected` reports the ID the
   failed lifecycle actually had.
+- Fixed: `onParams` hooks never ran on a LiveView that is not
+  `LiveView.Routed`, connected or disconnected, nested or not. The Scaladoc
+  from this phase described that as intended. They now run on every LiveView
+  after mount and each time its URL changes.
 - Fixed: `ctx.components.sendUpdate[C](id, props)` found the component through
   `MODULE$` by reflection, so for a component defined as a class it failed the
   handler with `NoSuchFieldException` and the session ended. It is replaced by

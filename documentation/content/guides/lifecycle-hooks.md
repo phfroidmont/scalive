@@ -89,7 +89,7 @@ declarations add an `on` prefix to the stage name, such as `onRawEvent` for
 | Root | `rawEvent` | Before binding lookup and component routing |
 | Root | `browserEvent` | After raw interception; consumes a matching named browser event |
 | Root | `event` | After a root binding resolves to `Msg`, before `handleMessage` |
-| Root | `params` | After URL decoding, before routed `handleParams` |
+| Root | `params` | After mount and each URL change, before routed `handleParams` |
 | Root | `info` | Before non-browser server-message handling, including subscriptions |
 | Root | `async` | Before handling a root-owned managed task completion |
 | Root | `afterRender` | After the complete root tree renders, before a connected diff is emitted |
@@ -100,7 +100,9 @@ declarations add an `on` prefix to the stage name, such as `onRawEvent` for
 | Component | `afterRender` | After that component subtree renders |
 
 Components do not have `params` or `info` stages. Root and component hook
-registries are separate even when the stage names match.
+registries are separate even when the stage names match. `params` hooks run on
+every LiveView, not only `LiveView.Routed` ones, and a nested LiveView sees the
+URL of its page.
 
 ## Continue, halt, and reply {#continue-halt-reply}
 

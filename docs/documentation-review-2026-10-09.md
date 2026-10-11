@@ -586,6 +586,11 @@ Found while writing, not fixed:
 - Fixed: `RenderError.Unsupported` said the feature "is not supported by the
   minimal render engine", an engine that does not exist. It now says the
   feature requires a LiveView lifecycle.
+- Fixed: `FormRowKey.from` accepted any letter or digit that fits in one UTF-16
+  code unit, such as `é` or `٣`, but not one outside that range or a decomposed
+  accent, and it allowed lookalike keys. Row keys are now ASCII letters,
+  digits, underscores, and hyphens. Phoenix row indexes likewise accept only
+  ASCII digits.
 - Fixed: `PhoenixNestedParamsAdapter.persistentId` and `sortControl` declared
   their own `Schema` type parameter, so they accepted row views of another
   form definition. They now use the adapter's. The drop-entry limit used `<=`

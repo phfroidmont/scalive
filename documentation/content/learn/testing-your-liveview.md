@@ -12,13 +12,13 @@ Add a test module inside `app` in `build.mill`. It uses the same snapshot
 repository and version as the application:
 
 ```scala mill
-//| mill-version: 1.1.8
+//| mill-version: 1.3.0
 package build
 
 import mill.*, scalalib.*
 
 object app extends ScalaModule:
-  def scalaVersion = "3.8.4"
+  def scalaVersion = "3.10.0"
   def mainClass = Some("quickstart.Main")
 
   def repositories = Seq(

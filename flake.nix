@@ -19,6 +19,29 @@
       system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
+        millVersion = "1.3.0";
+        millSources = {
+          aarch64-darwin = {
+            suffix = "native-mac-aarch64";
+            hash = "sha256-I5+aiUEGJgacOlDeTJrWlPfy25SRicEyHzPkAcTpXQA=";
+          };
+          aarch64-linux = {
+            suffix = "native-linux-aarch64";
+            hash = "sha256-rjZpyeXzFTFIoNYAVMOHwnzUYh45Ir3RX3HYhYR3mc4=";
+          };
+          x86_64-linux = {
+            suffix = "native-linux-amd64";
+            hash = "sha256-pY9O2Pl+dLxopknRifCqr0bVHRFq/m0pfJBPnfVWA7U=";
+          };
+        };
+        millSource = millSources.${system} or (throw "Unsupported system for Mill: ${system}");
+        mill = pkgs.mill.overrideAttrs {
+          version = millVersion;
+          src = pkgs.fetchurl {
+            url = "https://repo1.maven.org/maven2/com/lihaoyi/mill-dist-${millSource.suffix}/${millVersion}/mill-dist-${millSource.suffix}-${millVersion}.exe";
+            inherit (millSource) hash;
+          };
+        };
         liveviewRev = liveview-upstream.rev or "v1.2.10";
         phoenixTarball = pkgs.fetchurl {
           url = "https://registry.npmjs.org/phoenix/-/phoenix-1.8.9.tgz";
@@ -93,7 +116,7 @@
         devShell = pkgs.mkShell {
           SCALIVE_LIVE_VIEW_CLIENT_RESOURCES = "${liveViewClientResources}";
           buildInputs = [
-            pkgs.mill
+            mill
             pkgs.nodejs
             pkgs.playwright-test
             pkgs.playwright-driver

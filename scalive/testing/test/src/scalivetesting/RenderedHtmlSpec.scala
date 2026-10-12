@@ -135,7 +135,7 @@ object RenderedHtmlSpec extends ZIOSpecDefault:
       )
     },
     test("mutating matchText queries cannot change other queries or retained element data") {
-      // Jsoup 1.23.1 supports this deprecated mutating selector. Revisit this regression when
+      // Jsoup 1.23.2 supports this deprecated mutating selector. Revisit this regression when
       // upgrading past its removal, without weakening query isolation.
       val html =
         """<div id="content" data-state="kept">Before <span data-label="inner">inside</span> after</div>"""

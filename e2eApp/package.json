@@ -12,9 +12,9 @@
     "phoenix_live_view": "1.2.10"
   },
   "devDependencies": {
-    "@tailwindcss/cli": "4.1.12",
-    "daisyui": "5.1.12",
-    "esbuild": "0.24.2",
-    "tailwindcss": "4.1.12"
+    "@tailwindcss/cli": "4.3.3",
+    "daisyui": "5.7.47",
+    "esbuild": "0.28.2",
+    "tailwindcss": "4.3.3"
   }
 }

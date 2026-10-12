@@ -8,7 +8,7 @@ section = learn
 ## Before you begin {#before-you-begin}
 
 Install JDK 17 or later and the Mill launcher. This quick start uses Scala
-`3.8.4`, Mill `1.1.8`, and the
+`3.10.0`, Mill `1.3.0`, and the
 `dev.scalive::scalive:{{scaliveSnapshotVersion}}` artifact. The project's
 `build.mill` pins the Mill version, so any recent launcher downloads the right
 one. Verify that both tools are available before creating the project:
@@ -50,13 +50,13 @@ scalive-quick-start/
 Create `build.mill` at the project root:
 
 ```scala mill
-//| mill-version: 1.1.8
+//| mill-version: 1.3.0
 package build
 
 import mill.*, scalalib.*
 
 object app extends ScalaModule:
-  def scalaVersion = "3.8.4"
+  def scalaVersion = "3.10.0"
   def mainClass = Some("quickstart.Main")
 
   def repositories = Seq(

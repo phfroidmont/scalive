@@ -16122,6 +16122,18 @@
       ]
     },
     {
+      "id" : "lazy-val:scalive.openAttr",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.openAttr",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.openAttr:e325c847ced0147e",
+          "signature" : "lazy val openAttr: HtmlAttr[Boolean]"
+        }
+      ]
+    },
+    {
       "id" : "lazy-val:scalive.optGroup",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.optGroup",

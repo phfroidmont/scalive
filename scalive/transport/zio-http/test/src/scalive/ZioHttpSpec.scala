@@ -1411,6 +1411,27 @@ object ZioHttpSpec extends ZIOSpecDefault:
         body.contains("<main id=\"route\"><div id=\"view\"></div></main>")
       )
     },
+    test("router layouts nest in installation order, like session and route layouts") {
+      object View extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        def view(model: Signal[Unit]) = div(idAttr := "view")
+      object Outer extends LiveLayout[Any, Any]:
+        def view[Msg](content: HtmlElement[Msg], context: LiveLayoutContext[Any, Any]) =
+          sectionTag(idAttr := "outer", content)
+      object Inner extends LiveLayout[Any, Any]:
+        def view[Msg](content: HtmlElement[Msg], context: LiveLayoutContext[Any, Any]) =
+          articleTag(idAttr := "inner", content)
+      val application = scalive.Live.router.withLayout(Outer).withLayout(Inner)(scalive.live(View))
+
+      for
+        response <- run(ZioHttp.routes(application, config), Request.get(URL.root))
+        body     <- response.body.asString.orDie
+      yield assertTrue(
+        body.contains(
+          "<section id=\"outer\"><article id=\"inner\"><div id=\"view\"></div></article></section>"
+        )
+      )
+    },
     test("nested join admission authenticates join claims and independently verifies static tokens") {
       val claims = NestedCredentialClaims(
         NestedRegistrationId(11L),

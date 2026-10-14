@@ -102,8 +102,7 @@ Layouts can be installed at three levels:
 Ordinary layouts nest: router layouts are outermost, then session layouts, then
 route layouts. Within one level, they nest in installation order. Root layouts
 do not nest: a route's root layout replaces its session's, which replaces the
-router's. The router accepts one ordinary layout; sessions and routes accept
-several. [Live sessions and mount aspects](live-sessions-and-mount-aspects.md#group-routes-in-a-named-session)
+router's. [Live sessions and mount aspects](live-sessions-and-mount-aspects.md#group-routes-in-a-named-session)
 shows how to group routes in a named live session.
 
 ## Decide when pages share a document {#decide-when-pages-share-a-document}

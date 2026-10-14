@@ -187,7 +187,7 @@ object ZioHttp:
         index,
         sessionName,
         route.definition,
-        application.layout,
+        application.layouts,
         application.rootLayout
       )
     }
@@ -563,7 +563,7 @@ object ZioHttp:
       routeIndex: Int,
       declaredSession: Option[String],
       definition: LiveRouteDefinition[A],
-      applicationLayout: Option[LiveLayout[Any, Any]],
+      applicationLayouts: Vector[LiveLayout[Any, Any]],
       applicationRootLayout: LiveRootLayout[Any, Any]
     ): CompiledRoute[R] = definition match
       case ordinary: LiveRouteDefinition.Ordinary[r, A, in, ctx, message, state] =>
@@ -571,7 +571,7 @@ object ZioHttp:
           routeIndex,
           declaredSession,
           ordinary,
-          applicationLayout,
+          applicationLayouts,
           applicationRootLayout
         )
         compiled.asInstanceOf[CompiledRoute[R]]
@@ -580,7 +580,7 @@ object ZioHttp:
           routeIndex,
           declaredSession,
           routed,
-          applicationLayout,
+          applicationLayouts,
           applicationRootLayout
         )
         compiled.asInstanceOf[CompiledRoute[R]]
@@ -593,7 +593,7 @@ object ZioHttp:
       connectedResourceInitializers: LiveConnectedResourceInitializers[Ctx],
       layouts: Vector[LiveLayout[A, Ctx]],
       root: Option[LiveRootLayout[A, Ctx]],
-      applicationLayout: Option[LiveLayout[Any, Any]],
+      applicationLayouts: Vector[LiveLayout[Any, Any]],
       applicationRoot: LiveRootLayout[Any, Any],
       make: (A, Request, Ctx, URL) => Task[RootLifecycle[Message, State]]
     ): CompiledRoute[R] = new CompiledRoute[R]:
@@ -629,7 +629,7 @@ object ZioHttp:
                 request,
                 context,
                 layouts,
-                applicationLayout,
+                applicationLayouts,
                 url => codec.decode(url.path).fold(error => throw Exception(error), identity)
               )
               (composed, context: Any, claims, selectedRoot.asInstanceOf[LiveRootLayout[A, Any]])
@@ -673,7 +673,7 @@ object ZioHttp:
                   request,
                   context,
                   layouts,
-                  applicationLayout,
+                  applicationLayouts,
                   destination =>
                     codec.decode(destination.path).fold(error => throw Exception(error), identity)
                 ),
@@ -687,7 +687,7 @@ object ZioHttp:
       index: Int,
       sessionName: Option[String],
       definition: LiveRouteDefinition.Ordinary[R, A, In, Ctx, Message, State],
-      applicationLayout: Option[LiveLayout[Any, Any]],
+      applicationLayouts: Vector[LiveLayout[Any, Any]],
       applicationRoot: LiveRootLayout[Any, Any]
     ): CompiledRoute[R] =
       base(
@@ -698,7 +698,7 @@ object ZioHttp:
         definition.connectedResourceInitializers,
         definition.layouts,
         definition.rootLayout,
-        applicationLayout,
+        applicationLayouts,
         applicationRoot,
         (path, request, context, url) =>
           ZIO.attempt(
@@ -714,7 +714,7 @@ object ZioHttp:
       index: Int,
       sessionName: Option[String],
       definition: LiveRouteDefinition.Routed[R, A, In, Ctx, Message, State, Params],
-      applicationLayout: Option[LiveLayout[Any, Any]],
+      applicationLayouts: Vector[LiveLayout[Any, Any]],
       applicationRoot: LiveRootLayout[Any, Any]
     ): CompiledRoute[R] =
       base(
@@ -725,7 +725,7 @@ object ZioHttp:
         definition.connectedResourceInitializers,
         definition.layouts,
         definition.rootLayout,
-        applicationLayout,
+        applicationLayouts,
         applicationRoot,
         (path, request, context, url) =>
           for
@@ -778,7 +778,7 @@ object ZioHttp:
     request: Request,
     context: Ctx,
     layouts: Vector[LiveLayout[A, Ctx]],
-    applicationLayout: Option[LiveLayout[Any, Any]],
+    applicationLayouts: Vector[LiveLayout[Any, Any]],
     decodePath: URL => A
   ): RootLifecycle[Msg, Model] =
     lifecycle.copy(view = input =>
@@ -791,11 +791,9 @@ object ZioHttp:
       val routed       = layouts.foldRight(lifecycle.view(input))((layout, content) =>
         layout.view(content, routeContext)
       )
-      applicationLayout.fold(routed)(
-        _.view(
-          routed,
-          LiveLayoutContext(path, requestSignal, currentUrl, ())
-        )
+      val applicationContext = LiveLayoutContext(path, requestSignal, currentUrl, ())
+      applicationLayouts.foldRight(routed)((layout, content) =>
+        layout.view(content, applicationContext)
       ))
 
   private def runDisconnectedSessionPipeline[R, In, Ctx](

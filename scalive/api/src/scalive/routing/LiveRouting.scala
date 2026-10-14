@@ -1742,9 +1742,9 @@ end LiveSessionBuilder
   *   The routes and named live sessions passed to the router, in declaration order.
   * @param socketPath
   *   The path of the LiveView WebSocket, `/live` unless set with [[LiveRouter.withSocketPath]].
-  * @param layout
-  *   The router's layout, which wraps every route outside session and route layouts, if one was
-  *   installed.
+  * @param layouts
+  *   The router's layouts, which wrap every route outside session and route layouts, in
+  *   installation order.
   * @param rootLayout
   *   The root layout used by routes whose session or route installs none; without
   *   [[LiveRouter.withRootLayout]], it is [[LiveRootLayout.identity]].
@@ -1752,33 +1752,35 @@ end LiveSessionBuilder
 final class LiveApplication[-R] private[scalive] (
   val routes: Vector[LiveRouteFragment[R]],
   val socketPath: PathCodec[Unit],
-  val layout: Option[LiveLayout[Any, Any]],
+  val layouts: Vector[LiveLayout[Any, Any]],
   val rootLayout: LiveRootLayout[Any, Any])
 
 object LiveApplication:
   private[scalive] def apply[R](
     routes: Vector[LiveRouteFragment[R]],
     socketPath: PathCodec[Unit],
-    layout: Option[LiveLayout[Any, Any]],
+    layouts: Vector[LiveLayout[Any, Any]],
     rootLayout: LiveRootLayout[Any, Any]
-  ): LiveApplication[R] = new LiveApplication(routes, socketPath, layout, rootLayout)
+  ): LiveApplication[R] = new LiveApplication(routes, socketPath, layouts, rootLayout)
 
 /** Collects an application's routes into a [[LiveApplication]]. Start from `Live.router`. */
 final class LiveRouter private[scalive] (
   private val socketPath: PathCodec[Unit],
-  private val layout: Option[LiveLayout[Any, Any]],
+  private val layouts: Vector[LiveLayout[Any, Any]],
   private val rootLayout: LiveRootLayout[Any, Any]):
 
   /** Serves the LiveView WebSocket at `value` instead of `/live`.
     *
     * The browser's `LiveSocket` must connect to the same path.
     */
-  def withSocketPath(value: PathCodec[Unit]): LiveRouter = LiveRouter(value, layout, rootLayout)
+  def withSocketPath(value: PathCodec[Unit]): LiveRouter = LiveRouter(value, layouts, rootLayout)
 
-  /** Wraps every route in `value`, outside session and route layouts. The router keeps one layout.
+  /** Wraps every route in `value`.
+    *
+    * Router layouts sit outside session and route layouts, and nest in installation order.
     */
   def withLayout(value: LiveLayout[Any, Any]): LiveRouter =
-    LiveRouter(socketPath, Some(value), rootLayout)
+    LiveRouter(socketPath, layouts :+ value, rootLayout)
 
   /** Renders every route's document with `value`, unless a session or route installs its own.
     *
@@ -1786,22 +1788,22 @@ final class LiveRouter private[scalive] (
     * around it.
     */
   def withRootLayout(value: LiveRootLayout[Any, Any]): LiveRouter =
-    LiveRouter(socketPath, layout, value)
+    LiveRouter(socketPath, layouts, value)
 
   /** Builds the application from routes and named live sessions.
     *
     * Routes that read session context must be inside the [[LiveSessionBuilder]] that produces it.
     */
   def apply[R](routes: (LiveRouteFragment[R] { type Input = Any })*): LiveApplication[R] =
-    LiveApplication(routes.toVector, socketPath, layout, rootLayout)
+    LiveApplication(routes.toVector, socketPath, layouts, rootLayout)
 end LiveRouter
 
 object LiveRouter:
   private[scalive] def apply(
     socketPath: PathCodec[Unit],
-    layout: Option[LiveLayout[Any, Any]],
+    layouts: Vector[LiveLayout[Any, Any]],
     rootLayout: LiveRootLayout[Any, Any]
-  ): LiveRouter = new LiveRouter(socketPath, layout, rootLayout)
+  ): LiveRouter = new LiveRouter(socketPath, layouts, rootLayout)
 
 /** Entry points for declaring a Scalive application. */
 object Live:
@@ -1811,7 +1813,8 @@ object Live:
     * Pass the result to `ZioHttp.routes` to serve it. See the [quick
     * start](https://scalive.dev/learn/quick-start).
     */
-  val router: LiveRouter = LiveRouter(PathCodec.empty / "live", None, LiveRootLayout.identity)
+  val router: LiveRouter =
+    LiveRouter(PathCodec.empty / "live", Vector.empty, LiveRootLayout.identity)
 
   /** Starts a route from a ZIO HTTP path codec. Most routes start from `live` instead. */
   def route[A](pathCodec: PathCodec[A]): LiveRouteSeed[A] = LiveRouteSeed(pathCodec)

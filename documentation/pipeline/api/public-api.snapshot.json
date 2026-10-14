@@ -23421,14 +23421,14 @@
       ]
     },
     {
-      "id" : "val:scalive.LiveApplication.layout",
+      "id" : "val:scalive.LiveApplication.layouts",
       "ownerId" : "class:scalive.LiveApplication",
-      "qualifiedName" : "scalive.LiveApplication.layout",
+      "qualifiedName" : "scalive.LiveApplication.layouts",
       "kind" : "val",
       "signatures" : [
         {
-          "id" : "val:scalive.LiveApplication.layout:c41d0233a7e39887",
-          "signature" : "val layout: Option[LiveLayout[Any, Any]]"
+          "id" : "val:scalive.LiveApplication.layouts:159e817205762dca",
+          "signature" : "val layouts: Vector[LiveLayout[Any, Any]]"
         }
       ]
     },

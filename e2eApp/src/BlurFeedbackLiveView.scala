@@ -198,21 +198,18 @@ object BlurFeedbackLiveView:
 
     override def view(
       props: Signal[ChoiceProps],
-      model: Signal[Model],
-      self: ComponentRef[Msg]
+      model: Signal[Model]
     ) =
       div(
         dom.hook("BlurFeedback", DomRef("choice-widget")),
         form(
           idAttr := "choice-search-form",
           on.change.form(FormCodec.formData)(Msg.Searched(_)),
-          phx.target(self),
           input(
             typ      := "search",
             idAttr   := "choice-search",
             nameAttr := "query",
-            value    := model.map(_.search),
-            phx.target(self)
+            value    := model.map(_.search)
           )
         ),
         span(idAttr := "server-query", model.map(_.search)),
@@ -220,7 +217,6 @@ object BlurFeedbackLiveView:
           idAttr := "choice-option",
           typ    := "button",
           on.click(Msg.Select),
-          phx.target(self),
           "selected"
         ),
         input(
@@ -238,8 +234,7 @@ object BlurFeedbackLiveView:
           idAttr := "choice-close",
           typ    := "button",
           hidden := true,
-          on.click(JS.push(Msg.Left)),
-          phx.target(self)
+          on.click(JS.push(Msg.Left))
         )
       )
   end ChoiceComponent

@@ -831,7 +831,7 @@ final private[scalive] class RootConnection[Msg, Model] private (
         rejection match
           case _: SessionRejection.UnknownBinding | _: SessionRejection.BindingFailed |
               _: SessionRejection.UnknownComponent | _: SessionRejection.StaleComponent |
-              SessionRejection.UnknownComponentTarget | _: SessionRejection.AmbiguousComponent =>
+              SessionRejection.UnknownComponentTarget =>
             awaitEarlierCommands(command) *> writer
               .send(ConnectionOutput.Rejected(command, rejection)).foldZIO(
                 error => completeAfterWriterClose(command, error),

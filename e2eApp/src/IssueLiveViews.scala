@@ -881,7 +881,7 @@ object Issue3200LiveView:
     def handleMessage(props: Unit, model: Unit, ctx: MessageContext) =
       (_: Unit) => ZIO.succeed(model)
 
-    override def view(props: Signal[Unit], model: Signal[Unit], self: ComponentRef[Unit]) =
+    override def view(props: Signal[Unit], model: Signal[Unit]) =
       div("Settings")
 
   object MessagesTab extends LiveComponent[Unit, MessagesTab.Msg, String]:
@@ -896,7 +896,7 @@ object Issue3200LiveView:
       case Msg.Change(data) => ZIO.succeed(data.getOrElse("new_message", ""))
       case Msg.Submit       => ZIO.succeed(model)
 
-    override def view(props: Signal[Unit], model: Signal[String], self: ComponentRef[Msg]) =
+    override def view(props: Signal[Unit], model: Signal[String]) =
       div(
         liveComponent(MessageComponent, id = "some_unique_message_id", props = "Example message"),
         form(
@@ -926,8 +926,7 @@ object Issue3200LiveView:
 
     override def view(
       props: Signal[String],
-      model: Signal[String],
-      self: ComponentRef[Unit]
+      model: Signal[String]
     ) =
       div(model)
 end Issue3200LiveView
@@ -1025,8 +1024,7 @@ object Issue3026LiveView:
 
     override def view(
       props: Signal[FormProps],
-      model: Signal[Unit],
-      self: ComponentRef[Unit]
+      model: Signal[Unit]
     ) =
       div(
         "Example form",
@@ -1082,8 +1080,7 @@ object Issue3117LiveView:
 
     override def view(
       props: Signal[String],
-      model: Signal[Model],
-      self: ComponentRef[Msg]
+      model: Signal[Model]
     ) =
       val content = model.map { current =>
         val result = current.result.map(value => s"Some($value)").getOrElse("None")
@@ -1167,8 +1164,7 @@ object Issue3169LiveView:
 
     override def view(
       props: Signal[Option[String]],
-      model: Signal[Option[Record]],
-      self: ComponentRef[Msg]
+      model: Signal[Option[Record]]
     ) =
       div(
         "FormComponent (c1)",
@@ -1189,7 +1185,7 @@ object Issue3169LiveView:
     def handleMessage(props: Record, model: Record, ctx: MessageContext) =
       (_: Unit) => ZIO.succeed(model)
 
-    override def view(props: Signal[Record], model: Signal[Record], self: ComponentRef[Unit]) =
+    override def view(props: Signal[Record], model: Signal[Record]) =
       div(
         "FormCore (c2)",
         form(
@@ -1207,7 +1203,7 @@ object Issue3169LiveView:
     def handleMessage(props: Record, model: Record, ctx: MessageContext) =
       (_: Unit) => ZIO.succeed(model)
 
-    override def view(props: Signal[Record], model: Signal[Record], self: ComponentRef[Unit]) =
+    override def view(props: Signal[Record], model: Signal[Record]) =
       div(
         "FormColumn (c3) ",
         input(typ := "text", value := model.map(_.name)),
@@ -1574,25 +1570,23 @@ object Issue3684LiveView:
       case Msg.ChangeType(value) => ZIO.succeed(value)
       case Msg.FormChanged       => ZIO.succeed(model)
 
-    override def view(props: Signal[Unit], selected: Signal[String], self: ComponentRef[Msg]) =
+    override def view(props: Signal[Unit], selected: Signal[String]) =
       div(
         form(
           idAttr := "foo",
           cls    := "max-w-lg p-8 flex flex-col gap-4",
           on.change(_ => Msg.FormChanged),
-          phx.target(self),
           phxSubmitAttr := "submit",
-          radios(selected, self)
+          radios(selected)
         )
       )
 
-    private def radios(selected: Signal[String], self: ComponentRef[Msg]) =
+    private def radios(selected: Signal[String]) =
       fieldset(
         legend("Radio example:"),
         Vector("huey", "dewey").map(radioType =>
           div(
             on.click(Msg.ChangeType(radioType)),
-            phx.target(self),
             phx.value("type") := radioType,
             input(
               typ      := "radio",
@@ -1686,7 +1680,7 @@ object Issue3709LiveView:
     def handleMessage(props: Unit, model: Unit, ctx: MessageContext) =
       (_: Unit) => ZIO.succeed(model)
 
-    override def view(props: Signal[Unit], model: Signal[Unit], self: ComponentRef[Unit]) =
+    override def view(props: Signal[Unit], model: Signal[Unit]) =
       div("Hello")
 
 class Issue3919LiveView extends LiveView[Issue3919LiveView.Msg, Issue3919LiveView.Action]:
@@ -1780,8 +1774,7 @@ object Issue3941LiveView:
 
     override def view(
       props: Signal[String],
-      model: Signal[Unit],
-      self: ComponentRef[Nothing]
+      model: Signal[Unit]
     ) =
       div(
         idAttr   := props.map(value => s"item-$value"),
@@ -1823,8 +1816,7 @@ object Issue3941LiveView:
 
     override def view(
       props: Signal[String],
-      model: Signal[Model],
-      self: ComponentRef[Msg]
+      model: Signal[Model]
     ) =
       val item   = model.map(_.item)
       val loaded = model.map(_.asyncAssign.isInstanceOf[AsyncValue.Ok[?]])
@@ -1875,7 +1867,7 @@ object Issue3953LiveView:
     def handleMessage(props: Unit, model: Unit, ctx: MessageContext) =
       (_: Unit) => ZIO.succeed(model)
 
-    override def view(props: Signal[Unit], model: Signal[Unit], self: ComponentRef[Unit]) =
+    override def view(props: Signal[Unit], model: Signal[Unit]) =
       div("Component")
 
   class NestedViewLive extends LiveView[Unit, Unit]:
@@ -1960,8 +1952,7 @@ object Issue3979LiveView:
 
     override def view(
       props: Signal[CounterProps],
-      model: Signal[CounterProps],
-      self: ComponentRef[Unit]
+      model: Signal[CounterProps]
     ) =
       div(
         idAttr := model.map(current => s"hello-${current.id}-${current.domCounter}"),
@@ -2056,8 +2047,7 @@ object Issue4027LiveView:
 
     override def view(
       props: Signal[Vector[Item]],
-      model: Signal[Vector[Item]],
-      self: ComponentRef[Unit]
+      model: Signal[Vector[Item]]
     ) =
       keyedResult(model)
 
@@ -2086,8 +2076,7 @@ object Issue4027LiveView:
 
     override def view(
       props: Signal[AsyncValue[Vector[Item]]],
-      model: Signal[AsyncValue[Vector[Item]]],
-      self: ComponentRef[Unit]
+      model: Signal[AsyncValue[Vector[Item]]]
     ) =
       asyncResult(model)
 
@@ -2162,10 +2151,9 @@ object Issue4066LiveView:
     def handleMessage(props: Int, model: Unit, ctx: MessageContext) =
       (_: Unit) => ZIO.succeed(model)
 
-    override def view(props: Signal[Int], model: Signal[Unit], self: ComponentRef[Unit]) =
+    override def view(props: Signal[Int], model: Signal[Unit]) =
       input(
         dom.hook("Issue4066Hook", DomRef("foo")),
-        phx.target(self),
         dataAttr("delay") := props.map(_.toString)
       )
 

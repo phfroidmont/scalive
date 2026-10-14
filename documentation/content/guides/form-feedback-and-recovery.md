@@ -67,8 +67,8 @@ still overwrite a server-normalized value before its patch reaches the browser.
 
 Scalar `.onBlur` uses the browser's `value`, or an empty string when absent; it
 is not the complete value vector of a multi-select. Within a `LiveComponent`,
-use the usual `phx.target(self)` on the form and on controls with
-application-specific blur callbacks.
+the form and its controls send their events to the component, like its other
+bindings.
 
 For a composite control, the widget owns its logical focus boundary and
 dispatches `control.blurred` only when focus leaves the whole widget. In keyed

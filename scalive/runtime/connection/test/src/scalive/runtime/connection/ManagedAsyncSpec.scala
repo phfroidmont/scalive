@@ -258,7 +258,6 @@ object ManagedAsyncSpec extends ZIOSpecDefault:
                           def view(
                             props: Signal[Unit],
                             model: Signal[Unit],
-                            self: ComponentRef[String]
                           ) = div()
           instance = component(definition, "replaceable-async-owner")
           root = new LiveView[Boolean, Boolean]:

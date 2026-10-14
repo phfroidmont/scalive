@@ -339,8 +339,7 @@ object PortalLiveView:
 
     override def view(
       props: Signal[Unit],
-      model: Signal[Model],
-      self: ComponentRef[Msg.type]
+      model: Signal[Model]
     ) =
       div(
         idAttr := "teleported-lc",
@@ -351,7 +350,7 @@ object PortalLiveView:
           phx.update := PhxUpdate.Stream,
           model.map(_.items).stream((domId, item) => li(idAttr := domId, item.map(_.name)))
         ),
-        button(on.click(Msg), phx.target(self), "Prepend item"),
+        button(on.click(Msg), "Prepend item"),
         portal("teleported-from-lc-button", target = DomSelector.css("body"))(
           button(
             dom.hook("TeleportedLCButton", DomRef("lcbtn")),

@@ -581,17 +581,11 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
       */
     lazy val trackStatic = boolAttr("track-static")
 
-    /** Chooses the LiveView or component that receives the element's events (`phx-target`).
+    /** Chooses the LiveView or component that receives the element's events (`phx-target`): the
+      * owners of the elements matching `selector`.
       *
-      * This form targets a stateful component, usually `self` inside its `view`, together with a
-      * binding such as `on.click.to(self)(message)`.
-      */
-    def target[Msg](ref: ComponentRef[Msg]): Mod.Attr[Msg] =
-      Mod.Attr.ComponentTarget(ref)
-
-    /** Chooses the LiveView or component that receives the element's events (`phx-target`).
-      *
-      * This form targets the LiveView or components that own the elements matching `selector`.
+      * Scalive already sends a binding's events to the LiveView or component that renders it, and
+      * only that owner can resolve the binding. Use this escape hatch for Phoenix parity.
       * [[DomSelector.current]] throws `IllegalArgumentException`.
       */
     def target(selector: DomSelector): Mod.Attr[Nothing] = attr("target") := selector.requiredValue

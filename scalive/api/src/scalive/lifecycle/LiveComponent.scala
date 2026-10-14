@@ -48,16 +48,16 @@ trait LiveComponent[Props, Msg, Model]:
 
   /** Handles a message sent to this instance and returns its next model.
     *
-    * Bindings target the component with `phx.target(self)` and `on.click.to(self)(msg)`. A failed
-    * effect crashes the owning LiveView's lifecycle, so recover expected failures into the model.
+    * A failed effect crashes the owning LiveView's lifecycle, so recover expected failures into the
+    * model.
     */
   def handleMessage(props: Props, model: Model, ctx: MessageContext): Msg => Task[Model]
 
   /** Describes the component's HTML, like [[LiveView.view]].
     *
-    * `self` identifies this instance as the target of its own bindings.
+    * Its bindings, such as `on.click(Msg.Vote)`, send their messages to this instance.
     */
-  def view(props: Signal[Props], model: Signal[Model], self: ComponentRef[Msg]): HtmlElement[Msg]
+  def view(props: Signal[Props], model: Signal[Model]): HtmlElement[Msg]
 end LiveComponent
 
 /** Variants of [[LiveComponent]] and a type helper for addressing components. */
@@ -147,8 +147,8 @@ end ComponentSpec
 
 /** One named instance of a stateful component, as returned by `component(definition, id)`.
   *
-  * Render it in the owner's view with `render`, target its bindings with `on.click.to(instance)`,
-  * or send it new props with `ctx.components.sendUpdate`.
+  * Render it in the owner's view with `render`, send it a message from a binding rendered elsewhere
+  * with `on.click.to(instance)(msg)`, or send it new props with `ctx.components.sendUpdate`.
   *
   * @param component
   *   The component definition.
@@ -222,15 +222,9 @@ object ComponentOutputChannel:
 final private[scalive] class ComponentTarget(private[scalive] val identity: Object):
   override def toString: String = "ComponentRef"
 
-/** A reference to one mounted component instance, passed to its `view` as `self`.
-  *
-  * Make the instance the target of its own bindings with `phx.target(self)` and
-  * `on.click.to(self)(msg)`. The representation is hidden: do not store a reference in a model or
-  * keep it after the instance is removed.
-  */
-opaque type ComponentRef[Msg] = ComponentTarget
+/** The runtime identity of one mounted component instance. */
+private[scalive] opaque type ComponentRef[+Msg] = ComponentTarget
 
-/** Constructors for [[ComponentRef]], reserved for Scalive. */
-object ComponentRef:
+private[scalive] object ComponentRef:
   private[scalive] def runtime[Msg](identity: Object): ComponentRef[Msg] =
     ComponentTarget(identity)

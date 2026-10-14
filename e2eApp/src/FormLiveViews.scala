@@ -186,8 +186,7 @@ object FormLiveView:
   private def renderForm[Msg](
     query: Signal[FormQueryParams],
     values: Signal[Map[String, String]],
-    jsChangeMessage: Msg,
-    target: Option[Mod.Attr[Msg]] = None
+    jsChangeMessage: Msg
   ) =
     val idValue    = query.map(current => Option.unless(current.noId)("test-form"))
     val changeMode = query.map { current =>
@@ -219,8 +218,7 @@ object FormLiveView:
         ),
         phxAutoRecoverAttr.optional(autoRecover),
         phx.noUnusedField := noUnusedForm,
-        target,
-        cls := "myformclass",
+        cls               := "myformclass",
         fieldset(
           disabled := disabledValue,
           input(
@@ -338,8 +336,7 @@ object FormLiveView:
 
     override def view(
       _props: Signal[Props],
-      model: Signal[Model],
-      self: ComponentRef[Msg]
+      model: Signal[Model]
     ) =
       val query     = model.map(_.query)
       val values    = model.map(_.values)
@@ -349,8 +346,7 @@ object FormLiveView:
         FormLiveView.renderForm(
           query,
           values,
-          Msg.Validate(EmptyFormEvent),
-          Some(phx.target(self))
+          Msg.Validate(EmptyFormEvent)
         ),
         Signal.when(submitted)(p("LC Form was submitted!"))
       )

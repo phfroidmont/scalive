@@ -69,7 +69,7 @@ object ComponentKernelSpec extends ZIOSpecDefault:
     def mount(props: Int, ctx: MountContext) = ZIO.succeed(props)
     def handleMessage(props: Int, model: Int, ctx: MessageContext) = message =>
       ZIO.succeed(model + message)
-    def view(props: Signal[Int], model: Signal[Int], self: ComponentRef[Int]) =
+    def view(props: Signal[Int], model: Signal[Int]) =
       button(on.click(_ => 2), model.map { value =>
         events.add("render")
         value.toString
@@ -79,7 +79,7 @@ object ComponentKernelSpec extends ZIOSpecDefault:
     def mount(props: Int, ctx: MountContext) = ZIO.succeed(props)
     def handleMessage(props: Int, model: Int, ctx: MessageContext) = message =>
       ZIO.succeed(model + message)
-    def view(props: Signal[Int], model: Signal[Int], self: ComponentRef[Int]) =
+    def view(props: Signal[Int], model: Signal[Int]) =
       div(model.map(_.toString))
 
   private def logic(seen: Ref[Vector[Int]]): SessionLogic[Int, Int] =
@@ -277,7 +277,7 @@ object ComponentKernelSpec extends ZIOSpecDefault:
         val definition = new LiveComponent[Int, Int, Int]:
           def mount(props: Int, ctx: MountContext) = ZIO.succeed(props)
           def handleMessage(props: Int, model: Int, ctx: MessageContext) = message => ZIO.succeed(model + message)
-          def view(props: Signal[Int], model: Signal[Int], self: ComponentRef[Int]) =
+          def view(props: Signal[Int], model: Signal[Int]) =
             div(flash(notice)(message => span(message)))
         val instance = component(definition, "flash-component")
         val environment = new FakeEnvironment(events):
@@ -423,7 +423,7 @@ object ComponentKernelSpec extends ZIOSpecDefault:
           def mount(props: Int, ctx: MountContext) = ZIO.succeed(props)
           def handleMessage(props: Int, model: Int, ctx: MessageContext) = message =>
             ZIO.succeed(model + message)
-          def view(props: Signal[Int], model: Signal[Int], self: ComponentRef[Int]) =
+          def view(props: Signal[Int], model: Signal[Int]) =
             div(child.render(props))
         val parent = component(parentDefinition, "parent")
         val environment = new FakeEnvironment(events):
@@ -457,7 +457,7 @@ object ComponentKernelSpec extends ZIOSpecDefault:
           def mount(props: Int, ctx: MountContext) = ZIO.succeed(props)
           def handleMessage(props: Int, model: Int, ctx: MessageContext) = message =>
             ZIO.succeed(model + message)
-          def view(props: Signal[Int], model: Signal[Int], self: ComponentRef[Int]) =
+          def view(props: Signal[Int], model: Signal[Int]) =
             div(child.render(1))
         val parent = component(parentDefinition, "resource-parent")
         val environment = new FakeEnvironment(events):
@@ -499,7 +499,7 @@ object ComponentKernelSpec extends ZIOSpecDefault:
         val parentDefinition = new LiveComponent[Int, Int, Int]:
           def mount(props: Int, ctx: MountContext) = ZIO.succeed(props)
           def handleMessage(props: Int, model: Int, ctx: MessageContext) = message => ZIO.succeed(model + message)
-          def view(props: Signal[Int], model: Signal[Int], self: ComponentRef[Int]) = div(child.render(1))
+          def view(props: Signal[Int], model: Signal[Int]) = div(child.render(1))
         val parent = component(parentDefinition, "parent-from-child")
         val environment = new FakeEnvironment(events):
           override def message[P, M, A, O](id: ComponentInstanceId, component: LiveComponent[P, M, A], props: P, model: A, value: M, emit: O => Task[Unit], state: ComponentEnvironmentState, draft: TurnDraft[Int, Int]) =
@@ -532,7 +532,7 @@ object ComponentKernelSpec extends ZIOSpecDefault:
         val parentDefinition = new LiveComponent[Int, Int, Int]:
           def mount(props: Int, ctx: MountContext) = ZIO.succeed(props)
           def handleMessage(props: Int, model: Int, ctx: MessageContext) = message => ZIO.succeed(model + message)
-          def view(props: Signal[Int], model: Signal[Int], self: ComponentRef[Int]) =
+          def view(props: Signal[Int], model: Signal[Int]) =
             div(
               props.map(_ == 1).when(div(source.render(props))),
               props.map(_ > 1).when(div(added.render(props))),

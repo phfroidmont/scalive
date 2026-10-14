@@ -56,7 +56,7 @@ object LiveHooksApiSpec extends ZIOSpecDefault:
           def mount(props: String, ctx: MountContext) = ZIO.succeed(0)
           def handleMessage(props: String, model: Int, ctx: MessageContext) =
             case Counter.Msg.Increment => ZIO.succeed(model + 1)
-          def view(props: Signal[String], model: Signal[Int], self: ComponentRef[Counter.Msg]) =
+          def view(props: Signal[String], model: Signal[Int]) =
             div(model.map(_.toString))
 
         object Counter:

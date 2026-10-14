@@ -44,7 +44,7 @@ object VoteComponent
       ctx.emit(Output.VoteChanged(props.id, 0)).as(model.copy(votes = 0))
   // docs:end voting-component-logic
 
-  def view(props: Signal[Props], model: Signal[Model], self: ComponentRef[Msg]) =
+  def view(props: Signal[Props], model: Signal[Model]) =
     articleTag(
       cls                        := "docs-vote-card",
       dataAttr("vote-component") := props.map(_.id),
@@ -73,16 +73,14 @@ object VoteComponent
           button(
             cls := "docs-vote-primary",
             typ := "button",
-            phx.target(self),
-            on.click.to(self)(Msg.Vote),
+            on.click(Msg.Vote),
             "Vote"
           ),
           // docs:end voting-local-binding
           button(
             cls := "docs-vote-secondary",
             typ := "button",
-            phx.target(self),
-            on.click.to(self)(Msg.Reset),
+            on.click(Msg.Reset),
             "Reset"
           )
         )

@@ -362,8 +362,6 @@ object Form:
     case Mod.Attr.JsBinding(name, _)                    => Some(name)
     case Mod.Attr.SignalJsBinding(name, _)              => Some(name)
     case Mod.Attr.RoutedBinding(name, _)                => Some(name)
-    case Mod.Attr.ComponentBinding(name, _, _)          => Some(name)
-    case Mod.Attr.ComponentTarget(_)                    => Some("phx-target")
     case Mod.Attr.Group(attrs)                          => attrs.flatMap(attributeName).headOption
     case _: Mod.Content[?]                              => None
 end Form

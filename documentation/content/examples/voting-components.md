@@ -24,9 +24,9 @@ instance reports its votes to the parent LiveView through a typed output.
 
 - `component(VoteComponent, "scala-vote")` names one instance. Its stable ID
   keeps its model across the parent's renders.
-- The card's buttons combine `phx.target(self)` with
-  `on.click.to(self)(Msg.Vote)`, so a click reaches this instance rather than
-  the parent.
+- The card's buttons use `on.click(Msg.Vote)`. A binding in a component's view
+  sends its message to that instance, so a click never reaches the other card
+  or the parent.
 - `ctx.emit(Output.VoteChanged(...))` reports to the parent, which maps each
   output to its own `Msg.ComponentReported` where it renders the component.
 - `ctx.components.sendUpdate` sends new props. The component's `update` keeps

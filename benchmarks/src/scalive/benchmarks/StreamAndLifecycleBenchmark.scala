@@ -17,7 +17,7 @@ object StreamAndLifecycleBenchmark:
 
   object RetainedComponent extends LiveComponent.Eventless[Row, Row]:
     def mount(props: Row, ctx: MountContext): Task[Row] = ZIO.succeed(props)
-    def view(props: Signal[Row], model: Signal[Row], self: ComponentRef[Nothing]) = div(
+    def view(props: Signal[Row], model: Signal[Row])    = div(
       props.map(_.value)
     )
 

@@ -224,7 +224,6 @@ object ManagedStreamsSpec extends ZIOSpecDefault:
           def view(
             props: Signal[LiveStream[Item]],
             model: Signal[Unit],
-            self: ComponentRef[Nothing]
           ) = props.renderIn(div)(item => span(item.map(_.label)))
         val instance = component(componentDefinition, "foreign-stream-owner")
         val root = new LiveView[Unit, LiveStream[Item]]:
@@ -253,7 +252,6 @@ object ManagedStreamsSpec extends ZIOSpecDefault:
           def view(
             props: Signal[Unit],
             model: Signal[LiveStream[Item]],
-            self: ComponentRef[Item]
           ) = model.renderIn(div)(item => span(item.map(_.label)))
         val instance = component(definition, "shared-owner")
         val root = new LiveView[RootMessage, RootModel]:
@@ -303,7 +301,6 @@ object ManagedStreamsSpec extends ZIOSpecDefault:
                                   def view(
                                     props: Signal[Unit],
                                     model: Signal[LiveStream[Item]],
-                                    self: ComponentRef[Nothing]
                                   ) = model.renderIn(div)(item => span(item.map(_.label)))
           instance = component(componentDefinition, "replaceable")
           root = new LiveView[Boolean, Boolean]:
@@ -350,7 +347,6 @@ object ManagedStreamsSpec extends ZIOSpecDefault:
                                   def view(
                                     props: Signal[Unit],
                                     model: Signal[LiveStream[Item]],
-                                    self: ComponentRef[Nothing]
                                   ) = model.renderIn(ul)(item => li(item.map(_.label)))
           instance = component(componentDefinition, "disconnected-stream")
           root = new LiveView[Unit, LiveStream[Item]]:

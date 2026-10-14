@@ -5244,28 +5244,12 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.HtmlAttrBinding.to:142669bf3f91b22c",
-          "signature" : "def to[Msg](ref: ComponentRef[Msg])(message: Msg): Mod.Attr[Msg]"
-        },
-        {
           "id" : "def:scalive.HtmlAttrBinding.to:a0448c4d24867571",
           "signature" : "def to[Props, Msg, Model, Output](instance: LiveComponentOutputInstance[Props, Msg, Model, Output])(message: Msg): Mod.Attr[Nothing]"
         },
         {
           "id" : "def:scalive.HtmlAttrBinding.to:c2437ffa95c5bb53",
           "signature" : "def to[Props, Msg, Model](instance: LiveComponentInstance[Props, Msg, Model])(message: Msg): Mod.Attr[Nothing]"
-        }
-      ]
-    },
-    {
-      "id" : "def:scalive.HtmlAttrBinding.toComponent",
-      "ownerId" : "class:scalive.HtmlAttrBinding",
-      "qualifiedName" : "scalive.HtmlAttrBinding.toComponent",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.HtmlAttrBinding.toComponent:5edc0fddf312e2c8",
-          "signature" : "def toComponent[Props, Msg, Model](component: LiveComponent[Props, Msg, Model])(message: Msg): Mod.Attr[Nothing]"
         }
       ]
     },
@@ -5728,8 +5712,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.LiveComponent.view:b6270c3f43d4daf6",
-          "signature" : "def view(props: Signal[Props], model: Signal[Model], self: ComponentRef[Msg]): HtmlElement[Msg]"
+          "id" : "def:scalive.LiveComponent.view:3ad98ac852bf2011",
+          "signature" : "def view(props: Signal[Props], model: Signal[Model]): HtmlElement[Msg]"
         }
       ]
     },
@@ -10134,10 +10118,6 @@
         {
           "id" : "def:scalive.phx.target:438f2d9ce1594bd0",
           "signature" : "def target(selector: DomSelector): Mod.Attr[Nothing]"
-        },
-        {
-          "id" : "def:scalive.phx.target:fa04be40d4cf984f",
-          "signature" : "def target[Msg](ref: ComponentRef[Msg]): Mod.Attr[Msg]"
         }
       ]
     },
@@ -18542,18 +18522,6 @@
         {
           "id" : "opaque-type:scalive.BrowserToServerEvent:4b93fc7f4e370cb3",
           "signature" : "opaque type BrowserToServerEvent >: ([A] =>> Nothing) <: ([A] =>> Any) = ([A] =>> String)"
-        }
-      ]
-    },
-    {
-      "id" : "opaque-type:scalive.ComponentRef",
-      "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.ComponentRef",
-      "kind" : "opaqueType",
-      "signatures" : [
-        {
-          "id" : "opaque-type:scalive.ComponentRef:720feb0b9dd3f6bb",
-          "signature" : "opaque type ComponentRef >: ([Msg] =>> Nothing) <: ([Msg] =>> Any) = ([Msg] =>> ComponentTarget)"
         }
       ]
     },

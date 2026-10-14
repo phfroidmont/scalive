@@ -211,12 +211,11 @@ object Issue3368LiveView:
             ZIO.succeed(ConsumeDecision.Consume(entry.client.fileName))
           ).map { case (names, upload) => model.copy(upload, names.toVector) }
 
-    override def view(props: Signal[Unit], model: Signal[Model], self: ComponentRef[Msg]) =
+    override def view(props: Signal[Unit], model: Signal[Model]) =
       val upload = model.map(_.upload)
       div(
         form(
           idAttr := "upload-form",
-          phx.target(self),
           on.change(_ => Msg.Validate),
           on.submit(Msg.Save),
           div(idAttr := "dropzone", upload.dropTarget, "Drop files here"),
@@ -526,8 +525,7 @@ object Issue4334LiveView:
     def handleMessage(props: Unit, model: Boolean, ctx: MessageContext) = _ => ZIO.succeed(true)
     override def view(
       props: Signal[Unit],
-      changed: Signal[Boolean],
-      self: ComponentRef[ChangeRoot.type]
+      changed: Signal[Boolean]
     ) =
       sectionTag(
         idAttr          := changed.map(if _ then "new-root" else "old-root"),
@@ -535,7 +533,6 @@ object Issue4334LiveView:
         phx.hook        := "RootChange",
         button(
           idAttr := "change-root",
-          phx.target(self),
           on.click(ChangeRoot),
           "Change component root ID"
         ),
@@ -574,17 +571,17 @@ object Issue4350LiveView:
     case object Msg
     def mount(props: Unit, ctx: MountContext)                       = ZIO.succeed(0)
     def handleMessage(props: Unit, model: Int, ctx: MessageContext) = _ => ZIO.succeed(model + 1)
-    override def view(props: Signal[Unit], count: Signal[Int], self: ComponentRef[Msg.type]) =
+    override def view(props: Signal[Unit], count: Signal[Int])      =
       div(
         idAttr := "leaf",
         "count: ",
         span(idAttr   := "leaf-count", count.map(_.toString)),
-        button(idAttr := "bump", phx.target(self), on.click(Msg), "bump")
+        button(idAttr := "bump", on.click(Msg), "bump")
       )
 
   object Branch extends LiveComponent.Eventless[Int, Unit]:
-    def mount(props: Int, ctx: MountContext) = ZIO.unit
-    override def view(props: Signal[Int], model: Signal[Unit], self: ComponentRef[Nothing]) =
+    def mount(props: Int, ctx: MountContext)                   = ZIO.unit
+    override def view(props: Signal[Int], model: Signal[Unit]) =
       div(
         idAttr := "branch",
         props.map(value => s"tick: $value"),

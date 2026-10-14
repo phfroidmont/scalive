@@ -130,7 +130,6 @@ object EventlessApiSpec extends ZIOSpecDefault:
           override def view(
             props: Signal[String],
             model: Signal[Int],
-            self: ComponentRef[Nothing]
           ) = div(props)
 
         val component: LiveComponent[String, Nothing, Int] = Component

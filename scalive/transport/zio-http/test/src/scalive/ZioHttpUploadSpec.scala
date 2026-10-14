@@ -220,7 +220,6 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
                               def view(
                                 props: Signal[Unit],
                                 model: Signal[LiveUpload[String]],
-                                self: ComponentRef[Nothing]
                               ) = div(idAttr := "component-upload")
       componentInstance = component(componentDefinition, "component-upload")
       view = new LiveView.Eventless[(LiveUpload[Chunk[Byte]], LiveUpload[String])]:
@@ -1643,7 +1642,7 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
       val hideEvent = BrowserToServerEvent[Json]("hide-component")
       val definition = new LiveComponent.Eventless[Unit, Unit]:
         def mount(props: Unit, ctx: MountContext) = ZIO.unit
-        def view(props: Signal[Unit], model: Signal[Unit], self: ComponentRef[Nothing]) =
+        def view(props: Signal[Unit], model: Signal[Unit]) =
           div(idAttr := "destroyed-component")
       val instance = component(definition, "destroyed-component")
       val view = new LiveView[Nothing, Boolean]:

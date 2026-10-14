@@ -61,7 +61,6 @@ object DisconnectedComponentRendererSpec extends ZIOSpecDefault:
                          def view(
                            props: Signal[String],
                            model: Signal[String],
-                           self: ComponentRef[Nothing]
                          ) = span(model)
           instance = component(definition, "label")
           rendered <- DisconnectedComponentRenderer.renderWith[Unit, Nothing, String](
@@ -98,7 +97,6 @@ object DisconnectedComponentRendererSpec extends ZIOSpecDefault:
         def view(
           props: Signal[Vector[Int]],
           model: Signal[Vector[Int]],
-          self: ComponentRef[Nothing]
         ) = div(idAttr := "result", items(model))
       val asyncDefinition =
         new LiveComponent.Eventless[AsyncValue[Vector[Int]], AsyncValue[Vector[Int]]]:
@@ -111,7 +109,6 @@ object DisconnectedComponentRendererSpec extends ZIOSpecDefault:
           def view(
             props: Signal[AsyncValue[Vector[Int]]],
             model: Signal[AsyncValue[Vector[Int]]],
-            self: ComponentRef[Nothing]
           ) =
             val current = model.map(AsyncValue.currentValue)
             div(
@@ -157,7 +154,6 @@ object DisconnectedComponentRendererSpec extends ZIOSpecDefault:
                        def view(
                          props: Signal[Unit],
                          model: Signal[Int],
-                         self: ComponentRef[Nothing]
                        ) = span(model.map(_.toString))
         instance = component(definition, "counter")
         view      = (_: Signal[Unit]) => div(instance.render(()))
@@ -189,7 +185,7 @@ object DisconnectedComponentRendererSpec extends ZIOSpecDefault:
       val kind = FlashKind("disconnected-own")
       val definition = new LiveComponent.Eventless[String, Unit]:
         def mount(props: String, ctx: MountContext) = ctx.flash.put(kind, props)
-        def view(props: Signal[String], model: Signal[Unit], self: ComponentRef[Nothing]) =
+        def view(props: Signal[String], model: Signal[Unit]) =
           div(scalive.flash(kind)(message => span(message)))
       val instance = component(definition, "own-flash")
       DisconnectedComponentRenderer
@@ -201,11 +197,11 @@ object DisconnectedComponentRendererSpec extends ZIOSpecDefault:
       val kind = FlashKind("disconnected-shared")
       val writerDefinition = new LiveComponent.Eventless[Unit, Unit]:
         def mount(props: Unit, ctx: MountContext) = ctx.flash.put(kind, "shared")
-        def view(props: Signal[Unit], model: Signal[Unit], self: ComponentRef[Nothing]) =
+        def view(props: Signal[Unit], model: Signal[Unit]) =
           div(scalive.flash(kind)(message => span(message)))
       val readerDefinition = new LiveComponent.Eventless[Unit, Unit]:
         def mount(props: Unit, ctx: MountContext) = ZIO.unit
-        def view(props: Signal[Unit], model: Signal[Unit], self: ComponentRef[Nothing]) =
+        def view(props: Signal[Unit], model: Signal[Unit]) =
           div(scalive.flash(kind)(message => span(message)))
       val writer = component(writerDefinition, "writer")
       val reader = component(readerDefinition, "reader")
@@ -223,11 +219,11 @@ object DisconnectedComponentRendererSpec extends ZIOSpecDefault:
     test("rejects duplicate definition and application identities across the recursive graph") {
       val leafDefinition = new LiveComponent.Eventless[Unit, Unit]:
         def mount(props: Unit, ctx: MountContext) = ZIO.unit
-        def view(props: Signal[Unit], model: Signal[Unit], self: ComponentRef[Nothing]) = span()
+        def view(props: Signal[Unit], model: Signal[Unit]) = span()
       val leaf = component(leafDefinition, "duplicate")
       val parentDefinition = new LiveComponent.Eventless[Unit, Unit]:
         def mount(props: Unit, ctx: MountContext) = ZIO.unit
-        def view(props: Signal[Unit], model: Signal[Unit], self: ComponentRef[Nothing]) =
+        def view(props: Signal[Unit], model: Signal[Unit]) =
           div(leaf.render(()))
       val parent = component(parentDefinition, "parent")
       for
@@ -253,7 +249,7 @@ object DisconnectedComponentRendererSpec extends ZIOSpecDefault:
       val definition = new LiveComponent.Eventless[Unit, Unit]:
         def mount(props: Unit, ctx: MountContext) =
           ctx.flash.clear(oldKind) *> ctx.flash.put(newKind, "root-visible")
-        def view(props: Signal[Unit], model: Signal[Unit], self: ComponentRef[Nothing]) = div()
+        def view(props: Signal[Unit], model: Signal[Unit]) = div()
       val instance = component(definition, "flash-owner")
       for
         turn <- DisconnectedRootTurn.make[Unit, Unit](
@@ -291,13 +287,13 @@ object DisconnectedComponentRendererSpec extends ZIOSpecDefault:
                               .afterRender((_, _, _) => childAfters.update(_ + 1))
                             def mount(props: Unit, ctx: MountContext) =
                               childMounts.update(_ + 1)
-                            def view(props: Signal[Unit], model: Signal[Unit], self: ComponentRef[Nothing]) =
+                            def view(props: Signal[Unit], model: Signal[Unit]) =
                               span("child")
         child = component(childDefinition, "conditional")
         addDefinition = new LiveComponent.Eventless[Unit, Unit]:
                           def mount(props: Unit, ctx: MountContext) =
                             triggerMounts.update(_ + 1) *> ctx.flash.put(kind, "show")
-                          def view(props: Signal[Unit], model: Signal[Unit], self: ComponentRef[Nothing]) = div()
+                          def view(props: Signal[Unit], model: Signal[Unit]) = div()
         add = component(addDefinition, "trigger")
         added <- DisconnectedComponentRenderer.renderWith[Unit, Nothing, String](
                    _ => div(add.render(()), scalive.flash(kind)(_ => div(child.render(())))),
@@ -306,7 +302,7 @@ object DisconnectedComponentRendererSpec extends ZIOSpecDefault:
         addCounts <- triggerMounts.get.zip(childMounts.get).zip(childAfters.get)
         removeDefinition = new LiveComponent.Eventless[Unit, Unit]:
                              def mount(props: Unit, ctx: MountContext) = ctx.flash.clear(kind)
-                             def view(props: Signal[Unit], model: Signal[Unit], self: ComponentRef[Nothing]) = div()
+                             def view(props: Signal[Unit], model: Signal[Unit]) = div()
         remove = component(removeDefinition, "remover")
         removed <- DisconnectedComponentRenderer.renderWith[Unit, Nothing, String](
                       _ => div(remove.render(()), scalive.flash(kind)(_ => div(child.render(())))),
@@ -339,13 +335,12 @@ object DisconnectedComponentRendererSpec extends ZIOSpecDefault:
                                def view(
                                  props: Signal[String],
                                  model: Signal[String],
-                                 self: ComponentRef[Nothing]
                                ) = span(model)
         retained = component(retainedDefinition, "retained")
         triggerDefinition = new LiveComponent.Eventless[Unit, Unit]:
                               def mount(props: Unit, ctx: MountContext) =
                                 ctx.flash.put(kind, "final")
-                              def view(props: Signal[Unit], model: Signal[Unit], self: ComponentRef[Nothing]) = div()
+                              def view(props: Signal[Unit], model: Signal[Unit]) = div()
         trigger = component(triggerDefinition, "props-trigger")
         rendered <- DisconnectedComponentRenderer.renderWith[Unit, Nothing, String](
                       _ => div(
@@ -373,12 +368,12 @@ object DisconnectedComponentRendererSpec extends ZIOSpecDefault:
       var constructions = 0
       val leafDefinition = new LiveComponent.Eventless[Unit, Unit]:
         def mount(props: Unit, ctx: MountContext) = ZIO.unit
-        def view(props: Signal[Unit], model: Signal[Unit], self: ComponentRef[Nothing]) =
+        def view(props: Signal[Unit], model: Signal[Unit]) =
           div(liveView("leaf-nested", { constructions += 1; ChildView }))
       val leaf = component(leafDefinition, "leaf-component")
       val parentDefinition = new LiveComponent.Eventless[Unit, Unit]:
         def mount(props: Unit, ctx: MountContext) = ZIO.unit
-        def view(props: Signal[Unit], model: Signal[Unit], self: ComponentRef[Nothing]) =
+        def view(props: Signal[Unit], model: Signal[Unit]) =
           div(
             leaf.render(()),
             liveView("parent-nested", { constructions += 1; ChildView })
@@ -422,7 +417,7 @@ object DisconnectedComponentRendererSpec extends ZIOSpecDefault:
 
       val definition = new LiveComponent.Eventless[Unit, Unit]:
         def mount(props: Unit, ctx: MountContext) = ZIO.unit
-        def view(props: Signal[Unit], model: Signal[Unit], self: ComponentRef[Nothing]) =
+        def view(props: Signal[Unit], model: Signal[Unit]) =
           div(liveView("duplicate-nested", ChildView))
       val instance = component(definition, "nested-owner")
 
@@ -482,7 +477,6 @@ object DisconnectedComponentRendererSpec extends ZIOSpecDefault:
                        def view(
                          props: Signal[Unit],
                          model: Signal[Unit],
-                         self: ComponentRef[Nothing]
                        ) = div(liveView("failing-child", ChildView))
         instance = component(definition, "failing-owner")
         program  <- ZIO.fromEither(

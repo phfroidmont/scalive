@@ -366,11 +366,8 @@ final private[scalive] case class ComponentForest[OwnerMsg] private (
   roots: Vector[ComponentInstanceId],
   private val entries: Map[ComponentInstanceId, MountedComponent[OwnerMsg]],
   private val refs: Map[AnyRef, ComponentInstanceId]):
-  def get(id: ComponentInstanceId): Option[MountedComponent[OwnerMsg]]  = entries.get(id)
-  def byRef(ref: ComponentRef[Any]): Option[MountedComponent[OwnerMsg]] =
-    val active = values.iterator.map(_.id).toSet
-    refs.get(ref.asInstanceOf[AnyRef]).filter(active.contains).flatMap(entries.get)
-  def values: Vector[MountedComponent[OwnerMsg]] =
+  def get(id: ComponentInstanceId): Option[MountedComponent[OwnerMsg]] = entries.get(id)
+  def values: Vector[MountedComponent[OwnerMsg]]                       =
     def descendants(ids: Vector[ComponentInstanceId]): Vector[MountedComponent[OwnerMsg]] =
       ids.flatMap(id =>
         entries.get(id).toVector.flatMap(value => value +: descendants(value.children))
@@ -711,7 +708,6 @@ enum SessionRejection:
   case StaleComponent(component: ComponentInstanceId)
   case StaleResource(token: ResourceToken)
   case UploadUnavailable
-  case AmbiguousComponent(applicationId: Option[String])
   case BindingFailed(binding: BindingId, error: Throwable)
   case UnexpectedPatch
   case MismatchedPatch(expected: URL, actual: URL)

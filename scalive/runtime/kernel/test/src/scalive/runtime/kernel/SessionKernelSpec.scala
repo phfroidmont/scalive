@@ -69,7 +69,7 @@ object SessionKernelSpec extends ZIOSpecDefault:
     def mount(props: Int, ctx: MountContext)                       = ZIO.succeed(props)
     def handleMessage(props: Int, model: Int, ctx: MessageContext) = message =>
       ZIO.succeed(model + message)
-    def view(props: Signal[Int], model: Signal[Int], self: ComponentRef[Int]) =
+    def view(props: Signal[Int], model: Signal[Int]) =
       div(model.map(_.toString))
 
   private val componentEnvironment = new ComponentEnvironment[Int, Int]:

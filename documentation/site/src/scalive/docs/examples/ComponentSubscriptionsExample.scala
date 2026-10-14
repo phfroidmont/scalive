@@ -68,7 +68,7 @@ object SubscriptionTickerComponent
     case Msg.Tick =>
       ZIO.succeed(model.copy(ticks = model.ticks + 1))
 
-  def view(props: Signal[Props], model: Signal[Model], self: ComponentRef[Msg]) =
+  def view(props: Signal[Props], model: Signal[Model]) =
     articleTag(
       cls                                := "docs-vote-card",
       dataAttr("subscription-component") := props.map(_.id),
@@ -93,21 +93,18 @@ object SubscriptionTickerComponent
         button(
           typ      := "button",
           disabled := model.map(_.mode != Mode.Stopped),
-          phx.target(self),
-          on.click.to(self)(Msg.Start),
+          on.click(Msg.Start),
           "Start local ticks"
         ),
         button(
           typ := "button",
-          phx.target(self),
-          on.click.to(self)(Msg.Replace),
+          on.click(Msg.Replace),
           "Replace local ticks"
         ),
         button(
           typ      := "button",
           disabled := model.map(_.mode == Mode.Stopped),
-          phx.target(self),
-          on.click.to(self)(Msg.Cancel),
+          on.click(Msg.Cancel),
           "Cancel local ticks"
         )
       )

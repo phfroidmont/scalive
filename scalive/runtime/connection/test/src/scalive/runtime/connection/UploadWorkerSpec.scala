@@ -475,7 +475,6 @@ object UploadWorkerSpec extends ZIOSpecDefault:
                            def view(
                              props: Signal[Unit],
                              model: Signal[LiveUpload[Chunk[Byte]]],
-                             self: ComponentRef[Nothing]
                            ) = span()
           instance = component(componentDef, "uploader")
           root = new LiveView[Boolean, Boolean]:

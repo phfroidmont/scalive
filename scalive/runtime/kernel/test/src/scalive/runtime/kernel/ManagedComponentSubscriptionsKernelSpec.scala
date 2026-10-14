@@ -223,7 +223,6 @@ object ManagedComponentSubscriptionsKernelSpec extends ZIOSpecDefault:
       def view(
         props: Signal[Int],
         model: Signal[Vector[Int]],
-        self: ComponentRef[ComponentMessage]
       ) = child.fold(div(model.map(_.mkString(","))))(value => div(value.render(0)))
 
   private def program(

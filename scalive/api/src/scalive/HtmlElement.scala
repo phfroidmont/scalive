@@ -148,12 +148,6 @@ private[scalive] object ComponentDispatch:
       extends ComponentDispatch:
     type Message = Msg
 
-  final case class Definition[Props, Msg, Model](
-    component: LiveComponent[Props, Msg, Model],
-    message: Msg)
-      extends ComponentDispatch:
-    type Message = Msg
-
 /** Structured browser input supplied to a typed binding operation. */
 private[scalive] enum BindingPayload:
   case Params(values: Map[String, String])
@@ -233,10 +227,11 @@ class HtmlAttrBinding private[scalive] (
   def throttle(duration: FiniteDuration): HtmlAttrBinding =
     append(durationAttr("phx-throttle", duration))
 
-  /** Sends `message` to a stateful component instead of the LiveView.
+  /** Sends `message` to a component instance instead of the LiveView or component that renders the
+    * binding.
     *
     * This form addresses the instance by its component class and stable ID, as returned by
-    * `component`.
+    * `component`. An event for an instance that is not mounted is rejected.
     */
   def to[Props, Msg, Model](
     instance: LiveComponentInstance[Props, Msg, Model]
@@ -245,7 +240,8 @@ class HtmlAttrBinding private[scalive] (
   ): Mod.Attr[Nothing] =
     configured(Mod.Attr.RoutedBinding(name, _ => ComponentDispatch.Instance(instance, message)))
 
-  /** Sends `message` to a stateful component instead of the LiveView.
+  /** Sends `message` to a component instance instead of the LiveView or component that renders the
+    * binding.
     *
     * This form addresses an instance of a component that emits outputs.
     */
@@ -257,25 +253,6 @@ class HtmlAttrBinding private[scalive] (
     configured(
       Mod.Attr.RoutedBinding(name, _ => ComponentDispatch.OutputInstance(instance, message))
     )
-
-  /** Sends `message` to a stateful component instead of the LiveView.
-    *
-    * Inside a component's `view`, pass its `self`, as in `on.click.to(self)(Msg.Vote)`, together
-    * with `phx.target(self)`.
-    */
-  def to[Msg](ref: ComponentRef[Msg])(message: Msg): Mod.Attr[Msg] =
-    configured(Mod.Attr.ComponentBinding(name, ref, _ => message))
-
-  /** Sends `message` to the component of class `component` that the browser targets.
-    *
-    * This fixes only the message type. Add `phx.target` to choose the instance.
-    */
-  def toComponent[Props, Msg, Model](
-    component: LiveComponent[Props, Msg, Model]
-  )(
-    message: Msg
-  ): Mod.Attr[Nothing] =
-    configured(Mod.Attr.RoutedBinding(name, _ => ComponentDispatch.Definition(component, message)))
 
   /** Completes the binding with what happens when the event fires.
     *
@@ -530,13 +507,8 @@ object Mod:
         extends Attr[Msg]
     private[scalive] case RoutedBinding(
       name: String,
-      operation: BindingPayload => ComponentDispatch) extends Attr[Nothing]
-    private[scalive] case ComponentBinding[Msg](
-      name: String,
-      target: ComponentRef[Msg],
-      operation: BindingPayload => Msg)                                   extends Attr[Msg]
-    private[scalive] case ComponentTarget[Msg](target: ComponentRef[Msg]) extends Attr[Msg]
-    private[scalive] case Group[Msg](attrs: Vector[Attr[Msg]])            extends Attr[Msg]
+      operation: BindingPayload => ComponentDispatch)          extends Attr[Nothing]
+    private[scalive] case Group[Msg](attrs: Vector[Attr[Msg]]) extends Attr[Msg]
 
     private[scalive] def flattened: Vector[Attr[Msg]] = this match
       case Group(attrs) => attrs.flatMap(_.flattened)

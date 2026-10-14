@@ -41,7 +41,6 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
     def view(
       props: Signal[String],
       model: Signal[Unit],
-      self: ComponentRef[String]
     ): HtmlElement[String] = span(props)
 
   object TestView extends LiveView.Eventless[Unit]:
@@ -171,7 +170,7 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
         def mount(props: Vector[Int], ctx: MountContext) = ZIO.succeed(props)
         def handleMessage(props: Vector[Int], model: Vector[Int], ctx: MessageContext) = _ =>
           ZIO.succeed(model)
-        def view(props: Signal[Vector[Int]], model: Signal[Vector[Int]], self: ComponentRef[String]) =
+        def view(props: Signal[Vector[Int]], model: Signal[Vector[Int]]) =
           div(idAttr := "result", items(model))
       val asyncDefinition =
         new LiveComponent[AsyncValue[Vector[Int]], String, AsyncValue[Vector[Int]]]:
@@ -184,7 +183,6 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
           def view(
             props: Signal[AsyncValue[Vector[Int]]],
             model: Signal[AsyncValue[Vector[Int]]],
-            self: ComponentRef[String]
           ) =
             val current = model.map(AsyncValue.currentValue)
             div(
@@ -1623,14 +1621,16 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
         html._1.cidForToken(innerToken).contains(2)
       )
     },
-    test("resolves an explicit component target to its CID") {
+    test("resolves the owning component target to its CID") {
       val rootCompiled = RenderProgram.compile[Unit, Nothing](_ =>
         div(liveComponent(TestComponent, "child", "child"))
       )
       val token = Object()
       val ref   = ComponentRef.runtime[String](token)
-      val childCompiled = RenderProgram.compile[String, String](value =>
-        button(phx.target(ref), value)
+      val childCompiled = RenderProgram.compileComponent[String, String](
+        value => button(on.click("clicked"), value),
+        _ => Map.empty,
+        ref
       )
       for
         rootProgram  <- ZIO.fromEither(rootCompiled)
@@ -1648,15 +1648,11 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
         component       = componentFields("1").asInstanceOf[Json.Obj]
         fields          = component.fields.toMap
       yield assertTrue(
-        fields("s") == Json.Arr(
-          Json.Str("<button"),
-          Json.Str(" data-phx-component=\"1\">"),
-          Json.Str("</button>")
+        fields("1") == Json.Str(" phx-target=\"1\""),
+        fields("2") == Json.Str("click"),
+        html._2.matches(
+          "<div><button phx-click=\"[^\"]+\" phx-target=\"1\" data-phx-component=\"1\">click</button></div>"
         ),
-        fields("0") == Json.Str(" phx-target=\"1\""),
-        fields("1") == Json.Str("click"),
-        html._2 ==
-          "<div><button phx-target=\"1\" data-phx-component=\"1\">click</button></div>",
         html._1.cidForToken(token).contains(1)
       )
     },
@@ -2032,15 +2028,14 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
       val sharedRef   = ComponentRef.runtime[String](Object())
       val secondToken = Object()
       val validChild  = RenderProgram.compile[String, Nothing](value => span(value))
-      val staleChild  = RenderProgram.compile[String, String](value =>
-        button(phx.target(staleRef), value)
+      def targeting(owner: ComponentRef[String]) = RenderProgram.compileComponent[String, String](
+        value => button(on.click("clicked"), value),
+        _ => Map.empty,
+        owner
       )
-      val unknownChild = RenderProgram.compile[String, String](value =>
-        button(phx.target(unknownRef), value)
-      )
-      val targetedChild = RenderProgram.compile[String, String](value =>
-        button(phx.target(sharedRef), value)
-      )
+      val staleChild    = targeting(staleRef)
+      val unknownChild  = targeting(unknownRef)
+      val targetedChild = targeting(sharedRef)
       for
         validRootProgram     <- ZIO.fromEither(validRootCompiled)
         staleRootProgram     <- ZIO.fromEither(staleRootCompiled)

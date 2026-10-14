@@ -13,7 +13,6 @@ object StaticHtmlSpec extends ZIOSpecDefault:
     def view(
       props: Signal[String],
       model: Signal[String],
-      self: ComponentRef[Nothing]
     ): HtmlElement[Nothing] = span(model)
 
   private object StaticNestedView extends LiveView.Eventless[Unit]:
@@ -27,7 +26,6 @@ object StaticHtmlSpec extends ZIOSpecDefault:
     def view(
       props: Signal[Unit],
       model: Signal[Unit],
-      self: ComponentRef[String]
     ): HtmlElement[String] = div()
 
   override def spec = suite("StaticHtmlSpec")(
@@ -66,7 +64,8 @@ object StaticHtmlSpec extends ZIOSpecDefault:
     test("rejects lifecycle-backed content") {
       for
         binding <- StaticHtml
-                     .render(button(on.click.toComponent(RoutedComponent)("clicked"))).either
+                     .render(button(on.click.to(component(RoutedComponent, "routed"))("clicked")))
+                     .either
         component <- StaticHtml
                        .render(div(liveComponent(StaticComponent, "status", "ready"))).either
         nested <- StaticHtml.render(div(liveView("child", StaticNestedView))).either

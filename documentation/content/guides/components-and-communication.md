@@ -28,11 +28,8 @@ declares two instances of one component class:
 
 @:sourceRegion(documentation/site/src/scalive/docs/examples/VotingComponentsExample.scala, voting-component-ids)
 
-The ID is application identity within that component class. An
-@:apiSymbol(opaque-type:scalive.ComponentRef)`ComponentRef`@:@ is an opaque,
-type-safe semantic identity for the exact mounted component. Its representation
-is deliberately hidden: do not treat it as a numeric CID or persist it as domain
-state.
+The ID is application identity within that component class. Keep it stable so
+the instance keeps its model.
 
 ## Separate props, messages, model, and output {#separate-component-types}
 
@@ -56,9 +53,10 @@ Its model also keeps the parent's reset epoch, which
 
 ## Keep local events local {#keep-local-events-local}
 
-Bindings rendered by a component accept its `Msg` values. Pair
-`phx.target(self)` with `on.click.to(self)` so the Phoenix client sends the event
-to that exact runtime component rather than the owning LiveView:
+Bindings rendered by a component accept its `Msg` values and send them to that
+instance. Scalive renders `phx-target` with the instance's component ID on each
+element of the component's view that carries a binding, so the Phoenix client
+sends the event to the component rather than the owning LiveView:
 
 @:sourceRegion(documentation/site/src/scalive/docs/examples/VotingComponentsExample.scala, voting-local-binding)
 
@@ -145,22 +143,20 @@ not create a route or history boundary around the component.
 
 ## Target deliberately {#target-deliberately}
 
-For a component-local browser event, specify `phx.target(self)` alongside the
-typed binding. The client target and the Scala message target are distinct:
-
-- `on.click.to(instance)(message)` routes by stable component class and logical
-  ID, without depending on a numeric client ID;
-- `on.click.to(self)(message)` selects the current runtime `ComponentRef` for
-  typed dispatch; `phx.target(self)` separately emits the client's `phx-target`;
-- `on.click.toComponent(Component)(message)` only fixes the accepted component
-  class. Add `phx.target(self)` or a `DomSelector` to choose the actual client
-  target according to Phoenix targeting semantics.
+A binding sends its message to the LiveView or component whose view renders it.
+To send a message to another component instance, address it by its stable
+component class and logical ID with
+@:apiSymbol(def:scalive.HtmlAttrBinding.to)`on.click.to(instance)(message)`@:@.
+This works from the owning LiveView and from another component's view.
 
 Targets are limited to mounted components in the owning LiveView. They do not
-cross into a nested LiveView, and a missing exact target
-does not queue work for a future mount. Use typed outputs to communicate upward
-instead of treating selectors or numeric component IDs as an application
-message bus.
+cross into a nested LiveView, and an event for an instance that is not mounted
+is rejected rather than queued for a future mount. Use typed outputs to
+communicate upward.
+
+`phx.target(selector)` overrides the rendered target, as in Phoenix. Only the
+owner of a binding can resolve it, so a selector must point back to that owner;
+it exists for Phoenix parity, not as a message bus.
 
 ## Remove components cleanly {#remove-components-cleanly}
 
@@ -180,8 +176,7 @@ a fresh mount, not a revival of the old model; its mount may register entirely
 new subscriptions. Cancelled, completed, or defective retained registrations
 are not automatically restarted when a dormant instance returns.
 
-Do not retain a `ComponentRef`, upload snapshots, or other runtime handles after
-removal. Put durable data in the parent or an application service before hiding
+Do not retain upload snapshots or other runtime handles after removal. Put durable data in the parent or an application service before hiding
 the component. A failed component lifecycle fails the active render or message
 lifecycle; model expected failures as component messages when the UI should
 recover without taking down the owning LiveView.

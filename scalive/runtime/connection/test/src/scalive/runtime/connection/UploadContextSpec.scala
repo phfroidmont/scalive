@@ -344,7 +344,6 @@ object UploadContextSpec extends ZIOSpecDefault:
                            def view(
                              props: Signal[Unit],
                              model: Signal[LiveUpload[Chunk[Byte]]],
-                             self: ComponentRef[Nothing]
                            ) = span(model.map(_.ref.value))
           instance = component(componentDef, "uploader")
           root     = new LiveView[Boolean, (Boolean, LiveUpload[Chunk[Byte]])]:
@@ -393,7 +392,6 @@ object UploadContextSpec extends ZIOSpecDefault:
                          def view(
                            props: Signal[String],
                            model: Signal[LiveUpload[Chunk[Byte]]],
-                           self: ComponentRef[Nothing]
                          ) = span(model.map(_.ref.value))
         first  = component(componentDef, "first")
         second = component(componentDef, "second")

@@ -89,7 +89,6 @@ object NestedRenderingSpec extends ZIOSpecDefault:
         def view(
           props: Signal[Unit],
           model: Signal[Unit],
-          self: ComponentRef[Unit]
         ): HtmlElement[Unit] = div()
 
       val parentCompiled = RenderProgram.compile[Unit, Nothing](_ =>

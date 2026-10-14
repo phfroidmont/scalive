@@ -2215,10 +2215,12 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                      restore(
                        renderPhase(
                          ZIO.fromEither(
-                           RenderProgram.compile[(P, A, Map[scalive.FlashKind, String]), M](
-                             input => component.view(input.map(_._1), input.map(_._2), ref),
-                             _._3
-                           )
+                           RenderProgram
+                             .compileComponent[(P, A, Map[scalive.FlashKind, String]), M](
+                               input => component.view(input.map(_._1), input.map(_._2)),
+                               _._3,
+                               ref
+                             )
                          )
                        )
                      )
@@ -3326,58 +3328,31 @@ final private[scalive] class SessionKernel[Msg, Model] private (
             operation.dispatch(command.payload) match
               case Left(error)                           => Right(browser(Left(error)))
               case Right(BindingDispatch.Owner(message)) => Right(browser(Right(message)))
-              // `toComponent` addresses the component that the browser targets.
-              case Right(BindingDispatch.Routed(routed: ComponentDispatch.Definition[?, ?, ?])) =>
-                if mounted.key.definition.value eq routed.component.asInstanceOf[AnyRef] then
-                  Right(browser(Right(routed.message)))
-                else Left(SessionRejection.UnknownComponentTarget)
-              case Right(dispatch) =>
-                resolveDispatch(forest, dispatch).map {
-                  case ResolvedClient.Component(component, message)
-                      if component != command.component =>
-                    component -> ComponentAction.Message(message)
-                  case ResolvedClient.Component(_, message) => browser(Right(message))
-                  case ResolvedClient.Root(message)         => browser(Right(message))
+              case Right(BindingDispatch.Routed(routed)) =>
+                resolveRouted(forest, routed).map { component =>
+                  if component == command.component then browser(Right(routed.message))
+                  else component -> ComponentAction.Message(routed.message)
                 }
-  end resolveComponentClient
 
   private def resolveDispatch[Owner](
     forest: ComponentForest[Msg],
     dispatch: BindingDispatch[Owner]
   ): Either[SessionRejection, ResolvedClient[Owner]] = dispatch match
-    case BindingDispatch.Owner(message)     => Right(ResolvedClient.Root(message))
-    case targeted: BindingDispatch.Targeted =>
-      forest.byRef(targeted.target.asInstanceOf[ComponentRef[Any]]) match
-        case Some(component) => Right(ResolvedClient.Component(component.id, targeted.message))
-        case None            => Left(SessionRejection.UnknownComponentTarget)
-    case BindingDispatch.Routed(value) => resolveRouted(forest, value)
+    case BindingDispatch.Owner(message) => Right(ResolvedClient.Root(message))
+    case BindingDispatch.Routed(value)  =>
+      resolveRouted(forest, value).map(ResolvedClient.Component(_, value.message))
 
-  private def resolveRouted[Owner](
+  private def resolveRouted(
     forest: ComponentForest[Msg],
     dispatch: ComponentDispatch
-  ): Either[SessionRejection, ResolvedClient[Owner]] =
-    val (applicationId, matches) = dispatch match
+  ): Either[SessionRejection, ComponentInstanceId] =
+    val (definition, applicationId) = dispatch match
       case value: ComponentDispatch.Instance[?, ?, ?] =>
-        val key = ComponentKey(
-          ComponentDefinitionIdentity(value.instance.component.asInstanceOf[AnyRef]),
-          value.instance.id
-        )
-        Some(value.instance.id) -> forest.byKey.get(key).toVector.map(_ -> value.message)
+        value.instance.component -> value.instance.id
       case value: ComponentDispatch.OutputInstance[?, ?, ?, ?] =>
-        val key = ComponentKey(
-          ComponentDefinitionIdentity(value.instance.component.asInstanceOf[AnyRef]),
-          value.instance.id
-        )
-        Some(value.instance.id) -> forest.byKey.get(key).toVector.map(_ -> value.message)
-      case value: ComponentDispatch.Definition[?, ?, ?] =>
-        None -> forest.values
-          .filter(component =>
-            component.key.definition.value eq value.component.asInstanceOf[AnyRef]
-          ).map(_ -> value.message)
-    matches match
-      case Vector((component, message)) => Right(ResolvedClient.Component(component.id, message))
-      case Vector()                     => Left(SessionRejection.UnknownComponentTarget)
-      case _                            => Left(SessionRejection.AmbiguousComponent(applicationId))
+        value.instance.component -> value.instance.id
+    val key = ComponentKey(ComponentDefinitionIdentity(definition), applicationId)
+    forest.byKey.get(key).map(_.id).toRight(SessionRejection.UnknownComponentTarget)
 
   private def stageCandidateNavigation(
     state: SessionState.Active[Msg, Model],

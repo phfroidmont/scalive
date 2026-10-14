@@ -17,7 +17,7 @@ object NestedTopologyKernelSpec extends ZIOSpecDefault:
   object NestedComponent extends LiveComponent[Unit, Unit, Unit]:
     def mount(props: Unit, ctx: MountContext) = ZIO.unit
     def handleMessage(props: Unit, model: Unit, ctx: MessageContext) = _ => ZIO.unit
-    def view(props: Signal[Unit], model: Signal[Unit], self: ComponentRef[Unit]) =
+    def view(props: Signal[Unit], model: Signal[Unit]) =
       div(liveView("component-child", Child))
 
   private object Environment extends ComponentEnvironment[Int, Int]:

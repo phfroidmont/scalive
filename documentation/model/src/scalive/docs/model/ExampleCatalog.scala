@@ -332,7 +332,7 @@ object ExampleCatalog:
       "Stable component instances isolate local votes while typed outputs report changes to their parent LiveView.",
     category = ExampleCategory.StateAndRendering,
     topics = Vector("components", "typed outputs", "local state", "parent communication"),
-    aliases = Vector("LiveComponent", "ComponentRef", "sendUpdate", "emit", "WithOutput"),
+    aliases = Vector("LiveComponent", "sendUpdate", "emit", "WithOutput"),
     resetDescription = "Reset both component models and the parent report state.",
     sources = Vector(
       ExampleSource(

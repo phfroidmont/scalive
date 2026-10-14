@@ -31,7 +31,6 @@ object ComponentApiSpec extends ZIOSpecDefault:
           override def view(
             props: Signal[Unit],
             model: Signal[Unit],
-            self: ComponentRef[Msg.type]
           ) = div()
 
         val binding = component[CounterComponent.type](CounterComponent.Msg)
@@ -39,8 +38,22 @@ object ComponentApiSpec extends ZIOSpecDefault:
 
       assertTrue(errors.nonEmpty)
     },
-    test("component event routing is available on event bindings") {
+    test("component views send their own bindings to the component without a reference") {
       val errors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+
+        object CounterComponent
+            extends LiveComponent[Unit, CounterComponent.Msg.type, Unit]:
+          object Msg
+
+          def mount(props: Unit, ctx: MountContext) = ZIO.succeed(())
+
+          def handleMessage(props: Unit, model: Unit, ctx: MessageContext) =
+            (_: Msg.type) => ZIO.succeed(())
+
+          override def view(props: Signal[Unit], model: Signal[Unit]) = button(on.click(Msg))
+      """)
+      val selfErrors = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*
 
         object CounterComponent
@@ -56,15 +69,9 @@ object ComponentApiSpec extends ZIOSpecDefault:
             props: Signal[Unit],
             model: Signal[Unit],
             self: ComponentRef[Msg.type]
-          ) = div()
-
-        val binding = scalive.on.click.toComponent(CounterComponent)(CounterComponent.Msg)
+          ) = button(phx.target(self), on.click.to(self)(Msg))
       """)
-
-      assertTrue(errors.isEmpty)
-    },
-    test("component event routing rejects another component's message type") {
-      val errors = scala.compiletime.testing.typeCheckErrors("""
+      val definitionErrors = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*
 
         object CounterComponent
@@ -76,17 +83,12 @@ object ComponentApiSpec extends ZIOSpecDefault:
           def handleMessage(props: Unit, model: Unit, ctx: MessageContext) =
             (_: Msg.type) => ZIO.succeed(())
 
-          override def view(
-            props: Signal[Unit],
-            model: Signal[Unit],
-            self: ComponentRef[Msg.type]
-          ) = div()
+          override def view(props: Signal[Unit], model: Signal[Unit]) = div()
 
-        object OtherMsg
-        val binding = scalive.on.click.toComponent(CounterComponent)(OtherMsg)
+        val binding = on.click.toComponent(CounterComponent)(CounterComponent.Msg)
       """)
 
-      assertTrue(errors.nonEmpty)
+      assertTrue(errors.isEmpty, selfErrors.nonEmpty, definitionErrors.nonEmpty)
     },
     test("component instances unify rendering, event routing, and updates") {
       val errors = scala.compiletime.testing.typeCheckErrors("""
@@ -104,7 +106,6 @@ object ComponentApiSpec extends ZIOSpecDefault:
           override def view(
             props: Signal[String],
             model: Signal[Int],
-            self: ComponentRef[Msg.type]
           ) = div()
 
         val counter = component(CounterComponent, "counter")
@@ -136,7 +137,6 @@ object ComponentApiSpec extends ZIOSpecDefault:
           override def view(
             props: Signal[Unit],
             model: Signal[Unit],
-            self: ComponentRef[Msg.type]
           ) = div()
 
         object OtherMsg
@@ -159,7 +159,6 @@ object ComponentApiSpec extends ZIOSpecDefault:
           override def view(
             props: Signal[String],
             model: Signal[Unit],
-            self: ComponentRef[Unit]
           ) = div()
 
         val label = component(LabelComponent, "label")
@@ -179,7 +178,6 @@ object ComponentApiSpec extends ZIOSpecDefault:
           override def view(
             props: Signal[String],
             model: Signal[Unit],
-            self: ComponentRef[Unit]
           ) = div()
 
         def update(ctx: MessageContext[Unit, Unit]) =
@@ -210,7 +208,6 @@ object ComponentApiSpec extends ZIOSpecDefault:
           override def view(
             props: Signal[Unit],
             model: Signal[Int],
-            self: ComponentRef[Msg.type]
           ) = div()
 
         val counter = component(CounterComponent, "counter")
@@ -241,7 +238,6 @@ object ComponentApiSpec extends ZIOSpecDefault:
           override def view(
             props: Signal[Unit],
             model: Signal[Int],
-            self: ComponentRef[Msg.type]
           ) = div()
 
         val counter = component(CounterComponent, "counter")
@@ -262,7 +258,6 @@ object ComponentApiSpec extends ZIOSpecDefault:
           override def view(
             props: Signal[Unit],
             model: Signal[Unit],
-            self: ComponentRef[Unit]
           ) = div()
 
         val counter = component(CounterComponent, "counter")
@@ -283,7 +278,6 @@ object ComponentApiSpec extends ZIOSpecDefault:
           override def view(
             props: Signal[Unit],
             model: Signal[Unit],
-            self: ComponentRef[Unit]
           ) = div()
       """)
 

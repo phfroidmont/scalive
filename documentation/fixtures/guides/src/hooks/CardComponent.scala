@@ -47,19 +47,17 @@ object CardComponent
     case Msg.Rename(title) => ZIO.succeed(model.copy(title = title))
     case Msg.ToggleDetails => ZIO.succeed(model.copy(expanded = !model.expanded))
 
-  def view(props: Signal[Props], model: Signal[Model], self: ComponentRef[Msg]) =
+  def view(props: Signal[Props], model: Signal[Model]) =
     articleTag(
       strong(model.map(_.title)),
       button(
         typ := "button",
-        phx.target(self),
-        on.click.to(self)(Msg.ToggleDetails),
+        on.click(Msg.ToggleDetails),
         "Details"
       ),
       button(
         typ := "button",
-        phx.target(self),
-        on.click.to(self)(Msg.Rename("Renamed")),
+        on.click(Msg.Rename("Renamed")),
         "Rename"
       )
     )

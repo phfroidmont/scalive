@@ -17,7 +17,6 @@ object RenderRequirementsSpec extends ZIOSpecDefault:
     def view(
       props: Signal[String],
       model: Signal[Unit],
-      self: ComponentRef[String]
     ): HtmlElement[String] = span(props)
 
   object OutputComponent extends LiveComponent.WithOutput[String, String, Unit, String]:
@@ -27,7 +26,6 @@ object RenderRequirementsSpec extends ZIOSpecDefault:
     def view(
       props: Signal[String],
       model: Signal[Unit],
-      self: ComponentRef[String]
     ): HtmlElement[String] = span(props)
 
   object ChildView extends LiveView.Eventless[String]:
@@ -251,39 +249,51 @@ object RenderRequirementsSpec extends ZIOSpecDefault:
         duplicateNested.left.exists(_.isInstanceOf[RenderError.ComponentResolutionInvalid])
       )
     },
-    test("produces owner, routed, targeted, and semantic target bindings") {
-      val targetToken = Object()
-      val target      = ComponentRef.runtime[String](targetToken)
+    test("produces owner and routed bindings") {
+      val instance = component(PlainComponent, "plain")
       val compiled = RenderProgram.compile[Unit, String] { _ =>
-        div(
-          button(on.click("owner")),
-          button(on.click.toComponent(PlainComponent)("routed")),
-          button(on.click.to(target)("targeted"), phx.target(target))
-        )
+        div(button(on.click("owner")), button(on.click.to(instance)("routed")))
       }
 
       for
         program   <- ZIO.fromEither(compiled)
         candidate <- program.evaluate(())
-        ids = candidate.bindings.ids
-        owner = candidate.bindings.resolve(ids(0)).get.dispatch(BindingPayload.Params(Map.empty))
+        ids    = candidate.bindings.ids
+        owner  = candidate.bindings.resolve(ids(0)).get.dispatch(BindingPayload.Params(Map.empty))
         routed = candidate.bindings.resolve(ids(1)).get.dispatch(BindingPayload.Params(Map.empty))
-        targeted = candidate.bindings.resolve(ids(2)).get.dispatch(BindingPayload.Params(Map.empty))
-        targetAttribute = candidate.tree.root.children(2)
-          .asInstanceOf[EvaluatedNode.Element].attributes(1).value
       yield assertTrue(
         owner == Right(BindingDispatch.Owner("owner")),
-        routed.exists {
-          case BindingDispatch.Routed(ComponentDispatch.Definition(component, "routed")) =>
-            component eq PlainComponent
-          case _ => false
-        },
-        targeted.exists {
-          case value: BindingDispatch.Targeted =>
-            value.target == target && value.message == "targeted"
-          case _ => false
-        },
-        targetAttribute.contains(AttributeValue.ComponentTarget(target))
+        routed == Right(BindingDispatch.Routed(ComponentDispatch.Instance(instance, "routed")))
+      )
+    },
+    test("targets the owning component from each element of its view that carries a binding") {
+      val owner    = ComponentRef.runtime[String](Object())
+      val compiled = RenderProgram.compileComponent[Unit, String](
+        _ =>
+          div(
+            button(on.click("owner")),
+            button(on.click(JS.push("pushed"))),
+            button(phx.target(DomSelector.css("#elsewhere")), on.click("explicit")),
+            span("no binding")
+          ),
+        _ => Map.empty,
+        owner
+      )
+
+      for
+        program   <- ZIO.fromEither(compiled)
+        candidate <- program.evaluate(())
+        root     = candidate.tree.root
+        children = root.children.map(_.asInstanceOf[EvaluatedNode.Element])
+        targets  = children.map(_.attributes.filter(_.name == "phx-target").flatMap(_.value))
+      yield assertTrue(
+        targets == Vector(
+          Vector(AttributeValue.ComponentTarget(owner)),
+          Vector(AttributeValue.ComponentTarget(owner)),
+          Vector(AttributeValue.Text("#elsewhere")),
+          Vector.empty
+        ),
+        root.attributes.forall(_.name != "phx-target")
       )
     },
     test("scopes sibling component deltas despite colliding local ids") {

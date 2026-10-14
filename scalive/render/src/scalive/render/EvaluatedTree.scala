@@ -16,7 +16,7 @@ import scalive.streams.StreamLimit
 enum AttributeValue:
   case Text(value: String)
   case Presence
-  case ComponentTarget[Message](ref: ComponentRef[Message])
+  case ComponentTarget(ref: ComponentRef[Any])
 
 final case class EvaluatedAttribute private[render] (
   name: String,

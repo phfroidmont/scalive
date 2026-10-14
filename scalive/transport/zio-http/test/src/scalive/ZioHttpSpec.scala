@@ -358,7 +358,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
           ZIO.succeed(mounts.incrementAndGet()).unit *>
             ctx.flash.clear(oldKind) *>
             ctx.flash.put(newKind, "component-final")
-        def view(props: Signal[Unit], model: Signal[Unit], self: ComponentRef[Nothing]) = div()
+        def view(props: Signal[Unit], model: Signal[Unit]) = div()
       val instance = component(definition, "flash-mutator")
       object View extends LiveView.Eventless[Unit]:
         def mount(ctx: MountContext) = ZIO.unit
@@ -461,10 +461,9 @@ object ZioHttpSpec extends ZIOSpecDefault:
         def view(
           props: Signal[String],
           model: Signal[String],
-          self: ComponentRef[Nothing]
         ) =
           sectionTag(
-            button(phx.target(self), model),
+            button(on.click(JS.hide()), model),
             scriptTag(phx.trackStatic := true, src := "/assets/component.js")
           )
       val instance = component(definition, "disconnected-component")
@@ -511,8 +510,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
                          def view(
                            props: Signal[String],
                            model: Signal[String],
-                           self: ComponentRef[String]
-                         ) = button(phx.target(self), model)
+                         ) = button(on.click("clicked"), model)
           first  = component(definition, "cid-first")
           second = component(definition, "cid-second")
           view = new LiveView[Nothing, Boolean]:

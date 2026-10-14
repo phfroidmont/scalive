@@ -91,7 +91,6 @@ object ManagedComponentSubscriptionsSpec extends ZIOSpecDefault:
     def view(
       props: Signal[Props],
       model: Signal[Vector[Int]],
-      self: ComponentRef[ComponentMessage]
     ) = div(model.map(_.mkString(",")))
 
   private final case class Running(

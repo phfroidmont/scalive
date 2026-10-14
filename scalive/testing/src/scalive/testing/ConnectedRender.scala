@@ -347,7 +347,7 @@ final class ConnectedView[-Msg] private[testing] (
       event   <- ZIO.attempt {
                  val element = findElement(current)
                  val binding = ConnectedDom.requiredBinding(element, "phx-click")
-                 val cid     = ConnectedDom.componentCid(element)
+                 val cid     = ConnectedDom.eventTarget(element)
                  RootEvent(
                    eventType = "click",
                    event = binding,
@@ -369,7 +369,7 @@ final class ConnectedView[-Msg] private[testing] (
       event   <- ZIO.attempt {
                  val element = ConnectedDom.selectOne(current, selector)
                  val binding = ConnectedDom.requiredBinding(element, attribute)
-                 val cid     = ConnectedDom.componentCid(element)
+                 val cid     = ConnectedDom.eventTarget(element)
                  val meta    = target.map(value => Json.Obj("_target" -> Json.Str(value)))
                  RootEvent(
                    eventType = "form",
@@ -408,16 +408,17 @@ private object ConnectedDom:
     } ++ Option.when(element.hasAttr("value"))("value" -> Json.Str(element.attr("value")))
     Json.Obj(values*)
 
-  def componentCid(element: Element): Option[Long] =
-    Option.when(element.hasAttr("phx-target"))(element.attr("phx-target").toLong).orElse {
-      @annotation.tailrec
-      def enclosing(current: Element): Option[Long] =
-        if current == null then None
-        else if current.hasAttr("data-phx-component") then
-          Some(current.attr("data-phx-component").toLong)
-        else enclosing(current.parent())
-
-      enclosing(element)
+  /** Returns the component that the Phoenix client sends `element`'s events to, or `None` for the
+    * LiveView. Like the client, it reads `phx-target` from `element` only: a component ID, or a
+    * selector whose match belongs to its closest component.
+    */
+  def eventTarget(element: Element): Option[Long] =
+    Option.when(element.hasAttr("phx-target"))(element.attr("phx-target")).flatMap { target =>
+      if target.matches("0|[1-9][0-9]*") then Some(target.toLong)
+      else
+        val matches = element.ownerDocument().select(target).asScala.toVector
+        val matched = exactlyOne(matches, s"element matching the phx-target selector '$target'")
+        Option(matched.closest("[data-phx-component]")).map(_.attr("data-phx-component").toLong)
     }
 
   def urlEncoded(fields: Vector[(String, String)]): String =

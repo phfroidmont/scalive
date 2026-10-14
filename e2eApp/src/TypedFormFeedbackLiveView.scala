@@ -363,8 +363,7 @@ object TypedFormFeedbackLiveView:
 
     override def view(
       props: Signal[Unit],
-      model: Signal[Model],
-      self: ComponentRef[Msg]
+      model: Signal[Model]
     ) =
       val formSignal = model.map(_.form)
       val binding    = formSignal.bind(
@@ -377,8 +376,7 @@ object TypedFormFeedbackLiveView:
 
       div(
         binding.render(
-          phx.target(self),
-          name.text(name.validationAttributes, phx.target(self)),
+          name.text(name.validationAttributes),
           name.errorFeedback(error => error.map(_.message))
         ),
         div(idAttr := "component-server-name", formSignal.map(_.field(Name).fieldValue)),

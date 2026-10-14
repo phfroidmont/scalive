@@ -323,9 +323,10 @@ final private class DisconnectedComponentEnvironment private (
           ref = ComponentRef.runtime[M](new Object())
           program <- ZIO.acquireRelease(
                        ZIO.fromEither(
-                         RenderProgram.compile[(P, A, Map[FlashKind, String]), M](
-                           input => component.view(input.map(_._1), input.map(_._2), ref),
-                           _._3
+                         RenderProgram.compileComponent[(P, A, Map[FlashKind, String]), M](
+                           input => component.view(input.map(_._1), input.map(_._2)),
+                           _._3,
+                           ref
                          )
                        )
                      )(_.close)

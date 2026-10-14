@@ -42,11 +42,10 @@ object CopyButtonComponent
         .push(CopyRequestEvent, CopyRequest(requestId, props.text))
         .as(model.copy(requestNumber = requestNumber, pending = Some(requestId), copied = None))
 
-  def view(props: Signal[Props], model: Signal[Model], self: ComponentRef[Msg]) =
+  def view(props: Signal[Props], model: Signal[Model]) =
     button(
       typ := "button",
-      phx.target(self),
-      on.click.to(self)(Msg.Copy),
+      on.click(Msg.Copy),
       model.map(model => if model.copied.nonEmpty then "Copied" else "Copy")
     )
 

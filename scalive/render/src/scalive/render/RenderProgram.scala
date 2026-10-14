@@ -9,6 +9,7 @@ import zio.UIO
 import zio.ZIO
 
 import scalive.BindingPayload
+import scalive.ComponentRef
 import scalive.ComponentSpec
 import scalive.Escaping
 import scalive.FlashKind
@@ -138,6 +139,25 @@ object RenderProgram:
     view: Signal[Input] => HtmlElement[Msg],
     resolveFlash: Input => Map[FlashKind, String]
   ): Either[RenderError, RenderProgram[Input, Msg]] =
+    compileOwned(view, resolveFlash, None)
+
+  /** Compiles a component's view, like `compile`.
+    *
+    * Every element that carries a binding and sets no `phx-target` targets `owner`, so that the
+    * browser sends its events to the component that owns the binding.
+    */
+  def compileComponent[Input, Msg](
+    view: Signal[Input] => HtmlElement[Msg],
+    resolveFlash: Input => Map[FlashKind, String],
+    owner: ComponentRef[Msg]
+  ): Either[RenderError, RenderProgram[Input, Msg]] =
+    compileOwned(view, resolveFlash, Some(owner))
+
+  private def compileOwned[Input, Msg](
+    view: Signal[Input] => HtmlElement[Msg],
+    resolveFlash: Input => Map[FlashKind, String],
+    owner: Option[ComponentRef[Any]]
+  ): Either[RenderError, RenderProgram[Input, Msg]] =
     val scope       = SignalScope.root()
     val sourceToken = SignalSource[Input](scope)
     val source      = Signal.source[Input](sourceToken)
@@ -146,7 +166,7 @@ object RenderProgram:
     try
       (for
         identity <- RenderProgramId.fresh()
-        template <- Compiler(allocator, scope, identity).compileElement(view(source))
+        template <- Compiler(allocator, scope, identity, owner).compileElement(view(source))
       yield RenderProgram(identity, source, scope, resolveFlash, template)) match
         case Right(program) => Right(program)
         case Left(error)    =>
@@ -412,15 +432,8 @@ object RenderProgram:
       id: BindingId,
       operation: BindingPayload => scalive.ComponentDispatch)
         extends AttributeTemplate[Nothing]
-    final case class TargetedBinding[Message](
-      name: String,
-      valueSlot: TemplateSlotId,
-      id: BindingId,
-      target: scalive.ComponentRef[Message],
-      operation: BindingPayload => Message)
-        extends AttributeTemplate[Nothing]
-    final case class ComponentTarget[Message](
-      target: scalive.ComponentRef[Message],
+    final case class ComponentTarget(
+      target: ComponentRef[Any],
       valueSlot: TemplateSlotId)
         extends AttributeTemplate[Nothing]:
       val name = "phx-target"
@@ -443,6 +456,7 @@ object RenderProgram:
     allocator: IdentityAllocator,
     scope: SignalScope,
     program: RenderProgramId,
+    owner: Option[ComponentRef[Any]],
     lock: Object):
 
     def compileElement[Msg](element: HtmlElement[Msg]): Either[RenderError, ElementTemplate[Msg]] =
@@ -451,7 +465,8 @@ object RenderProgram:
         parts <- classifyMods(element.mods)
         (attributeCandidates, contents) = parts
         _          <- validateAttributeCandidateNames(attributeCandidates)
-        attributes <- finalizeAttributes(attributeCandidates)
+        finalized  <- finalizeAttributes(attributeCandidates)
+        attributes <- targetOwner(finalized)
         _          <- validateAttributeNames(attributes)
         _          <- Either.cond(
                !element.tag.void || contents.isEmpty,
@@ -695,24 +710,6 @@ object RenderProgram:
               operation
             )
           )
-        case Mod.Attr.ComponentBinding(name, target, operation) =>
-          for
-            valueSlot   <- allocator.slot()
-            bindingSlot <- allocator.binding()
-          yield AttributeCandidate.Scalar(
-            AttributeTemplate.TargetedBinding(
-              name,
-              valueSlot,
-              BindingId.event(program, bindingSlot),
-              target,
-              operation
-            )
-          )
-        case Mod.Attr.ComponentTarget(target) =>
-          allocator
-            .slot().map(slot =>
-              AttributeCandidate.Scalar(AttributeTemplate.ComponentTarget(target, slot))
-            )
         case Mod.Attr.Group(_) =>
           Left(RenderError.InvalidHtml("attribute groups must be flattened before compilation"))
 
@@ -753,6 +750,22 @@ object RenderProgram:
                   )
           }
         }.map(_._1)
+
+    private def targetOwner[Msg](
+      attributes: Vector[AttributeTemplate[Msg]]
+    ): Either[RenderError, Vector[AttributeTemplate[Msg]]] =
+      def isBinding(attribute: AttributeTemplate[Msg]): Boolean = attribute match
+        case _: AttributeTemplate.Binding[?] | _: AttributeTemplate.SignalBinding[?, ?] |
+            _: AttributeTemplate.JsBinding[?] | _: AttributeTemplate.SignalJsBinding[?] |
+            _: AttributeTemplate.RoutedBinding =>
+          true
+        case choice: AttributeTemplate.Choice[Msg] => choice.branches.exists((_, b) => isBinding(b))
+        case _                                     => false
+      val targeted = attributes.exists(_.name.equalsIgnoreCase("phx-target"))
+      owner match
+        case Some(ref) if !targeted && attributes.exists(isBinding) =>
+          allocator.slot().map(slot => attributes :+ AttributeTemplate.ComponentTarget(ref, slot))
+        case _ => Right(attributes)
 
     private def finalizeCompositeAttribute(
       name: String,
@@ -927,7 +940,7 @@ object RenderProgram:
       retained match
         case Some(old) =>
           try
-            Compiler(allocator, old.scope, program, lock)
+            Compiler(allocator, old.scope, program, owner, lock)
               .compileElement(project(domId, value)).map { compiled =>
                 val aligned =
                   alignElement(compiled, old.element).getOrElse(markStaticScalars(compiled))
@@ -959,7 +972,9 @@ object RenderProgram:
             for
               rowId   <- RowId.fresh()
               element <-
-                Compiler(allocator, childScope, program, lock).compileElement(project(source))
+                Compiler(allocator, childScope, program, owner, lock).compileElement(
+                  project(source)
+                )
             yield StreamRowTemplate(rowId, childScope, source, element)
           catch
             case error: RenderError => Left(error)
@@ -983,7 +998,7 @@ object RenderProgram:
           try
             for
               rowId   <- RowId.fresh()
-              element <- Compiler(allocator, childScope, program, lock)
+              element <- Compiler(allocator, childScope, program, owner, lock)
                            .compileElement(project(source))
             yield DynamicKeyedRowTemplate(rowId, childScope, source, element)
           catch
@@ -1175,13 +1190,8 @@ object RenderProgram:
           case (left: AttributeTemplate.RoutedBinding, right: AttributeTemplate.RoutedBinding) =>
             Some(left.copy(valueSlot = right.valueSlot, id = right.id))
           case (
-                left: AttributeTemplate.TargetedBinding[?],
-                right: AttributeTemplate.TargetedBinding[?]
-              ) =>
-            Some(left.copy(valueSlot = right.valueSlot, id = right.id))
-          case (
-                left: AttributeTemplate.ComponentTarget[?],
-                right: AttributeTemplate.ComponentTarget[?]
+                left: AttributeTemplate.ComponentTarget,
+                right: AttributeTemplate.ComponentTarget
               ) =>
             Some(left.copy(valueSlot = right.valueSlot))
           case _ => None
@@ -1191,16 +1201,18 @@ object RenderProgram:
     def apply(
       allocator: IdentityAllocator,
       scope: SignalScope,
-      program: RenderProgramId
+      program: RenderProgramId,
+      owner: Option[ComponentRef[Any]]
     ): Compiler =
-      new Compiler(allocator, scope, program, Object())
+      new Compiler(allocator, scope, program, owner, Object())
 
     def apply(
       allocator: IdentityAllocator,
       scope: SignalScope,
       program: RenderProgramId,
+      owner: Option[ComponentRef[Any]],
       lock: Object
-    ): Compiler = new Compiler(allocator, scope, program, lock)
+    ): Compiler = new Compiler(allocator, scope, program, owner, lock)
 
   private def evaluateElement[Msg](
     template: ElementTemplate[Msg],
@@ -1966,14 +1978,6 @@ object RenderProgram:
             .add(
               resolvedId,
               BindingOperation.dispatching(payload => BindingDispatch.Routed(operation(payload)))
-            ).map(_ => Some(valueSlot) -> Some(AttributeValue.Text(resolvedId.encoded)))
-        case TargetedBinding(name, valueSlot, id, target, operation) =>
-          val resolvedId = resolveBindingId(name, id, formId)
-          bindings
-            .add(
-              resolvedId,
-              BindingOperation
-                .dispatching(payload => BindingDispatch.Targeted.Value(target, operation(payload)))
             ).map(_ => Some(valueSlot) -> Some(AttributeValue.Text(resolvedId.encoded)))
         case ComponentTarget(target, valueSlot) =>
           Right(Some(valueSlot) -> Some(AttributeValue.ComponentTarget(target)))

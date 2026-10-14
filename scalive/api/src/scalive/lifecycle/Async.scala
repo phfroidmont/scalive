@@ -84,11 +84,7 @@ enum AsyncValue[+A]:
   case Cancelled(previous: Option[A], reason: Option[String])
 end AsyncValue
 
-/** Constructors and operations for [[AsyncValue]].
-  *
-  * Prefer the extension methods `loading`, `updated`, and `valueOption`; the named functions are
-  * the same operations in prefix form.
-  */
+/** Constructors and operations for [[AsyncValue]]. */
 object AsyncValue:
   /** A value for work that has not started. */
   def empty[A]: AsyncValue[A] = AsyncValue.Empty
@@ -99,45 +95,24 @@ object AsyncValue:
   /** A value holding a successful result. */
   def ok[A](value: A): AsyncValue[A] = AsyncValue.Ok(value)
 
-  /** The current or last successful value, if any, like `valueOption`. */
-  def currentValue[A](value: AsyncValue[A]): Option[A] = value match
-    case AsyncValue.Empty                  => None
-    case AsyncValue.Loading(previous)      => previous
-    case AsyncValue.Ok(current)            => Some(current)
-    case AsyncValue.Failed(previous, _)    => previous
-    case AsyncValue.Cancelled(previous, _) => previous
-
-  /** Whether work is running, like `isLoading`. */
-  def currentlyLoading[A](value: AsyncValue[A]): Boolean = value match
-    case AsyncValue.Loading(_) => true
-    case _                     => false
-
-  /** Whether the last work succeeded, like `isOk`. */
-  def currentlyOk[A](value: AsyncValue[A]): Boolean = value match
-    case AsyncValue.Ok(_) => true
-    case _                => false
-
-  /** Marks work as running, like `loading`. */
-  def markLoading[A](current: AsyncValue[A], reset: Boolean = false): AsyncValue[A] =
-    AsyncValue.Loading(if reset then None else currentValue(current))
-
-  /** Applies a task's result, like `updated`. */
-  def applyResult[A](current: AsyncValue[A], result: LiveAsyncResult[A]): AsyncValue[A] =
-    val previous = currentValue(current)
-    result match
-      case LiveAsyncResult.Succeeded(value)  => AsyncValue.Ok(value)
-      case LiveAsyncResult.Failed(cause)     => AsyncValue.Failed(previous, cause)
-      case LiveAsyncResult.Cancelled(reason) => AsyncValue.Cancelled(previous, reason)
-
   extension [A](value: AsyncValue[A])
     /** The current or last successful value, if any. */
-    @targetName("asyncValueOption") def valueOption: Option[A] = currentValue(value)
+    @targetName("asyncValueOption") def valueOption: Option[A] = value match
+      case AsyncValue.Empty                  => None
+      case AsyncValue.Loading(previous)      => previous
+      case AsyncValue.Ok(current)            => Some(current)
+      case AsyncValue.Failed(previous, _)    => previous
+      case AsyncValue.Cancelled(previous, _) => previous
 
     /** Whether work is running. */
-    @targetName("asyncIsLoading") def isLoading: Boolean = currentlyLoading(value)
+    @targetName("asyncIsLoading") def isLoading: Boolean = value match
+      case AsyncValue.Loading(_) => true
+      case _                     => false
 
     /** Whether the last work succeeded. */
-    @targetName("asyncIsOk") def isOk: Boolean = currentlyOk(value)
+    @targetName("asyncIsOk") def isOk: Boolean = value match
+      case AsyncValue.Ok(_) => true
+      case _                => false
 
     /** Whether the last work failed. */
     @targetName("asyncIsFailed") def isFailed: Boolean = failure.nonEmpty
@@ -157,10 +132,13 @@ object AsyncValue:
 
     /** Marks work as running, keeping the last successful value unless `reset` is `true`. */
     @targetName("asyncLoading") def loading(reset: Boolean = false): AsyncValue[A] =
-      markLoading(value, reset)
+      AsyncValue.Loading(if reset then None else valueOption)
 
     /** Applies a task's result: success replaces the value; failure and cancellation keep it. */
     @targetName("asyncUpdated") def updated(result: LiveAsyncResult[A]): AsyncValue[A] =
-      applyResult(value, result)
+      result match
+        case LiveAsyncResult.Succeeded(current) => AsyncValue.Ok(current)
+        case LiveAsyncResult.Failed(cause)      => AsyncValue.Failed(valueOption, cause)
+        case LiveAsyncResult.Cancelled(reason)  => AsyncValue.Cancelled(valueOption, reason)
   end extension
 end AsyncValue

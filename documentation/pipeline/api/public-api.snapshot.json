@@ -1682,54 +1682,6 @@
       ]
     },
     {
-      "id" : "def:scalive.AsyncValue.applyResult",
-      "ownerId" : "object:scalive.AsyncValue",
-      "qualifiedName" : "scalive.AsyncValue.applyResult",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.AsyncValue.applyResult:dcccd96d0d4b7f8e",
-          "signature" : "def applyResult[A](current: AsyncValue[A], result: LiveAsyncResult[A]): AsyncValue[A]"
-        }
-      ]
-    },
-    {
-      "id" : "def:scalive.AsyncValue.currentValue",
-      "ownerId" : "object:scalive.AsyncValue",
-      "qualifiedName" : "scalive.AsyncValue.currentValue",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.AsyncValue.currentValue:4989299cd13a64f1",
-          "signature" : "def currentValue[A](value: AsyncValue[A]): Option[A]"
-        }
-      ]
-    },
-    {
-      "id" : "def:scalive.AsyncValue.currentlyLoading",
-      "ownerId" : "object:scalive.AsyncValue",
-      "qualifiedName" : "scalive.AsyncValue.currentlyLoading",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.AsyncValue.currentlyLoading:ad37513284377939",
-          "signature" : "def currentlyLoading[A](value: AsyncValue[A]): Boolean"
-        }
-      ]
-    },
-    {
-      "id" : "def:scalive.AsyncValue.currentlyOk",
-      "ownerId" : "object:scalive.AsyncValue",
-      "qualifiedName" : "scalive.AsyncValue.currentlyOk",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.AsyncValue.currentlyOk:66370c9b467ae97a",
-          "signature" : "def currentlyOk[A](value: AsyncValue[A]): Boolean"
-        }
-      ]
-    },
-    {
       "id" : "def:scalive.AsyncValue.empty",
       "ownerId" : "object:scalive.AsyncValue",
       "qualifiedName" : "scalive.AsyncValue.empty",
@@ -1750,18 +1702,6 @@
         {
           "id" : "def:scalive.AsyncValue.loading:55974c8e8bf1517a",
           "signature" : "def loading[A]: AsyncValue[A]"
-        }
-      ]
-    },
-    {
-      "id" : "def:scalive.AsyncValue.markLoading",
-      "ownerId" : "object:scalive.AsyncValue",
-      "qualifiedName" : "scalive.AsyncValue.markLoading",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.AsyncValue.markLoading:8261097a83a141d0",
-          "signature" : "def markLoading[A](current: AsyncValue[A], reset: Boolean = ...): AsyncValue[A]"
         }
       ]
     },
@@ -6298,18 +6238,6 @@
         {
           "id" : "def:scalive.LiveParamsCodec.fromQuery:c547f08d8ca22a06",
           "signature" : "def fromQuery[PathParams, QueryParams](codec: zio.http.codec.package.QueryCodec[QueryParams])(using combiner: zio.http.codec.Combiner[PathParams, QueryParams]): LiveParamsCodec[PathParams, combiner.Out]"
-        }
-      ]
-    },
-    {
-      "id" : "def:scalive.LiveParamsCodec.fromZioHttp",
-      "ownerId" : "object:scalive.LiveParamsCodec",
-      "qualifiedName" : "scalive.LiveParamsCodec.fromZioHttp",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.LiveParamsCodec.fromZioHttp:910794928d3e6706",
-          "signature" : "def fromZioHttp[A](codec: zio.http.codec.package.QueryCodec[A]): LiveParamsCodec[Unit, A]"
         }
       ]
     },
@@ -17146,18 +17074,6 @@
       ]
     },
     {
-      "id" : "lazy-val:scalive.tpe",
-      "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.tpe",
-      "kind" : "lazyVal",
-      "signatures" : [
-        {
-          "id" : "lazy-val:scalive.tpe:3e628cb4b8d5bba2",
-          "signature" : "lazy val tpe: HtmlAttr[String]"
-        }
-      ]
-    },
-    {
       "id" : "lazy-val:scalive.tr",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.tr",
@@ -26081,18 +25997,6 @@
         {
           "id" : "val:scalive.ZioHttpConfig.sessionMaxAge:11d724c81838cb79",
           "signature" : "val sessionMaxAge: java.time.Duration"
-        }
-      ]
-    },
-    {
-      "id" : "val:scalive.className",
-      "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.className",
-      "kind" : "val",
-      "signatures" : [
-        {
-          "id" : "val:scalive.className:eedf03a762801f79",
-          "signature" : "val className: CompositeHtmlAttr"
         }
       ]
     },

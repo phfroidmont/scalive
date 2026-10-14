@@ -268,7 +268,7 @@ object RenderProgramSpec extends ZIOSpecDefault:
           dataAttr("first") := "1",
           cls               := " alpha\tbeta ",
           title             := "middle",
-          className         := "beta\ngamma",
+          cls               := "beta\ngamma",
           rel               := "next",
           rel               := "next prev",
           role              := "button",

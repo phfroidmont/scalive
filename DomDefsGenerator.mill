@@ -150,6 +150,9 @@ class DomDefsGenerator(baseOutputDirectoryPath: String):
           commentLines = linkedComments,
           docUrls = List("https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/img#alt")
         )
+      // Keep one short name for `type`.
+      case "type" =>
+        attr.copy(commentLines = linkedComments, scalaAliases = attr.scalaAliases.filterNot(_ == "tpe"))
       case _ => attr.copy(commentLines = linkedComments)
 
   private def scaliveTagComments(tag: TagDef): TagDef =

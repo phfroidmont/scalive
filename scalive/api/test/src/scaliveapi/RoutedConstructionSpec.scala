@@ -64,9 +64,16 @@ object RoutedConstructionSpec extends ZIOSpecDefault:
           .mapParamsDecodeOnly(id => id.toString)
 
         val explicit = Live.route(PathCodec.empty / "explicit")
+
+        val queryOnly: LiveParamsCodec[Unit, Int] =
+          LiveParamsCodec.fromQuery(zio.http.codec.HttpCodec.query[Int]("page"))
+      """)
+      val fromZioHttpErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        val queryOnly = LiveParamsCodec.fromZioHttp(zio.http.codec.HttpCodec.query[Int]("page"))
       """)
 
-      assertTrue(errors.isEmpty)
+      assertTrue(errors.isEmpty, fromZioHttpErrors.nonEmpty)
     },
     test("mount aspects supply typed context to route factories") {
       val errors = scala.compiletime.testing.typeCheckErrors("""

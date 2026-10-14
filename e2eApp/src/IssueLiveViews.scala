@@ -1801,7 +1801,7 @@ object Issue3941LiveView:
     override def update(props: String, model: Model, ctx: UpdateContext) =
       val loading = model.copy(
         item = props,
-        asyncAssign = AsyncValue.markLoading(model.asyncAssign, reset = true)
+        asyncAssign = model.asyncAssign.loading(reset = true)
       )
       ctx.connection match
         case Connection.Connected(capabilities) =>
@@ -1975,17 +1975,17 @@ class Issue4027LiveView
 
   def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.Load =>
-      startLoad(ctx.async, InitialItems).as(model.copy(data = AsyncValue.markLoading(model.data)))
+      startLoad(ctx.async, InitialItems).as(model.copy(data = model.data.loading()))
     case Msg.Remove =>
       startLoad(ctx.async, InitialItems.tail).as(
-        model.copy(data = AsyncValue.markLoading(model.data))
+        model.copy(data = model.data.loading())
       )
     case Msg.Loaded(result) => ZIO.succeed(model.copy(data = model.data.updated(result)))
 
   override def view(model: Signal[Model]) =
     val caseName     = model.map(_.caseName)
     val data         = model.map(_.data)
-    val currentItems = data.map(AsyncValue.currentValue)
+    val currentItems = data.map(_.valueOption)
 
     div(
       cls := "p-4",
@@ -2090,10 +2090,10 @@ object Issue4027LiveView:
     div(
       idAttr := "result",
       data
-        .map(AsyncValue.currentValue)
+        .map(_.valueOption)
         .map(_.isDefined)
         .chooseMod(
-          keyedItems(data.map(current => AsyncValue.currentValue(current).getOrElse(Vector.empty))),
+          keyedItems(data.map(current => current.valueOption.getOrElse(Vector.empty))),
           ""
         )
     )

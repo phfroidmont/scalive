@@ -165,23 +165,13 @@ object LiveParamsCodec:
     *   a codec with no path values and schema-derived query parameters
     */
   def query[A](using Schema[A]): LiveParamsCodec[Unit, A] =
-    fromZioHttp(HttpCodec.query[A])
-
-  /** Adapts a ZIO HTTP query codec to a query-only Live parameter codec.
-    *
-    * @param codec
-    *   the query codec used for request decoding and encoding
-    * @return
-    *   a Live parameter codec whose path value is `Unit`
-    */
-  def fromZioHttp[A](codec: QueryCodec[A]): LiveParamsCodec[Unit, A] =
-    fromQuery(codec)
+    fromQuery(HttpCodec.query[A])
 
   /** Combines route path values with parameters handled by a ZIO HTTP query codec.
     *
     * The implicit [[zio.http.codec.Combiner]] determines the resulting tuple or simplified value
     * and separates it again during encoding. Query encoding exceptions are caught and returned as
-    * [[LiveLocation.EncodeError.Query]].
+    * [[LiveLocation.EncodeError.Query]]. With `Unit` path values, the result is a query-only codec.
     *
     * @param codec
     *   the query codec used for request decoding and encoding

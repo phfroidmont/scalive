@@ -14,10 +14,7 @@ trait ComplexHtmlKeys extends NamespacedHtmlKeys:
     * Repeated modifiers contribute tokens to one `class` attribute. Values are split on HTML ASCII
     * whitespace, empty tokens are discarded, and duplicate tokens retain their first position.
     */
-  val className: CompositeHtmlAttr = CompositeHtmlAttr("class")
-
-  /** Concise alias for [[className]]. */
-  val cls: CompositeHtmlAttr = className
+  val cls: CompositeHtmlAttr = CompositeHtmlAttr("class")
 
   /** Defines the space-separated relationship types of a linked resource.
     *

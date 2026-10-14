@@ -110,7 +110,7 @@ object DisconnectedComponentRendererSpec extends ZIOSpecDefault:
             props: Signal[AsyncValue[Vector[Int]]],
             model: Signal[AsyncValue[Vector[Int]]],
           ) =
-            val current = model.map(AsyncValue.currentValue)
+            val current = model.map(_.valueOption)
             div(
               idAttr := "result",
               current.map(_.isDefined).chooseMod(
@@ -124,7 +124,7 @@ object DisconnectedComponentRendererSpec extends ZIOSpecDefault:
         .renderWith[(String, AsyncValue[Vector[Int]]), Nothing, String](input =>
           val caseName = input.map(_._1)
           val data     = input.map(_._2)
-          val current  = data.map(AsyncValue.currentValue)
+          val current  = data.map(_.valueOption)
           div(
             Signal.when(caseName.map(_ == "second"))(div("separator")),
             caseName

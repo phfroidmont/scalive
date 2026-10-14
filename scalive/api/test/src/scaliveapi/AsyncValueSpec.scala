@@ -31,6 +31,14 @@ object AsyncValueSpec extends ZIOSpecDefault:
         celsius(AsyncValue.Cancelled(None, Some("stopped"))) ==
           AsyncValue.Cancelled(None, Some("stopped"))
       )
+    },
+    test("offers its operations only as methods") {
+      val errors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        val value = AsyncValue.currentValue(AsyncValue.ok(1))
+      """)
+
+      assertTrue(errors.nonEmpty)
     }
   )
 end AsyncValueSpec

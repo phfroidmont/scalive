@@ -7,6 +7,22 @@ import scalive.*
 object HtmlDslApiSpec extends ZIOSpecDefault:
 
   override def spec = suite("HtmlDslApiSpec")(
+    test("each attribute has one short name") {
+      val shortNames = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        val button = input(typ := "checkbox", cls := "toggle")
+      """)
+      val tpeErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        val button = input(tpe := "checkbox")
+      """)
+      val classNameErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        val button = input(className := "toggle")
+      """)
+
+      assertTrue(shortNames.isEmpty, tpeErrors.nonEmpty, classNameErrors.nonEmpty)
+    },
     test("function components accept mixed modifier inputs") {
       enum Msg:
         case Clicked
@@ -189,9 +205,9 @@ object HtmlDslApiSpec extends ZIOSpecDefault:
     test("typed attributes keep their public types") {
       val typed: HtmlAttr[Boolean]            = inert
       val asHtmlAttr: HtmlAttr[String]        = CompositeHtmlAttr("data-tags")
-      val builtIns: Vector[CompositeHtmlAttr] = Vector(className, cls, rel, role)
+      val builtIns: Vector[CompositeHtmlAttr] = Vector(cls, rel, role)
 
-      assertTrue(typed.name == "inert", asHtmlAttr.name == "data-tags", builtIns.size == 4)
+      assertTrue(typed.name == "inert", asHtmlAttr.name == "data-tags", builtIns.size == 3)
     }
   )
 end HtmlDslApiSpec

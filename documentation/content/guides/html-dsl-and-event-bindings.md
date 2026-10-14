@@ -57,8 +57,8 @@ Repeat `cls` when several modifiers each add classes to one element. Some HTML
 attributes contain a space-separated token list rather than one scalar value.
 Their @:apiSymbol(class:scalive.CompositeHtmlAttr)`CompositeHtmlAttr`@:@
 definitions let independent modifiers contribute to one rendered attribute. The
-built-in @:apiSymbol(val:scalive.className)`className`@:@,
-@:apiSymbol(val:scalive.cls)`cls`@:@, @:apiSymbol(lazy-val:scalive.rel)`rel`@:@, and
+built-in @:apiSymbol(val:scalive.cls)`cls`@:@,
+@:apiSymbol(lazy-val:scalive.rel)`rel`@:@, and
 @:apiSymbol(lazy-val:scalive.role)`role`@:@ definitions use this behavior:
 
 @:sourceRegion(documentation/fixtures/guides/src/bindings/CartMarkup.scala, bindings-token-list)

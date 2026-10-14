@@ -49,7 +49,8 @@ command's timing and targeting options rather than treating this overview as an
 exhaustive reference.
 
 Use @:apiSymbol(def:scalive.Client.exec)`ctx.client.exec`@:@ when a server callback must execute a client-only command after
-work completes. A command containing a typed message push belongs on a rendered
+work completes. It accepts only client-only commands: a command containing a
+typed message push does not compile there, because it belongs on a rendered
 binding, where Scalive can encode that binding correctly.
 
 ## Push typed server events {#push-typed-server-events}

@@ -288,9 +288,9 @@ trait Client:
 
   /** Runs the client-only command `js` in the browser, once the current turn commits.
     *
-    * A command that pushes a typed message belongs on a rendered binding instead.
+    * A command that pushes a typed message does not compile here: it belongs on a rendered binding.
     */
-  def exec[Msg](js: JSCommands.JSCommand[Msg]): Task[Unit]
+  def exec(js: JSCommands.JSCommand[Nothing]): Task[Unit]
 
 /** Sends new props to stateful components that are already mounted. */
 trait ComponentUpdates:

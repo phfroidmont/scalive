@@ -517,7 +517,7 @@ final private class JournaledClient(journal: RootTurnJournal) extends Client:
           IllegalArgumentException(s"Could not encode client event '${event.value}': $error")
         )
 
-  def exec[Msg](js: JSCommands.JSCommand[Msg]): Task[Unit] =
+  def exec(js: JSCommands.JSCommand[Nothing]): Task[Unit] =
     import JSCommands.JSCommand.given
     journal.clientEvents.update(
       _ :+ ClientEffect("js:exec", Json.Obj("cmd" -> Json.Str(js.toJson)))

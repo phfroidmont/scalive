@@ -230,5 +230,28 @@ object ConnectionCapabilitiesSpec extends ZIOSpecDefault:
       """)
 
       assertTrue(errors.isEmpty, wrongMessageErrors.nonEmpty, missingDeliveryErrors.nonEmpty)
+    },
+    test("server-executed commands accept client-only commands and reject pushes") {
+      val errors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+
+        def clientOnly(ctx: MessageContext[Int, Unit]) =
+          ctx.client.exec(
+            JS.show(to = DomSelector.css("#panel"))
+              .addClass("open", to = DomSelector.css("#panel"))
+              .focus(to = DomSelector.css("#panel input"))
+          )
+      """)
+      val pushErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        def push(ctx: MessageContext[Int, Unit]) = ctx.client.exec(JS.push(1))
+      """)
+      val composedPushErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        def push(ctx: ComponentMessageContext[Unit, Int, Unit]) =
+          ctx.client.exec(JS.hide().push(1))
+      """)
+
+      assertTrue(errors.isEmpty, pushErrors.nonEmpty, composedPushErrors.nonEmpty)
     }
   )

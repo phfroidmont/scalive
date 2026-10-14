@@ -1796,8 +1796,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.Client.exec:2f1151a75a54cb3a",
-          "signature" : "def exec[Msg](js: JSCommands.JSCommand[Msg]): zio.package.Task[Unit]"
+          "id" : "def:scalive.Client.exec:19c0a621a35764c5",
+          "signature" : "def exec(js: JSCommands.JSCommand[Nothing]): zio.package.Task[Unit]"
         }
       ]
     },

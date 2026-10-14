@@ -24,9 +24,10 @@ object JSCommands:
     * invalid values retain the browser/client's behavior.
     *
     * A command containing [[push]] must be rendered as an HTML event binding. Rendering gives each
-    * push a stable binding ID and registers its typed message. Encoding such a command directly, or
-    * sending it through `ctx.client.exec`, has no HTML binding scope and leaves the push
-    * unresolved; the encoded placeholder is not a usable server event binding.
+    * push a stable binding ID and registers its typed message. `ctx.client.exec` accepts only
+    * `JSCommand[Nothing]`, so it rejects such a command at compile time. Encoding one directly has
+    * no HTML binding scope and leaves the push unresolved; the encoded placeholder is not a usable
+    * server event binding.
     *
     * @tparam Msg
     *   the least upper bound of messages pushed by this command
@@ -404,8 +405,8 @@ object JSCommands:
       * not currently trigger page-loading lifecycle events.
       *
       * A push must be attached to a typed HTML event binding such as `on.click(JS.push(message))`.
-      * Standalone JSON encoding and `ctx.client.exec` cannot allocate its binding ID and therefore
-      * leave an unresolved placeholder.
+      * `ctx.client.exec` does not accept it. Standalone JSON encoding cannot allocate its binding
+      * ID and therefore leaves an unresolved placeholder.
       *
       * @param event
       *   the Scala message to deliver to the LiveView

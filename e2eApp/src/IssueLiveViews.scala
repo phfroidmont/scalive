@@ -1342,7 +1342,7 @@ class Issue3636LiveView extends LiveView[Unit, Unit]:
     (_: Unit) => ZIO.succeed(model)
 
   override def view(model: Signal[Unit]) =
-    focusWrap("focus-wrap")(
+    focusWrap(DomRef("focus-wrap"))(
       button("One"),
       button("Two"),
       button("Three")
@@ -2278,7 +2278,7 @@ class Issue4095LiveView extends LiveView[Issue4095LiveView.Msg, String]:
         idAttr := "issue-4095-form",
         on.change.form(Msg.Validate(_)),
         input(typ := "text", nameAttr := "show?", idAttr := "show?", value := show),
-        portal("portal", target = DomSelector.css("#portal_target"))(
+        portal(DomRef("portal"), target = DomSelector.css("#portal_target"))(
           div(Signal.when(show.map(_.nonEmpty))(button("Show?")))
         )
       ),
@@ -2331,7 +2331,7 @@ class Issue4107LiveView extends LiveView[Unit, Unit]:
 
   override def view(model: Signal[Unit]) =
     div(
-      portal("test-form-portal", target = DomSelector.css("body"))(
+      portal(DomRef("test-form-portal"), target = DomSelector.css("body"))(
         form(
           idAttr := "test-form",
           action := "/api/test",
@@ -2356,7 +2356,7 @@ class Issue4121LiveView extends LiveView[Issue4121LiveView.Msg.type, Issue4121Li
   override def view(model: Signal[Model]) =
     div(
       button(on.click(Msg), "Reset teleported stream"),
-      portal("teleported-stream", target = DomSelector.css("body"))(
+      portal(DomRef("teleported-stream"), target = DomSelector.css("body"))(
         ul(
           idAttr     := "stream-in-lv",
           phx.update := PhxUpdate.Stream,

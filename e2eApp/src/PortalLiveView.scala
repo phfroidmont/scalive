@@ -75,7 +75,7 @@ class PortalLiveView
       ),
       model
         .map(_.renderModal).when(
-          portal("portal-source", target = DomSelector.css("#root-portal"))(
+          portal(DomRef("portal-source"), target = DomSelector.css("#root-portal"))(
             modal("my-modal", count, first = true),
             div(
               dom.hook("InsidePortal", DomRef("hook-test")),
@@ -83,13 +83,13 @@ class PortalLiveView
             )
           )
         ),
-      portal("portal-with-live-component", target = DomSelector.css("#root-portal"))(
+      portal(DomRef("portal-with-live-component"), target = DomSelector.css("#root-portal"))(
         liveComponent(LiveComponentFixture, id = "lc", props = ())
       ),
-      portal("tooltip-example-portal-portal", target = DomSelector.css("body"))(
+      portal(DomRef("tooltip-example-portal-portal"), target = DomSelector.css("body"))(
         tooltipBody("tooltip-example-portal", count)
       ),
-      portal("portal-source-2", target = DomSelector.css("#app-portal"))(
+      portal(DomRef("portal-source-2"), target = DomSelector.css("#app-portal"))(
         modal("my-modal-2", count, first = false, inner = Vector(secondModalInnerPortal))
       ),
       modal("non-teleported-modal", count, first = false, inner = nonTeleportedModalMenu),
@@ -188,11 +188,11 @@ object PortalLiveView:
       ),
       model
         .map(_.renderNestedPortals).when(
-          portal("nested-portal-source", target = DomSelector.css("#root-portal"))(
+          portal(DomRef("nested-portal-source"), target = DomSelector.css("#root-portal"))(
             div(
               idAttr := "outer-portal",
               h3("Outer Portal"),
-              portal("inner-portal-source", target = DomSelector.css("body"))(
+              portal(DomRef("inner-portal-source"), target = DomSelector.css("body"))(
                 div(
                   idAttr := "inner-portal",
                   h4("Inner Portal (nested inside outer)"),
@@ -211,7 +211,7 @@ object PortalLiveView:
         on.click(JS.show(to = DomSelector.css("#teleported-menu-content"))),
         "Open menu"
       ),
-      portal("teleported-menu", target = DomSelector.css("body"))(
+      portal(DomRef("teleported-menu"), target = DomSelector.css("body"))(
         div(
           idAttr    := "teleported-menu-content",
           cls       := "hidden z-[100] fixed top-0 left-0 border border-red-500 p-4 bg-white",
@@ -226,7 +226,7 @@ object PortalLiveView:
 
   private def secondModalInnerPortal =
     portal(
-      "modal-2-inner-portal",
+      DomRef("modal-2-inner-portal"),
       target = DomSelector.css("#my-modal-2-content"),
       wrapperClass = Some("contents")
     )(
@@ -234,7 +234,7 @@ object PortalLiveView:
         cls := "size-96 bg-gray-300 absolute top-0 right-0",
         styleAttr := "width: 24rem; height: 24rem; background-color: rgb(209 213 219); position: absolute; top: 0; right: 0;",
         portal(
-          "modal-2-inner-portal-2",
+          DomRef("modal-2-inner-portal-2"),
           target = DomSelector.css("#my-modal-2-content"),
           wrapperClass = Some("contents")
         )(
@@ -287,13 +287,13 @@ object PortalLiveView:
         h1("Nested LiveView"),
         p(idAttr := "nested-event-count", count.map(_.toString)),
         button(on.click(NestedLive.Msg), "Trigger event in nested LV"),
-        portal("nested-lv-button", target = DomSelector.css("body"))(
+        portal(DomRef("nested-lv-button"), target = DomSelector.css("body"))(
           button(
             on.click(NestedLive.Msg),
             "Trigger event in nested LV (from teleported button)"
           )
         ),
-        portal("nested-lv", target = DomSelector.css("body"))(
+        portal(DomRef("nested-lv"), target = DomSelector.css("body"))(
           liveView("nested-teleported", NestedTeleportedLive())
         )
       )
@@ -351,7 +351,7 @@ object PortalLiveView:
           model.map(_.items).stream((domId, item) => li(idAttr := domId, item.map(_.name)))
         ),
         button(on.click(Msg), "Prepend item"),
-        portal("teleported-from-lc-button", target = DomSelector.css("body"))(
+        portal(DomRef("teleported-from-lc-button"), target = DomSelector.css("body"))(
           button(
             dom.hook("TeleportedLCButton", DomRef("lcbtn")),
             "Prepend item (teleported)"

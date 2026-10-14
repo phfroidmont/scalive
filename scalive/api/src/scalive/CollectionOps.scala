@@ -61,12 +61,13 @@ extension [A](stream: streams.LiveStream[A])
     */
   def renderIn[Msg](
     container: HtmlTag,
-    mods: Mod[Msg]*
+    mods: Mod.Input[Msg]*
   )(
     project: A => HtmlElement[Msg]
   ): HtmlElement[Msg] =
-    val containerMods = mods.filterNot(mod => isAttr(mod, "id") || isAttr(mod, "phx-update"))
-    val entries       = stream.stream { (domId, item) =>
+    val containerMods =
+      Mod.flatten(mods).filterNot(mod => isAttr(mod, "id") || isAttr(mod, "phx-update"))
+    val entries = stream.stream { (domId, item) =>
       val element = project(item)
       HtmlElement(
         element.tag,
@@ -96,12 +97,13 @@ extension [A](stream: Signal[streams.LiveStream[A]])
     */
   def renderIn[Msg](
     container: HtmlTag,
-    mods: Mod[Msg]*
+    mods: Mod.Input[Msg]*
   )(
     project: Signal[A] => HtmlElement[Msg]
   ): HtmlElement[Msg] =
-    val containerMods = mods.filterNot(mod => isAttr(mod, "id") || isAttr(mod, "phx-update"))
-    val entries       = stream.stream { (domId, item) =>
+    val containerMods =
+      Mod.flatten(mods).filterNot(mod => isAttr(mod, "id") || isAttr(mod, "phx-update"))
+    val entries = stream.stream { (domId, item) =>
       val element = project(item)
       HtmlElement(
         element.tag,

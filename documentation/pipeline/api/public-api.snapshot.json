@@ -5128,8 +5128,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.HtmlAttrBinding.debounce:ded1a00e1904f700",
-          "signature" : "def debounce(duration: concurrent.duration.FiniteDuration): HtmlAttrBinding"
+          "id" : "def:scalive.HtmlAttrBinding.debounce:5b83d7fdd0474d87",
+          "signature" : "def debounce(duration: zio.package.Duration): HtmlAttrBinding"
         }
       ]
     },
@@ -5172,8 +5172,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.HtmlAttrBinding.throttle:e7e94be3e8dd7b23",
-          "signature" : "def throttle(duration: concurrent.duration.FiniteDuration): HtmlAttrBinding"
+          "id" : "def:scalive.HtmlAttrBinding.throttle:38e286d93fbc03e6",
+          "signature" : "def throttle(duration: zio.package.Duration): HtmlAttrBinding"
         }
       ]
     },
@@ -5424,8 +5424,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.KeyHtmlAttrBinding.debounce:6aa84f0e14715a60",
-          "signature" : "def debounce(duration: concurrent.duration.FiniteDuration): KeyHtmlAttrBinding"
+          "id" : "def:scalive.KeyHtmlAttrBinding.debounce:482c2a3657e7c3d9",
+          "signature" : "def debounce(duration: zio.package.Duration): KeyHtmlAttrBinding"
         }
       ]
     },
@@ -5460,8 +5460,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.KeyHtmlAttrBinding.throttle:64ed8b61598b4d76",
-          "signature" : "def throttle(duration: concurrent.duration.FiniteDuration): KeyHtmlAttrBinding"
+          "id" : "def:scalive.KeyHtmlAttrBinding.throttle:22f0abf22190c35e",
+          "signature" : "def throttle(duration: zio.package.Duration): KeyHtmlAttrBinding"
         }
       ]
     },
@@ -9292,8 +9292,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.StaticAssets.script:bed7650c2c2a0c60",
-          "signature" : "def script[Msg](asset: String, mods: Mod[Msg]*): HtmlElement[Msg]"
+          "id" : "def:scalive.StaticAssets.script:f1f26987384710ef",
+          "signature" : "def script[Msg](asset: String, mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         }
       ]
     },
@@ -9304,8 +9304,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.StaticAssets.stylesheet:abcd840b50fb958b",
-          "signature" : "def stylesheet[Msg](asset: String, mods: Mod[Msg]*): HtmlElement[Msg]"
+          "id" : "def:scalive.StaticAssets.stylesheet:5bf87d92b767b86f",
+          "signature" : "def stylesheet[Msg](asset: String, mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         }
       ]
     },
@@ -9316,8 +9316,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.StaticAssets.trackedScript:63f1bf5d934685d8",
-          "signature" : "def trackedScript[Msg](asset: String, mods: Mod[Msg]*): HtmlElement[Msg]"
+          "id" : "def:scalive.StaticAssets.trackedScript:5a55ed38416725af",
+          "signature" : "def trackedScript[Msg](asset: String, mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         }
       ]
     },
@@ -9328,8 +9328,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.StaticAssets.trackedStylesheet:eab6f178e97a9518",
-          "signature" : "def trackedStylesheet[Msg](asset: String, mods: Mod[Msg]*): HtmlElement[Msg]"
+          "id" : "def:scalive.StaticAssets.trackedStylesheet:80e6b6bdfe9e5b7f",
+          "signature" : "def trackedStylesheet[Msg](asset: String, mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         }
       ]
     },
@@ -9756,8 +9756,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.focusWrap:80bc5056a2cc61f4",
-          "signature" : "def focusWrap[Msg](id: String, mods: Mod[Msg]*)(content: Mod[Msg]*): HtmlElement[Msg]"
+          "id" : "def:scalive.focusWrap:03868876a258377a",
+          "signature" : "def focusWrap[Msg](id: DomRef, mods: Mod.Input[Msg]*)(content: Mod.Input[Msg]*): HtmlElement[Msg]"
         }
       ]
     },
@@ -9804,12 +9804,12 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.link.pushNavigate:28137fa17e33550e",
-          "signature" : "def pushNavigate[Msg](to: LiveLocation, mods: Mod[Msg]*): HtmlElement[Msg]"
+          "id" : "def:scalive.link.pushNavigate:899cde1d3cc2a49d",
+          "signature" : "def pushNavigate[Msg](to: Signal[LiveLocation], mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         },
         {
-          "id" : "def:scalive.link.pushNavigate:3808f2ef92c406a5",
-          "signature" : "def pushNavigate[Msg](to: Signal[LiveLocation], mods: Mod[Msg]*): HtmlElement[Msg]"
+          "id" : "def:scalive.link.pushNavigate:e8f5049ba49ed0fc",
+          "signature" : "def pushNavigate[Msg](to: LiveLocation, mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         }
       ]
     },
@@ -9820,12 +9820,12 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.link.pushNavigateUnsafe:0a6942892459e29f",
-          "signature" : "def pushNavigateUnsafe[Msg](to: Signal[String], mods: Mod[Msg]*): HtmlElement[Msg]"
+          "id" : "def:scalive.link.pushNavigateUnsafe:a3a1bad5fa3abe3b",
+          "signature" : "def pushNavigateUnsafe[Msg](to: String, mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         },
         {
-          "id" : "def:scalive.link.pushNavigateUnsafe:86910a1fc3f16d13",
-          "signature" : "def pushNavigateUnsafe[Msg](to: String, mods: Mod[Msg]*): HtmlElement[Msg]"
+          "id" : "def:scalive.link.pushNavigateUnsafe:c646c3a019d6936d",
+          "signature" : "def pushNavigateUnsafe[Msg](to: Signal[String], mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         }
       ]
     },
@@ -9836,12 +9836,12 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.link.pushPatch:34416e3f8cbd986c",
-          "signature" : "def pushPatch[Msg](to: Signal[LiveLocation], mods: Mod[Msg]*): HtmlElement[Msg]"
+          "id" : "def:scalive.link.pushPatch:5de4221dc9f9cc5d",
+          "signature" : "def pushPatch[Msg](to: LiveLocation, mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         },
         {
-          "id" : "def:scalive.link.pushPatch:5a67d6a14b5371f1",
-          "signature" : "def pushPatch[Msg](to: LiveLocation, mods: Mod[Msg]*): HtmlElement[Msg]"
+          "id" : "def:scalive.link.pushPatch:c860ff43291526c9",
+          "signature" : "def pushPatch[Msg](to: Signal[LiveLocation], mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         }
       ]
     },
@@ -9852,12 +9852,12 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.link.pushPatchUnsafe:27057e3d27ce132a",
-          "signature" : "def pushPatchUnsafe[Msg](to: Signal[String], mods: Mod[Msg]*): HtmlElement[Msg]"
+          "id" : "def:scalive.link.pushPatchUnsafe:0e7dbd8df8539608",
+          "signature" : "def pushPatchUnsafe[Msg](to: Signal[String], mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         },
         {
-          "id" : "def:scalive.link.pushPatchUnsafe:27373d13b18f7079",
-          "signature" : "def pushPatchUnsafe[Msg](to: String, mods: Mod[Msg]*): HtmlElement[Msg]"
+          "id" : "def:scalive.link.pushPatchUnsafe:3c4b4354cb0a247b",
+          "signature" : "def pushPatchUnsafe[Msg](to: String, mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         }
       ]
     },
@@ -9868,12 +9868,12 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.link.replaceNavigate:1683970dcf8c6e64",
-          "signature" : "def replaceNavigate[Msg](to: LiveLocation, mods: Mod[Msg]*): HtmlElement[Msg]"
+          "id" : "def:scalive.link.replaceNavigate:2e8ffff796cb713b",
+          "signature" : "def replaceNavigate[Msg](to: Signal[LiveLocation], mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         },
         {
-          "id" : "def:scalive.link.replaceNavigate:5f93db0baa971e19",
-          "signature" : "def replaceNavigate[Msg](to: Signal[LiveLocation], mods: Mod[Msg]*): HtmlElement[Msg]"
+          "id" : "def:scalive.link.replaceNavigate:9fbe9da8c973398a",
+          "signature" : "def replaceNavigate[Msg](to: LiveLocation, mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         }
       ]
     },
@@ -9884,12 +9884,12 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.link.replaceNavigateUnsafe:891784dc4e6342b3",
-          "signature" : "def replaceNavigateUnsafe[Msg](to: String, mods: Mod[Msg]*): HtmlElement[Msg]"
+          "id" : "def:scalive.link.replaceNavigateUnsafe:91dbf6cba39671c1",
+          "signature" : "def replaceNavigateUnsafe[Msg](to: String, mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         },
         {
-          "id" : "def:scalive.link.replaceNavigateUnsafe:f400723c948a3561",
-          "signature" : "def replaceNavigateUnsafe[Msg](to: Signal[String], mods: Mod[Msg]*): HtmlElement[Msg]"
+          "id" : "def:scalive.link.replaceNavigateUnsafe:eb2e7247ab6680c1",
+          "signature" : "def replaceNavigateUnsafe[Msg](to: Signal[String], mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         }
       ]
     },
@@ -9900,12 +9900,12 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.link.replacePatch:d2d4801de398e9b4",
-          "signature" : "def replacePatch[Msg](to: LiveLocation, mods: Mod[Msg]*): HtmlElement[Msg]"
+          "id" : "def:scalive.link.replacePatch:43c35ce3d50e91e2",
+          "signature" : "def replacePatch[Msg](to: LiveLocation, mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         },
         {
-          "id" : "def:scalive.link.replacePatch:e5c872ef836db843",
-          "signature" : "def replacePatch[Msg](to: Signal[LiveLocation], mods: Mod[Msg]*): HtmlElement[Msg]"
+          "id" : "def:scalive.link.replacePatch:75cadb9b57caedc4",
+          "signature" : "def replacePatch[Msg](to: Signal[LiveLocation], mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         }
       ]
     },
@@ -9916,12 +9916,12 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.link.replacePatchUnsafe:90cee0fbca68ac96",
-          "signature" : "def replacePatchUnsafe[Msg](to: Signal[String], mods: Mod[Msg]*): HtmlElement[Msg]"
+          "id" : "def:scalive.link.replacePatchUnsafe:bf2b8def2b986ff8",
+          "signature" : "def replacePatchUnsafe[Msg](to: String, mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         },
         {
-          "id" : "def:scalive.link.replacePatchUnsafe:dbf9d300114b230c",
-          "signature" : "def replacePatchUnsafe[Msg](to: String, mods: Mod[Msg]*): HtmlElement[Msg]"
+          "id" : "def:scalive.link.replacePatchUnsafe:d6ece2f0e76c640b",
+          "signature" : "def replacePatchUnsafe[Msg](to: Signal[String], mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         }
       ]
     },
@@ -9968,20 +9968,20 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.liveFileInput:087d73c8fb67519b",
-          "signature" : "def liveFileInput[Msg, R](upload: Signal[LiveUpload[R]], mods: Mod[Msg]*): HtmlElement[Msg]"
+          "id" : "def:scalive.liveFileInput:3d855715713c45f5",
+          "signature" : "def liveFileInput[Msg, R](upload: LiveUpload[R], mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         },
         {
-          "id" : "def:scalive.liveFileInput:5ab2cefed430d0c5",
-          "signature" : "def liveFileInput[Msg, R](upload: LiveUpload[R], progress: UploadProgress[Msg], mods: Mod[Msg]*): HtmlElement[Msg]"
+          "id" : "def:scalive.liveFileInput:77e68f12b802db38",
+          "signature" : "def liveFileInput[Msg, R](upload: LiveUpload[R], progress: UploadProgress[Msg], mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         },
         {
-          "id" : "def:scalive.liveFileInput:c09740dfc9f12518",
-          "signature" : "def liveFileInput[Msg, R](upload: LiveUpload[R], mods: Mod[Msg]*): HtmlElement[Msg]"
+          "id" : "def:scalive.liveFileInput:91608f55cfd534bf",
+          "signature" : "def liveFileInput[Msg, R](upload: Signal[LiveUpload[R]], mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         },
         {
-          "id" : "def:scalive.liveFileInput:c504d1cf7cc8aef7",
-          "signature" : "def liveFileInput[Msg, R](upload: Signal[LiveUpload[R]], progress: UploadProgress[Msg], mods: Mod[Msg]*): HtmlElement[Msg]"
+          "id" : "def:scalive.liveFileInput:fc30745ead50f822",
+          "signature" : "def liveFileInput[Msg, R](upload: Signal[LiveUpload[R]], progress: UploadProgress[Msg], mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         }
       ]
     },
@@ -10068,8 +10068,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.portal:6ebbc1fe6aefffb7",
-          "signature" : "def portal[Msg](id: String, target: DomSelector, container: String = ..., wrapperClass: Option[String] = ...)(mods: Mod.Input[Msg]*): HtmlElement[Msg]"
+          "id" : "def:scalive.portal:147d236003c117c1",
+          "signature" : "def portal[Msg](id: DomRef, target: DomSelector, container: HtmlTag = ..., wrapperClass: Option[String] = ...)(mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         }
       ]
     },
@@ -13160,8 +13160,8 @@
       "kind" : "extension",
       "signatures" : [
         {
-          "id" : "extension:scalive.JSCommands.hide:47b3279fb4ee36aa",
-          "signature" : "extension def hide[Msg](ops: JSCommands.JSCommand[Msg])(to: DomSelector = ..., transition: |[String, Tuple3[String, String, String]] = ..., time: Int = ..., blocking: Boolean = ...): JSCommands.JSCommand[Msg]"
+          "id" : "extension:scalive.JSCommands.hide:d3d62bc66eb83847",
+          "signature" : "extension def hide[Msg](ops: JSCommands.JSCommand[Msg])(to: DomSelector = ..., transition: |[String, Tuple3[String, String, String]] = ..., time: zio.package.Duration = ..., blocking: Boolean = ...): JSCommands.JSCommand[Msg]"
         }
       ]
     },
@@ -13172,8 +13172,8 @@
       "kind" : "extension",
       "signatures" : [
         {
-          "id" : "extension:scalive.JSCommands.ignoreAttributes:15c9bbf97969c36b",
-          "signature" : "extension def ignoreAttributes[Msg](ops: JSCommands.JSCommand[Msg])(attrs: Seq[String] = ..., to: DomSelector = ...): JSCommands.JSCommand[Msg]"
+          "id" : "extension:scalive.JSCommands.ignoreAttributes:7d3021ab727841d1",
+          "signature" : "extension def ignoreAttributes[Msg](ops: JSCommands.JSCommand[Msg])(attrs: Seq[String], to: DomSelector = ...): JSCommands.JSCommand[Msg]"
         }
       ]
     },
@@ -13384,8 +13384,8 @@
       "kind" : "extension",
       "signatures" : [
         {
-          "id" : "extension:scalive.JSCommands.show:e40cb8f438d33425",
-          "signature" : "extension def show[Msg](ops: JSCommands.JSCommand[Msg])(to: DomSelector = ..., transition: |[String, Tuple3[String, String, String]] = ..., time: Int = ..., blocking: Boolean = ..., display: String = ...): JSCommands.JSCommand[Msg]"
+          "id" : "extension:scalive.JSCommands.show:2644fd202d8fb169",
+          "signature" : "extension def show[Msg](ops: JSCommands.JSCommand[Msg])(to: DomSelector = ..., transition: |[String, Tuple3[String, String, String]] = ..., time: zio.package.Duration = ..., blocking: Boolean = ..., display: String = ...): JSCommands.JSCommand[Msg]"
         }
       ]
     },
@@ -13396,8 +13396,8 @@
       "kind" : "extension",
       "signatures" : [
         {
-          "id" : "extension:scalive.JSCommands.toggle:f6b6af6371fe0880",
-          "signature" : "extension def toggle[Msg](ops: JSCommands.JSCommand[Msg])(to: DomSelector = ..., in: |[String, Tuple3[String, String, String]] = ..., out: |[String, Tuple3[String, String, String]] = ..., time: Int = ..., blocking: Boolean = ..., display: String = ...): JSCommands.JSCommand[Msg]"
+          "id" : "extension:scalive.JSCommands.toggle:f5e3bd8eaba06e49",
+          "signature" : "extension def toggle[Msg](ops: JSCommands.JSCommand[Msg])(to: DomSelector = ..., in: |[String, Tuple3[String, String, String]] = ..., out: |[String, Tuple3[String, String, String]] = ..., time: zio.package.Duration = ..., blocking: Boolean = ..., display: String = ...): JSCommands.JSCommand[Msg]"
         }
       ]
     },
@@ -13432,8 +13432,8 @@
       "kind" : "extension",
       "signatures" : [
         {
-          "id" : "extension:scalive.JSCommands.transition:5033b3cf121de9cb",
-          "signature" : "extension def transition[Msg](ops: JSCommands.JSCommand[Msg])(transition: |[String, Tuple3[String, String, String]] = ..., to: DomSelector = ..., time: Int = ..., blocking: Boolean = ...): JSCommands.JSCommand[Msg]"
+          "id" : "extension:scalive.JSCommands.transition:f7565aeafccaea6e",
+          "signature" : "extension def transition[Msg](ops: JSCommands.JSCommand[Msg])(transition: |[String, Tuple3[String, String, String]] = ..., to: DomSelector = ..., time: zio.package.Duration = ..., blocking: Boolean = ...): JSCommands.JSCommand[Msg]"
         }
       ]
     },
@@ -13664,12 +13664,12 @@
       "kind" : "extension",
       "signatures" : [
         {
-          "id" : "extension:scalive.renderIn:4c2431c11303c84e",
-          "signature" : "extension def renderIn[A](stream: LiveStream[A])[Msg](container: HtmlTag, mods: Mod[Msg]*)(project: A => HtmlElement[Msg]): HtmlElement[Msg]"
+          "id" : "extension:scalive.renderIn:de1c3900bc4b737b",
+          "signature" : "extension def renderIn[A](stream: LiveStream[A])[Msg](container: HtmlTag, mods: Mod.Input[Msg]*)(project: A => HtmlElement[Msg]): HtmlElement[Msg]"
         },
         {
-          "id" : "extension:scalive.renderIn:c262cb9d7c84be17",
-          "signature" : "extension def renderIn[A](stream: Signal[LiveStream[A]])[Msg](container: HtmlTag, mods: Mod[Msg]*)(project: Signal[A] => HtmlElement[Msg]): HtmlElement[Msg]"
+          "id" : "extension:scalive.renderIn:ff90f558c426c78b",
+          "signature" : "extension def renderIn[A](stream: Signal[LiveStream[A]])[Msg](container: HtmlTag, mods: Mod.Input[Msg]*)(project: Signal[A] => HtmlElement[Msg]): HtmlElement[Msg]"
         }
       ]
     },

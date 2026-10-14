@@ -177,8 +177,8 @@ values come from the browser, so validate them before use.
 
 To avoid sending a message for every keystroke, configure a rate limit on the
 binding before supplying the message. The search input uses
-`on.keyUp.debounce(300.millis)`; import `scala.concurrent.duration.*` for the
-duration syntax.
+`on.keyUp.debounce(300.millis)`. Durations are `zio.Duration` values, so the
+syntax comes with `import zio.*`.
 
 - @:apiSymbol(def:scalive.HtmlAttrBinding.debounce)`debounce(duration)`@:@ sends
   the latest event once no new event has arrived for `duration`. A pending event

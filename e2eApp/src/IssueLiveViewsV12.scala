@@ -113,7 +113,7 @@ class Issue3199LiveView(away: Boolean)
         div(
           idAttr := "root-remove-transition",
           hidden := true,
-          dom.onRemove(JS.transition("view-removing", time = 100))
+          dom.onRemove(JS.transition("view-removing", time = 100.millis))
         ),
         ul(
           idAttr     := "items",
@@ -122,7 +122,7 @@ class Issue3199LiveView(away: Boolean)
             .map(_.get).stream((domId, item) =>
               li(
                 idAttr := domId,
-                dom.onRemove(JS.transition("item-removing", time = 1000)),
+                dom.onRemove(JS.transition("item-removing", time = 1000.millis)),
                 item.map(_.name),
                 button(on.click(item.map(current => Msg.Delete(current.id))), "Delete")
               )
@@ -431,7 +431,7 @@ class Issue4290LiveView(page: String)
         h1("A"),
         div(
           idAttr := "slow-remove",
-          dom.onRemove(JS.transition("fade-out", time = 1500)),
+          dom.onRemove(JS.transition("fade-out", time = 1500.millis)),
           "removed with transition"
         ),
         form(

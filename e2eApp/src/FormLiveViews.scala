@@ -105,7 +105,7 @@ class FormLiveView(initialQuery: FormQueryParams = FormQueryParams())
     div(
       Signal.when(portalMode)(h1("Form")),
       portalMode.chooseMod(
-        portal("form-portal", target = DomSelector.css("body"))(
+        portal(DomRef("form-portal"), target = DomSelector.css("body"))(
           renderFormContent(query, values)
         ),
         renderFormContent(query, values)

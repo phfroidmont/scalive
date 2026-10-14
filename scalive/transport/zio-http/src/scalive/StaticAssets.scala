@@ -257,20 +257,20 @@ final class StaticAssets private (
     manifest(asset)
 
   /** Renders a stylesheet `<link>` using the asset's canonical URL. */
-  def stylesheet[Msg](asset: String, mods: Mod[Msg]*): HtmlElement[Msg] =
-    linkTag(rel := "stylesheet", href := path(asset), mods)
+  def stylesheet[Msg](asset: String, mods: Mod.Input[Msg]*): HtmlElement[Msg] =
+    linkTag(rel := "stylesheet", href := path(asset), Mod.flatten(mods))
 
   /** Renders a tracked stylesheet `<link>` using the asset's versioned or final URL. */
-  def trackedStylesheet[Msg](asset: String, mods: Mod[Msg]*): HtmlElement[Msg] =
-    linkTag(phx.trackStatic := true, rel := "stylesheet", href := path(asset), mods)
+  def trackedStylesheet[Msg](asset: String, mods: Mod.Input[Msg]*): HtmlElement[Msg] =
+    linkTag(phx.trackStatic := true, rel := "stylesheet", href := path(asset), Mod.flatten(mods))
 
   /** Renders a `<script>` using the asset's canonical URL. */
-  def script[Msg](asset: String, mods: Mod[Msg]*): HtmlElement[Msg] =
-    scriptTag(src := path(asset), mods)
+  def script[Msg](asset: String, mods: Mod.Input[Msg]*): HtmlElement[Msg] =
+    scriptTag(src := path(asset), Mod.flatten(mods))
 
   /** Renders a tracked `<script>` using the asset's versioned or final URL. */
-  def trackedScript[Msg](asset: String, mods: Mod[Msg]*): HtmlElement[Msg] =
-    scriptTag(phx.trackStatic := true, src := path(asset), mods)
+  def trackedScript[Msg](asset: String, mods: Mod.Input[Msg]*): HtmlElement[Msg] =
+    scriptTag(phx.trackStatic := true, src := path(asset), Mod.flatten(mods))
 
   /** GET and HEAD routes serving loaded assets below the configured mount path. */
   val routes: Routes[Any, Nothing] =

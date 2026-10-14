@@ -24,15 +24,20 @@ trait Components:
     * @param content
     *   content whose focus should wrap at the boundaries
     */
-  def focusWrap[Msg](id: String, mods: Mod[Msg]*)(content: Mod[Msg]*): HtmlElement[Msg] =
-    val startSentinel = span(idAttr := s"$id-start", tabIndex := 0, aria.hidden := true)
-    val endSentinel   = span(idAttr := s"$id-end", tabIndex := 0, aria.hidden := true)
+  def focusWrap[Msg](
+    id: DomRef,
+    mods: Mod.Input[Msg]*
+  )(
+    content: Mod.Input[Msg]*
+  ): HtmlElement[Msg] =
+    val startSentinel = span(idAttr := s"${id.value}-start", tabIndex := 0, aria.hidden := true)
+    val endSentinel   = span(idAttr := s"${id.value}-end", tabIndex := 0, aria.hidden := true)
 
     div(
-      Vector(idAttr := id, phx.hook := "Phoenix.FocusWrap") ++
-        mods ++
+      Vector(id.attr, phx.hook := "Phoenix.FocusWrap") ++
+        Mod.flatten(mods) ++
         Vector(Mod.Content.Tag(startSentinel)) ++
-        content ++
+        Mod.flatten(content) ++
         Vector(Mod.Content.Tag(endSentinel))
     )
 
@@ -59,8 +64,8 @@ trait Components:
     *   additional input attributes and bindings; do not pass content or duplicate the protocol
     *   attributes owned by this helper
     */
-  def liveFileInput[Msg, R](upload: LiveUpload[R], mods: Mod[Msg]*): HtmlElement[Msg] =
-    fileInput(upload, idAttr := upload.ref.value, mods)
+  def liveFileInput[Msg, R](upload: LiveUpload[R], mods: Mod.Input[Msg]*): HtmlElement[Msg] =
+    fileInput(upload, idAttr := upload.ref.value, Mod.flatten(mods))
 
   /** Renders the file input required by the LiveView upload protocol.
     *
@@ -71,7 +76,7 @@ trait Components:
   def liveFileInput[Msg, R](
     upload: LiveUpload[R],
     progress: UploadProgress[Msg],
-    mods: Mod[Msg]*
+    mods: Mod.Input[Msg]*
   ): HtmlElement[Msg] =
     val id = progress.upload match
       case Left(ref) =>
@@ -82,7 +87,7 @@ trait Components:
           requireOwnProgress(upload, ref)
           upload.ref.value
         }
-    fileInput(upload, id, progress.binding +: mods)
+    fileInput(upload, id, progress.binding +: Mod.flatten(mods))
 
   /** Renders the file input required by the LiveView upload protocol.
     *
@@ -91,9 +96,9 @@ trait Components:
     */
   def liveFileInput[Msg, R](
     upload: Signal[LiveUpload[R]],
-    mods: Mod[Msg]*
+    mods: Mod.Input[Msg]*
   ): HtmlElement[Msg] =
-    signalFileInput(upload, idAttr := upload.map(_.ref.value), mods)
+    signalFileInput(upload, idAttr := upload.map(_.ref.value), Mod.flatten(mods))
 
   /** Renders the file input required by the LiveView upload protocol.
     *
@@ -104,7 +109,7 @@ trait Components:
   def liveFileInput[Msg, R](
     upload: Signal[LiveUpload[R]],
     progress: UploadProgress[Msg],
-    mods: Mod[Msg]*
+    mods: Mod.Input[Msg]*
   ): HtmlElement[Msg] =
     val id = progress.upload match
       case Left(ref) =>
@@ -117,7 +122,7 @@ trait Components:
           requireOwnProgress(current, ref)
           current.ref.value
         }
-    signalFileInput(upload, id, progress.binding +: mods)
+    signalFileInput(upload, id, progress.binding +: Mod.flatten(mods))
 
   private def requireOwnProgress[R](upload: LiveUpload[R], progress: UploadRef): Unit =
     require(

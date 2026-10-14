@@ -112,7 +112,7 @@ object EventlessApiSpec extends ZIOSpecDefault:
           case Clicked
 
         val content: HtmlElement[Msg] = portal(
-          "portal-source",
+          DomRef("portal-source"),
           target = DomSelector.css("#portal-target"),
           wrapperClass = Some("contents")
         )(button(on.click(Msg.Clicked), "click"))

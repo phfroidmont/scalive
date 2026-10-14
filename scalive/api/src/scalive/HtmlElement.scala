@@ -1,7 +1,8 @@
 package scalive
 
 import scala.annotation.targetName
-import scala.concurrent.duration.FiniteDuration
+
+import zio.Duration
 
 import scalive.JSCommands.JSCommand
 import scalive.codecs.BooleanAsAttrPresenceEncoder
@@ -205,8 +206,8 @@ class HtmlAttrBinding private[scalive] (
   private def configured[Msg](binding: Mod.Attr[Msg]): Mod.Attr[Msg] =
     if companionAttrs.isEmpty then binding else Mod.Attr.Group(binding +: companionAttrs)
 
-  protected def durationAttr(name: String, duration: FiniteDuration): Mod.Attr[Nothing] =
-    require(duration.length >= 0, s"$name duration must not be negative")
+  protected def durationAttr(name: String, duration: Duration): Mod.Attr[Nothing] =
+    require(!duration.isNegative, s"$name duration must not be negative")
     Mod.Attr.Static(name, duration.toMillis.toString)
 
   /** Sends the latest event once no new event has arrived for `duration`.
@@ -214,7 +215,7 @@ class HtmlAttrBinding private[scalive] (
     * A pending event is sent immediately when the element loses focus. The limit applies to every
     * binding on the element. For a form's change events, put `phx.debounce` on the control instead.
     */
-  def debounce(duration: FiniteDuration): HtmlAttrBinding =
+  def debounce(duration: Duration): HtmlAttrBinding =
     append(durationAttr("phx-debounce", duration))
 
   /** Waits until the element loses focus, then sends the latest event. */
@@ -224,7 +225,7 @@ class HtmlAttrBinding private[scalive] (
     *
     * The limit applies to every binding on the element.
     */
-  def throttle(duration: FiniteDuration): HtmlAttrBinding =
+  def throttle(duration: Duration): HtmlAttrBinding =
     append(durationAttr("phx-throttle", duration))
 
   /** Sends `message` to a component instance instead of the LiveView or component that renders the
@@ -391,7 +392,7 @@ final class KeyHtmlAttrBinding private[scalive] (
     recreate(companionAttrs :+ attr)
 
   /** Like [[HtmlAttrBinding.debounce]], keeping the key filter available. */
-  override def debounce(duration: FiniteDuration): KeyHtmlAttrBinding =
+  override def debounce(duration: Duration): KeyHtmlAttrBinding =
     append(durationAttr("phx-debounce", duration))
 
   /** Like [[HtmlAttrBinding.debounceOnBlur]], keeping the key filter available. */
@@ -402,7 +403,7 @@ final class KeyHtmlAttrBinding private[scalive] (
     *
     * On a key-down binding, a press of a different key is sent immediately.
     */
-  override def throttle(duration: FiniteDuration): KeyHtmlAttrBinding =
+  override def throttle(duration: Duration): KeyHtmlAttrBinding =
     append(durationAttr("phx-throttle", duration))
 
   /** Reacts only to `value`, as in `on.windowKeyDown.key(Key.Escape)(Msg.Close)`.

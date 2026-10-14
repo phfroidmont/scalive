@@ -8,7 +8,7 @@ object CartDialog:
 
   // docs:start bindings-portal
   val dialog: HtmlElement[Msg] =
-    portal("cart-dialog", target = DomSelector.css("#modal-root"))(
+    portal(DomRef("cart-dialog"), target = DomSelector.css("#modal-root"))(
       sectionTag(aria.label := "Cart", h2("Cart"), p("Review your items."))
     )
   // docs:end bindings-portal
@@ -16,7 +16,7 @@ object CartDialog:
   // docs:start bindings-focus-wrap
   val dialogBody: HtmlElement[Msg] =
     focusWrap(
-      "cart-dialog-focus",
+      DomRef("cart-dialog-focus"),
       cls := "dialog-body",
       on.windowKeyDown.key(Key.Escape)(Msg.Close)
     )(

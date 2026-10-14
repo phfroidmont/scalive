@@ -23,6 +23,60 @@ object HtmlDslApiSpec extends ZIOSpecDefault:
 
       assertTrue(shortNames.isEmpty, tpeErrors.nonEmpty, classNameErrors.nonEmpty)
     },
+    test("helpers take the same parameter types as tags") {
+      val errors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        import zio.*
+
+        val extra = Vector(cls := "extra")
+        val navigation = link.pushNavigateUnsafe("/next", extra, span("Next"))
+        val wrapped = focusWrap(DomRef("dialog"), extra)(p("Dialog"), Vector(span("Body")))
+        val moved = portal(DomRef("menu"), DomSelector.css("body"), container = sectionTag)(extra)
+        def upload(value: LiveUpload[Unit]) = liveFileInput(value, extra)
+        def items(stream: streams.LiveStream[Int]) =
+          stream.renderIn(ul, extra)(item => li(item.toString))
+        val timed = JS.show(time = 50.millis).hide(time = 1.second).transition("fade", time = 0.millis)
+        val search = input(on.keyUp.debounce(300.millis).withValue(identity))
+      """)
+      val rejected = Vector(
+        scala.compiletime.testing.typeCheckErrors("""
+          import scalive.*
+          val wrapped = focusWrap("dialog")(p("Dialog"))
+        """),
+        scala.compiletime.testing.typeCheckErrors("""
+          import scalive.*
+          val moved = portal("menu", DomSelector.css("body"))(p("Menu"))
+        """),
+        scala.compiletime.testing.typeCheckErrors("""
+          import scalive.*
+          val moved = portal(DomRef("menu"), DomSelector.css("body"), container = "section")()
+        """),
+        scala.compiletime.testing.typeCheckErrors("""
+          import scalive.*
+          val timed = JS.show(time = 50)
+        """),
+        scala.compiletime.testing.typeCheckErrors("""
+          import scalive.*
+          val ignored = JS.ignoreAttributes()
+        """)
+      )
+
+      assertTrue(errors.isEmpty, rejected.forall(_.nonEmpty))
+    },
+    test("JS commands encode durations in milliseconds and always send ignored attributes") {
+      import zio.durationInt
+      import zio.json.*
+
+      val timed    = JS.hide(time = 50.millis).show(time = 200.millis).toJson
+      val ignored  = JS.ignoreAttributes(Seq("open")).toJson
+      val negative = scala.util.Try(JS.hide(time = (-1).millis))
+
+      assertTrue(
+        timed == """[["hide",{"time":50}],["show",{}]]""",
+        ignored == """[["ignore_attrs",{"attrs":["open"]}]]""",
+        negative.isFailure
+      )
+    },
     test("function components accept mixed modifier inputs") {
       enum Msg:
         case Clicked

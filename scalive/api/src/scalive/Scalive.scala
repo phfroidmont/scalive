@@ -196,32 +196,28 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
     *
     * The content stays owned by this LiveView, with its events, hooks, and components, so a dialog
     * can appear inside a root-level container. Keep `id` stable and unique. `container` is the
-    * wrapper's tag and `wrapperClass` its class. [[DomSelector.current]] and an invalid `container`
-    * throw `IllegalArgumentException`; whether the target exists is not checked. See
+    * wrapper's tag and `wrapperClass` its class. [[DomSelector.current]] throws
+    * `IllegalArgumentException`; whether the target exists is not checked. See
     * [portals](https://scalive.dev/guides/html-dsl-and-event-bindings#move-content-and-wrap-focus).
     */
   def portal[Msg](
-    id: String,
+    id: DomRef,
     target: DomSelector,
-    container: String = "div",
+    container: HtmlTag = div,
     wrapperClass: Option[String] = None
   )(
     mods: Mod.Input[Msg]*
   ): HtmlElement[Msg] =
-    require(
-      Escaping.validTag(container),
-      s"portal container must be a valid HTML tag, got '$container'"
-    )
     val content = Mod.flatten(mods)
     val wrapper = Vector.newBuilder[Mod[Msg]]
-    wrapper += (idAttr := s"_lv_portal_wrap_$id")
+    wrapper += (idAttr := s"_lv_portal_wrap_${id.value}")
     wrapperClass.foreach(value => wrapper += (cls := value))
     wrapper ++= content
 
     portalTemplateTag(
-      idAttr    := id,
+      id.attr,
       phxPortal := target.requiredValue,
-      HtmlTag(container)(wrapper.result())
+      container(wrapper.result())
     )
 
   /** Renders flash messages set with `ctx.flash`. */
@@ -318,92 +314,132 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
       NavigationDestination.live(value).fold(throw _, identity)
 
     /** Renders a link that mounts the LiveView at `to` and adds a browser history entry. */
-    def pushNavigate[Msg](to: LiveLocation, mods: Mod[Msg]*): HtmlElement[Msg] =
+    def pushNavigate[Msg](to: LiveLocation, mods: Mod.Input[Msg]*): HtmlElement[Msg] =
       pushNavigateUnsafe(to.href, mods*)
 
     /** Renders a link that mounts the LiveView at `to` and adds a browser history entry.
       *
       * This form follows a signal of the destination.
       */
-    def pushNavigate[Msg](to: Signal[LiveLocation], mods: Mod[Msg]*): HtmlElement[Msg] =
+    def pushNavigate[Msg](to: Signal[LiveLocation], mods: Mod.Input[Msg]*): HtmlElement[Msg] =
       pushNavigateUnsafe(to.map(_.href), mods*)
 
     /** Like `pushNavigate`, for a raw URL that the route types do not check. */
-    def pushNavigateUnsafe[Msg](to: String, mods: Mod[Msg]*): HtmlElement[Msg] =
-      a(href := liveDestination(to), phx.link := "redirect", phx.linkState := "push", mods)
+    def pushNavigateUnsafe[Msg](to: String, mods: Mod.Input[Msg]*): HtmlElement[Msg] =
+      a(
+        href          := liveDestination(to),
+        phx.link      := "redirect",
+        phx.linkState := "push",
+        Mod.flatten(mods)
+      )
 
     /** Like `pushNavigate`, for a raw URL that the route types do not check.
       *
       * This form follows a signal of the destination.
       */
-    def pushNavigateUnsafe[Msg](to: Signal[String], mods: Mod[Msg]*): HtmlElement[Msg] =
-      a(href := to.map(liveDestination), phx.link := "redirect", phx.linkState := "push", mods)
+    def pushNavigateUnsafe[Msg](to: Signal[String], mods: Mod.Input[Msg]*): HtmlElement[Msg] =
+      a(
+        href          := to.map(liveDestination),
+        phx.link      := "redirect",
+        phx.linkState := "push",
+        Mod.flatten(mods)
+      )
 
     /** Renders a link that mounts the LiveView at `to`, replacing the current history entry. */
-    def replaceNavigate[Msg](to: LiveLocation, mods: Mod[Msg]*): HtmlElement[Msg] =
+    def replaceNavigate[Msg](to: LiveLocation, mods: Mod.Input[Msg]*): HtmlElement[Msg] =
       replaceNavigateUnsafe(to.href, mods*)
 
     /** Renders a link that mounts the LiveView at `to`, replacing the current history entry.
       *
       * This form follows a signal of the destination.
       */
-    def replaceNavigate[Msg](to: Signal[LiveLocation], mods: Mod[Msg]*): HtmlElement[Msg] =
+    def replaceNavigate[Msg](to: Signal[LiveLocation], mods: Mod.Input[Msg]*): HtmlElement[Msg] =
       replaceNavigateUnsafe(to.map(_.href), mods*)
 
     /** Like `replaceNavigate`, for a raw URL that the route types do not check. */
-    def replaceNavigateUnsafe[Msg](to: String, mods: Mod[Msg]*): HtmlElement[Msg] =
-      a(href := liveDestination(to), phx.link := "redirect", phx.linkState := "replace", mods)
+    def replaceNavigateUnsafe[Msg](to: String, mods: Mod.Input[Msg]*): HtmlElement[Msg] =
+      a(
+        href          := liveDestination(to),
+        phx.link      := "redirect",
+        phx.linkState := "replace",
+        Mod.flatten(mods)
+      )
 
     /** Like `replaceNavigate`, for a raw URL that the route types do not check.
       *
       * This form follows a signal of the destination.
       */
-    def replaceNavigateUnsafe[Msg](to: Signal[String], mods: Mod[Msg]*): HtmlElement[Msg] =
-      a(href := to.map(liveDestination), phx.link := "redirect", phx.linkState := "replace", mods)
+    def replaceNavigateUnsafe[Msg](to: Signal[String], mods: Mod.Input[Msg]*): HtmlElement[Msg] =
+      a(
+        href          := to.map(liveDestination),
+        phx.link      := "redirect",
+        phx.linkState := "replace",
+        Mod.flatten(mods)
+      )
 
     /** Renders a link that patches this LiveView's URL to `to` and adds a history entry. */
-    def pushPatch[Msg](to: LiveLocation, mods: Mod[Msg]*): HtmlElement[Msg] =
+    def pushPatch[Msg](to: LiveLocation, mods: Mod.Input[Msg]*): HtmlElement[Msg] =
       pushPatchUnsafe(to.href, mods*)
 
     /** Renders a link that patches this LiveView's URL to `to` and adds a history entry.
       *
       * This form follows a signal of the destination.
       */
-    def pushPatch[Msg](to: Signal[LiveLocation], mods: Mod[Msg]*): HtmlElement[Msg] =
+    def pushPatch[Msg](to: Signal[LiveLocation], mods: Mod.Input[Msg]*): HtmlElement[Msg] =
       pushPatchUnsafe(to.map(_.href), mods*)
 
     /** Like `pushPatch`, for a raw URL that the route types do not check. */
-    def pushPatchUnsafe[Msg](to: String, mods: Mod[Msg]*): HtmlElement[Msg] =
-      a(href := liveDestination(to), phx.link := "patch", phx.linkState := "push", mods)
+    def pushPatchUnsafe[Msg](to: String, mods: Mod.Input[Msg]*): HtmlElement[Msg] =
+      a(
+        href          := liveDestination(to),
+        phx.link      := "patch",
+        phx.linkState := "push",
+        Mod.flatten(mods)
+      )
 
     /** Like `pushPatch`, for a raw URL that the route types do not check.
       *
       * This form follows a signal of the destination.
       */
-    def pushPatchUnsafe[Msg](to: Signal[String], mods: Mod[Msg]*): HtmlElement[Msg] =
-      a(href := to.map(liveDestination), phx.link := "patch", phx.linkState := "push", mods)
+    def pushPatchUnsafe[Msg](to: Signal[String], mods: Mod.Input[Msg]*): HtmlElement[Msg] =
+      a(
+        href          := to.map(liveDestination),
+        phx.link      := "patch",
+        phx.linkState := "push",
+        Mod.flatten(mods)
+      )
 
     /** Renders a link that patches this LiveView's URL to `to`, replacing the current entry. */
-    def replacePatch[Msg](to: LiveLocation, mods: Mod[Msg]*): HtmlElement[Msg] =
+    def replacePatch[Msg](to: LiveLocation, mods: Mod.Input[Msg]*): HtmlElement[Msg] =
       replacePatchUnsafe(to.href, mods*)
 
     /** Renders a link that patches this LiveView's URL to `to`, replacing the current entry.
       *
       * This form follows a signal of the destination.
       */
-    def replacePatch[Msg](to: Signal[LiveLocation], mods: Mod[Msg]*): HtmlElement[Msg] =
+    def replacePatch[Msg](to: Signal[LiveLocation], mods: Mod.Input[Msg]*): HtmlElement[Msg] =
       replacePatchUnsafe(to.map(_.href), mods*)
 
     /** Like `replacePatch`, for a raw URL that the route types do not check. */
-    def replacePatchUnsafe[Msg](to: String, mods: Mod[Msg]*): HtmlElement[Msg] =
-      a(href := liveDestination(to), phx.link := "patch", phx.linkState := "replace", mods)
+    def replacePatchUnsafe[Msg](to: String, mods: Mod.Input[Msg]*): HtmlElement[Msg] =
+      a(
+        href          := liveDestination(to),
+        phx.link      := "patch",
+        phx.linkState := "replace",
+        Mod.flatten(mods)
+      )
 
     /** Like `replacePatch`, for a raw URL that the route types do not check.
       *
       * This form follows a signal of the destination.
       */
-    def replacePatchUnsafe[Msg](to: Signal[String], mods: Mod[Msg]*): HtmlElement[Msg] =
-      a(href := to.map(liveDestination), phx.link := "patch", phx.linkState := "replace", mods)
+    def replacePatchUnsafe[Msg](to: Signal[String], mods: Mod.Input[Msg]*): HtmlElement[Msg] =
+      a(
+        href          := to.map(liveDestination),
+        phx.link      := "patch",
+        phx.linkState := "replace",
+        Mod.flatten(mods)
+      )
   end link
 
   /** Raw Phoenix LiveView attributes and client behavior switches.

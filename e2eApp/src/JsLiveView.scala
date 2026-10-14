@@ -1,5 +1,5 @@
 import JsLiveView.*
-import zio.ZIO
+import zio.{ZIO, durationInt}
 
 import scalive.*
 
@@ -21,7 +21,7 @@ class JsLiveView extends LiveView[Msg, Model]:
       ),
       button(
         on.click(
-          JS.show(to = Modal.selector, transition = "fade-in", time = 50)
+          JS.show(to = Modal.selector, transition = "fade-in", time = 50.millis)
             .setAttribute(("aria-expanded", "true"), to = Modal.selector)
             .setAttribute(("open", "true"), to = Modal.selector)
         ),
@@ -29,7 +29,7 @@ class JsLiveView extends LiveView[Msg, Model]:
       ),
       button(
         on.click(
-          JS.hide(to = Modal.selector, transition = "fade-out", time = 50)
+          JS.hide(to = Modal.selector, transition = "fade-out", time = 50.millis)
             .setAttribute(("aria-expanded", "false"), to = Modal.selector)
             .removeAttribute("open", to = Modal.selector)
         ),
@@ -37,7 +37,7 @@ class JsLiveView extends LiveView[Msg, Model]:
       ),
       button(
         on.click(
-          JS.toggle(to = Modal.selector, in = "fade-in", out = "fade-out", time = 50)
+          JS.toggle(to = Modal.selector, in = "fade-in", out = "fade-out", time = 50.millis)
             .toggleAttribute("aria-expanded", "true", "false", to = Modal.selector)
             .toggleAttribute("open", "true", to = Modal.selector)
         ),

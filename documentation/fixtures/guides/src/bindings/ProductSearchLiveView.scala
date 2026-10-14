@@ -1,9 +1,7 @@
 // docs:start bindings-liveview
 package bindings
 
-import scala.concurrent.duration.*
-
-import zio.{Task, ZIO}
+import zio.{Task, ZIO, durationInt}
 
 import scalive.*
 

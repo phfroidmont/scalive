@@ -1,5 +1,7 @@
 package scalive
 
+import zio.Duration
+import zio.durationInt
 import zio.json.*
 import zio.json.ast.Json
 
@@ -61,6 +63,10 @@ object JSCommands:
     (kind, args).toJsonAST.toOption.getOrElse(Json.Arr(Json.Str(kind), Json.Obj.empty))
 
   private def classNames(names: String): Seq[String] = names.split("\\s+").toSeq
+
+  private def transitionTime(time: Duration): Option[Long] =
+    require(!time.isNegative, "transition time must not be negative")
+    Option.when(time.toMillis != 200)(time.toMillis)
   private def transitionClasses(names: String | (String, String, String))
     : Option[Seq[Seq[String]]] =
     names match
@@ -99,8 +105,8 @@ object JSCommands:
       *
       * `to` defaults to the element executing the command. `transition` may be a class string or an
       * `(transition, start, end)` tuple of class strings; `""` requests no transition. `time` is
-      * the transition duration in milliseconds and defaults to 200. `blocking` defaults to `true`,
-      * so LiveView defers concurrent UI work for the transition; use `false` to let it run
+      * the transition duration and defaults to 200 milliseconds. `blocking` defaults to `true`, so
+      * LiveView defers concurrent UI work for the transition; use `false` to let it run
       * asynchronously.
       */
     def addClass = ClassOp("add_class", ops)
@@ -109,8 +115,8 @@ object JSCommands:
       *
       * `to` defaults to the element executing the command. `transition` may be a class string or an
       * `(transition, start, end)` tuple of class strings; `""` requests no transition. `time` is
-      * the transition duration in milliseconds and defaults to 200. `blocking` defaults to `true`,
-      * so LiveView defers concurrent UI work for the transition; use `false` to let it run
+      * the transition duration and defaults to 200 milliseconds. `blocking` defaults to `true`, so
+      * LiveView defers concurrent UI work for the transition; use `false` to let it run
       * asynchronously.
       */
     def toggleClass = ClassOp("toggle_class", ops)
@@ -119,8 +125,8 @@ object JSCommands:
       *
       * `to` defaults to the element executing the command. `transition` may be a class string or an
       * `(transition, start, end)` tuple of class strings; `""` requests no transition. `time` is
-      * the transition duration in milliseconds and defaults to 200. `blocking` defaults to `true`,
-      * so LiveView defers concurrent UI work for the transition; use `false` to let it run
+      * the transition duration and defaults to 200 milliseconds. `blocking` defaults to `true`, so
+      * LiveView defers concurrent UI work for the transition; use `false` to let it run
       * asynchronously.
       */
     def removeClass = ClassOp("remove_class", ops)
@@ -205,14 +211,14 @@ object JSCommands:
     /** Appends a command which hides selected elements that are currently visible.
       *
       * `transition` accepts a class string or an `(transition, start, end)` tuple; `""` requests no
-      * transition. `time` is measured in milliseconds and defaults to 200. `blocking` defaults to
-      * `true`; `false` allows the timed transition to proceed without blocking other LiveView UI
-      * work. `to` defaults to the element executing the command.
+      * transition. `time` is the transition duration and defaults to 200 milliseconds. `blocking`
+      * defaults to `true`; `false` allows the timed transition to proceed without blocking other
+      * LiveView UI work. `to` defaults to the element executing the command.
       */
     def hide(
       to: DomSelector = DomSelector.current,
       transition: String | (String, String, String) = "",
-      time: Int = 200,
+      time: Duration = 200.millis,
       blocking: Boolean = true
     ) =
       ops.addOp(
@@ -220,7 +226,7 @@ object JSCommands:
         Args.Hide(
           to.jsonValue,
           transitionClasses(transition),
-          Option.when(time != 200)(time),
+          transitionTime(time),
           Option.when(!blocking)(blocking)
         )
       )
@@ -229,21 +235,11 @@ object JSCommands:
       *
       * Names may include the LiveView client's `*` wildcard syntax. Calling this command again
       * replaces the ignored set for each target. It affects future patches only, so it cannot
-      * restore an attribute already changed during disconnected render. Although `attrs` defaults
-      * to an empty sequence, the current client expects an actual list; pass a non-empty sequence
-      * rather than relying on that default. `to` defaults to the element executing the command.
+      * restore an attribute already changed during disconnected render. `to` defaults to the
+      * element executing the command.
       */
-    def ignoreAttributes(
-      attrs: Seq[String] = Seq.empty,
-      to: DomSelector = DomSelector.current
-    ) =
-      ops.addOp(
-        "ignore_attrs",
-        Args.IgnoreAttributes(
-          Option.when(attrs.nonEmpty)(attrs),
-          to.jsonValue
-        )
-      )
+    def ignoreAttributes(attrs: Seq[String], to: DomSelector = DomSelector.current) =
+      ops.addOp("ignore_attrs", Args.IgnoreAttributes(attrs, to.jsonValue))
 
     /** Appends a live navigation that mounts the LiveView at `to` and adds a browser history entry.
       *
@@ -486,16 +482,16 @@ object JSCommands:
     /** Appends a command which shows selected elements that are currently hidden.
       *
       * `transition` accepts a class string or an `(transition, start, end)` tuple; `""` requests no
-      * transition. `time` is measured in milliseconds and defaults to 200. `blocking` defaults to
-      * `true`; `false` allows the timed transition to proceed without blocking other LiveView UI
-      * work. The default `display` request uses the client's normal display value (`block`, with
-      * table-row and table-cell handling); another value is sent explicitly. `to` defaults to the
-      * element executing the command.
+      * transition. `time` is the transition duration and defaults to 200 milliseconds. `blocking`
+      * defaults to `true`; `false` allows the timed transition to proceed without blocking other
+      * LiveView UI work. The default `display` request uses the client's normal display value
+      * (`block`, with table-row and table-cell handling); another value is sent explicitly. `to`
+      * defaults to the element executing the command.
       */
     def show(
       to: DomSelector = DomSelector.current,
       transition: String | (String, String, String) = "",
-      time: Int = 200,
+      time: Duration = 200.millis,
       blocking: Boolean = true,
       display: String = "block"
     ) =
@@ -504,7 +500,7 @@ object JSCommands:
         Args.Show(
           to.jsonValue,
           transitionClasses(transition),
-          Option.when(time != 200)(time),
+          transitionTime(time),
           Option.when(!blocking)(blocking),
           Option.when(display != "block")(display)
         )
@@ -513,17 +509,17 @@ object JSCommands:
     /** Appends a command which toggles the visibility of selected elements.
       *
       * `in` and `out` each accept a class string or an `(transition, start, end)` tuple; `""`
-      * requests no classes for that direction. `time` is measured in milliseconds and defaults to
-      * 200. `blocking` defaults to `true`; `false` lets a timed transition run without blocking
-      * other LiveView UI work. The default `display` request uses the client's normal display value
-      * (`block`, with table-row and table-cell handling); another value is sent explicitly. `to`
-      * defaults to the element executing the command.
+      * requests no classes for that direction. `time` is the transition duration and defaults to
+      * 200 milliseconds. `blocking` defaults to `true`; `false` lets a timed transition run without
+      * blocking other LiveView UI work. The default `display` request uses the client's normal
+      * display value (`block`, with table-row and table-cell handling); another value is sent
+      * explicitly. `to` defaults to the element executing the command.
       */
     def toggle(
       to: DomSelector = DomSelector.current,
       in: String | (String, String, String) = "",
       out: String | (String, String, String) = "",
-      time: Int = 200,
+      time: Duration = 200.millis,
       blocking: Boolean = true,
       display: String = "block"
     ) =
@@ -533,7 +529,7 @@ object JSCommands:
           to.jsonValue,
           ins = transitionClasses(in),
           outs = transitionClasses(out),
-          Option.when(time != 200)(time),
+          transitionTime(time),
           Option.when(!blocking)(blocking),
           Option.when(display != "block")(display)
         )
@@ -564,15 +560,15 @@ object JSCommands:
       * A string supplies transition classes with empty start and end phases. A tuple supplies the
       * `(transition, start, end)` class strings. Unlike the optional transitions on visibility and
       * class commands, this command always sends a transition shape; callers should provide at
-      * least one non-empty class rather than relying on the `""` default. `time` is measured in
-      * milliseconds and defaults to 200. `blocking` defaults to `true`; `false` lets the transition
-      * run without blocking other LiveView UI work. `to` defaults to the element executing the
-      * command.
+      * least one non-empty class rather than relying on the `""` default. `time` is the transition
+      * duration and defaults to 200 milliseconds. `blocking` defaults to `true`; `false` lets the
+      * transition run without blocking other LiveView UI work. `to` defaults to the element
+      * executing the command.
       */
     def transition(
       transition: String | (String, String, String) = "",
       to: DomSelector = DomSelector.current,
-      time: Int = 200,
+      time: Duration = 200.millis,
       blocking: Boolean = true
     ) =
       ops.addOp(
@@ -582,7 +578,7 @@ object JSCommands:
             case names: String               => Seq(classNames(names), Seq.empty, Seq.empty)
             case t: (String, String, String) => t.toList.map(classNames),
           to.jsonValue,
-          Option.when(time != 200)(time),
+          transitionTime(time),
           Option.when(!blocking)(blocking)
         )
       )
@@ -594,7 +590,7 @@ object JSCommands:
       names: String,
       to: DomSelector = DomSelector.current,
       transition: String | (String, String, String) = "",
-      time: Int = 200,
+      time: Duration = 200.millis,
       blocking: Boolean = true
     ): JSCommand[Msg] =
       ops.addOp(
@@ -603,7 +599,7 @@ object JSCommands:
           classNames(names),
           to.jsonValue,
           transitionClasses(transition),
-          Option.when(time != 200)(time),
+          transitionTime(time),
           Option.when(!blocking)(blocking)
         )
       )
@@ -613,7 +609,7 @@ object JSCommands:
       names: Seq[String],
       to: Option[String],
       transition: Option[Seq[Seq[String]]],
-      time: Option[Int],
+      time: Option[Long],
       blocking: Option[Boolean])
         derives JsonEncoder
     final case class Dispatch(
@@ -625,12 +621,11 @@ object JSCommands:
         derives JsonEncoder
     final case class Attr(attr: String, to: Option[String]) derives JsonEncoder
     final case class To(to: Option[String]) derives JsonEncoder
-    final case class IgnoreAttributes(attrs: Option[Seq[String]], to: Option[String])
-        derives JsonEncoder
+    final case class IgnoreAttributes(attrs: Seq[String], to: Option[String]) derives JsonEncoder
     final case class Hide(
       to: Option[String],
       transition: Option[Seq[Seq[String]]],
-      time: Option[Int],
+      time: Option[Long],
       blocking: Option[Boolean])
         derives JsonEncoder
     final case class SetAttribute(
@@ -641,7 +636,7 @@ object JSCommands:
     final case class Show(
       to: Option[String],
       transition: Option[Seq[Seq[String]]],
-      time: Option[Int],
+      time: Option[Long],
       blocking: Option[Boolean],
       display: Option[String])
         derives JsonEncoder
@@ -649,7 +644,7 @@ object JSCommands:
       to: Option[String],
       ins: Option[Seq[Seq[String]]],
       outs: Option[Seq[Seq[String]]],
-      time: Option[Int],
+      time: Option[Long],
       blocking: Option[Boolean],
       display: Option[String])
         derives JsonEncoder
@@ -657,7 +652,7 @@ object JSCommands:
     final case class Transition(
       transition: Seq[Seq[String]],
       to: Option[String],
-      time: Option[Int],
+      time: Option[Long],
       blocking: Option[Boolean])
         derives JsonEncoder
     final case class Push(

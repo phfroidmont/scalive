@@ -89,7 +89,7 @@ class ComponentsLiveView() extends LiveView.Routed[Msg, Model, UrlParams]:
             idAttr := "dropdown-menu",
             styleAttr := "display: none; position: absolute; left: 0; margin-top: 0.5rem; background-color: white; border: 1px solid #d1d5db; border-radius: 0.25rem; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); z-index: 10;",
             focusWrap(
-              "dropdown-content",
+              DomRef("dropdown-content"),
               styleAttr := "padding-top: 0.25rem; padding-bottom: 0.25rem;"
             )(
               menuButton("Edit Profile"),
@@ -109,7 +109,7 @@ class ComponentsLiveView() extends LiveView.Routed[Msg, Model, UrlParams]:
           "A simple container that wraps focus. Notice how Tab navigation cycles within this box."
         ),
         focusWrap(
-          "simple-focus-container",
+          DomRef("simple-focus-container"),
           styleAttr := "border: 2px dashed #d1d5db; padding: 1rem; border-radius: 0.25rem;"
         )(
           div(

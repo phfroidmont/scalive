@@ -167,7 +167,7 @@ object TextUploadExample:
   private val MaxFileSize = 64L * 1024L
   private val Word        = raw"\S+".r
 
-  private val TextFiles = LiveUploadDef.inMemory(
+  val TextFiles = LiveUploadDef.inMemory(
     name = "text-file",
     accept = LiveUploadAccept.only(".txt", ".md"),
     maxEntries = 1,

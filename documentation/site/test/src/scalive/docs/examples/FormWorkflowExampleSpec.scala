@@ -9,7 +9,7 @@ import scalive.testing.{ConnectedRender, ConnectedView}
 
 object FormWorkflowExampleSpec extends ZIOSpecDefault:
   private val example   = FormWorkflowExample
-  private val validData = Vector(example.Draft.Title.name -> "Release notes")
+  private val draft = example.Draft
 
   private def document(harness: ConnectedView[?]) =
     harness.html.map(Jsoup.parseBodyFragment)
@@ -43,9 +43,9 @@ object FormWorkflowExampleSpec extends ZIOSpecDefault:
       ZIO.scoped {
         for
           harness <- ConnectedRender.join(new FormWorkflowExample)
-          _ <- harness.submitForm("[data-workflow-form]", Vector(example.Draft.Title.name -> ""))
+          _ <- harness.submitForm(draft.Definition)(draft.Title.initial(""))
           invalid <- document(harness)
-          _       <- harness.submitForm("[data-workflow-form]", validData)
+          _       <- harness.submitForm(draft.Definition)(draft.Title.initial("Release notes"))
           _       <- harness.clickButton("Begin another save")
           overlap <- document(harness)
         yield assertTrue(
@@ -63,12 +63,8 @@ object FormWorkflowExampleSpec extends ZIOSpecDefault:
       ZIO.scoped {
         for
           harness <- ConnectedRender.join(new FormWorkflowExample)
-          _       <- harness.submitForm("[data-workflow-form]", validData)
-          _       <- harness.changeForm(
-                 "[data-workflow-form]",
-                 Vector(example.Draft.Title.name -> "Newer local edit"),
-                 target = Some(example.Draft.Title.name)
-               )
+          _       <- harness.submitForm(draft.Definition)(draft.Title.initial("Release notes"))
+          _       <- harness.changeForm(draft.Definition)(draft.Title.initial("Newer local edit"))
           _       <- harness.clickButton("Reset to baseline")
           blocked <- document(harness)
           _       <- harness.clickButton("Simulate success")
@@ -94,20 +90,12 @@ object FormWorkflowExampleSpec extends ZIOSpecDefault:
       ZIO.scoped {
         for
           harness <- ConnectedRender.join(new FormWorkflowExample)
-          _       <- harness.submitForm("[data-workflow-form]", validData)
+          _       <- harness.submitForm(draft.Definition)(draft.Title.initial("Release notes"))
           _       <- harness.clickButton("Simulate failure")
           failed  <- document(harness)
-          _       <- harness.changeForm(
-                 "[data-workflow-form]",
-                 validData,
-                 target = Some(example.Draft.Title.name)
-               )
+          _       <- harness.changeForm(draft.Definition)(draft.Title.initial("Release notes"))
           unchanged <- document(harness)
-          _         <- harness.changeForm(
-                 "[data-workflow-form]",
-                 Vector(example.Draft.Title.name -> "Newer local edit"),
-                 target = Some(example.Draft.Title.name)
-               )
+          _         <- harness.changeForm(draft.Definition)(draft.Title.initial("Newer local edit"))
           edited <- document(harness)
         yield assertTrue(
           failed.select("[data-workflow-failure-feedback][role=alert]").text()
@@ -124,7 +112,7 @@ object FormWorkflowExampleSpec extends ZIOSpecDefault:
       ZIO.scoped {
         for
           harness <- ConnectedRender.join(new FormWorkflowExample)
-          _       <- harness.submitForm("[data-workflow-form]", validData)
+          _       <- harness.submitForm(draft.Definition)(draft.Title.initial("Release notes"))
           _       <- harness.clickButton("Simulate failure")
           before  <- document(harness)
           _       <- harness.clickButton("Dismiss failure")

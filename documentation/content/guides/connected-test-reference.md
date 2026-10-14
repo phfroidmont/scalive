@@ -44,6 +44,18 @@ or subscription update, and `awaitAction` waits for uncorrelated navigation or
 transport disconnect. `joinNested(instanceId)` enters a nested lifecycle
 registered by the parent.
 
+The typed `changeForm(definition)` and `submitForm(definition)` select the one
+form containing a field that the definition declares, and fail when none or
+several match. They build the payload as the Phoenix client does: the form's
+successful controls in DOM order (checked checkboxes and radios, selected
+options, and no disabled controls, buttons, or files), with the assigned fields
+replacing theirs. A group assignment replaces all of the group's rows. A change
+prefixes `_unused_` markers to the values of non-hidden fields that the test has
+neither edited nor submitted in this view, and sets `_target` when it assigns one
+field. A submit marks every field of the form as used and appends the
+submitter's name and value. The raw `changeForm(selector, fields)` and
+`submitForm(selector, fields)` send exactly the given fields.
+
 Actions return a @:apiSymbol(enum:scalive.testing.ConnectedAction)`ConnectedAction`@:@:
 
 | Case | Meaning |

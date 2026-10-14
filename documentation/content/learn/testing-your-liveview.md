@@ -85,10 +85,11 @@ Create `app/test/src/quickstart/SignupLiveViewSpec.scala`:
 
 @:sourceRegion(documentation/fixtures/learn/test/src/quickstart/SignupLiveViewSpec.scala, learn-signup-test)
 
-`submitForm` selects the form by CSS selector and sends its submit event with
-the given fields, as the browser would. The field names come from the form
-definition, such as `Signup.Name.name`, so a renamed field cannot leave the test
-behind. `html` returns the latest rendered HTML, and
+`submitForm(Signup.Definition)` finds the form that renders `Signup`'s fields
+and submits it as the browser would: it starts from the form's current values
+and replaces the fields the test assigns, such as `Signup.Name.initial("Ada")`.
+The assignments are typed by the form definition, so a renamed or retyped field
+cannot leave the test behind. `html` returns the latest rendered HTML, and
 @:apiSymbol(object:scalive.testing.RenderedHtml)`RenderedHtml`@:@ queries it by
 CSS selector.
 

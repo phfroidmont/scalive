@@ -9856,6 +9856,10 @@
           "signature" : "def join[Msg, Model](liveView: LiveView[Msg, Model]): zio.package.RIO[zio.Scope, testing.ConnectedView[Msg]]"
         },
         {
+          "id" : "def:scalive.testing.ConnectedRender.join:5d428f0a6cf79600",
+          "signature" : "def join[A, Params, Msg, Model](route: LiveRoute[A, Params], liveView: LiveView.Routed[Msg, Model, Params], params: Params): zio.package.RIO[zio.Scope, testing.ConnectedView[Msg]]"
+        },
+        {
           "id" : "def:scalive.testing.ConnectedRender.join:9272546112018a13",
           "signature" : "def join[R](application: LiveApplication[R], config: ZioHttpConfig, request: zio.http.Request, connectParams: Map[String, zio.json.ast.Json] = ...): zio.ZIO[&[R, zio.Scope], Throwable, testing.ConnectedView[Nothing]]"
         }
@@ -9930,6 +9934,10 @@
         {
           "id" : "def:scalive.testing.ConnectedView.changeForm:5a5d501e97bd8d88",
           "signature" : "def changeForm(selector: String, fields: Vector[(String, String)], target: Option[String] = ...): zio.package.Task[testing.ConnectedAction]"
+        },
+        {
+          "id" : "def:scalive.testing.ConnectedView.changeForm:9fc0c85291215071",
+          "signature" : "def changeForm[Owner](definition: FormDefinition[Owner, ?])(assignments: FormInitial[Owner]*): zio.package.Task[testing.ConnectedAction]"
         }
       ]
     },
@@ -9939,6 +9947,10 @@
       "qualifiedName" : "scalive.testing.ConnectedView.click",
       "kind" : "def",
       "signatures" : [
+        {
+          "id" : "def:scalive.testing.ConnectedView.click:6487c70133440981",
+          "signature" : "def click(ref: DomRef): zio.package.Task[testing.ConnectedAction]"
+        },
         {
           "id" : "def:scalive.testing.ConnectedView.click:dc15ce60d0815790",
           "signature" : "def click(selector: String): zio.package.Task[testing.ConnectedAction]"
@@ -10036,6 +10048,14 @@
       "kind" : "def",
       "signatures" : [
         {
+          "id" : "def:scalive.testing.ConnectedView.submitForm:e80cc7c20ff46f7f",
+          "signature" : "def submitForm[Owner](definition: FormDefinition[Owner, ?], submitter: RawFormSubmitter)(assignments: FormInitial[Owner]*): zio.package.Task[testing.ConnectedAction]"
+        },
+        {
+          "id" : "def:scalive.testing.ConnectedView.submitForm:eb6c34836a6334d2",
+          "signature" : "def submitForm[Owner](definition: FormDefinition[Owner, ?])(assignments: FormInitial[Owner]*): zio.package.Task[testing.ConnectedAction]"
+        },
+        {
           "id" : "def:scalive.testing.ConnectedView.submitForm:f10ef938e51382a2",
           "signature" : "def submitForm(selector: String, fields: Vector[(String, String)], submitter: Option[RawFormSubmitter] = ...): zio.package.Task[testing.ConnectedAction]"
         }
@@ -10050,6 +10070,10 @@
         {
           "id" : "def:scalive.testing.ConnectedView.text:09701b60728bf1af",
           "signature" : "def text(selector: String): zio.package.Task[String]"
+        },
+        {
+          "id" : "def:scalive.testing.ConnectedView.text:60a5248c4a6b142f",
+          "signature" : "def text(ref: DomRef): zio.package.Task[String]"
         }
       ]
     },
@@ -10060,8 +10084,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.testing.ConnectedView.upload:f92179980cae0647",
-          "signature" : "def upload(uploadRef: String, entryRef: String, fileName: String, mediaType: String, bytes: zio.Chunk[Byte]): zio.package.Task[Unit]"
+          "id" : "def:scalive.testing.ConnectedView.upload:df2669a1e6ce5d84",
+          "signature" : "def upload(definition: LiveUploadDef[?], fileName: String, mediaType: String, bytes: zio.Chunk[Byte]): zio.package.Task[Unit]"
         }
       ]
     },

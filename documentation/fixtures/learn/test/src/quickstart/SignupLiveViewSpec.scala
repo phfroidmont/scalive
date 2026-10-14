@@ -12,9 +12,9 @@ object SignupLiveViewSpec extends ZIOSpecDefault:
       ZIO.scoped {
         for
           view <- ConnectedRender.join(SignupLiveView())
-          _    <- view.submitForm(
-                    "#signup-form",
-                    Vector(Signup.Name.name -> "", Signup.Email.name -> "ada")
+          _    <- view.submitForm(Signup.Definition)(
+                    Signup.Name.initial(""),
+                    Signup.Email.initial("ada")
                   )
           html <- view.html
         yield assertTrue(
@@ -27,10 +27,10 @@ object SignupLiveViewSpec extends ZIOSpecDefault:
       ZIO.scoped {
         for
           view <- ConnectedRender.join(SignupLiveView())
-          _    <- view.submitForm(
-                    "#signup-form",
-                    Vector(Signup.Name.name -> "Ada", Signup.Email.name -> "ada@example.com")
-                  )
+          _ <- view.submitForm(Signup.Definition)(
+                 Signup.Name.initial("Ada"),
+                 Signup.Email.initial("ada@example.com")
+               )
           status <- view.text("[role=status]")
           html   <- view.html
           name    = RenderedHtml.parse(html).selectOne("input[type=text]").map(_.value)

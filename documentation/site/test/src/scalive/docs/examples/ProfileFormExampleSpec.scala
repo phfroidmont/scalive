@@ -20,9 +20,9 @@ object ProfileFormExampleSpec extends ZIOSpecDefault:
     harness.html.map(RenderedHtml.parse)
 
   private val validFields = Vector(
-    ProfileFormExample.Profile.Name.name      -> "  Ada Lovelace  ",
-    ProfileFormExample.Profile.Email.name     -> "  ada@example.com  ",
-    ProfileFormExample.Profile.Biography.name -> "  Analytical engine pioneer.  "
+    ProfileFormExample.Profile.Name.initial("  Ada Lovelace  "),
+    ProfileFormExample.Profile.Email.initial("  ada@example.com  "),
+    ProfileFormExample.Profile.Biography.initial("  Analytical engine pioneer.  ")
   )
 
   override def spec = suite("ProfileFormExampleSpec")(
@@ -54,17 +54,7 @@ object ProfileFormExampleSpec extends ZIOSpecDefault:
         for
           harness <- ConnectedRender.join(new ProfileFormExample)
           initial <- document(harness)
-          _       <- harness.changeForm(
-                 "[data-profile-form]",
-                 Vector(
-                   profile.Name.name             -> "",
-                   s"profile[_unused_email]"     -> "",
-                   profile.Email.name            -> "",
-                   s"profile[_unused_biography]" -> "",
-                   profile.Biography.name        -> ""
-                 ),
-                 target = Some(profile.Name.name)
-               )
+          _       <- harness.changeForm(profile.Definition)(profile.Name.initial(""))
           changed <- document(harness)
         yield assertTrue(
           initial.selectAll("[data-field-error] .form-error").map(_.isEmpty) == Right(true),
@@ -82,26 +72,17 @@ object ProfileFormExampleSpec extends ZIOSpecDefault:
         val profile = ProfileFormExample.Profile
         for
           harness <- ConnectedRender.join(new ProfileFormExample)
-          _       <- harness.submitForm(
-                 "[data-profile-form]",
-                 Vector(
-                   profile.Name.name      -> "",
-                   profile.Email.name     -> "invalid",
-                   profile.Biography.name -> ""
-                 ),
-                 submitter = Some(profile.Submitter.raw(profile.Intent.Save))
+          _       <- harness.submitForm(profile.Definition, profile.Submitter.raw(profile.Intent.Save))(
+                 profile.Name.initial(""),
+                 profile.Email.initial("invalid")
                )
           invalid <- document(harness)
-          _       <- harness.submitForm(
-                 "[data-profile-form]",
-                 validFields,
-                 submitter = Some(profile.Submitter.raw(profile.Intent.Preview))
+          _ <- harness.submitForm(profile.Definition, profile.Submitter.raw(profile.Intent.Preview))(
+                 validFields*
                )
           previewed <- document(harness)
-          _         <- harness.submitForm(
-                 "[data-profile-form]",
-                 validFields,
-                 submitter = Some(profile.Submitter.raw(profile.Intent.Save))
+          _ <- harness.submitForm(profile.Definition, profile.Submitter.raw(profile.Intent.Save))(
+                 validFields*
                )
           saved <- document(harness)
           _     <- harness.clickButton("Reset form")

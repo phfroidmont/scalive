@@ -30,9 +30,8 @@ object TextUploadExampleSpec extends ZIOSpecDefault:
       ZIO.scoped {
         for
           harness <- ConnectedRender.join(new TextUploadExample)
-          ref     <- uploadRef(harness)
           bytes    = Chunk.fromArray(SecretText.getBytes(StandardCharsets.UTF_8))
-          _       <- harness.upload(ref, "entry-1", "notes.txt", "text/plain", bytes)
+          _       <- harness.upload(TextUploadExample.TextFiles, "notes.txt", "text/plain", bytes)
           _       <- harness.submitForm("[data-text-upload-form]", Vector.empty)
           page    <- document(harness)
           html    <- harness.html
@@ -53,8 +52,7 @@ object TextUploadExampleSpec extends ZIOSpecDefault:
           harness   <- ConnectedRender.join(new TextUploadExample)
           initialRef <- uploadRef(harness)
           _ <- harness.upload(
-                 initialRef,
-                 "entry-1",
+                 TextUploadExample.TextFiles,
                  "notes.md",
                  "text/markdown",
                  Chunk.fromArray("one two".getBytes(StandardCharsets.UTF_8))
@@ -75,10 +73,8 @@ object TextUploadExampleSpec extends ZIOSpecDefault:
         for
           first     <- ConnectedRender.join(new TextUploadExample)
           second    <- ConnectedRender.join(new TextUploadExample)
-          firstRef  <- uploadRef(first)
           _ <- first.upload(
-                 firstRef,
-                 "entry-1",
+                 TextUploadExample.TextFiles,
                  "first.txt",
                  "text/plain",
                  Chunk.fromArray("isolated words".getBytes(StandardCharsets.UTF_8))

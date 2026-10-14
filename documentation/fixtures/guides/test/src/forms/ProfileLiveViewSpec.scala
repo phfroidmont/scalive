@@ -15,20 +15,9 @@ object ProfileLiveViewSpec extends ZIOSpecDefault:
       ZIO.scoped {
         for
           view <- ConnectedRender.join(ProfileLiveView(profiles))
-          _    <- view.changeForm(
-                    "#profile-form",
-                    Vector(
-                      Profile.Name.name        -> "",
-                      "profile[_unused_email]" -> "",
-                      Profile.Email.name       -> ""
-                    ),
-                    target = Some(Profile.Name.name)
-                  )
+          _       <- view.changeForm(Profile.Definition)(Profile.Name.initial(""))
           changed <- view.html
-          _       <- view.submitForm(
-                       "#profile-form",
-                       Vector(Profile.Name.name -> "", Profile.Email.name -> "invalid")
-                     )
+          _       <- view.submitForm(Profile.Definition)(Profile.Email.initial("invalid"))
           submitted <- view.html
         yield assertTrue(
           changed.contains("Name is required."),
@@ -41,10 +30,10 @@ object ProfileLiveViewSpec extends ZIOSpecDefault:
       ZIO.scoped {
         for
           view <- ConnectedRender.join(ProfileLiveView(profiles))
-          _    <- view.submitForm(
-                    "#profile-form",
-                    Vector(Profile.Name.name -> "Ada", Profile.Email.name -> "ada@example.com")
-                  )
+          _ <- view.submitForm(Profile.Definition)(
+                 Profile.Name.initial("Ada"),
+                 Profile.Email.initial("ada@example.com")
+               )
           status <- view.text("[role=status]")
         yield assertTrue(status == "Saved Ada.")
       }

@@ -4,6 +4,7 @@ import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.time.Duration
 import java.util.concurrent.TimeoutException
+import scala.annotation.targetName
 import scala.jdk.CollectionConverters.*
 
 import org.jsoup.Jsoup
@@ -41,6 +42,26 @@ object ConnectedRender:
       DefaultConfig,
       Request.get(URL.root)
     ).map(_.asInstanceOf[ConnectedView[Msg]])
+
+  /** Renders a page, then connects to it as a browser would, and returns the connected view.
+    *
+    * This form mounts a routed LiveView on `route`, at the URL that `params` encode, as in
+    * `ConnectedRender.join(Routes.search, SearchLiveView(), Some("LiveView"))`. The returned view
+    * keeps the LiveView's message type for [[ConnectedView.send]]. Fails with
+    * [[LiveLocation.EncodingException]] when `params` cannot be encoded.
+    */
+  def join[A, Params, Msg, Model](
+    route: LiveRoute[A, Params],
+    liveView: LiveView.Routed[Msg, Model, Params],
+    params: Params
+  ): RIO[Scope, ConnectedView[Msg]] =
+    for
+      location <- ZIO
+                    .fromEither(route.locationEither(params))
+                    .mapError(new LiveLocation.EncodingException(_))
+      url  <- ZIO.fromEither(URL.decode(location.href))
+      view <- join(Live.router(route -> liveView), DefaultConfig, Request.get(url))
+    yield view.asInstanceOf[ConnectedView[Msg]]
 
   /** Renders a page, then connects to it as a browser would, and returns the connected view.
     *
@@ -281,15 +302,33 @@ final class ConnectedView[-Msg] private[testing] (
   def text(selector: String): Task[String] =
     html.flatMap(value => ZIO.attempt(ConnectedDom.selectOne(value, selector).text()))
 
+  /** Returns the text of exactly one element matching `selector`.
+    *
+    * This form selects the element with the ID `ref`, which the view also renders.
+    */
+  @targetName("textOfRef")
+  def text(ref: DomRef): Task[String] = text(s"#${ref.value}")
+
   /** Dispatches the `phx-click` binding on exactly one matching element. */
   def click(selector: String): Task[ConnectedAction] =
     dispatchClick(ConnectedDom.selectOne(_, selector))
+
+  /** Dispatches the `phx-click` binding on exactly one matching element.
+    *
+    * This form clicks the element with the ID `ref`, which the view also renders.
+    */
+  @targetName("clickRef")
+  def click(ref: DomRef): Task[ConnectedAction] = click(s"#${ref.value}")
 
   /** Dispatches the `phx-click` binding on exactly one button with the given text. */
   def clickButton(label: String): Task[ConnectedAction] =
     dispatchClick(ConnectedDom.buttonByLabel(_, label))
 
-  /** Dispatches the selected form's `phx-change` binding. */
+  /** Dispatches a form's `phx-change` binding.
+    *
+    * This form sends exactly `fields` to the form matching `selector`, with `target` as `_target`.
+    * Use it for forms without a [[FormDefinition]], or to send a payload a browser would not.
+    */
   def changeForm(
     selector: String,
     fields: Vector[(String, String)],
@@ -297,7 +336,26 @@ final class ConnectedView[-Msg] private[testing] (
   ): Task[ConnectedAction] =
     dispatchForm(selector, "phx-change", fields, target)
 
-  /** Dispatches the selected form's `phx-submit` binding. */
+  /** Dispatches a form's `phx-change` binding.
+    *
+    * This form edits the one form that renders fields of `definition`, as a visitor changing the
+    * assigned fields would, as in `view.changeForm(Signup.Definition)(Signup.Name.initial("Ada"))`.
+    * The payload starts from the form's rendered values, with the assigned fields replaced. Like
+    * the browser, it marks fields the visitor has neither edited nor submitted as unused, so only
+    * edited fields show their errors. With one field assignment, `_target` names that field.
+    */
+  def changeForm[Owner](
+    definition: FormDefinition[Owner, ?]
+  )(
+    assignments: FormInitial[Owner]*
+  ): Task[ConnectedAction] =
+    dispatchTypedForm(definition, assignments.toVector, submitter = None, submitting = false)
+
+  /** Dispatches a form's `phx-submit` binding.
+    *
+    * This form sends exactly `fields`, then `submitter`, to the form matching `selector`. Use it
+    * for forms without a [[FormDefinition]], or to send a payload a browser would not.
+    */
   def submitForm(
     selector: String,
     fields: Vector[(String, String)],
@@ -305,6 +363,33 @@ final class ConnectedView[-Msg] private[testing] (
   ): Task[ConnectedAction] =
     val submitted = fields ++ submitter.map(value => value.name -> value.value)
     dispatchForm(selector, "phx-submit", submitted, None)
+
+  /** Dispatches a form's `phx-submit` binding.
+    *
+    * This form submits the one form that renders fields of `definition`, with the assigned fields
+    * replacing its rendered values, as in
+    * `view.submitForm(Signup.Definition)(Signup.Name.initial("Ada"))`. Submitting marks every field
+    * of the form as used, as the browser does.
+    */
+  def submitForm[Owner](
+    definition: FormDefinition[Owner, ?]
+  )(
+    assignments: FormInitial[Owner]*
+  ): Task[ConnectedAction] =
+    dispatchTypedForm(definition, assignments.toVector, submitter = None, submitting = true)
+
+  /** Dispatches a form's `phx-submit` binding.
+    *
+    * This form also sends the submit button that `submitter` describes, as in
+    * `view.submitForm(Profile.Definition, Profile.Submitter.raw(Intent.Save))(...)`.
+    */
+  def submitForm[Owner](
+    definition: FormDefinition[Owner, ?],
+    submitter: RawFormSubmitter
+  )(
+    assignments: FormInitial[Owner]*
+  ): Task[ConnectedAction] =
+    dispatchTypedForm(definition, assignments.toVector, Some(submitter), submitting = true)
 
   /** Sends one typed server message and waits for its committed output. */
   def send(message: Msg): Task[ConnectedAction] = session.send(state, message)
@@ -319,15 +404,22 @@ final class ConnectedView[-Msg] private[testing] (
   def joinNested(instanceId: String): RIO[Scope, ConnectedView[Nothing]] =
     session.joinNested(state, instanceId)
 
-  /** Runs hosted upload preflight and streams one complete entry to the lifecycle. */
+  /** Uploads one file through the file input that `definition` renders, as a visitor choosing it.
+    *
+    * It runs the upload's preflight and streams the whole file. The input must be rendered with
+    * `liveFileInput`, and the upload must be hosted by the server.
+    */
   def upload(
-    uploadRef: String,
-    entryRef: String,
+    definition: LiveUploadDef[?],
     fileName: String,
     mediaType: String,
     bytes: Chunk[Byte]
   ): Task[Unit] =
-    session.upload(state, uploadRef, entryRef, fileName, mediaType, bytes)
+    for
+      current <- html
+      ref     <- ZIO.attempt(ConnectedDom.uploadRef(current, definition.name))
+      _       <- session.upload(state, ref, fileName, mediaType, bytes)
+    yield ()
 
   /** Returns the route URL currently owned by this exact joined generation. */
   def currentUrl: Task[URL] = state.currentUrl
@@ -381,6 +473,50 @@ final class ConnectedView[-Msg] private[testing] (
                }
       result <- session.dispatch(state, event)
     yield result
+
+  private def dispatchTypedForm[Owner](
+    definition: FormDefinition[Owner, ?],
+    assignments: Vector[FormInitial[Owner]],
+    submitter: Option[RawFormSubmitter],
+    submitting: Boolean
+  ): Task[ConnectedAction] =
+    val attribute = if submitting then "phx-submit" else "phx-change"
+    for
+      current  <- html
+      used     <- state.usedFields.get
+      prepared <- ZIO.attempt {
+                    val form             = ConnectedDom.formFor(current, definition)
+                    val binding          = ConnectedDom.requiredBinding(form, attribute)
+                    val controls         = ConnectedDom.controls(form)
+                    val (data, assigned) =
+                      definition.overlay(FormData(controls.successful), assignments)
+                    // The browser marks every field of a submitted form as used.
+                    val nowUsed =
+                      used ++ assigned ++ (if submitting then controls.names else Set.empty)
+                    val fields = data.raw.flatMap { (name, value) =>
+                      val unused = !nowUsed(name) && !controls.hiddenOnly(name)
+                      Option.when(unused)(ConnectedDom.unusedName(name) -> "").toVector :+
+                        (name -> value)
+                    } ++ submitter.map(value => value.name -> value.value)
+                    val target = assignments match
+                      case Vector(field: FormFieldAssignment[Owner]) if !submitting =>
+                        Some(field.field.path.name)
+                      case _ => None
+                    val event = RootEvent(
+                      eventType = "form",
+                      event = binding,
+                      value = Json.Str(ConnectedDom.urlEncoded(fields)),
+                      cid = ConnectedDom.eventTarget(form),
+                      meta = target.map(name => Json.Obj("_target" -> Json.Str(name)))
+                    )
+                    event -> nowUsed
+                  }
+      (event, nowUsed) = prepared
+      _      <- state.usedFields.set(nowUsed)
+      result <- session.dispatch(state, event)
+    yield result
+    end for
+  end dispatchTypedForm
 end ConnectedView
 
 private object ConnectedDom:
@@ -420,6 +556,82 @@ private object ConnectedDom:
         val matched = exactlyOne(matches, s"element matching the phx-target selector '$target'")
         Option(matched.closest("[data-phx-component]")).map(_.attr("data-phx-component").toLong)
     }
+
+  /** The one rendered form containing a field that `definition` declares. */
+  def formFor(html: String, definition: FormDefinition[?, ?]): Element =
+    val forms = Jsoup.parseBodyFragment(html).select("form").asScala.toVector.filter { form =>
+      form.select("[name]").asScala.exists(control => definition.declares(control.attr("name")))
+    }
+    exactlyOne(forms, s"form rendering fields of the '${definition.root.name}' form definition")
+
+  /** The named controls of one form, read as the browser's `FormData` reads them. */
+  final case class FormControls(
+    successful: Vector[(String, String)],
+    names: Set[String],
+    hiddenOnly: Set[String])
+
+  def controls(form: Element): FormControls =
+    val named = form
+      .select("input[name], select[name], textarea[name], button[name]").asScala.toVector
+      .filter(_.attr("name").nonEmpty)
+    val successful = named.filterNot(disabled(form, _)).flatMap { element =>
+      val name = element.attr("name")
+      element.tagName match
+        case "select" =>
+          val options  = element.select("option").asScala.toVector
+          val selected = options.filter(_.hasAttr("selected"))
+          val chosen   =
+            if element.hasAttr("multiple") then selected
+            else selected.lastOption.orElse(options.headOption).toVector
+          chosen.map(option =>
+            name -> (if option.hasAttr("value") then option.attr("value") else option.text())
+          )
+        case "textarea" => Vector(name -> element.`val`())
+        case "button"   => Vector.empty
+        case _          =>
+          element.attr("type").toLowerCase(java.util.Locale.ROOT) match
+            case "checkbox" | "radio" =>
+              Option
+                .when(element.hasAttr("checked"))(
+                  name -> (if element.hasAttr("value") then element.attr("value") else "on")
+                ).toVector
+            case "submit" | "button" | "reset" | "image" | "file" => Vector.empty
+            case _ => Vector(name -> element.attr("value"))
+    }
+    val byName = named.groupBy(_.attr("name"))
+    FormControls(
+      successful,
+      byName.keySet,
+      byName.collect {
+        case (name, elements) if elements.forall(_.attr("type").equalsIgnoreCase("hidden")) => name
+      }.toSet
+    )
+  end controls
+
+  /** The name Phoenix's client sends for an unused field, as in `profile[_unused_email]`. */
+  def unusedName(name: String): String =
+    val array   = name.endsWith("[]")
+    val base    = if array then name.dropRight(2) else name
+    val bracket = base.lastIndexOf('[')
+    val marked  =
+      if base.endsWith("]") && bracket >= 0 then
+        base.take(bracket + 1) + "_unused_" + base.drop(bracket + 1)
+      else "_unused_" + base
+    if array then marked + "[]" else marked
+
+  def uploadRef(html: String, name: String): String =
+    val inputs = Jsoup
+      .parseBodyFragment(html)
+      .select("input[type=file][data-phx-upload-ref]").asScala.toVector
+      .filter(_.attr("name") == name)
+    exactlyOne(inputs, s"file input for the '$name' upload").attr("data-phx-upload-ref")
+
+  private def disabled(form: Element, element: Element): Boolean =
+    element.hasAttr("disabled") ||
+      element
+        .parents().asScala.takeWhile(_ ne form).exists(parent =>
+          parent.tagName == "fieldset" && parent.hasAttr("disabled")
+        )
 
   def urlEncoded(fields: Vector[(String, String)]): String =
     fields.map { case (name, value) => s"${encode(name)}=${encode(value)}" }.mkString("&")
@@ -519,12 +731,12 @@ final private class ConnectedSession(
   def upload(
     state: ConnectedViewState,
     uploadRef: String,
-    entryRef: String,
     fileName: String,
     mediaType: String,
     bytes: Chunk[Byte]
   ): Task[Unit] =
     for
+      entryRef  <- freshReference.map(_.value)
       preflight <- request(
                      state.joinRef,
                      state.topic,
@@ -878,7 +1090,8 @@ final private class ConnectedViewState(
   diffs: Queue[Unit],
   actions: Queue[ConnectedAction],
   joined: Ref[Boolean],
-  closed: Promise[Nothing, Unit]):
+  closed: Promise[Nothing, Unit],
+  val usedFields: Ref[Set[String]]):
 
   val key: (String, String) = topic -> joinRef.value
 
@@ -949,4 +1162,5 @@ private object ConnectedViewState:
       actions <- Queue.sliding[ConnectedAction](16)
       joined  <- Ref.make(false)
       closed  <- Promise.make[Nothing, Unit]
-    yield new ConnectedViewState(transport, topic, joinRef, diffs, actions, joined, closed)
+      used    <- Ref.make(Set.empty[String])
+    yield new ConnectedViewState(transport, topic, joinRef, diffs, actions, joined, closed, used)

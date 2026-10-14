@@ -140,6 +140,49 @@ final class FormDefinition[Owner, Domain] private[scalive] (
     val (static, groups) = initialValues(assignments.toVector)
     rebuild(new FormValues(this, static, groups), FormInteraction.pristine, Vector.empty)
 
+  /** Whether `browserName` is a field of this definition or belongs to one of its repeated groups.
+    */
+  private[scalive] def declares(browserName: String): Boolean =
+    FormPath
+      .parse(browserName, FormPath.ParseLimits(limits.maxPathDepth, limits.maxSegmentLength))
+      .toOption.flatMap(FormDefinition.namesOption).exists { names =>
+        staticByPath.contains(names) ||
+        rowGroups.exists(rows => names.startsWith(FormDefinition.names(rows.path)))
+      }
+
+  /** Replaces the browser fields that `assignments` set in `data`, as a visitor editing them would.
+    *
+    * A field assignment replaces every value of that field; a group assignment replaces all of the
+    * group's rows. This is the inverse of [[project]] for the assigned fields. Returns the payload
+    * and the names of the fields that `assignments` set.
+    */
+  private[scalive] def overlay(
+    data: FormData,
+    assignments: Vector[FormInitial[Owner]]
+  ): (FormData, Vector[String]) =
+    val _ = initialValues(assignments)
+    assignments.foldLeft(data -> Vector.empty[String]) {
+      case ((current, names), assignment: FormFieldAssignment[Owner]) =>
+        val name = assignment.field.path.name
+        current.updated(name, assignment.values) -> (names :+ name)
+      case ((current, names), assignment: FormGroupAssignment[Owner, ?]) =>
+        val group  = assignment.rows.path
+        val prefix = s"${group.name}["
+        val rows   = assignment.values.flatMap { row =>
+          val rowSegments = group.segments :+ FormPathSegment.Name(row.key.value)
+          val presence    = FormPath.fromSegments(
+            rowSegments :+ FormPathSegment.Name(FormDefinition.RowPresenceName)
+          )
+          val fields = row.assignments.flatMap { field =>
+            val name = FormPath.fromSegments(rowSegments ++ field.field.relativePath.segments).name
+            field.values.map(name -> _)
+          }
+          (presence.name -> FormDefinition.RowPresenceValue) +: fields
+        }
+        val kept = current.raw.filterNot((name, _) => name.startsWith(prefix))
+        FormData(kept ++ rows) -> (names ++ rows.map(_._1).distinct)
+    }
+
   /** Projects an untrusted browser payload and returns a consistent typed event.
     *
     * Projection is bounded by [[limits]]. The event retains the original payload while its

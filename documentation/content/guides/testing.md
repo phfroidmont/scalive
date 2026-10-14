@@ -40,8 +40,8 @@ reconnect timing, or network behavior.
 `scalive.testing` is intentionally smaller than `Phoenix.LiveViewTest`. It
 supports connected mount, typed server messages, semantic click and form
 bindings, nested joins, hosted uploads, routed reconnects, live navigation, and
-explicit local ordinary-form requests. It does not emulate browser
-successful-control selection or execute JavaScript.
+explicit local ordinary-form requests. Typed form actions read a form's rendered
+values the way the browser does, but the harness does not execute JavaScript.
 
 @:@
 
@@ -50,19 +50,26 @@ successful-control selection or execute JavaScript.
 @:apiSymbol(def:scalive.testing.ConnectedRender.join)`ConnectedRender.join`@:@
 mounts one LiveView at `/`, renders its first HTML, and connects it. The
 [first test](../learn/testing-your-liveview.md#write-a-first-test) uses it. Use
-it when routing and mount policy are not part of the claim.
+it when routing and mount policy are not part of the claim. For a routed
+LiveView, `ConnectedRender.join(Routes.search, SearchLiveView(), Some("LiveView"))`
+mounts it on its route at the URL the parameters encode.
 
 Interact through the view the way a visitor would:
 
 - `clickButton(label)` clicks the button with that text, and `click(selector)`
-  clicks the element a CSS selector finds.
-- `changeForm(selector, fields)` and `submitForm(selector, fields)` send a
-  form's change or submit event with the given fields.
+  clicks the element a CSS selector finds. `click(ref)` clicks the element with
+  a `DomRef` ID that the view also renders.
+- `changeForm(definition)(...)` and `submitForm(definition)(...)` edit or submit
+  the form that renders a form definition's fields, with typed field values, as
+  [typed form behavior](#test-typed-form-behavior) shows.
+- `upload(definition, fileName, mediaType, bytes)` uploads one file through the
+  file input of a `LiveUploadDef`.
 - `send(message)` delivers a typed message directly, when the message itself is
   the behavior under test.
 
 Each action waits for the server's reply. Then read the result with
-`text(selector)` for one element or `html` for the whole rendered view.
+`text(selector)` or `text(ref)` for one element, or `html` for the whole
+rendered view.
 
 ## Wait for background updates {#wait-for-an-html-condition}
 
@@ -84,27 +91,31 @@ describes the deadline, clock, and concurrency rules.
 
 ## Test typed form behavior {#test-typed-form-behavior}
 
-Use `changeForm` with a target and `_unused_*` markers to verify field-local
-feedback. Use `submitForm` without unused markers to verify that submission
-reveals all errors and produces a domain value only when valid. Query the
-committed HTML after each action rather than asserting against an independently
-decoded form. This spec tests the profile form from
+Use `changeForm(definition)` to verify field-local feedback and
+`submitForm(definition)` to verify that submission reveals every error and
+produces a domain value only when valid. Both start from the form's rendered
+values and replace the fields the test assigns. Like the browser, `changeForm`
+marks the fields the test has not edited or submitted as unused, so only edited
+fields show their errors, and names the edited field as the event's target.
+Query the committed HTML after each action rather than asserting against an
+independently decoded form. This spec tests the profile form from
 [Typed forms and validation](typed-forms-and-validation.md#handle-change-and-submit-events):
 
 @:sourceRegion(documentation/fixtures/guides/test/src/forms/ProfileLiveViewSpec.scala, forms-test)
 
-Field names come from the definition, such as `Profile.Name.name`, so a renamed
-field cannot leave the test behind.
+Values are typed by the definition's fields, such as `Profile.Name.initial("")`,
+so a renamed or retyped field cannot leave the test behind. To send a payload a
+browser would not, such as a duplicated field, use the raw forms
+`changeForm(selector, fields)` and `submitForm(selector, fields)`, which send
+exactly the given fields.
 
 For a form with a [typed submitter](form-controls.md#route-multiple-submit-actions),
-pass the button's name and value explicitly. The harness appends the pair to the
+pass the button that submits it. The harness appends its name and value to the
 submitted fields, as the Phoenix browser client does:
 
 ```scala fragment
-view.submitForm(
-  "#profile-form",
-  validFields,
-  submitter = Some(Profile.Submitter.raw(Profile.Intent.Preview))
+view.submitForm(Profile.Definition, Profile.Submitter.raw(Profile.Intent.Preview))(
+  Profile.Name.initial("Ada")
 )
 ```
 
@@ -112,10 +123,11 @@ This exercises the same decoder as a real button click. Use a browser test when
 the claim also depends on native implicit submission, form association,
 constraint validation, or JavaScript loading behavior.
 
-[Repeated rows](repeated-form-rows.md#prerequisites) must submit every row's
-presence control along with its fields. Exercise add, remove, and reorder
-controls through the connected view, then assert stable row keys rather than
-display indexes. Automatic form recovery after a reconnect runs in the Phoenix
+[Repeated rows](repeated-form-rows.md#prerequisites) are submitted with their
+presence controls, which the rendered form already contains. Assigning a
+group, as in `ContactRows.initial(ContactRows.row(key)(...))`, replaces all of its
+rows. Exercise add, remove, and reorder controls through the connected view,
+then assert stable row keys rather than display indexes. Automatic form recovery after a reconnect runs in the Phoenix
 JavaScript client, so verify it in a [browser test](#test-in-a-browser).
 
 ## Test a routed application {#open-a-routed-application-client}

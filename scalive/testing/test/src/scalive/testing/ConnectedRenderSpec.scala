@@ -38,6 +38,50 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
         event: Definition.Event,
         intent: Either[FormSubmitter.DecodeError, Intent])
 
+  private object SignupForm:
+    final case class Signup(name: String, email: String, newsletter: Boolean)
+    val Root       = FormRoot("signup")
+    val Name       = Root.text("name").required(FieldIssue("Enter your name."))
+    val Email      = Root.text("email").validate(FieldIssue("Enter an email."))(_.contains("@"))
+    val Newsletter = Root.field("newsletter", FieldInput.checkbox())
+    val Definition =
+      Root.product[Signup]((name = Name, email = Email, newsletter = Newsletter))
+    val Save = DomRef("save-signup")
+
+    enum Msg:
+      case Changed(event: Definition.Event)
+      case Submitted(event: Definition.Event)
+      case Saved
+
+    final case class Model(form: Definition.Form, saved: Option[Signup], clicks: Int)
+
+    class SignupView extends LiveView[Msg, Model]:
+      def mount(ctx: MountContext) = ZIO.succeed(Model(Definition.initial(), None, 0))
+      def handleMessage(model: Model, ctx: MessageContext) =
+        case Msg.Changed(event)   => ZIO.succeed(model.copy(form = event.form))
+        case Msg.Submitted(event) =>
+          ZIO.succeed(model.copy(form = event.form, saved = event.form.result.toOption))
+        case Msg.Saved => ZIO.succeed(model.copy(clicks = model.clicks + 1))
+      def view(model: Signal[Model]) =
+        val signup     = model.map(_.form)
+        val name       = signup.field(Name)
+        val email      = signup.field(Email)
+        val newsletter = signup.field(Newsletter)
+        div(
+          form(
+            Definition.onChange(Msg.Changed(_)),
+            Definition.onSubmit(Msg.Submitted(_)),
+            name.text(),
+            name.errorFeedback(_.map(_.message), dataAttr("name-errors") := ""),
+            email.text(),
+            email.errorFeedback(_.map(_.message), dataAttr("email-errors") := ""),
+            newsletter.checkbox()
+          ),
+          button(Save.attr, on.click(Msg.Saved), "Save"),
+          span(dataAttr("clicks") := "", model.map(_.clicks.toString)),
+          span(dataAttr("saved") := "", model.map(_.saved.fold("")(_.toString)))
+        )
+
   private enum ChildMsg:
     case Clicked
 
@@ -169,6 +213,75 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
           submitted == "true",
           submitUsed == "true"
         )
+      }
+    },
+    test("typed form changes keep rendered values and show errors only for used fields") {
+      import SignupForm.*
+      ZIO.scoped {
+        for
+          view        <- ConnectedRender.join(SignupView())
+          _           <- view.changeForm(Definition)(Email.initial("ada"))
+          emailOnly   <- view.text("[data-email-errors]")
+          nameHidden  <- view.text("[data-name-errors]")
+          _           <- view.changeForm(Definition)(Name.initial("Ada"))
+          keptEmail   <- view.html.map(html =>
+                           Jsoup.parseBodyFragment(html).select("input[name='signup[email]']").attr("value")
+                         )
+          _           <- view.submitForm(Definition)(Name.initial(""), Newsletter.initial(true))
+          nameShown   <- view.text("[data-name-errors]")
+          _           <- view.submitForm(Definition)(
+                           Name.initial("Ada"),
+                           Email.initial("ada@example.com")
+                         )
+          saved       <- view.text("[data-saved]")
+        yield assertTrue(
+          emailOnly == "Enter an email.",
+          nameHidden.isEmpty,
+          keptEmail == "ada",
+          nameShown == "Enter your name.",
+          saved == "Signup(Ada,ada@example.com,true)"
+        )
+      }
+    },
+    test("typed form actions require exactly one form for the definition") {
+      val view = new LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext)  = ZIO.unit
+        def view(model: Signal[Unit]) = div("no form")
+      ZIO.scoped {
+        for
+          connected <- ConnectedRender.join(view)
+          result    <- connected.submitForm(SignupForm.Definition)().either
+        yield assertTrue(
+          result.left.exists(_.getMessage.contains("form rendering fields of the 'signup' form"))
+        )
+      }
+    },
+    test("clicks and reads elements by DomRef") {
+      import SignupForm.*
+      ZIO.scoped {
+        for
+          view   <- ConnectedRender.join(SignupView())
+          _      <- view.click(Save)
+          clicks <- view.text("[data-clicks]")
+          label  <- view.text(Save)
+        yield assertTrue(clicks == "1", label == "Save")
+      }
+    },
+    test("joins a routed LiveView with its message type") {
+      val search = scalive.live.queryOptional[String]("q")
+      val view   = new LiveView.Routed[NavigationMsg, String, Option[String]]:
+        def mount(params: Option[String], ctx: MountContext) = ZIO.succeed(params.getOrElse(""))
+        def handleMessage(model: String, ctx: MessageContext) =
+          case NavigationMsg.Patch => ZIO.succeed(model.toUpperCase)
+        def view(model: Signal[String]) = span(dataAttr("query") := "", model)
+      ZIO.scoped {
+        for
+          connected <- ConnectedRender.join(search, view, Some("typed"))
+          before    <- connected.text("[data-query]")
+          _         <- connected.send(NavigationMsg.Patch)
+          after     <- connected.text("[data-query]")
+          url       <- connected.currentUrl
+        yield assertTrue(before == "typed", after == "TYPED", url.encode == "/?q=typed")
       }
     },
     test("dispatches definition-owned submit actions as ordinary form data") {
@@ -460,20 +573,13 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
       )
       val view = new LiveView.Eventless[LiveUpload[Chunk[Byte]]]:
         def mount(ctx: MountContext) = ctx.uploads.allow(definition)
-        override def view(model: Signal[LiveUpload[Chunk[Byte]]]) =
-          input(dataAttr("upload-ref") := model.map(_.ref.value))
+        override def view(model: Signal[LiveUpload[Chunk[Byte]]]) = liveFileInput(model)
 
       ZIO.scoped {
         for
           connected <- ConnectedRender.join(view)
-          html      <- connected.html
-          uploadRef <- ZIO.attempt(
-                         Jsoup.parseBodyFragment(html).selectFirst("[data-upload-ref]")
-                           .attr("data-upload-ref")
-                       )
           _ <- connected.upload(
-                 uploadRef,
-                 "small-entry",
+                 definition,
                  "small.txt",
                  "text/plain",
                  Chunk.fromArray("seven77".getBytes(java.nio.charset.StandardCharsets.UTF_8))

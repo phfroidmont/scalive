@@ -21,6 +21,11 @@ object RepeatedContactsFormExampleSpec extends ZIOSpecDefault:
     row("contact-1", "Ada Lovelace", "ada@example.com") ++
       row("contact-2", "Grace Hopper", "grace@example.com")
 
+  private val contacts = RepeatedContactsFormExample.Contacts
+
+  private def contact(number: Long, name: String, email: String) =
+    contacts.Rows.row(contacts.key(number))(contacts.Name.initial(name), contacts.Email.initial(email))
+
   private val duplicateNameFields = Vector(
     "contact_book[contacts][contact-1][_scalive_row]" -> "1",
     "contact_book[contacts][contact-1][name]"         -> "Ada Lovelace",
@@ -54,20 +59,28 @@ object RepeatedContactsFormExampleSpec extends ZIOSpecDefault:
                  target = Some("contact_book[contacts][contact-1][name]")
                )
           malformed <- document(view)
-          _ <- view.changeForm(
-                 "[data-contacts-form]",
-                 row("contact-1", "Ada Lovelace", "ada@example.com") ++
-                   row("contact-2", "Grace Hopper", "not-an-email"),
-                 target = Some("contact_book[contacts][contact-2][email]")
+          _ <- view.changeForm(contacts.Definition)(
+                 contacts.Rows.initial(
+                   contact(1, "Ada Lovelace", "ada@example.com"),
+                   contact(2, "Grace Hopper", "not-an-email")
+                 )
                )
           invalid <- document(view)
-          _       <- view.changeForm("[data-contacts-form]", initialFields)
+          _ <- view.changeForm(contacts.Definition)(
+                 contacts.Rows.initial(
+                   contact(1, "Ada Lovelace", "ada@example.com"),
+                   contact(2, "Grace Hopper", "grace@example.com")
+                 )
+               )
           edited  <- document(view)
           _       <- view.click("[data-add-contact]")
           added   <- document(view)
-          _ <- view.submitForm(
-                 "[data-contacts-form]",
-                 initialFields ++ row("contact-3", "", "")
+          _ <- view.submitForm(contacts.Definition)(
+                 contacts.Rows.initial(
+                   contact(1, "Ada Lovelace", "ada@example.com"),
+                   contact(2, "Grace Hopper", "grace@example.com"),
+                   contact(3, "", "")
+                 )
                )
           invalidSubmit <- document(view)
           _       <- view.click("[data-contact-key=contact-3] [data-move-up]")
@@ -79,10 +92,12 @@ object RepeatedContactsFormExampleSpec extends ZIOSpecDefault:
           _       <- view.click("[data-add-contact]")
           next    <- document(view)
           _       <- view.click("[data-contact-key=contact-4] [data-remove-row]")
-          finalFields =
-            row("contact-3", "Katherine Johnson", "katherine@example.com") ++
-              row("contact-2", "Grace Hopper", "grace@example.com")
-          _     <- view.submitForm("[data-contacts-form]", finalFields)
+          _ <- view.submitForm(contacts.Definition)(
+                 contacts.Rows.initial(
+                   contact(3, "Katherine Johnson", "katherine@example.com"),
+                   contact(2, "Grace Hopper", "grace@example.com")
+                 )
+               )
           saved <- document(view)
           _     <- view.clickButton("Reset")
           reset <- document(view)

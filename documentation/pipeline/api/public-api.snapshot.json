@@ -12778,6 +12778,30 @@
       ]
     },
     {
+      "id" : "extension:scalive.AsyncValue.failure",
+      "ownerId" : "object:scalive.AsyncValue",
+      "qualifiedName" : "scalive.AsyncValue.failure",
+      "kind" : "extension",
+      "signatures" : [
+        {
+          "id" : "extension:scalive.AsyncValue.failure:3e3cf4312182c11d",
+          "signature" : "extension def failure[A](value: AsyncValue[A]): Option[Throwable]"
+        }
+      ]
+    },
+    {
+      "id" : "extension:scalive.AsyncValue.isFailed",
+      "ownerId" : "object:scalive.AsyncValue",
+      "qualifiedName" : "scalive.AsyncValue.isFailed",
+      "kind" : "extension",
+      "signatures" : [
+        {
+          "id" : "extension:scalive.AsyncValue.isFailed:a06136cfe4b7b7c4",
+          "signature" : "extension def isFailed[A](value: AsyncValue[A]): Boolean"
+        }
+      ]
+    },
+    {
       "id" : "extension:scalive.AsyncValue.isLoading",
       "ownerId" : "object:scalive.AsyncValue",
       "qualifiedName" : "scalive.AsyncValue.isLoading",
@@ -12810,6 +12834,18 @@
         {
           "id" : "extension:scalive.AsyncValue.loading:0ea1162ebe21dad4",
           "signature" : "extension def loading[A](value: AsyncValue[A])(reset: Boolean = ...): AsyncValue[A]"
+        }
+      ]
+    },
+    {
+      "id" : "extension:scalive.AsyncValue.map",
+      "ownerId" : "object:scalive.AsyncValue",
+      "qualifiedName" : "scalive.AsyncValue.map",
+      "kind" : "extension",
+      "signatures" : [
+        {
+          "id" : "extension:scalive.AsyncValue.map:57c672e75125da84",
+          "signature" : "extension def map[A](value: AsyncValue[A])[B](f: A => B): AsyncValue[B]"
         }
       ]
     },

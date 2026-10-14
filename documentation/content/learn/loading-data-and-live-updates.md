@@ -98,8 +98,8 @@ The view renders every state of the reading:
 
 `valueOption` is the last successful reading, so the temperature stays visible
 while a refresh runs or after it fails. `isLoading` shows the progress message,
-and the alert appears only after a failure. The visitor sees a fixed message
-rather than the exception.
+and `isFailed` shows the alert only after a failure. The visitor sees a fixed
+message rather than the exception.
 
 ## Try it {#try-it}
 

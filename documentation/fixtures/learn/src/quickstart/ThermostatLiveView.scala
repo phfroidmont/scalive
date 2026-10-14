@@ -41,7 +41,7 @@ final class ThermostatLiveView(thermostat: Thermostat)
       h1("Thermostat"),
       p("Temperature: ", outputTag(reading.map(_.valueOption.fold("unknown")(celsius)))),
       reading.map(_.isLoading).when(p("Reading the sensor…")),
-      reading.map(failed).when(p(role := "alert", "The sensor did not answer.")),
+      reading.map(_.isFailed).when(p(role := "alert", "The sensor did not answer.")),
       button(on.click(Msg.Refresh), "Refresh")
     )
   // docs:end learn-thermostat-view
@@ -61,8 +61,4 @@ object ThermostatLiveView:
   // docs:end learn-thermostat-model
 
   private def celsius(value: Double): String = f"$value%.1f °C"
-
-  private def failed(reading: AsyncValue[Double]): Boolean = reading match
-    case AsyncValue.Failed(_, _) => true
-    case _                       => false
 // docs:end learn-thermostat-live-view

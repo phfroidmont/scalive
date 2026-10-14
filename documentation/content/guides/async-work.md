@@ -102,7 +102,10 @@ Then apply each completion with `updated`:
 
 Call `loading(reset = true)` when old data would be misleading. The default
 retains it. Render every state deliberately; a failed task is domain-visible
-state, not a reason for the LiveView process to crash.
+state, not a reason for the LiveView process to crash. Match on the cases, or
+read one aspect with `valueOption`, `isLoading`, `isOk`, `isFailed`, or
+`failure`. `map` transforms the current and retained values and keeps the
+state.
 
 Do not expose arbitrary exception messages to visitors. Convert expected
 failures into stable, actionable copy and log diagnostic context separately.

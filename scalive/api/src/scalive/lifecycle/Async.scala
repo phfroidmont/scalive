@@ -139,6 +139,22 @@ object AsyncValue:
     /** Whether the last work succeeded. */
     @targetName("asyncIsOk") def isOk: Boolean = currentlyOk(value)
 
+    /** Whether the last work failed. */
+    @targetName("asyncIsFailed") def isFailed: Boolean = failure.nonEmpty
+
+    /** The error the last work failed with, if it failed. */
+    @targetName("asyncFailure") def failure: Option[Throwable] = value match
+      case AsyncValue.Failed(_, cause) => Some(cause)
+      case _                           => None
+
+    /** Applies `f` to the current and last successful values, keeping the state. */
+    @targetName("asyncMap") def map[B](f: A => B): AsyncValue[B] = value match
+      case AsyncValue.Empty                       => AsyncValue.Empty
+      case AsyncValue.Loading(previous)           => AsyncValue.Loading(previous.map(f))
+      case AsyncValue.Ok(current)                 => AsyncValue.Ok(f(current))
+      case AsyncValue.Failed(previous, cause)     => AsyncValue.Failed(previous.map(f), cause)
+      case AsyncValue.Cancelled(previous, reason) => AsyncValue.Cancelled(previous.map(f), reason)
+
     /** Marks work as running, keeping the last successful value unless `reset` is `true`. */
     @targetName("asyncLoading") def loading(reset: Boolean = false): AsyncValue[A] =
       markLoading(value, reset)
@@ -146,4 +162,5 @@ object AsyncValue:
     /** Applies a task's result: success replaces the value; failure and cancellation keep it. */
     @targetName("asyncUpdated") def updated(result: LiveAsyncResult[A]): AsyncValue[A] =
       applyResult(value, result)
+  end extension
 end AsyncValue

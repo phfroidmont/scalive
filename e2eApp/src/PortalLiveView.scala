@@ -87,7 +87,7 @@ class PortalLiveView
           )
         ),
       portal(DomRef("portal-with-live-component"), target = DomSelector.css("#root-portal"))(
-        liveComponent(LiveComponentFixture, id = "lc", props = ())
+        component(LiveComponentFixture, "lc").render(())
       ),
       portal(DomRef("tooltip-example-portal-portal"), target = DomSelector.css("body"))(
         tooltipBody("tooltip-example-portal", count)

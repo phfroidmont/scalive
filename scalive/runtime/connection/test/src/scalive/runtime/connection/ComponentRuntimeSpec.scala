@@ -200,7 +200,7 @@ object ComponentRuntimeSpec extends ZIOSpecDefault:
         val view = new LiveView[Unit, Unit]:
           def mount(ctx: MountContext) = ZIO.unit
           def handleMessage(model: Unit, ctx: MessageContext): Unit => Task[Unit] = _ =>
-            ctx.components.sendUpdate(definition, "counter", 3)
+            ctx.components.sendUpdate(component(definition, "counter"), 3)
           def view(model: Signal[Unit]) = div(component(definition, "counter").render(1))
         for
           sink       <- Queue.unbounded[ConnectionOutput]
@@ -221,7 +221,7 @@ object ComponentRuntimeSpec extends ZIOSpecDefault:
         val view = new LiveView.Eventless[Unit]:
           def mount(ctx: MountContext) = ctx.connection match
             case Connection.Connected(connected) =>
-              connected.components.sendUpdate(definition, "counter", 5)
+              connected.components.sendUpdate(component(definition, "counter"), 5)
             case Connection.Disconnected => ZIO.unit
           def view(model: Signal[Unit]) = div(component(definition, "counter").render(1))
         for
@@ -244,7 +244,7 @@ object ComponentRuntimeSpec extends ZIOSpecDefault:
         val parent = new LiveView[Unit, Unit]:
           def mount(ctx: MountContext) = ZIO.unit
           def handleMessage(model: Unit, ctx: MessageContext): Unit => Task[Unit] = _ =>
-            ctx.components.sendUpdate(failing, "failing", 2)
+            ctx.components.sendUpdate(component(failing, "failing"), 2)
           def view(model: Signal[Unit]) = div(component(failing, "failing").render(1))
         val failingParams = new LiveView.Eventless[Unit]:
           override val hooks = LiveHooks.empty[Nothing, Unit]

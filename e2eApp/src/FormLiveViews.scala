@@ -146,11 +146,7 @@ class FormLiveView(initialQuery: FormQueryParams = FormQueryParams())
     }
 
     liveComponentMode.chooseMod(
-      liveComponent(
-        FormComponent,
-        id = "form-component",
-        props = componentProps
-      ),
+      component(FormComponent, "form-component").render(componentProps),
       FormLiveView.renderForm(query, values, Msg.Validate(EmptyFormEvent))
     )
 

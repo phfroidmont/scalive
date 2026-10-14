@@ -59,10 +59,10 @@ object RenderRequirementsSpec extends ZIOSpecDefault:
           value._2
         }
         div(
-          liveComponent(PlainComponent, "static", "one"),
-          liveComponent(PlainComponent, "signal", props),
-          liveComponent(PlainComponent, id, props),
-          liveComponent(OutputComponent, "output", props, _.length)
+          component(PlainComponent, "static").render("one"),
+          component(PlainComponent, "signal").render(props),
+          component(PlainComponent, id).render(props),
+          component(OutputComponent, "output").render(props, _.length)
         )
       }
 
@@ -87,10 +87,10 @@ object RenderRequirementsSpec extends ZIOSpecDefault:
         val selected = model.map(_._1)
         val items    = model.map(_._2)
         div(
-          liveComponent(PlainComponent, "first", "first"),
-          selected.when(span(liveComponent(PlainComponent, "choice", "choice"))),
+          component(PlainComponent, "first").render("first"),
+          selected.when(span(component(PlainComponent, "choice").render("choice"))),
           items.splitBy(identity) { (key, item) =>
-            span(liveComponent(PlainComponent, key, item))
+            span(component(PlainComponent, key).render(item))
           }
         )
       }
@@ -105,7 +105,7 @@ object RenderRequirementsSpec extends ZIOSpecDefault:
     test("requires component finalization and inlines resolved child HTML") {
       val rootCompiled = RenderProgram.compile[Unit, Nothing](_ => div(
         "before",
-        liveComponent(PlainComponent, "child", "props"),
+        component(PlainComponent, "child").render("props"),
         "after"
       ))
       val childCompiled = RenderProgram.compile[String, String](value => span(value))
@@ -143,7 +143,7 @@ object RenderRequirementsSpec extends ZIOSpecDefault:
     },
     test("component resolution leaves child candidate rollback ownership untouched") {
       val rootCompiled = RenderProgram.compile[Unit, Nothing](_ =>
-        div(liveComponent(PlainComponent, "child", "props"))
+        div(component(PlainComponent, "child").render("props"))
       )
       val childCompiled = RenderProgram.compile[String, String](value => span(value))
 
@@ -178,15 +178,15 @@ object RenderRequirementsSpec extends ZIOSpecDefault:
 
       val siblingsCompiled = RenderProgram.compile[Unit, Nothing](_ =>
         div(
-          liveComponent(PlainComponent, "left", "left"),
-          liveComponent(PlainComponent, "right", "right")
+          component(PlainComponent, "left").render("left"),
+          component(PlainComponent, "right").render("right")
         )
       )
       val nestedRootCompiled = RenderProgram.compile[Unit, Nothing](_ =>
-        div(liveComponent(PlainComponent, "outer", "outer"))
+        div(component(PlainComponent, "outer").render("outer"))
       )
       val outerCompiled = RenderProgram.compile[Unit, String](_ =>
-        div(liveComponent(PlainComponent, "inner", "inner"))
+        div(component(PlainComponent, "inner").render("inner"))
       )
       val childCompiled = RenderProgram.compile[Unit, String](_ => span("child"))
 
@@ -300,8 +300,8 @@ object RenderRequirementsSpec extends ZIOSpecDefault:
       val rootCompiled = RenderProgram.compile[String, Nothing] { rootValue =>
         div(
           rootValue,
-          liveComponent(PlainComponent, "left", "left"),
-          liveComponent(PlainComponent, "right", "right")
+          component(PlainComponent, "left").render("left"),
+          component(PlainComponent, "right").render("right")
         )
       }
       val leftCompiled  = RenderProgram.compile[String, String](value => span(value))
@@ -371,10 +371,10 @@ object RenderRequirementsSpec extends ZIOSpecDefault:
     },
     test("keeps nested component changes recursively scoped") {
       val rootCompiled = RenderProgram.compile[Unit, Nothing](_ =>
-        div(liveComponent(PlainComponent, "outer", "outer"))
+        div(component(PlainComponent, "outer").render("outer"))
       )
       val outerCompiled = RenderProgram.compile[Unit, String](_ =>
-        div(liveComponent(PlainComponent, "inner", "inner"))
+        div(component(PlainComponent, "inner").render("inner"))
       )
       val innerCompiled = RenderProgram.compile[String, String](value => span(value))
       val outerToken    = Object()
@@ -460,7 +460,7 @@ object RenderRequirementsSpec extends ZIOSpecDefault:
     },
     test("treats a new component token at one declaration as replacement identity") {
       val rootCompiled = RenderProgram.compile[Unit, Nothing](_ =>
-        div(liveComponent(PlainComponent, "child", "props"))
+        div(component(PlainComponent, "child").render("props"))
       )
       val childCompiled = RenderProgram.compile[String, String](value => span(value))
       val firstToken    = Object()
@@ -556,7 +556,7 @@ object RenderRequirementsSpec extends ZIOSpecDefault:
             span(
               id,
               value,
-              liveComponent(PlainComponent, s"component-$id", value),
+              component(PlainComponent, s"component-$id").render(value),
               liveView(s"nested-$id", ChildView)
             )
           ),
@@ -564,7 +564,7 @@ object RenderRequirementsSpec extends ZIOSpecDefault:
             span(
               id,
               value,
-              liveComponent(PlainComponent, s"component-$id", value),
+              component(PlainComponent, s"component-$id").render(value),
               liveView(s"nested-$id", ChildView)
             )
           )

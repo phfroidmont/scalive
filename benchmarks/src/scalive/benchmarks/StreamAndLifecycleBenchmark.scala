@@ -98,7 +98,7 @@ class StreamAndLifecycleState:
       .compile[Vector[Row], Nothing](model =>
         div(
           (0 until 32).map(index =>
-            liveComponent(RetainedComponent, s"component-$index", model.map(_(index)))
+            component(RetainedComponent, s"component-$index").render(model.map(_(index)))
           )
         )
       ).fold(throw _, identity)

@@ -64,86 +64,27 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
   ): LiveComponentOutputInstance[Props, Msg, Model, Output] =
     LiveComponentOutputInstance(value, id)
 
-  /** Renders one instance of a stateful component, identified by its class and `id`.
+  /** Names one instance of a stateful component, to render it with `render(props)`.
     *
-    * This form passes constant `props`, like `component(value, id).render(props)`. Keep `id` stable
-    * so the instance keeps its model.
+    * This form takes an ID that follows a signal: a new ID renders a different instance, with its
+    * own model. The result can only be rendered; build an instance with the current ID to target it
+    * or send it props.
     */
-  def liveComponent[Props, Msg, Model](
+  def component[Props, Msg, Model](
     value: LiveComponent[Props, Msg, Model],
-    id: String,
-    props: Props
-  ): Mod[Nothing] = Mod.Content.Component(ComponentSpec.Plain(value, id, props))
+    id: Signal[String]
+  ): LiveComponentInstance.Dynamic[Props, Msg, Model] = LiveComponentInstance.Dynamic(value, id)
 
-  /** Renders one instance of a stateful component, identified by its class and `id`.
+  /** Names one instance of a stateful component, to render it with `render(props)`.
     *
-    * This form passes props that follow a signal; changed props reach the instance's `update`.
+    * This form names a component that emits outputs, with an ID that follows a signal; render it
+    * with `render(props, onOutput)`.
     */
-  def liveComponent[Props, Msg, Model](
-    value: LiveComponent[Props, Msg, Model],
-    id: String,
-    props: Signal[Props]
-  ): Mod[Nothing] = Mod.Content.Component(ComponentSpec.PlainSignal(value, id, props))
-
-  /** Renders one instance of a stateful component, identified by its class and `id`.
-    *
-    * This form also follows a signal of the ID: a new ID renders a different instance, with its own
-    * model.
-    */
-  def liveComponent[Props, Msg, Model](
-    value: LiveComponent[Props, Msg, Model],
-    id: Signal[String],
-    props: Signal[Props]
-  ): Mod[Nothing] = Mod.Content.Component(ComponentSpec.Dynamic(value, id, props))
-
-  /** Renders one instance of a stateful component, identified by its class and `id`.
-    *
-    * This form follows a signal of the ID with constant props: a new ID renders a different
-    * instance, with its own model.
-    */
-  def liveComponent[Props, Msg, Model](
-    value: LiveComponent[Props, Msg, Model],
-    id: Signal[String],
-    props: Props
-  ): Mod[Nothing] = liveComponent(value, id, id.map(_ => props))
-
-  /** Renders one instance of a stateful component, identified by its class and `id`.
-    *
-    * This form renders a component that emits outputs and maps each one to an owner message with
-    * `onOutput`, like `component(value, id).render(props, onOutput)`.
-    */
-  def liveComponent[Props, Msg, Model, Output, OwnerMsg](
+  def component[Props, Msg, Model, Output](
     value: LiveComponent.WithOutput[Props, Msg, Model, Output],
-    id: String,
-    props: Props,
-    onOutput: Output => OwnerMsg
-  ): Mod[OwnerMsg] =
-    Mod.Content.Component(ComponentSpec.Output(value, id, props, onOutput))
-
-  /** Renders one instance of a stateful component, identified by its class and `id`.
-    *
-    * This form renders a component that emits outputs, with props that follow a signal.
-    */
-  def liveComponent[Props, Msg, Model, Output, OwnerMsg](
-    value: LiveComponent.WithOutput[Props, Msg, Model, Output],
-    id: String,
-    props: Signal[Props],
-    onOutput: Output => OwnerMsg
-  ): Mod[OwnerMsg] =
-    Mod.Content.Component(ComponentSpec.OutputSignal(value, id, props, onOutput))
-
-  /** Renders one instance of a stateful component, identified by its class and `id`.
-    *
-    * This form renders a component that emits outputs, following signals of both the ID and the
-    * props.
-    */
-  def liveComponent[Props, Msg, Model, Output, OwnerMsg](
-    value: LiveComponent.WithOutput[Props, Msg, Model, Output],
-    id: Signal[String],
-    props: Signal[Props],
-    onOutput: Output => OwnerMsg
-  ): Mod[OwnerMsg] =
-    Mod.Content.Component(ComponentSpec.OutputDynamic(value, id, props, onOutput))
+    id: Signal[String]
+  ): LiveComponentOutputInstance.Dynamic[Props, Msg, Model, Output] =
+    LiveComponentOutputInstance.Dynamic(value, id)
 
   /** Embeds a nested LiveView with its own lifecycle, identified by `id`.
     *

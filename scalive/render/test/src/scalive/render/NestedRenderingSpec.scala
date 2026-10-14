@@ -92,7 +92,7 @@ object NestedRenderingSpec extends ZIOSpecDefault:
         ): HtmlElement[Unit] = div()
 
       val parentCompiled = RenderProgram.compile[Unit, Nothing](_ =>
-        div(liveComponent(Component, "component", ()))
+        div(component(Component, "component").render(()))
       )
       val childCompiled = RenderProgram.compile[Unit, Unit](_ => div(liveView("nested", ChildView)))
 

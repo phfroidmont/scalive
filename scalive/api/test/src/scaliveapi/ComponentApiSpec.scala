@@ -115,11 +115,46 @@ object ComponentApiSpec extends ZIOSpecDefault:
         def update(ctx: MessageContext[Unit, Unit]) =
           ctx.components.sendUpdate(counter, "Updated counter")
 
-        def updateByDefinition(ctx: MessageContext[Unit, Unit]) =
-          ctx.components.sendUpdate(CounterComponent, "counter", "Updated counter")
+        object Page extends LiveView.Eventless[Int]:
+          def mount(ctx: MountContext) = ZIO.succeed(1)
+          def view(model: Signal[Int]) =
+            div(component(CounterComponent, model.map(id => s"counter-$id")).render("Counter"))
       """)
 
       assertTrue(errors.isEmpty)
+    },
+    test("instances with a dynamic ID render but cannot be targeted or updated") {
+      inline val definition = """
+        import scalive.*
+
+        object CounterComponent extends LiveComponent[String, CounterComponent.Msg.type, Int]:
+          object Msg
+          def mount(props: String, ctx: MountContext) = ZIO.succeed(0)
+          def handleMessage(props: String, model: Int, ctx: MessageContext) =
+            (_: Msg.type) => ZIO.succeed(model + 1)
+          override def view(props: Signal[String], model: Signal[Int]) = div()
+      """
+      val targeted = scala.compiletime.testing.typeCheckErrors(definition + """
+        object Page extends LiveView.Eventless[Int]:
+          def mount(ctx: MountContext) = ZIO.succeed(1)
+          def view(model: Signal[Int]) =
+            val counter = component(CounterComponent, model.map(id => s"counter-$id"))
+            div(button(scalive.on.click.to(counter)(CounterComponent.Msg)))
+      """)
+      val updated = scala.compiletime.testing.typeCheckErrors(definition + """
+        object Page extends LiveView[Unit, Int]:
+          def mount(ctx: MountContext) = ZIO.succeed(1)
+          def handleMessage(model: Int, ctx: MessageContext) = _ =>
+            ctx.components.sendUpdate(component(CounterComponent, ???: Signal[String]), "x").as(model)
+          def view(model: Signal[Int]) = div()
+      """)
+      val removed = scala.compiletime.testing.typeCheckErrors(definition + """
+        def update(ctx: MessageContext[Unit, Unit]) =
+          ctx.components.sendUpdate(CounterComponent, "counter", "Updated counter")
+        val rendered = liveComponent(CounterComponent, "counter", "Counter")
+      """)
+
+      assertTrue(targeted.nonEmpty, updated.nonEmpty, removed.size == 2)
     },
     test("component instances reject another component's message type") {
       val errors = scala.compiletime.testing.typeCheckErrors("""
@@ -166,28 +201,7 @@ object ComponentApiSpec extends ZIOSpecDefault:
         def update(ctx: MessageContext[Unit, Unit]) =
           ctx.components.sendUpdate(label, 42)
       """)
-      val definitionErrors = scala.compiletime.testing.typeCheckErrors("""
-        import scalive.*
-
-        object LabelComponent extends LiveComponent[String, Unit, Unit]:
-          def mount(props: String, ctx: MountContext) = ZIO.succeed(())
-
-          def handleMessage(props: String, model: Unit, ctx: MessageContext) =
-            (_: Unit) => ZIO.succeed(())
-
-          override def view(
-            props: Signal[String],
-            model: Signal[Unit],
-          ) = div()
-
-        def update(ctx: MessageContext[Unit, Unit]) =
-          ctx.components.sendUpdate(LabelComponent, "label", 42)
-      """)
-
-      assertTrue(
-        errors.nonEmpty,
-        definitionErrors.exists(_.message.contains("Required: String"))
-      )
+      assertTrue(errors.nonEmpty)
     },
     test("component outputs map into the owning LiveView message type") {
       val errors = scala.compiletime.testing.typeCheckErrors("""

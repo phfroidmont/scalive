@@ -201,14 +201,10 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
           caseName
             .map(_ == "first").chooseMod(
               current.map(_.isDefined).chooseMod(
-                liveComponent(
-                  directDefinition,
-                  "direct",
-                  current.map(_.getOrElse(Vector.empty))
-                ),
+                component(directDefinition, "direct").render(current.map(_.getOrElse(Vector.empty))),
                 ""
               ),
-              liveComponent(asyncDefinition, "async", data)
+              component(asyncDefinition, "async").render(data)
             ),
           div(button("load"), button("remove"))
         )
@@ -253,7 +249,7 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
       val parentCompiled = RenderProgram.compile[Unit, Nothing](_ => div(liveView("child", TestView)))
       val childCompiled = RenderProgram.compile[LiveStream[StreamItem], Nothing](model =>
         div(
-          liveComponent(TestComponent, "component", "component child"),
+          component(TestComponent, "component").render("component child"),
           model.stream((domId, item) => span(idAttr := domId, item.map(_.label)))
         )
       )
@@ -848,7 +844,7 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
         Vector((StreamItem("a", "one"), StreamAt.Last, None, false))
       )
       val rootCompiled = RenderProgram.compile[Boolean, Nothing](selected =>
-        div(selected.when(span(liveComponent(TestComponent, "stream", "stream"))))
+        div(selected.when(span(component(TestComponent, "stream").render("stream"))))
       )
       val childCompiled = RenderProgram.compile[LiveStream[StreamItem], Nothing](model =>
         div(model.stream((domId, item) => span(idAttr := domId, item.map(_.label))))
@@ -909,7 +905,7 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
       val rootCompiled = RenderProgram.compile[LiveStream[StreamItem], Nothing](model =>
         div(
           model.stream((domId, _) =>
-            div(idAttr := domId, liveComponent(TestComponent, domId, domId))
+            div(idAttr := domId, component(TestComponent, domId).render(domId))
           )
         )
       )
@@ -1132,7 +1128,7 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
     },
     test("emits a keyed reorder as a sparse component diff") {
       val rootCompiled = RenderProgram.compile[Unit, Nothing](_ =>
-        div(liveComponent(TestComponent, "keyed", "keyed"))
+        div(component(TestComponent, "keyed").render("keyed"))
       )
       val componentCompiled = RenderProgram.compile[Vector[(String, String)], Nothing](items =>
         div(items.splitBy(_._1)((_, item) => span(item.map(_._2))))
@@ -1476,8 +1472,8 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
     test("assigns sibling CIDs in declaration order and isolates state lookups") {
       val rootCompiled = RenderProgram.compile[Unit, Nothing](_ =>
         div(
-          liveComponent(TestComponent, "left", "left"),
-          liveComponent(TestComponent, "right", "right")
+          component(TestComponent, "left").render("left"),
+          component(TestComponent, "right").render("right")
         )
       )
       val childCompiled = RenderProgram.compile[String, Nothing](value => span(value))
@@ -1539,10 +1535,10 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
     },
     test("allocates a nested component after its parent and emits a component-only sparse diff") {
       val rootCompiled = RenderProgram.compile[Unit, Nothing](_ =>
-        div(liveComponent(TestComponent, "outer", "outer"))
+        div(component(TestComponent, "outer").render("outer"))
       )
       val outerCompiled = RenderProgram.compile[Unit, Nothing](_ =>
-        div(liveComponent(TestComponent, "inner", "inner"))
+        div(component(TestComponent, "inner").render("inner"))
       )
       val innerCompiled = RenderProgram.compile[String, Nothing](value => span(value))
       val outerToken    = Object()
@@ -1623,7 +1619,7 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
     },
     test("resolves the owning component target to its CID") {
       val rootCompiled = RenderProgram.compile[Unit, Nothing](_ =>
-        div(liveComponent(TestComponent, "child", "child"))
+        div(component(TestComponent, "child").render("child"))
       )
       val token = Object()
       val ref   = ComponentRef.runtime[String](token)
@@ -1658,7 +1654,7 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
     },
     test("retains and reuses removed CIDs until the browser confirms destruction") {
       val rootCompiled = RenderProgram.compile[Boolean, Nothing](selected =>
-        div(selected.when(span(liveComponent(TestComponent, "child", "child"))))
+        div(selected.when(span(component(TestComponent, "child").render("child"))))
       )
       val childCompiled = RenderProgram.compile[String, Nothing](value => span(value))
       val firstToken    = Object()
@@ -1751,7 +1747,7 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
       val rootCompiled = RenderProgram.compile[Vector[(String, String)], Nothing](items =>
         div(
           items.splitBy(_._1)((_, item) =>
-            span(liveComponent(TestComponent, "child", item.map(_._2)))
+            span(component(TestComponent, "child").render(item.map(_._2)))
           )
         )
       )
@@ -1828,7 +1824,7 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
     },
     test("replaces a component token at the same declaration with a monotonic CID") {
       val rootCompiled  = RenderProgram.compile[Unit, Nothing](_ =>
-        div(liveComponent(TestComponent, "child", "child"))
+        div(component(TestComponent, "child").render("child"))
       )
       val childCompiled = RenderProgram.compile[String, Nothing](value => span(value))
       val firstToken    = Object()
@@ -1893,10 +1889,10 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
     },
     test("emits parent and nested payloads for component-scoped addition and removal") {
       val rootCompiled = RenderProgram.compile[Unit, Nothing](_ =>
-        div(liveComponent(TestComponent, "outer", "outer"))
+        div(component(TestComponent, "outer").render("outer"))
       )
       val outerCompiled = RenderProgram.compile[Boolean, Nothing](selected =>
-        div(selected.when(span(liveComponent(TestComponent, "inner", "inner"))))
+        div(selected.when(span(component(TestComponent, "inner").render("inner"))))
       )
       val innerCompiled = RenderProgram.compile[String, Nothing](value => span(value))
       val outerToken    = Object()
@@ -2010,15 +2006,15 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
     },
     test("rejects stale and ambiguous targets without mutating prior state") {
       val validRootCompiled = RenderProgram.compile[Unit, Nothing](_ =>
-        div(liveComponent(TestComponent, "valid", "valid"))
+        div(component(TestComponent, "valid").render("valid"))
       )
       val staleRootCompiled = RenderProgram.compile[Unit, Nothing](_ =>
-        div(liveComponent(TestComponent, "stale", "stale"))
+        div(component(TestComponent, "stale").render("stale"))
       )
       val ambiguousRootCompiled = RenderProgram.compile[Unit, Nothing](_ =>
         div(
-          liveComponent(TestComponent, "first", "first"),
-          liveComponent(TestComponent, "second", "second")
+          component(TestComponent, "first").render("first"),
+          component(TestComponent, "second").render("second")
         )
       )
       val token       = Object()

@@ -67,7 +67,7 @@ object StaticHtmlSpec extends ZIOSpecDefault:
                      .render(button(on.click.to(component(RoutedComponent, "routed"))("clicked")))
                      .either
         component <- StaticHtml
-                       .render(div(liveComponent(StaticComponent, "status", "ready"))).either
+                       .render(div(component(StaticComponent, "status").render("ready"))).either
         nested <- StaticHtml.render(div(liveView("child", StaticNestedView))).either
         flashContent <- StaticHtml
                           .render(div(flash(FlashKind("info"))(message => span(message)))).either

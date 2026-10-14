@@ -686,6 +686,18 @@
       ]
     },
     {
+      "id" : "class:scalive.LiveComponentInstance.Dynamic",
+      "ownerId" : "object:scalive.LiveComponentInstance",
+      "qualifiedName" : "scalive.LiveComponentInstance.Dynamic",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.LiveComponentInstance.Dynamic:a20f79143d06ffe0",
+          "signature" : "class Dynamic[Props, Msg, Model](component: LiveComponent[Props, Msg, Model], id: Signal[String])"
+        }
+      ]
+    },
+    {
       "id" : "class:scalive.LiveComponentOutputInstance",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.LiveComponentOutputInstance",
@@ -694,6 +706,18 @@
         {
           "id" : "class:scalive.LiveComponentOutputInstance:340a47686da7b10f",
           "signature" : "class LiveComponentOutputInstance[Props, Msg, Model, Output](component: LiveComponent.WithOutput[Props, Msg, Model, Output], id: String)"
+        }
+      ]
+    },
+    {
+      "id" : "class:scalive.LiveComponentOutputInstance.Dynamic",
+      "ownerId" : "object:scalive.LiveComponentOutputInstance",
+      "qualifiedName" : "scalive.LiveComponentOutputInstance.Dynamic",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.LiveComponentOutputInstance.Dynamic:74ae61825bcb0d72",
+          "signature" : "class Dynamic[Props, Msg, Model, Output](component: LiveComponent.WithOutput[Props, Msg, Model, Output], id: Signal[String])"
         }
       ]
     },
@@ -2271,10 +2295,6 @@
       "qualifiedName" : "scalive.ComponentUpdates.sendUpdate",
       "kind" : "def",
       "signatures" : [
-        {
-          "id" : "def:scalive.ComponentUpdates.sendUpdate:0443627c82d77fad",
-          "signature" : "def sendUpdate[Props, Msg, Model](definition: LiveComponent[Props, Msg, Model], id: String, props: Props): zio.package.Task[Unit]"
-        },
         {
           "id" : "def:scalive.ComponentUpdates.sendUpdate:77a2c8358d880313",
           "signature" : "def sendUpdate[Props, Msg, Model, Output](instance: LiveComponentOutputInstance[Props, Msg, Model, Output], props: Props): zio.package.Task[Unit]"
@@ -5678,6 +5698,22 @@
       ]
     },
     {
+      "id" : "def:scalive.LiveComponentInstance.Dynamic.render",
+      "ownerId" : "class:scalive.LiveComponentInstance.Dynamic",
+      "qualifiedName" : "scalive.LiveComponentInstance.Dynamic.render",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveComponentInstance.Dynamic.render:93730af1a7325d89",
+          "signature" : "def render(props: Props): Mod[Nothing]"
+        },
+        {
+          "id" : "def:scalive.LiveComponentInstance.Dynamic.render:b893614f0f7cf1ad",
+          "signature" : "def render(props: Signal[Props]): Mod[Nothing]"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.LiveComponentInstance.render",
       "ownerId" : "class:scalive.LiveComponentInstance",
       "qualifiedName" : "scalive.LiveComponentInstance.render",
@@ -5690,6 +5726,22 @@
         {
           "id" : "def:scalive.LiveComponentInstance.render:16ecea6756ec2b33",
           "signature" : "def render(props: Props): Mod[Nothing]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LiveComponentOutputInstance.Dynamic.render",
+      "ownerId" : "class:scalive.LiveComponentOutputInstance.Dynamic",
+      "qualifiedName" : "scalive.LiveComponentOutputInstance.Dynamic.render",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveComponentOutputInstance.Dynamic.render:8b851e286e6bc393",
+          "signature" : "def render[OwnerMsg](props: Signal[Props], onOutput: Output => OwnerMsg): Mod[OwnerMsg]"
+        },
+        {
+          "id" : "def:scalive.LiveComponentOutputInstance.Dynamic.render:e323e3db2b8cc0d0",
+          "signature" : "def render[OwnerMsg](props: Props, onOutput: Output => OwnerMsg): Mod[OwnerMsg]"
         }
       ]
     },
@@ -9328,6 +9380,14 @@
       "kind" : "def",
       "signatures" : [
         {
+          "id" : "def:scalive.component:83d2328b686e97b7",
+          "signature" : "def component[Props, Msg, Model](value: LiveComponent[Props, Msg, Model], id: Signal[String]): LiveComponentInstance.Dynamic[Props, Msg, Model]"
+        },
+        {
+          "id" : "def:scalive.component:c68ad562bf844f75",
+          "signature" : "def component[Props, Msg, Model, Output](value: LiveComponent.WithOutput[Props, Msg, Model, Output], id: Signal[String]): LiveComponentOutputInstance.Dynamic[Props, Msg, Model, Output]"
+        },
+        {
           "id" : "def:scalive.component:e00451b24c93ba2e",
           "signature" : "def component[Props, Msg, Model](value: LiveComponent[Props, Msg, Model], id: String): LiveComponentInstance[Props, Msg, Model]"
         },
@@ -9570,42 +9630,6 @@
         {
           "id" : "def:scalive.link.replacePatchUnsafe:d6ece2f0e76c640b",
           "signature" : "def replacePatchUnsafe[Msg](to: Signal[String], mods: Mod.Input[Msg]*): HtmlElement[Msg]"
-        }
-      ]
-    },
-    {
-      "id" : "def:scalive.liveComponent",
-      "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.liveComponent",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.liveComponent:4014250f3dbe2a0f",
-          "signature" : "def liveComponent[Props, Msg, Model](value: LiveComponent[Props, Msg, Model], id: Signal[String], props: Signal[Props]): Mod[Nothing]"
-        },
-        {
-          "id" : "def:scalive.liveComponent:459d45256ba2f30e",
-          "signature" : "def liveComponent[Props, Msg, Model](value: LiveComponent[Props, Msg, Model], id: String, props: Signal[Props]): Mod[Nothing]"
-        },
-        {
-          "id" : "def:scalive.liveComponent:471e81768c8f4883",
-          "signature" : "def liveComponent[Props, Msg, Model, Output, OwnerMsg](value: LiveComponent.WithOutput[Props, Msg, Model, Output], id: Signal[String], props: Signal[Props], onOutput: Output => OwnerMsg): Mod[OwnerMsg]"
-        },
-        {
-          "id" : "def:scalive.liveComponent:8f137f890f4f6645",
-          "signature" : "def liveComponent[Props, Msg, Model](value: LiveComponent[Props, Msg, Model], id: Signal[String], props: Props): Mod[Nothing]"
-        },
-        {
-          "id" : "def:scalive.liveComponent:95dd98d766af1dc2",
-          "signature" : "def liveComponent[Props, Msg, Model, Output, OwnerMsg](value: LiveComponent.WithOutput[Props, Msg, Model, Output], id: String, props: Signal[Props], onOutput: Output => OwnerMsg): Mod[OwnerMsg]"
-        },
-        {
-          "id" : "def:scalive.liveComponent:9e91985b87e02545",
-          "signature" : "def liveComponent[Props, Msg, Model, Output, OwnerMsg](value: LiveComponent.WithOutput[Props, Msg, Model, Output], id: String, props: Props, onOutput: Output => OwnerMsg): Mod[OwnerMsg]"
-        },
-        {
-          "id" : "def:scalive.liveComponent:d7db265a2451c998",
-          "signature" : "def liveComponent[Props, Msg, Model](value: LiveComponent[Props, Msg, Model], id: String, props: Props): Mod[Nothing]"
         }
       ]
     },
@@ -17490,6 +17514,30 @@
       ]
     },
     {
+      "id" : "object:scalive.LiveComponentInstance",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.LiveComponentInstance",
+      "kind" : "object",
+      "signatures" : [
+        {
+          "id" : "object:scalive.LiveComponentInstance:a9dadd7bc45df404",
+          "signature" : "object LiveComponentInstance"
+        }
+      ]
+    },
+    {
+      "id" : "object:scalive.LiveComponentOutputInstance",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.LiveComponentOutputInstance",
+      "kind" : "object",
+      "signatures" : [
+        {
+          "id" : "object:scalive.LiveComponentOutputInstance:7194ee885139c0fd",
+          "signature" : "object LiveComponentOutputInstance"
+        }
+      ]
+    },
+    {
       "id" : "object:scalive.LiveConnectedTurnFailure",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.LiveConnectedTurnFailure",
@@ -23297,6 +23345,30 @@
       ]
     },
     {
+      "id" : "val:scalive.LiveComponentInstance.Dynamic.component",
+      "ownerId" : "class:scalive.LiveComponentInstance.Dynamic",
+      "qualifiedName" : "scalive.LiveComponentInstance.Dynamic.component",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveComponentInstance.Dynamic.component:9ca1ae5e3a14866e",
+          "signature" : "val component: LiveComponent[Props, Msg, Model]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveComponentInstance.Dynamic.id",
+      "ownerId" : "class:scalive.LiveComponentInstance.Dynamic",
+      "qualifiedName" : "scalive.LiveComponentInstance.Dynamic.id",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveComponentInstance.Dynamic.id:2fb93f4fd23d641c",
+          "signature" : "val id: Signal[String]"
+        }
+      ]
+    },
+    {
       "id" : "val:scalive.LiveComponentInstance.component",
       "ownerId" : "class:scalive.LiveComponentInstance",
       "qualifiedName" : "scalive.LiveComponentInstance.component",
@@ -23317,6 +23389,30 @@
         {
           "id" : "val:scalive.LiveComponentInstance.id:dc2166db80555898",
           "signature" : "val id: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveComponentOutputInstance.Dynamic.component",
+      "ownerId" : "class:scalive.LiveComponentOutputInstance.Dynamic",
+      "qualifiedName" : "scalive.LiveComponentOutputInstance.Dynamic.component",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveComponentOutputInstance.Dynamic.component:e586e0055703b6f1",
+          "signature" : "val component: LiveComponent.WithOutput[Props, Msg, Model, Output]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveComponentOutputInstance.Dynamic.id",
+      "ownerId" : "class:scalive.LiveComponentOutputInstance.Dynamic",
+      "qualifiedName" : "scalive.LiveComponentOutputInstance.Dynamic.id",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveComponentOutputInstance.Dynamic.id:2fb93f4fd23d641c",
+          "signature" : "val id: Signal[String]"
         }
       ]
     },

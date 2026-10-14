@@ -185,7 +185,7 @@ class Issue3368LiveView extends LiveView[Unit, Unit]:
   def mount(ctx: MountContext)                        = ZIO.unit
   def handleMessage(model: Unit, ctx: MessageContext) = _ => ZIO.unit
   override def view(model: Signal[Unit])              =
-    div(liveComponent(Issue3368LiveView.UploadComponent, id = "uploader", props = ()))
+    div(component(Issue3368LiveView.UploadComponent, "uploader").render(()))
 
 object Issue3368LiveView:
   object UploadComponent extends LiveComponent[Unit, UploadComponent.Msg, UploadComponent.Model]:
@@ -514,7 +514,7 @@ class Issue4334LiveView extends LiveView[Unit, Unit]:
   override def view(model: Signal[Unit])              =
     mainTag(
       h1("LiveComponent root ID corruption repro"),
-      liveComponent(Issue4334LiveView.RootChangingComponent, id = "demo-component", props = ())
+      component(Issue4334LiveView.RootChangingComponent, "demo-component").render(())
     )
 
 object Issue4334LiveView:
@@ -557,7 +557,7 @@ class Issue4350LiveView extends LiveView[Issue4350LiveView.Msg, Issue4350LiveVie
       Signal.when(model.map(_.show))(
         div(
           idAttr := "wrapper",
-          liveComponent(Branch, id = "branch", props = model.map(_.tick))
+          component(Branch, "branch").render(model.map(_.tick))
         )
       )
     )
@@ -585,7 +585,7 @@ object Issue4350LiveView:
       div(
         idAttr := "branch",
         props.map(value => s"tick: $value"),
-        liveComponent(Leaf, id = "leaf", props = ())
+        component(Leaf, "leaf").render(())
       )
 
 class Issue4359LiveView extends LiveView.Routed[Issue4359LiveView.Msg, Unit, Option[String]]:

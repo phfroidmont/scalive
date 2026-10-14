@@ -174,6 +174,37 @@ final case class LiveComponentInstance[Props, Msg, Model](
   def render(props: Signal[Props]): Mod[Nothing] =
     Mod.Content.Component(ComponentSpec.PlainSignal(component, id, props))
 
+/** Component instances whose ID follows a signal. */
+object LiveComponentInstance:
+  /** An instance of a stateful component whose ID follows a signal, as returned by
+    * `component(definition, id)` with a `Signal[String]` ID.
+    *
+    * A new ID renders a different instance, with its own model. It can only be rendered: to send it
+    * a message or new props, build an instance with its current ID, as in
+    * `component(definition, currentId)`.
+    *
+    * @param component
+    *   The component definition.
+    * @param id
+    *   The instance's logical ID, unique among instances of the same component class.
+    */
+  final case class Dynamic[Props, Msg, Model](
+    component: LiveComponent[Props, Msg, Model],
+    id: Signal[String]):
+    /** Renders the instance with the current ID at this place in the owner's view, with `props`.
+      *
+      * This form passes a constant `props` value.
+      */
+    def render(props: Props): Mod[Nothing] = render(id.map(_ => props))
+
+    /** Renders the instance with the current ID at this place in the owner's view, with `props`.
+      *
+      * This form passes props that follow a [[Signal]]; the instance receives each changed value in
+      * [[LiveComponent.update]].
+      */
+    def render(props: Signal[Props]): Mod[Nothing] =
+      Mod.Content.Component(ComponentSpec.Dynamic(component, id, props))
+
 /** One named instance of a component that reports outputs, as returned by
   * `component(definition, id)`.
   *
@@ -207,6 +238,44 @@ final case class LiveComponentOutputInstance[Props, Msg, Model, Output](
     onOutput: Output => OwnerMsg
   ): Mod[OwnerMsg] =
     Mod.Content.Component(ComponentSpec.OutputSignal(component, id, props, onOutput))
+
+/** Instances of components that report outputs, whose ID follows a signal. */
+object LiveComponentOutputInstance:
+  /** An instance of a component that reports outputs, whose ID follows a signal, as returned by
+    * `component(definition, id)` with a `Signal[String]` ID.
+    *
+    * A new ID renders a different instance, with its own model. It can only be rendered: to send it
+    * a message or new props, build an instance with its current ID, as in
+    * `component(definition, currentId)`.
+    *
+    * @param component
+    *   The component definition.
+    * @param id
+    *   The instance's logical ID, unique among instances of the same component class.
+    */
+  final case class Dynamic[Props, Msg, Model, Output](
+    component: LiveComponent.WithOutput[Props, Msg, Model, Output],
+    id: Signal[String]):
+    /** Renders the instance with the current ID at this place in the owner's view, with `props`,
+      * and turns each of its outputs into an owner message with `onOutput`.
+      *
+      * This form passes a constant `props` value.
+      */
+    def render[OwnerMsg](props: Props, onOutput: Output => OwnerMsg): Mod[OwnerMsg] =
+      render(id.map(_ => props), onOutput)
+
+    /** Renders the instance with the current ID at this place in the owner's view, with `props`,
+      * and turns each of its outputs into an owner message with `onOutput`.
+      *
+      * This form passes props that follow a [[Signal]]; the instance receives each changed value in
+      * [[LiveComponent.update]].
+      */
+    def render[OwnerMsg](
+      props: Signal[Props],
+      onOutput: Output => OwnerMsg
+    ): Mod[OwnerMsg] =
+      Mod.Content.Component(ComponentSpec.OutputDynamic(component, id, props, onOutput))
+end LiveComponentOutputInstance
 
 /** The link that carries a [[LiveComponent.WithOutput]] component's outputs to its owner.
   *

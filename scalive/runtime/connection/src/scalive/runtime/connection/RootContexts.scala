@@ -532,13 +532,6 @@ final private class JournaledComponentUpdates(journal: RootTurnJournal) extends 
     instance: LiveComponentOutputInstance[Props, Msg, Model, Output],
     props: Props
   ): Task[Unit] = journal.componentUpdates.update(_ :+ ComponentUpdateRequest(instance, props))
-  def sendUpdate[Props, Msg, Model](
-    definition: LiveComponent[Props, Msg, Model],
-    id: String,
-    props: Props
-  ): Task[Unit] =
-    journal.componentUpdates.update(_ :+ ComponentUpdateRequest(definition, id, props))
-
 final private class DeferredRootHooks[Msg, Model] extends RootHooks[Msg, Model]:
   val rawEvent: RootRawEventHooks[Msg, Model] = new RootRawEventHooks[Msg, Model]:
     def attach(

@@ -54,17 +54,15 @@ class BlurFeedbackLiveView extends LiveView[BlurFeedbackLiveView.Msg, BlurFeedba
         renderField("other", model),
         button(typ := "submit", "Submit")
       ),
-      liveComponent(
-        ChoiceComponent,
-        id = "choice",
-        props = model.map { current =>
+      component(ChoiceComponent, "choice").render(
+        model.map { current =>
           ChoiceProps(
             selected = current.values(ChoiceField),
             invalid = current.values(ChoiceField).isEmpty &&
               (current.all || current.blurred.contains(ChoiceField))
           )
         },
-        onOutput = Msg.ChoiceOutput.apply
+        Msg.ChoiceOutput.apply
       ),
       button(idAttr := "outside", typ := "button", "Outside"),
       button(idAttr := "reset", typ   := "button", on.click(Msg.Reset), "Reset"),

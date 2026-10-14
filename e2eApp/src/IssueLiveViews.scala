@@ -859,8 +859,8 @@ class Issue3200LiveView
       ),
       model
         .map(_.tab == Tab.Settings).chooseMod(
-          liveComponent(SettingsTab, id = "settings_tab", props = ()),
-          liveComponent(MessagesTab, id = "messages_tab", props = ())
+          component(SettingsTab, "settings_tab").render(()),
+          component(MessagesTab, "messages_tab").render(())
         )
     )
 end Issue3200LiveView
@@ -898,7 +898,7 @@ object Issue3200LiveView:
 
     override def view(props: Signal[Unit], model: Signal[String]) =
       div(
-        liveComponent(MessageComponent, id = "some_unique_message_id", props = "Example message"),
+        component(MessageComponent, "some_unique_message_id").render("Example message"),
         form(
           idAttr := "full_add_message_form",
           on.change.form(Msg.Change(_)),
@@ -986,11 +986,8 @@ class Issue3026LiveView extends LiveView[Issue3026LiveView.Msg, Issue3026LiveVie
       ),
       status
         .map(_ == Status.Loaded).chooseMod(
-          liveComponent(
-            Issue3026FormComponent,
-            id = "my-form",
-            props = model.map(current => FormProps(current.name, current.email))
-          ),
+          component(Issue3026FormComponent, "my-form")
+            .render(model.map(current => FormProps(current.name, current.email))),
           div(cls := "p-8 bg-gray-200 mb-4", status.map(_.value))
         )
     )
@@ -1048,9 +1045,7 @@ class Issue3117LiveView extends LiveView[Unit, Unit]:
   override def view(model: Signal[Unit]) =
     div(
       link.pushNavigateUnsafe("/issues/3117?nav", idAttr := "navigate", "Navigate"),
-      (1 to 2).map(i =>
-        div(liveComponent(Issue3117LiveView.Row, id = s"row-$i", props = s"row-$i"))
-      )
+      (1 to 2).map(i => div(component(Issue3117LiveView.Row, s"row-$i").render(s"row-$i")))
     )
 
 object Issue3117LiveView:
@@ -1106,7 +1101,7 @@ class Issue3169LiveView extends LiveView[Issue3169LiveView.Msg, Option[String]]:
   override def view(selected: Signal[Option[String]]) =
     div(
       "HomeLive ",
-      liveComponent(FormComponent, id = "form_view", props = selected),
+      component(FormComponent, "form_view").render(selected),
       button(
         idAttr            := "select-a",
         phx.value("name") := "a",
@@ -1169,7 +1164,7 @@ object Issue3169LiveView:
       div(
         "FormComponent (c1)",
         Signal.option(model)((record: Signal[Record]) =>
-          div(liveComponent(FormCore, id = "core", props = record))
+          div(component(FormCore, "core").render(record))
         ),
         hr()
       )
@@ -1189,7 +1184,7 @@ object Issue3169LiveView:
       div(
         "FormCore (c2)",
         form(
-          liveComponent(FormColumn, id = model.map(record => s"column-${record.id}"), props = model)
+          component(FormColumn, model.map(record => s"column-${record.id}")).render(model)
         )
       )
 
@@ -1555,7 +1550,7 @@ class Issue3684LiveView extends LiveView[Unit, Unit]:
     (_: Unit) => ZIO.succeed(model)
 
   override def view(model: Signal[Unit]) =
-    div(liveComponent(Issue3684LiveView.BadgeForm, id = "badge_form", props = ()))
+    div(component(Issue3684LiveView.BadgeForm, "badge_form").render(()))
 
 object Issue3684LiveView:
   object BadgeForm extends LiveComponent[Unit, BadgeForm.Msg, String]:
@@ -1658,7 +1653,7 @@ class Issue3709LiveView extends LiveView.Routed[Unit, String, Option[String]]:
         }
       ),
       div(
-        liveComponent(SomeComponent, id = model.map(value => s"user-$value"), props = ()),
+        component(SomeComponent, model.map(value => s"user-$value")).render(()),
         model.map(value => s" id: $value"),
         div(
           "Click the button, then click any link.",
@@ -1742,7 +1737,7 @@ class Issue3941LiveView extends LiveView[Issue3941LiveView.Msg, Issue3941LiveVie
 
   private def selectedItem(item: String, selected: Signal[Set[String]]): Mod[Msg] =
     Signal.when(selected.map(_.contains(item)))(
-      div(liveComponent(ItemComponent, id = s"item-$item", props = item))
+      div(component(ItemComponent, s"item-$item").render(item))
     )
 
   private def itemCheckbox(id: String, selected: Signal[Set[String]]) =
@@ -1779,11 +1774,7 @@ object Issue3941LiveView:
       div(
         idAttr   := props.map(value => s"item-$value"),
         phx.hook := "PagePositionNotifier",
-        liveComponent(
-          ItemHeaderComponent,
-          id = props.map(value => s"item-header-$value"),
-          props = props
-        )
+        component(ItemHeaderComponent, props.map(value => s"item-header-$value")).render(props)
       )
 
   object ItemHeaderComponent
@@ -1851,7 +1842,7 @@ class Issue3953LiveView extends LiveView[Issue3953LiveView.Msg, Boolean]:
 
   override def view(model: Signal[Boolean]) =
     div(
-      liveComponent(Component, id = "comp", props = ()),
+      component(Component, "comp").render(()),
       button(on.click(Msg.Toggle), "Show"),
       model.chooseMod(liveView("nested_view", NestedViewLive()), "")
     )
@@ -1880,7 +1871,7 @@ object Issue3953LiveView:
     override def view(model: Signal[Unit]) =
       div(
         "Nested Content",
-        liveComponent(Component, id = "comp2", props = ())
+        component(Component, "comp2").render(())
       )
 
 class Issue3979LiveView extends LiveView[Issue3979LiveView.Msg, Issue3979LiveView.Model]:
@@ -1905,12 +1896,11 @@ class Issue3979LiveView extends LiveView[Issue3979LiveView.Msg, Issue3979LiveVie
         .as(model.copy(counter = target + 1, components = nextComponents))
     case Msg.DelayedUpdate(LiveAsyncResult.Succeeded(id)) =>
       model.components.find(_.id == id) match
-        case Some(component) =>
+        case Some(current) =>
           ctx.components
             .sendUpdate(
-              CounterComponent,
-              s"comp-$id",
-              CounterProps(id = id, domCounter = component.counter, counter = 10)
+              component(CounterComponent, s"comp-$id"),
+              CounterProps(id = id, domCounter = current.counter, counter = 10)
             ).as(model)
         case None => ZIO.succeed(model)
     case Msg.DelayedUpdate(_) => ZIO.succeed(model)
@@ -1918,10 +1908,8 @@ class Issue3979LiveView extends LiveView[Issue3979LiveView.Msg, Issue3979LiveVie
   override def view(model: Signal[Model]) =
     div(
       (1 to 10).map { id =>
-        liveComponent(
-          CounterComponent,
-          id = s"comp-$id",
-          props = model
+        component(CounterComponent, s"comp-$id").render(
+          model
             .map(_.components.find(_.id == id).get).map(current =>
               CounterProps(current.id, domCounter = current.counter, counter = current.counter)
             )
@@ -2000,21 +1988,17 @@ class Issue4027LiveView
         .map(_ == "first").chooseMod(
           currentItems
             .map(_.isDefined).chooseMod(
-              liveComponent(
-                ReproLiveComponent,
-                id = "repro",
-                props = currentItems.map(_.getOrElse(Vector.empty))
-              ),
+              component(ReproLiveComponent, "repro")
+                .render(currentItems.map(_.getOrElse(Vector.empty))),
               ""
             ),
-          liveComponent(ReproLiveComponentWithAsyncResult, id = "repro_async", props = data)
+          component(ReproLiveComponentWithAsyncResult, "repro_async").render(data)
         ),
       div(
         button(on.click(Msg.Load), "Load data"),
         button(on.click(Msg.Remove), "Remove first entry")
       )
     )
-  end view
 end Issue4027LiveView
 
 object Issue4027LiveView:
@@ -2126,7 +2110,7 @@ class Issue4066LiveView
       button(on.click(Msg.Toggle), "Toggle"),
       model
         .map(_.renderInput).chooseMod(
-          liveComponent(DelayedInputComponent, id = "foo", props = model.map(_.delay)),
+          component(DelayedInputComponent, "foo").render(model.map(_.delay)),
           ""
         )
     )

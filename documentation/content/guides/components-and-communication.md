@@ -31,6 +31,12 @@ declares two instances of one component class:
 The ID is application identity within that component class. Keep it stable so
 the instance keeps its model.
 
+When the model decides which instance to show, pass the ID as a signal, as in
+`component(EditorComponent, model.map(doc => s"editor-${doc.id}"))`. A new ID
+renders a different instance with its own model. Such an instance can only be
+rendered: to send it a message or new props, build an instance with the current
+ID, as in `component(EditorComponent, s"editor-$id")`.
+
 ## Separate props, messages, model, and output {#separate-component-types}
 
 The component APIs separate four independent roles:

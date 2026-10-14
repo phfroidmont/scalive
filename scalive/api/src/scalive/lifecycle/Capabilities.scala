@@ -360,16 +360,3 @@ trait ComponentUpdates:
     instance: LiveComponentOutputInstance[Props, Msg, Model, Output],
     props: Props
   ): Task[Unit]
-
-  /** Sends `props` to a mounted component, which receives them in [[LiveComponent.update]].
-    *
-    * This form addresses the instance of `definition` with logical ID `id`, as in
-    * `ctx.components.sendUpdate(CounterComponent, "counter", props)`. `definition` must be the same
-    * value the view rendered.
-    */
-  def sendUpdate[Props, Msg, Model](
-    definition: LiveComponent[Props, Msg, Model],
-    id: String,
-    props: Props
-  ): Task[Unit]
-end ComponentUpdates

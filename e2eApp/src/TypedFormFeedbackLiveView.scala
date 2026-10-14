@@ -217,7 +217,7 @@ class TypedFormFeedbackLiveView
         "Add replacement"
       ),
       button(idAttr := "reset", typ := "button", on.click(Msg.Reset), "Reset"),
-      liveComponent(FeedbackComponent, id = "typed-feedback-component", props = ()),
+      component(FeedbackComponent, "typed-feedback-component").render(()),
       div(idAttr := "status", model.map(_.status)),
       div(idAttr := "update-count", model.map(_.updateCount.toString)),
       div(idAttr := "blur-count", model.map(_.blurCount.toString)),

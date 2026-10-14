@@ -279,8 +279,8 @@ end LiveUploadEntryStatus
 
 /** Immutable runtime snapshot of one selected upload entry.
   *
-  * A snapshot can become stale as browser events advance the upload. Obtain the latest
-  * [[LiveUpload]] from the upload context or use the value returned by an upload operation.
+  * A view renders entries from [[LiveUploadDef.render]], which keeps them current. A handler that
+  * needs the latest entries reads them with [[Uploads.get]].
   *
   * @tparam Result
   *   the result produced by the configured upload destination
@@ -319,9 +319,9 @@ final class LiveUploadEntry[Result] private[scalive] (
 
 /** Immutable runtime snapshot of an allowed upload and its current entries.
   *
-  * The upload runtime owns the live state; this value is a point-in-time view intended for models
-  * and rendering. Keep the snapshot returned by each upload operation or refresh it through the
-  * upload context after progress events.
+  * The upload runtime owns the live state; this value is a point-in-time view. A view receives it
+  * as a signal from [[LiveUploadDef.render]], which follows the state as it changes, and a handler
+  * reads it with [[Uploads.get]].
   *
   * @tparam Result
   *   the result produced by each completed destination entry
@@ -782,6 +782,19 @@ final class LiveUploadDef[Result] private (
   val maxEntriesMode: LiveUploadMaxEntriesMode,
   val validator: Option[UploadClientMetadata => Option[String]],
   private[scalive] val destination: LiveUploadDestination[Result]):
+
+  /** Renders `body` with this upload's current state, while the LiveView or component allows it.
+    *
+    * The signal follows the upload as the visitor selects, uploads, and cancels files, so no
+    * message has to refresh it. Render the upload's controls inside, as in
+    * `TextFiles.render(upload => div(upload.dropTarget, liveFileInput(upload)))`. `body` produces
+    * content, such as an element or `upload.map(_.entries).splitBy(...)`; call `render` again for
+    * content elsewhere in the view. Nothing renders before [[Uploads.allow]] or after
+    * [[Uploads.disallow]].
+    */
+  def render[Msg](body: Signal[LiveUpload[Result]] => Mod[Msg]): Mod[Msg] =
+    Mod.Content.ManagedUpload(this, body)
+
   private[scalive] def withName(value: String): LiveUploadDef[Result] =
     new LiveUploadDef(
       value,
@@ -796,6 +809,7 @@ final class LiveUploadDef[Result] private (
       validator,
       destination
     )
+end LiveUploadDef
 
 /** Factories and validation for [[LiveUploadDef]]. */
 object LiveUploadDef:

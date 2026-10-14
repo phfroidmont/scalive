@@ -276,7 +276,7 @@ object RenderRequirementsSpec extends ZIOSpecDefault:
             button(phx.target(DomSelector.css("#elsewhere")), on.click("explicit")),
             span("no binding")
           ),
-        _ => Map.empty,
+        _ => RenderState.empty,
         owner
       )
 

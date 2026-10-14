@@ -20,7 +20,7 @@ class UploadLiveView() extends LiveView.Routed[Msg, Model, QueryParams]:
   private val ariaLabel = htmlAttr("aria-label", StringAsIsEncoder)
 
   def mount(_params: QueryParams, ctx: MountContext) =
-    ctx.uploads.allow(uploadDefinition(UploadMode.Manual)).map(upload => Model(upload = upload))
+    ctx.uploads.allow(uploadDefinition(UploadMode.Manual)).as(Model())
 
   override def handleParams(model: Model, params: QueryParams, _url: URL, ctx: ParamsContext) =
     val mode =
@@ -30,23 +30,18 @@ class UploadLiveView() extends LiveView.Routed[Msg, Model, QueryParams]:
 
     if model.mode == mode then ZIO.succeed(model)
     else
-      ctx.uploads.disallow(model.upload.definition) *>
-        ctx.uploads
-          .allow(uploadDefinition(mode)).map(upload => model.copy(upload = upload, mode = mode))
+      ctx.uploads.disallow(uploadDefinition(model.mode)) *>
+        ctx.uploads.allow(uploadDefinition(mode)).as(model.copy(mode = mode))
 
   def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.Validate =>
-      refreshUpload(model, ctx.uploads)
-    case Msg.Progress =>
-      refreshUpload(model, ctx.uploads)
+      ZIO.succeed(model)
     case Msg.CancelUpload(entry) =>
-      ctx.uploads.cancel(entry).map(upload => model.copy(upload = upload))
+      ctx.uploads.cancel(entry).as(model)
     case Msg.Save =>
       saveCompletedEntries(model, ctx.uploads)
 
   override def view(model: Signal[Model]) =
-    val upload = model.map(_.upload)
-
     div(
       styleAttr := "padding: 1rem;",
       styleTag(
@@ -85,110 +80,90 @@ class UploadLiveView() extends LiveView.Routed[Msg, Model, QueryParams]:
       ),
       h1("Uploads"),
       link.pushNavigateUnsafe("/upload?replaced=1", "Replace view"),
-      form(
-        idAttr := "upload-form",
-        on.submit(Msg.Save),
-        on.change(_ => Msg.Validate),
-        liveFileInput(
-          upload,
-          upload.onProgress(_ => Msg.Progress)
-        ),
-        button(
-          typ := "submit",
-          "Upload"
-        ),
-        sectionTag(
-          idAttr := "drop-target",
-          upload.dropTarget,
-          div(
-            idAttr := "drop-target-inner",
-            span("Inner drop target child"),
-            span("Drag a file across the outer padding and this inner element.")
-          ),
-          upload.map(_.entries).splitBy(_.ref) { (_, entry) =>
-            articleTag(
-              cls := "upload-entry",
-              figure(
-                figCaption(entry.map(_.client.fileName))
-              ),
-              progressTag(
-                value   := entry.map(_.progress.toString),
-                maxAttr := "100",
-                entry.map(current => s"${current.progress}%")
-              ),
-              button(
-                typ := "button",
-                on.click(entry.map(Msg.CancelUpload.apply)),
-                phx.value("ref") := entry.map(_.ref.value),
-                ariaLabel        := "cancel",
-                "x"
-              ),
-              uploadErrors(entry)
-                .map(_.filterNot(_ == LiveUploadError.TooManyFiles))
-                .splitBy(_.toString) { (_, error) =>
-                  p(
-                    cls := "alert alert-danger",
-                    error.map(errorToString)
-                  )
-                }
-            )
-          },
-          uploadErrors(upload).splitBy(_.toString) { (_, error) =>
-            p(
-              cls := "alert alert-danger",
-              error.map(errorToString)
-            )
-          }
-        ),
-        ul(
-          model.map(_.uploadedFiles).splitBy(_.storedName) { (_, file) =>
-            li(
-              a(
-                href := file.map(current => downloadUrl(current.storedName)),
-                file.map(_.name)
-              )
-            )
-          }
+      model
+        .map(_.mode).chooseMod(
+          UploadMode.values.toSeq.map(mode =>
+            mode -> uploadDefinition(mode).render(upload => uploadForm(model, upload))
+          )*
         )
-      )
     )
   end view
 
-  private def refreshUpload(model: Model, uploads: Uploads): Task[Model] =
-    uploads.get(model.upload.definition).map {
-      case Some(upload) => model.copy(upload = upload)
-      case None         => model
-    }
-
-  private def uploadDefinition(mode: UploadMode): LiveUploadDef[Chunk[Byte]] =
-    mode match
-      case UploadMode.External =>
-        LiveUploadDef.external(
-          name = "avatar",
-          accept = LiveUploadAccept.only(AcceptedExtensions.head, AcceptedExtensions.tail*),
-          uploader = TestExternalUploader,
-          maxEntries = MaxEntries,
-          maxFileSize = MaxFileSize,
-          autoUpload = true
-        )
-      case _ =>
-        LiveUploadDef.inMemory(
-          name = "avatar",
-          accept = LiveUploadAccept.only(AcceptedExtensions.head, AcceptedExtensions.tail*),
-          maxEntries = MaxEntries,
-          maxFileSize = MaxFileSize,
-          autoUpload = mode == UploadMode.Auto
-        )
+  private def uploadForm(
+    model: Signal[Model],
+    upload: Signal[LiveUpload[Chunk[Byte]]]
+  ): HtmlElement[Msg] =
+    form(
+      idAttr := "upload-form",
+      on.submit(Msg.Save),
+      on.change(_ => Msg.Validate),
+      liveFileInput(upload),
+      button(
+        typ := "submit",
+        "Upload"
+      ),
+      sectionTag(
+        idAttr := "drop-target",
+        upload.dropTarget,
+        div(
+          idAttr := "drop-target-inner",
+          span("Inner drop target child"),
+          span("Drag a file across the outer padding and this inner element.")
+        ),
+        upload.map(_.entries).splitBy(_.ref) { (_, entry) =>
+          articleTag(
+            cls := "upload-entry",
+            figure(
+              figCaption(entry.map(_.client.fileName))
+            ),
+            progressTag(
+              value   := entry.map(_.progress.toString),
+              maxAttr := "100",
+              entry.map(current => s"${current.progress}%")
+            ),
+            button(
+              typ := "button",
+              on.click(entry.map(Msg.CancelUpload.apply)),
+              phx.value("ref") := entry.map(_.ref.value),
+              ariaLabel        := "cancel",
+              "x"
+            ),
+            uploadErrors(entry)
+              .map(_.filterNot(_ == LiveUploadError.TooManyFiles))
+              .splitBy(_.toString) { (_, error) =>
+                p(
+                  cls := "alert alert-danger",
+                  error.map(errorToString)
+                )
+              }
+          )
+        },
+        uploadErrors(upload).splitBy(_.toString) { (_, error) =>
+          p(
+            cls := "alert alert-danger",
+            error.map(errorToString)
+          )
+        }
+      ),
+      ul(
+        model.map(_.uploadedFiles).splitBy(_.storedName) { (_, file) =>
+          li(
+            a(
+              href := file.map(current => downloadUrl(current.storedName)),
+              file.map(_.name)
+            )
+          )
+        }
+      )
+    )
 
   private def saveCompletedEntries(model: Model, uploads: Uploads): Task[Model] =
     uploads
-      .consumeCompleted(model.upload.definition) { entry =>
+      .consumeCompleted(uploadDefinition(model.mode)) { entry =>
         persistUploadedFile(entry.client.fileName, entry.result)
           .map(storedName => UploadedFile(entry.client.fileName, storedName))
           .map(ConsumeDecision.Consume(_))
-      }.map { case (persisted, upload) =>
-        model.copy(upload = upload, uploadedFiles = model.uploadedFiles ++ persisted)
-      }
+      }.map(persisted => model.copy(uploadedFiles = model.uploadedFiles ++ persisted))
 end UploadLiveView
 
 object UploadLiveView:
@@ -206,6 +181,36 @@ object UploadLiveView:
         )
       )
 
+  private val ManualUpload = LiveUploadDef.inMemory(
+    name = "avatar",
+    accept = LiveUploadAccept.only(AcceptedExtensions.head, AcceptedExtensions.tail*),
+    maxEntries = MaxEntries,
+    maxFileSize = MaxFileSize
+  )
+
+  private val AutoUpload = LiveUploadDef.inMemory(
+    name = "avatar",
+    accept = LiveUploadAccept.only(AcceptedExtensions.head, AcceptedExtensions.tail*),
+    maxEntries = MaxEntries,
+    maxFileSize = MaxFileSize,
+    autoUpload = true
+  )
+
+  private val ExternalUpload = LiveUploadDef.external(
+    name = "avatar",
+    accept = LiveUploadAccept.only(AcceptedExtensions.head, AcceptedExtensions.tail*),
+    uploader = TestExternalUploader,
+    maxEntries = MaxEntries,
+    maxFileSize = MaxFileSize,
+    autoUpload = true
+  )
+
+  private def uploadDefinition(mode: UploadMode): LiveUploadDef[Chunk[Byte]] =
+    mode match
+      case UploadMode.Manual   => ManualUpload
+      case UploadMode.Auto     => AutoUpload
+      case UploadMode.External => ExternalUpload
+
   final case class QueryParams(
     auto_upload: Option[String] = None,
     external_upload: Option[String] = None)
@@ -216,14 +221,12 @@ object UploadLiveView:
 
   enum Msg:
     case Validate
-    case Progress
     case CancelUpload(entry: LiveUploadEntry[Chunk[Byte]])
     case Save
 
   final case class UploadedFile(name: String, storedName: String)
 
   final case class Model(
-    upload: LiveUpload[Chunk[Byte]],
     mode: UploadMode = UploadMode.Manual,
     uploadedFiles: List[UploadedFile] = Nil)
 

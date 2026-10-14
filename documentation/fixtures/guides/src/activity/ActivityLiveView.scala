@@ -8,10 +8,7 @@ import scalive.*
 // docs:start streams-model
 final case class Activity(id: Int, summary: String)
 
-final case class Model(
-  activities: Vector[Activity],
-  activityStream: LiveStream[Activity],
-  nextId: Int)
+final case class Model(activities: Vector[Activity], nextId: Int)
 // docs:end streams-model
 
 enum Msg:
@@ -32,37 +29,29 @@ val InitialActivities = Vector(
 final class ActivityLiveView extends LiveView[Msg, Model]:
   // docs:start streams-mount
   def mount(ctx: MountContext): Task[Model] =
-    ctx.streams.create(ActivityStreamDef, InitialActivities).map { stream =>
-      Model(InitialActivities, stream, nextId = 3)
-    }
+    ctx.streams
+      .create(ActivityStreamDef, InitialActivities).as(Model(InitialActivities, nextId = 3))
   // docs:end streams-mount
 
   def handleMessage(model: Model, ctx: MessageContext) =
     // docs:start streams-insert
     case Msg.Add =>
       val activity = Activity(model.nextId, s"Activity ${model.nextId}")
-      ctx.streams.insert(ActivityStreamDef, activity).map { stream =>
-        model.copy(
-          activities = model.activities :+ activity,
-          activityStream = stream,
-          nextId = model.nextId + 1
-        )
-      }
+      ctx.streams
+        .insert(ActivityStreamDef, activity)
+        .as(model.copy(activities = model.activities :+ activity, nextId = model.nextId + 1))
     // docs:end streams-insert
     // docs:start streams-delete
     case Msg.Delete(activityId) =>
-      ctx.streams.delete(ActivityStreamDef, activityId).map { stream =>
-        model.copy(
-          activities = model.activities.filterNot(_.id == activityId),
-          activityStream = stream
-        )
-      }
+      ctx.streams
+        .delete(ActivityStreamDef, activityId)
+        .as(model.copy(activities = model.activities.filterNot(_.id == activityId)))
     // docs:end streams-delete
     // docs:start streams-reset
     case Msg.Reset =>
-      ctx.streams.reset(ActivityStreamDef, InitialActivities).map { stream =>
-        Model(InitialActivities, stream, nextId = 3)
-      }
+      ctx.streams
+        .reset(ActivityStreamDef, InitialActivities)
+        .as(Model(InitialActivities, nextId = 3))
     // docs:end streams-reset
 
   // docs:start streams-render
@@ -71,7 +60,7 @@ final class ActivityLiveView extends LiveView[Msg, Model]:
       p(model.map(current => s"${current.activities.size} activities")),
       button(typ := "button", on.click(Msg.Add), "Add activity"),
       button(typ := "button", on.click(Msg.Reset), "Reset"),
-      model.map(_.activityStream).renderIn(ol, aria.label := "Recent activity") { activity =>
+      ActivityStreamDef.renderIn(ol, aria.label := "Recent activity") { activity =>
         li(
           p(activity.map(_.summary)),
           button(

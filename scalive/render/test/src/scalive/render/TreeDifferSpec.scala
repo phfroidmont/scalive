@@ -144,7 +144,7 @@ object TreeDifferSpec extends ZIOSpecDefault:
           if message.startsWith("!") then strong(dataAttr("message") := message, message)
           else span(dataAttr("message") := message, message)
         }),
-        identity
+        RenderState(_)
       )
 
       for
@@ -200,6 +200,38 @@ object TreeDifferSpec extends ZIOSpecDefault:
             id == keyed.id && rowId == keyed.rows.head.id &&
               changes.exists(_.isInstanceOf[RenderChange.Text]) &&
               !changes.exists(_.isInstanceOf[RenderChange.Replace])
+          case _ => false
+      )
+    },
+    test("diffs the rows of a stream whose operations were already sent") {
+      final case class Item(id: String, label: String)
+      val entry  = streams.LiveStreamEntry("items-a", Item("a", "A"))
+      val insert = streams.LiveStreamInsert(entry, streams.StreamAt.Last, None, updateOnly = false)
+      val stream = streams.LiveStream(
+        streams.LiveStreamIdentity.fresh(),
+        "items",
+        generation = 1L,
+        entries = Vector(entry),
+        inserted = Vector(insert),
+        deleted = Vector.empty,
+        reset = false
+      )
+      val compiled = RenderProgram.compile[(streams.LiveStream[Item], String), Nothing] { input =>
+        val suffix = input.map(_._2)
+        ul(input.map(_._1).stream((domId, item) => li(idAttr := domId, item.map(_.label), suffix)))
+      }
+
+      for
+        program <- ZIO.fromEither(compiled)
+        first   <- program.evaluate(stream -> "one")
+        second  <- program.evaluate(stream -> "two", Some(first.commit))
+      yield assertTrue(
+        TreeDiffer.diff(first.tree, second.tree) match
+          case RenderDelta.Update(_, changes) =>
+            changes.exists {
+              case RenderChange.Text(_, value, _) => value == "two"
+              case _                              => false
+            } && !changes.exists(_.isInstanceOf[RenderChange.Stream])
           case _ => false
       )
     },

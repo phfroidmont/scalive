@@ -22,7 +22,7 @@ object UploadInputSpec extends ZIOSpecDefault:
     test("renders an upload's progress binding on its own file input") {
       for html <- render(uploads =>
                     div(
-                      liveFileInput(avatar, avatar.onProgress("progress")),
+                      liveFileInput(uploads.map(_._1), uploads.map(_._1).onProgress("progress")),
                       liveFileInput(uploads.map(_._2), uploads.map(_._2).onProgress(_ => "progress"))
                     )
                   )
@@ -31,12 +31,10 @@ object UploadInputSpec extends ZIOSpecDefault:
       )
     },
     test("rejects another upload's progress binding") {
-      val snapshot = scala.util.Try(liveFileInput(avatar, cover.onProgress("progress")))
       for signal <- render(uploads =>
                       div(liveFileInput(uploads.map(_._1), uploads.map(_._2).onProgress("progress")))
                     ).exit
       yield assertTrue(
-        snapshot.failed.toOption.exists(_.getMessage.contains("cover")),
         signal.isFailure
       )
     }

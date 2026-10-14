@@ -14,11 +14,10 @@ val TextFiles = LiveUploadDef.inMemory(
 )
 // docs:end uploads-definition
 
-final case class Model(upload: LiveUpload[Chunk[Byte]], savedSizes: Vector[Int] = Vector.empty)
+final case class Model(savedSizes: Vector[Int] = Vector.empty)
 
 enum Msg:
   case Validate
-  case Progress
   case Save
   case Cancel(entry: LiveUploadEntry[Chunk[Byte]])
   case Reset
@@ -26,52 +25,51 @@ enum Msg:
 final class TextUploadLiveView extends LiveView[Msg, Model]:
   // docs:start uploads-mount
   def mount(ctx: MountContext): Task[Model] =
-    ctx.uploads.allow(TextFiles).map(Model(_))
+    ctx.uploads.allow(TextFiles).as(Model())
   // docs:end uploads-mount
 
   def handleMessage(model: Model, ctx: MessageContext) =
-    // docs:start uploads-progress
-    case Msg.Validate | Msg.Progress =>
-      ctx.uploads.get(TextFiles).map(_.fold(model)(upload => model.copy(upload = upload)))
-    // docs:end uploads-progress
+    // docs:start uploads-validate
+    case Msg.Validate => ZIO.succeed(model)
+    // docs:end uploads-validate
     // docs:start uploads-consume
     case Msg.Save =>
       ctx.uploads
         .consumeCompleted(TextFiles) { completed =>
           ZIO.succeed(ConsumeDecision.Consume(completed.result.length))
         }
-        .map { case (sizes, upload) =>
-          model.copy(upload = upload, savedSizes = model.savedSizes ++ sizes)
-        }
+        .map(sizes => model.copy(savedSizes = model.savedSizes ++ sizes))
     // docs:end uploads-consume
     // docs:start uploads-cancel
     case Msg.Cancel(entry) =>
-      ctx.uploads.cancel(entry).map(upload => model.copy(upload = upload))
+      ctx.uploads.cancel(entry).as(model)
     // docs:end uploads-cancel
     // docs:start uploads-reset
     case Msg.Reset =>
-      ctx.uploads.disallow(TextFiles) *>
-        ctx.uploads.allow(TextFiles).map(Model(_))
+      (ctx.uploads.disallow(TextFiles) *> ctx.uploads.allow(TextFiles)).as(Model())
     // docs:end uploads-reset
 
   // docs:start uploads-render
   def view(model: Signal[Model]): HtmlElement[Msg] =
-    val upload = model.map(_.upload)
     form(
       on.change(_ => Msg.Validate),
       on.submit(Msg.Save),
-      div(
-        upload.dropTarget,
-        label(forId := upload.map(_.ref.value), "Text file"),
-        liveFileInput(upload, upload.onProgress(Msg.Progress)),
-        errorMessages(uploadErrors(upload))
-      ),
-      upload.map(_.entries).splitBy(_.ref) { (_, entry) =>
+      TextFiles.render { upload =>
         div(
-          span(entry.map(_.client.fileName)),
-          progressTag(value := entry.map(_.progress.toString), maxAttr := "100"),
-          button(typ        := "button", on.click(entry.map(Msg.Cancel(_))), "Cancel"),
-          errorMessages(uploadErrors(entry))
+          div(
+            upload.dropTarget,
+            label(forId := upload.map(_.ref.value), "Text file"),
+            liveFileInput(upload),
+            errorMessages(uploadErrors(upload))
+          ),
+          upload.map(_.entries).splitBy(_.ref) { (_, entry) =>
+            div(
+              span(entry.map(_.client.fileName)),
+              progressTag(value := entry.map(_.progress.toString), maxAttr := "100"),
+              button(typ        := "button", on.click(entry.map(Msg.Cancel(_))), "Cancel"),
+              errorMessages(uploadErrors(entry))
+            )
+          }
         )
       },
       button(typ := "submit", "Upload and save"),

@@ -326,13 +326,13 @@ object DisconnectedRenderSpec extends ZIOSpecDefault:
     test("renders every initial stream row before connected limits are applied") {
       final case class Item(id: Int)
       val items = LiveStreamDef.byId[Item, Int]("items")(_.id).keepLast(1)
-      val view = new LiveView.Eventless[LiveStream[Item]]:
+      val view = new LiveView.Eventless[Unit]:
         def mount(ctx: MountContext) = ctx.streams.create(items, List(Item(1), Item(2), Item(3)))
-        override def view(model: Signal[LiveStream[Item]]) =
+        override def view(model: Signal[Unit]) =
           ul(
             idAttr     := "items",
             phx.update := PhxUpdate.Stream,
-            model.stream((domId, item) => li(idAttr := domId, item.map(_.id.toString)))
+            items.stream((domId, item) => li(idAttr := domId, item.map(_.id.toString)))
           )
 
       val routes = ZioHttp.routes(scalive.Live.router(scalive.live -> view), config)

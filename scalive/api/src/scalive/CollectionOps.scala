@@ -46,12 +46,49 @@ extension [A, Items <: Iterable[A]](items: Signal[Items])
   def splitByIndex[Msg](project: (Int, Signal[A]) => HtmlElement[Msg]): Mod[Msg] =
     Mod.Content.SignalKeyedByIndex(items.map(values => values: Iterable[A]), project)
 
+extension [A, Id](definition: streams.LiveStreamDef[A, Id])
+  /** Renders this stream's items; `project` receives each item's DOM `id`.
+    *
+    * The items are the ones the LiveView or component created and updated through `ctx.streams`.
+    * Rendering a stream it never created fails the render. Prefer [[renderIn]], which also sets up
+    * the container.
+    */
+  def stream[Msg](project: (String, Signal[A]) => HtmlElement[Msg]): Mod[Msg] =
+    Mod.Content.ManagedStream(definition, project)
+
+  /** Renders this stream's items inside `container`.
+    *
+    * Scalive sets the container's `id` to the stream's name, its `phx-update`, and each item's DOM
+    * `id`, as in `Activities.renderIn(ol, aria.label := "Recent activity")(activity => li(...))`.
+    * See [streams](https://scalive.dev/guides/streams-and-collection-updates).
+    */
+  def renderIn[Msg](
+    container: HtmlTag,
+    mods: Mod.Input[Msg]*
+  )(
+    project: Signal[A] => HtmlElement[Msg]
+  ): HtmlElement[Msg] =
+    val containerMods =
+      Mod.flatten(mods).filterNot(mod => isAttr(mod, "id") || isAttr(mod, "phx-update"))
+    val entries = definition.stream { (domId, item) =>
+      val element = project(item)
+      HtmlElement(
+        element.tag,
+        element.mods.filterNot(isAttr(_, "id")).prepended(idAttr := domId)
+      )
+    }
+    HtmlElement(
+      container,
+      Vector(idAttr := definition.name, phx.update := PhxUpdate.Stream) ++ containerMods :+ entries
+    )
+end extension
+
 extension [A](stream: streams.LiveStream[A])
   /** Renders a rendered stream's items; `project` receives each item's DOM `id`.
     *
     * Prefer [[renderIn]], which also sets up the container.
     */
-  def stream[Msg](project: (String, A) => HtmlElement[Msg]): Mod[Msg] =
+  private[scalive] def stream[Msg](project: (String, A) => HtmlElement[Msg]): Mod[Msg] =
     Mod.Content.Stream(stream, project)
 
   /** Renders a rendered stream's items inside `container`.
@@ -59,7 +96,7 @@ extension [A](stream: streams.LiveStream[A])
     * Scalive sets the container's `id` and `phx-update` and each item's DOM `id`. See
     * [streams](https://scalive.dev/guides/streams-and-collection-updates).
     */
-  def renderIn[Msg](
+  private[scalive] def renderIn[Msg](
     container: HtmlTag,
     mods: Mod.Input[Msg]*
   )(
@@ -86,7 +123,7 @@ extension [A](stream: Signal[streams.LiveStream[A]])
     * This form follows a signal of the stream. Prefer [[renderIn]], which also sets up the
     * container.
     */
-  def stream[Msg](project: (String, Signal[A]) => HtmlElement[Msg]): Mod[Msg] =
+  private[scalive] def stream[Msg](project: (String, Signal[A]) => HtmlElement[Msg]): Mod[Msg] =
     Mod.Content.SignalStream(stream, project)
 
   /** Renders a rendered stream's items inside `container`.
@@ -95,7 +132,7 @@ extension [A](stream: Signal[streams.LiveStream[A]])
     * `model.map(_.activity).renderIn(ul)(item => li(...))`. Scalive sets the container's `id` and
     * `phx-update` and each item's DOM `id`.
     */
-  def renderIn[Msg](
+  private[scalive] def renderIn[Msg](
     container: HtmlTag,
     mods: Mod.Input[Msg]*
   )(

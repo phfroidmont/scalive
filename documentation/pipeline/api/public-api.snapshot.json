@@ -974,18 +974,6 @@
       ]
     },
     {
-      "id" : "class:scalive.LiveStream",
-      "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.LiveStream",
-      "kind" : "class",
-      "signatures" : [
-        {
-          "id" : "class:scalive.LiveStream:40fa7d33945e89e0",
-          "signature" : "class LiveStream[+A]"
-        }
-      ]
-    },
-    {
       "id" : "class:scalive.LiveStreamDef",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.LiveStreamDef",
@@ -7458,6 +7446,18 @@
       ]
     },
     {
+      "id" : "def:scalive.LiveUploadDef.render",
+      "ownerId" : "class:scalive.LiveUploadDef",
+      "qualifiedName" : "scalive.LiveUploadDef.render",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveUploadDef.render:2b363d19cc69161c",
+          "signature" : "def render[Msg](body: Signal[LiveUpload[Result]] => Mod[Msg]): Mod[Msg]"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.LiveUploadDef.validated",
       "ownerId" : "object:scalive.LiveUploadDef",
       "qualifiedName" : "scalive.LiveUploadDef.validated",
@@ -9040,8 +9040,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.Streams.create:1625cb2fc695c82a",
-          "signature" : "def create[A, Id](definition: LiveStreamDef[A, Id], items: Iterable[A]): zio.package.Task[LiveStream[A]]"
+          "id" : "def:scalive.Streams.create:3a0eb4c8c860d7a0",
+          "signature" : "def create[A, Id](definition: LiveStreamDef[A, Id], items: Iterable[A]): zio.package.Task[Unit]"
         }
       ]
     },
@@ -9052,8 +9052,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.Streams.delete:a81fe393d10e8bd2",
-          "signature" : "def delete[A, Id](definition: LiveStreamDef[A, Id], id: Id): zio.package.Task[LiveStream[A]]"
+          "id" : "def:scalive.Streams.delete:b60eba926f5c557c",
+          "signature" : "def delete[A, Id](definition: LiveStreamDef[A, Id], id: Id): zio.package.Task[Unit]"
         }
       ]
     },
@@ -9064,8 +9064,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.Streams.deleteByDomId:c3396b98458fb410",
-          "signature" : "def deleteByDomId[A, Id](definition: LiveStreamDef[A, Id], domId: String): zio.package.Task[LiveStream[A]]"
+          "id" : "def:scalive.Streams.deleteByDomId:ebac251c7265e553",
+          "signature" : "def deleteByDomId[A, Id](definition: LiveStreamDef[A, Id], domId: String): zio.package.Task[Unit]"
         }
       ]
     },
@@ -9076,8 +9076,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.Streams.insert:25b33068cef94510",
-          "signature" : "def insert[A, Id](definition: LiveStreamDef[A, Id], item: A, at: StreamAt = ..., updateOnly: Boolean = ...): zio.package.Task[LiveStream[A]]"
+          "id" : "def:scalive.Streams.insert:a9589e7376a51d78",
+          "signature" : "def insert[A, Id](definition: LiveStreamDef[A, Id], item: A, at: StreamAt = ..., updateOnly: Boolean = ...): zio.package.Task[Unit]"
         }
       ]
     },
@@ -9088,8 +9088,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.Streams.insertAll:2d3a22462b9931b4",
-          "signature" : "def insertAll[A, Id](definition: LiveStreamDef[A, Id], items: Iterable[A], at: StreamAt = ...): zio.package.Task[LiveStream[A]]"
+          "id" : "def:scalive.Streams.insertAll:d10d5ce0a523be60",
+          "signature" : "def insertAll[A, Id](definition: LiveStreamDef[A, Id], items: Iterable[A], at: StreamAt = ...): zio.package.Task[Unit]"
         }
       ]
     },
@@ -9100,8 +9100,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.Streams.reset:e786b553bbbb3494",
-          "signature" : "def reset[A, Id](definition: LiveStreamDef[A, Id], items: Iterable[A], at: StreamAt = ...): zio.package.Task[LiveStream[A]]"
+          "id" : "def:scalive.Streams.reset:07848cfa50dda8b6",
+          "signature" : "def reset[A, Id](definition: LiveStreamDef[A, Id], items: Iterable[A], at: StreamAt = ...): zio.package.Task[Unit]"
         }
       ]
     },
@@ -9172,8 +9172,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.Uploads.allow:790c8f4fe33f19dc",
-          "signature" : "def allow[R](definition: LiveUploadDef[R]): zio.package.Task[LiveUpload[R]]"
+          "id" : "def:scalive.Uploads.allow:5daa2e596f2c685f",
+          "signature" : "def allow[R](definition: LiveUploadDef[R]): zio.package.Task[Unit]"
         }
       ]
     },
@@ -9184,8 +9184,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.Uploads.cancel:56de362a6dfcec05",
-          "signature" : "def cancel[R](entry: LiveUploadEntry[R]): zio.package.Task[LiveUpload[R]]"
+          "id" : "def:scalive.Uploads.cancel:86e2055d317ffa42",
+          "signature" : "def cancel[R](entry: LiveUploadEntry[R]): zio.package.Task[Unit]"
         }
       ]
     },
@@ -9196,8 +9196,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.Uploads.consume:93507263f80ba86a",
-          "signature" : "def consume[R, A](entry: LiveUploadEntry[R])(callback: CompletedUpload[R] => zio.package.Task[ConsumeDecision[A]]): zio.package.Task[(A, LiveUpload[R])]"
+          "id" : "def:scalive.Uploads.consume:71cac142ce743593",
+          "signature" : "def consume[R, A](entry: LiveUploadEntry[R])(callback: CompletedUpload[R] => zio.package.Task[ConsumeDecision[A]]): zio.package.Task[A]"
         }
       ]
     },
@@ -9208,8 +9208,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.Uploads.consumeCompleted:fcdc6d9cfa37da8d",
-          "signature" : "def consumeCompleted[R, A](definition: LiveUploadDef[R])(callback: CompletedUpload[R] => zio.package.Task[ConsumeDecision[A]]): zio.package.Task[(List[A], LiveUpload[R])]"
+          "id" : "def:scalive.Uploads.consumeCompleted:83ae0c90232655b5",
+          "signature" : "def consumeCompleted[R, A](definition: LiveUploadDef[R])(callback: CompletedUpload[R] => zio.package.Task[ConsumeDecision[A]]): zio.package.Task[List[A]]"
         }
       ]
     },
@@ -9639,14 +9639,6 @@
       "qualifiedName" : "scalive.liveFileInput",
       "kind" : "def",
       "signatures" : [
-        {
-          "id" : "def:scalive.liveFileInput:3d855715713c45f5",
-          "signature" : "def liveFileInput[Msg, R](upload: LiveUpload[R], mods: Mod.Input[Msg]*): HtmlElement[Msg]"
-        },
-        {
-          "id" : "def:scalive.liveFileInput:77e68f12b802db38",
-          "signature" : "def liveFileInput[Msg, R](upload: LiveUpload[R], progress: UploadProgress[Msg], mods: Mod.Input[Msg]*): HtmlElement[Msg]"
-        },
         {
           "id" : "def:scalive.liveFileInput:91608f55cfd534bf",
           "signature" : "def liveFileInput[Msg, R](upload: Signal[LiveUpload[R]], mods: Mod.Input[Msg]*): HtmlElement[Msg]"
@@ -10400,24 +10392,12 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.uploadErrors:0fc29d16a6d179d7",
-          "signature" : "def uploadErrors[R](upload: LiveUpload[R]): List[LiveUploadError]"
-        },
-        {
-          "id" : "def:scalive.uploadErrors:3c74553d913d9c36",
-          "signature" : "def uploadErrors[R](upload: LiveUpload[R], entry: LiveUploadEntry[R]): List[LiveUploadError]"
-        },
-        {
           "id" : "def:scalive.uploadErrors:70dc5527823c5dff",
           "signature" : "def uploadErrors[R](upload: Signal[LiveUpload[R]]): Signal[List[LiveUploadError]]"
         },
         {
           "id" : "def:scalive.uploadErrors:af3af1b4d860d489",
           "signature" : "def uploadErrors[R](entry: Signal[LiveUploadEntry[R]]): Signal[List[LiveUploadError]]"
-        },
-        {
-          "id" : "def:scalive.uploadErrors:b96049c28958247d",
-          "signature" : "def uploadErrors[R](entry: LiveUploadEntry[R]): List[LiveUploadError]"
         }
       ]
     },
@@ -13292,10 +13272,6 @@
       "kind" : "extension",
       "signatures" : [
         {
-          "id" : "extension:scalive.dropTarget:04e06996d5a634e8",
-          "signature" : "extension def dropTarget[R](upload: LiveUpload[R]): Mod.Attr[Nothing]"
-        },
-        {
           "id" : "extension:scalive.dropTarget:f8e0d7cb2578e8a5",
           "signature" : "extension def dropTarget[R](upload: Signal[LiveUpload[R]]): Mod.Attr[Nothing]"
         }
@@ -13336,20 +13312,12 @@
       "kind" : "extension",
       "signatures" : [
         {
-          "id" : "extension:scalive.onProgress:16c62e4e7e4f7fe9",
-          "signature" : "extension def onProgress[R](upload: LiveUpload[R])[Msg](message: Msg): UploadProgress[Msg]"
-        },
-        {
           "id" : "extension:scalive.onProgress:421905991249c7d6",
           "signature" : "extension def onProgress[R](upload: Signal[LiveUpload[R]])[Msg](message: Msg): UploadProgress[Msg]"
         },
         {
           "id" : "extension:scalive.onProgress:5e229348e46ac57f",
           "signature" : "extension def onProgress[R](upload: Signal[LiveUpload[R]])[Msg](f: Map[String, String] => Msg): UploadProgress[Msg]"
-        },
-        {
-          "id" : "extension:scalive.onProgress:c19c72dab46c0ebe",
-          "signature" : "extension def onProgress[R](upload: LiveUpload[R])[Msg](f: Map[String, String] => Msg): UploadProgress[Msg]"
         }
       ]
     },
@@ -13360,12 +13328,8 @@
       "kind" : "extension",
       "signatures" : [
         {
-          "id" : "extension:scalive.renderIn:de1c3900bc4b737b",
-          "signature" : "extension def renderIn[A](stream: LiveStream[A])[Msg](container: HtmlTag, mods: Mod.Input[Msg]*)(project: A => HtmlElement[Msg]): HtmlElement[Msg]"
-        },
-        {
-          "id" : "extension:scalive.renderIn:ff90f558c426c78b",
-          "signature" : "extension def renderIn[A](stream: Signal[LiveStream[A]])[Msg](container: HtmlTag, mods: Mod.Input[Msg]*)(project: Signal[A] => HtmlElement[Msg]): HtmlElement[Msg]"
+          "id" : "extension:scalive.renderIn:a27b8e23e55d4c16",
+          "signature" : "extension def renderIn[A, Id](definition: LiveStreamDef[A, Id])[Msg](container: HtmlTag, mods: Mod.Input[Msg]*)(project: Signal[A] => HtmlElement[Msg]): HtmlElement[Msg]"
         }
       ]
     },
@@ -13420,12 +13384,8 @@
       "kind" : "extension",
       "signatures" : [
         {
-          "id" : "extension:scalive.stream:e1b94e984c8d1fa8",
-          "signature" : "extension def stream[A](stream: LiveStream[A])[Msg](project: (String, A) => HtmlElement[Msg]): Mod[Msg]"
-        },
-        {
-          "id" : "extension:scalive.stream:ea88f525c5819dff",
-          "signature" : "extension def stream[A](stream: Signal[LiveStream[A]])[Msg](project: (String, Signal[A]) => HtmlElement[Msg]): Mod[Msg]"
+          "id" : "extension:scalive.stream:6169c3a969c59206",
+          "signature" : "extension def stream[A, Id](definition: LiveStreamDef[A, Id])[Msg](project: (String, Signal[A]) => HtmlElement[Msg]): Mod[Msg]"
         }
       ]
     },

@@ -30,19 +30,49 @@ object UploadContextSpec extends ZIOSpecDefault:
     case value: EvaluatedNode.Nested =>
       value.resolution.flatMap(_.child).map(tree => renderedText(tree.root)).getOrElse("")
 
+  private def allowed[R](uploads: Uploads, definition: LiveUploadDef[R]): Task[LiveUpload[R]] =
+    uploads.allow(definition) *> uploads.get(definition).someOrFail(Exception("upload not allowed"))
+
   override def spec = suite("UploadContextSpec")(
+    test("a selection synchronized without output reaches the browser with the next turn") {
+      ZIO.scoped {
+        val uploadDef = definition()
+        val view      = new LiveView[Unit, UploadRef]:
+          def mount(ctx: MountContext) = allowed(ctx.uploads, uploadDef).map(_.ref)
+          def handleMessage(model: UploadRef, ctx: MessageContext): Unit => Task[UploadRef] =
+            _ => ZIO.succeed(model)
+          def view(model: Signal[UploadRef]) =
+            div(
+              uploadDef.render(upload =>
+                upload.map(_.entries).splitBy(_.ref)((_, entry) =>
+                  span(entry.map(_.client.fileName))
+                )
+              )
+            )
+        val client = new UploadClientMetadata("a.txt", None, 1L, "text/plain", None, None)
+        for
+          outputs    <- Queue.unbounded[ConnectionOutput]
+          connection <- RootConnection.start(config, metadata, view, outputs.offer(_).unit)
+          _          <- outputs.take
+          upload     <- connection.inspectModel
+          _          <- connection.syncUploadSelection(None, upload, Vector((UploadEntryRef("0"), client)))
+          _          <- connection.submitInfo(())
+          output     <- outputs.take
+        yield assertTrue(output.toString.contains("a.txt"))
+      }
+    },
     test("connected root mount stores and renders an upload that survives an unrelated turn") {
       ZIO.scoped {
         val uploadDef = definition()
         val view      = new LiveView[Unit, LiveUpload[Chunk[Byte]]]:
-          def mount(ctx: MountContext) = ctx.uploads.allow(uploadDef)
+          def mount(ctx: MountContext) = allowed(ctx.uploads, uploadDef)
           def handleMessage(
             model: LiveUpload[Chunk[Byte]],
             ctx: MessageContext
           ): Unit => Task[LiveUpload[Chunk[Byte]]] =
             _ => ctx.uploads.get(uploadDef).someOrFail(Exception("upload disappeared"))
           def view(model: Signal[LiveUpload[Chunk[Byte]]]) =
-            div(model.map(_.ref.value))
+            div(uploadDef.render(upload => span(upload.map(_.ref.value))))
 
         for
           outputs    <- Queue.unbounded[ConnectionOutput]
@@ -89,7 +119,7 @@ object UploadContextSpec extends ZIOSpecDefault:
                               callbackAt.set(Some(entry.progress)))
                       )
           view = new LiveView.Eventless[LiveUpload[String]]:
-                   def mount(ctx: MountContext)                = ctx.uploads.allow(uploadDef)
+                   def mount(ctx: MountContext)                = allowed(ctx.uploads, uploadDef)
                    def view(model: Signal[LiveUpload[String]]) = div(model.map(_.ref.value))
           lifecycle = RootLifecycle.ordinary(
                         view,
@@ -205,7 +235,7 @@ object UploadContextSpec extends ZIOSpecDefault:
             def onProgress(entry: LiveUploadEntry[String]) = ZIO.fail(callbackFailure))
         )
         val view = new LiveView.Eventless[LiveUpload[String]]:
-          def mount(ctx: MountContext)                = ctx.uploads.allow(uploadDef)
+          def mount(ctx: MountContext)                = allowed(ctx.uploads, uploadDef)
           def view(model: Signal[LiveUpload[String]]) = div()
 
         for
@@ -303,17 +333,16 @@ object UploadContextSpec extends ZIOSpecDefault:
         val uploadDef = definition()
         for
           turn <- DisconnectedRootTurn.make[Unit, Unit](LiveHooks.empty, URL.root, Map.empty)
-          disconnected <- turn.mountContext.uploads.allow(uploadDef)
+          disconnected <- allowed(turn.mountContext.uploads, uploadDef)
           rendered     <- DisconnectedComponentRenderer.renderTurnWith[Unit, Nothing, String](
-                        _ => div(disconnected.ref.value),
+                        _ => div(uploadDef.render(upload => span(upload.map(_.ref.value)))),
                         (),
                         turn
                       )((tree, _) => ZIO.succeed(renderedText(tree.root)))
           connectedRef <- Ref.make(Option.empty[UploadRef])
           root = new LiveView.Eventless[Unit]:
                    def mount(ctx: MountContext) =
-                     ctx.uploads
-                       .allow(uploadDef).flatMap(upload => connectedRef.set(Some(upload.ref)))
+                     allowed(ctx.uploads, uploadDef).flatMap(upload => connectedRef.set(Some(upload.ref)))
                    def view(model: Signal[Unit]) = div()
           outputs    <- Queue.unbounded[ConnectionOutput]
           connection <- RootConnection.start(config, metadata, root, outputs.offer(_).unit)
@@ -337,10 +366,9 @@ object UploadContextSpec extends ZIOSpecDefault:
           rootRefs      <- Ref.make(Vector.empty[UploadRef])
           componentDef = new LiveComponent.Eventless[Unit, LiveUpload[Chunk[Byte]]]:
                            def mount(props: Unit, ctx: MountContext) =
-                             ctx.uploads
-                               .allow(uploadDef).tap(upload =>
-                                 componentRefs.update(_ :+ upload.ref)
-                               )
+                             allowed(ctx.uploads, uploadDef).tap(upload =>
+                               componentRefs.update(_ :+ upload.ref)
+                             )
                            def view(
                              props: Signal[Unit],
                              model: Signal[LiveUpload[Chunk[Byte]]],
@@ -348,8 +376,7 @@ object UploadContextSpec extends ZIOSpecDefault:
           instance = component(componentDef, "uploader")
           root     = new LiveView[Boolean, (Boolean, LiveUpload[Chunk[Byte]])]:
                    def mount(ctx: MountContext) =
-                     ctx.uploads
-                       .allow(uploadDef).tap(upload => rootRefs.update(_ :+ upload.ref)).map(
+                     allowed(ctx.uploads, uploadDef).tap(upload => rootRefs.update(_ :+ upload.ref)).map(
                          true -> _
                        )
                    def handleMessage(
@@ -388,7 +415,7 @@ object UploadContextSpec extends ZIOSpecDefault:
         refs <- Ref.make(Vector.empty[UploadRef])
         componentDef = new LiveComponent.Eventless[String, LiveUpload[Chunk[Byte]]]:
                          def mount(props: String, ctx: MountContext) =
-                           ctx.uploads.allow(uploadDef).tap(upload => refs.update(_ :+ upload.ref))
+                           allowed(ctx.uploads, uploadDef).tap(upload => refs.update(_ :+ upload.ref))
                          def view(
                            props: Signal[String],
                            model: Signal[LiveUpload[Chunk[Byte]]],

@@ -6,9 +6,8 @@ section = examples
 %}
 
 A rendered stream that shows the five newest activities while the model keeps
-the complete history. The @:apiSymbol(class:scalive.LiveStream)`LiveStream`@:@
-sends the browser one change per insert or delete instead of re-rendering the
-list.
+the complete history. The stream sends the browser one change per insert or
+delete instead of re-rendering the list.
 
 ## Try it {#try-it}
 

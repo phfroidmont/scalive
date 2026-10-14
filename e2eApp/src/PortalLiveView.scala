@@ -330,7 +330,7 @@ object PortalLiveView:
     import LiveComponentFixture.*
 
     def mount(props: Unit, ctx: MountContext) =
-      ctx.streams.create(ItemsStream, InitialItems).map(items => Model(items = items))
+      ctx.streams.create(ItemsStream, InitialItems).as(Model())
 
     def handleMessage(props: Unit, model: Model, ctx: MessageContext) =
       (_: Msg.type) => prependItem(model, ctx.streams)
@@ -351,7 +351,7 @@ object PortalLiveView:
         ul(
           idAttr     := "stream-in-lc",
           phx.update := PhxUpdate.Stream,
-          model.map(_.items).stream((domId, item) => li(idAttr := domId, item.map(_.name)))
+          ItemsStream.stream((domId, item) => li(idAttr := domId, item.map(_.name)))
         ),
         button(on.click(Msg), "Prepend item"),
         portal(DomRef("teleported-from-lc-button"), target = DomSelector.css("body"))(
@@ -366,12 +366,10 @@ object PortalLiveView:
       val item = Item(model.nextItem, s"Item ${model.nextItem}")
       streams
         .insert(ItemsStream, item, at = StreamAt.First)
-        .map(items => model.copy(items = items, nextItem = model.nextItem + 1))
+        .as(model.copy(nextItem = model.nextItem + 1))
 
     final case class Item(id: Int, name: String)
-    final case class Model(
-      items: LiveStream[Item],
-      nextItem: Int = 1000)
+    final case class Model(nextItem: Int = 1000)
 
     case object Msg
 

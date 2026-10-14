@@ -132,21 +132,8 @@ final private[scalive] class LiveStreamDefIdentity private ()
 private[scalive] object LiveStreamDefIdentity:
   def fresh(): LiveStreamDefIdentity = new LiveStreamDefIdentity()
 
-/** Opaque rendering handle for a LiveView stream.
-  *
-  * Stream operations return a handle for the `stream` and `renderIn` rendering helpers. Store and
-  * render the returned handle; it is not a collection and intentionally exposes no entries or
-  * runtime protocol state to application code.
-  *
-  * Stream runtime state belongs to the current socket or component lifecycle and is lost when that
-  * lifecycle ends or mounts again. A `LiveStream` must therefore not be the durable source of truth
-  * for domain data. Persist or retain canonical data separately and recreate the stream during
-  * mount.
-  *
-  * @tparam A
-  *   the streamed item type
-  */
-abstract class LiveStream[+A] private[scalive] ():
+/** The runtime state of one stream: its retained entries and the operations of the current turn. */
+abstract private[scalive] class LiveStream[+A]:
   private[scalive] def identity: LiveStreamIdentity          = unsupported
   private[scalive] def name: String                          = unsupported
   private[scalive] def generation: Long                      = unsupported
@@ -197,4 +184,4 @@ private[scalive] object LiveStream:
       extends LiveStream[A]
 
 object api:
-  export _root_.scalive.streams.{LiveStream, LiveStreamDef, StreamAt, StreamLimit}
+  export _root_.scalive.streams.{LiveStreamDef, StreamAt, StreamLimit}

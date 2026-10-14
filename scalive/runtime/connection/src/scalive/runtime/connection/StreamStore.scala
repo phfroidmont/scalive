@@ -95,18 +95,14 @@ final private[scalive] case class StreamStore private (
     validateDomId(domId)
     deletePrepared(definition, domId)
 
-  /** Clears all operation journals after a successful render commit. */
-  def prune: StreamStore =
-    val pruned = streams.map { case (name, stored) =>
-      name -> stored.copy(stream = pruneHandle(stored.stream))
-    }
-    StreamStore(pruned)
-
-  /** Clears one stream's journal and returns its replacement rendering handle. */
-  def prune[A, Id](definition: LiveStreamDef[A, Id]): Replacement[A] =
-    validateDefinition(definition)
-    val current = requireCurrent(definition)
-    install(definition, pruneHandle(current))
+  /** Marks every stream's operations as rendered, once a render commits.
+    *
+    * A settled stream keeps its operations, so rendering it again still carries them; the browser
+    * receives them only if it has not seen that generation yet. The next operation on the stream
+    * starts a new journal.
+    */
+  def settle: StreamStore =
+    StreamStore(streams.map((name, stored) => name -> stored.copy(settled = true)))
 
   /** Rejects stale handles and handles created by another root or component lifecycle. */
   def validate(requirements: Vector[StreamRequirement[?]]): Unit =
@@ -153,7 +149,8 @@ final private[scalive] case class StreamStore private (
         )
       case Some(stored) =>
         requireCoherent(stored, definition)
-        stored.stream.asInstanceOf[LiveStream[A]]
+        val stream = stored.stream.asInstanceOf[LiveStream[A]]
+        if stored.settled then pruneHandle(stream) else stream
 
   private def install[A, Id](
     definition: LiveStreamDef[A, Id],
@@ -166,7 +163,10 @@ end StreamStore
 private[scalive] object StreamStore:
   final case class Replacement[A](store: StreamStore, stream: LiveStream[A])
 
-  final private case class Stored(definition: LiveStreamDef[?, ?], stream: LiveStream[?])
+  final private case class Stored(
+    definition: LiveStreamDef[?, ?],
+    stream: LiveStream[?],
+    settled: Boolean = false)
 
   val empty: StreamStore = StreamStore(Map.empty)
 

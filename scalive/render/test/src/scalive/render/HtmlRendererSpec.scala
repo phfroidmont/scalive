@@ -115,7 +115,7 @@ object HtmlRendererSpec extends ZIOSpecDefault:
       val info = FlashKind("info")
       val compiled = RenderProgram.compile[Map[FlashKind, String], Nothing](
         _ => mainTag("before", flash(info)(message => span(message)), "after"),
-        identity
+        RenderState(_)
       )
 
       for

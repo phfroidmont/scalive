@@ -4,41 +4,23 @@ import zio.test.*
 
 object StreamOpacitySpec extends ZIOSpecDefault:
   override def spec = suite("StreamOpacitySpec")(
-    test("LiveStream exposes no runtime state to application code") {
-      val nameErrors = scala.compiletime.testing.typeCheckErrors("""
+    test("stream state is not part of the application API") {
+      val handleErrors = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*
-        def streamName(stream: LiveStream[Int]) = stream.name
-      """)
-      val entriesErrors = scala.compiletime.testing.typeCheckErrors("""
-        import scalive.*
-        def entries(stream: LiveStream[Int]) = stream.entries
-      """)
-      val emptyErrors = scala.compiletime.testing.typeCheckErrors("""
-        import scalive.*
-        def empty(stream: LiveStream[Int]) = stream.isEmpty
-      """)
-      val nonEmptyErrors = scala.compiletime.testing.typeCheckErrors("""
-        import scalive.*
-        def nonEmpty(stream: LiveStream[Int]) = stream.nonEmpty
+        def keep(stream: LiveStream[Int]) = ()
       """)
       val entryTypeErrors = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*
         type Entry = LiveStreamEntry[Int]
       """)
-      val extractorErrors = scala.compiletime.testing.typeCheckErrors("""
+      val operationErrors = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*
-        def inspect(stream: LiveStream[Int]) = stream match
-          case LiveStream(_, _, _, _, _, _, _) => ()
+        import zio.*
+        val Items = LiveStreamDef.byId[Int, Int]("items")(identity)
+        def insert(ctx: MessageContext[Unit, Unit]): Task[Int] = ctx.streams.insert(Items, 1)
       """)
 
-      assertTrue(
-        nameErrors.nonEmpty,
-        entriesErrors.nonEmpty,
-        emptyErrors.nonEmpty,
-        nonEmptyErrors.nonEmpty,
-        entryTypeErrors.nonEmpty,
-        extractorErrors.nonEmpty
-      )
+      assertTrue(handleErrors.nonEmpty, entryTypeErrors.nonEmpty, operationErrors.nonEmpty)
     }
   )
 end StreamOpacitySpec

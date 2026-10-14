@@ -113,20 +113,21 @@ object TreeDiffer:
           case _ => Vector(RenderChange.Replace(left.id, right))
       case (left: EvaluatedNode.Stream, right: EvaluatedNode.Stream)
           if left.id == right.id && (left.identity eq right.identity) =>
-        val operatedIds = right.operations.inserts.map(_.row.domId).toSet
-        val oldRows     = left.rows.map(row => row.domId -> row.child).toMap
-        val rowChanges  = right.rows.flatMap { row =>
+        // A stream keeps its last operations until the next one, so they are sent only when the
+        // browser has not seen this generation. Rows they insert are sent whole; diff the others.
+        val operations      = right.operations
+        val sendsOperations = left.generation != right.generation &&
+          (operations.inserts.nonEmpty || operations.deletes.nonEmpty || operations.reset)
+        val operatedIds =
+          if sendsOperations then operations.inserts.map(_.row.domId).toSet else Set.empty[String]
+        val oldRows    = left.rows.map(row => row.domId -> row.child).toMap
+        val rowChanges = right.rows.flatMap { row =>
           if operatedIds.contains(row.domId) then Vector.empty
           else oldRows.get(row.domId).toVector.flatMap(diffNode(_, row.child))
         }
         val streamChanges =
-          if left.generation == right.generation then Vector.empty
-          else if right.operations.inserts.nonEmpty || right.operations.deletes.nonEmpty ||
-            right.operations.reset
-          then
-            Vector(
-              RenderChange.Stream(right.id, right.identity, right.generation, right.operations)
-            )
+          if sendsOperations then
+            Vector(RenderChange.Stream(right.id, right.identity, right.generation, operations))
           else Vector.empty
         streamChanges ++ rowChanges
       case _ if previous.revision == current.revision => Vector.empty

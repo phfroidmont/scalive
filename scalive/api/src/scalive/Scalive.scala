@@ -717,55 +717,31 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
       */
     def replaceTextWith(text: String): Mod.Attr[Nothing] = phx.disableWith := text
 
-  extension [R](upload: LiveUpload[R])
-    /** Makes the element a drop zone for this upload's files (`phx-drop-target`).
-      *
-      * This form takes an upload snapshot. Dropped files go to the upload's `liveFileInput` and get
-      * the same acceptance, count, and size checks as selected ones.
-      */
-    def dropTarget: Mod.Attr[Nothing] = phx.dropTarget := upload.ref
-
-    /** Sends a message each time the browser reports transfer progress for this upload
-      * (`phx-progress`).
-      *
-      * This form sends a constant message, as in `upload.onProgress(Msg.Progress)`. Pass it to the
-      * upload's `liveFileInput`, and read the latest upload snapshot when handling the message.
-      */
-    def onProgress[Msg](message: Msg): UploadProgress[Msg] =
-      UploadProgress(Left(upload.ref), on.uploadProgress(message))
-
-    /** Sends a message each time the browser reports transfer progress for this upload
-      * (`phx-progress`).
-      *
-      * This form builds the message from the raw `ref`, `entry_ref`, `progress`, and optional
-      * `error` values, which the browser controls.
-      */
-    def onProgress[Msg](f: Map[String, String] => Msg): UploadProgress[Msg] =
-      UploadProgress(Left(upload.ref), on.uploadProgress(f))
-
   extension [R](upload: Signal[LiveUpload[R]])
     /** Makes the element a drop zone for this upload's files (`phx-drop-target`).
       *
-      * This form follows a signal of the upload, such as `model.map(_.upload)`.
+      * Use it on the upload from [[LiveUploadDef.render]]'s body.
       */
     def dropTarget: Mod.Attr[Nothing] = phx.dropTarget := upload.map(_.ref)
 
     /** Sends a message each time the browser reports transfer progress for this upload
       * (`phx-progress`).
       *
-      * This form, on a signal of the upload, sends a constant message.
+      * Rendering already follows progress; use it only to react to it. This form sends a constant
+      * message.
       */
     def onProgress[Msg](message: Msg): UploadProgress[Msg] =
-      UploadProgress(Right(upload.map(_.ref)), on.uploadProgress(message))
+      UploadProgress(upload.map(_.ref), on.uploadProgress(message))
 
     /** Sends a message each time the browser reports transfer progress for this upload
       * (`phx-progress`).
       *
-      * This form, on a signal of the upload, builds the message from the raw `ref`, `entry_ref`,
-      * `progress`, and optional `error` values, which the browser controls.
+      * Rendering already follows progress; use it only to react to it. This form builds the message
+      * from the raw `ref`, `entry_ref`, `progress`, and optional `error` values, which the browser
+      * controls.
       */
     def onProgress[Msg](f: Map[String, String] => Msg): UploadProgress[Msg] =
-      UploadProgress(Right(upload.map(_.ref)), on.uploadProgress(f))
+      UploadProgress(upload.map(_.ref), on.uploadProgress(f))
 
   /** Converts a string to text content, escaped when rendered, so a string can be a child. */
   implicit def stringToMod(value: String): Mod[Nothing] = Mod.Content.Text(value)

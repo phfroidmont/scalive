@@ -182,7 +182,7 @@ a fresh mount, not a revival of the old model; its mount may register entirely
 new subscriptions. Cancelled, completed, or defective retained registrations
 are not automatically restarted when a dormant instance returns.
 
-Do not retain upload snapshots or other runtime handles after removal. Put durable data in the parent or an application service before hiding
+Do not retain upload entries or other runtime handles after removal. Put durable data in the parent or an application service before hiding
 the component. A failed component lifecycle fails the active render or message
 lifecycle; model expected failures as component messages when the UI should
 recover without taking down the owning LiveView.

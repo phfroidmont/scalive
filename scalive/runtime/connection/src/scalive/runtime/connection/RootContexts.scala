@@ -17,6 +17,7 @@ import zio.json.ast.Json
 import zio.stream.ZStream
 
 import scalive.*
+import scalive.render.RenderState
 import scalive.runtime.contracts.Epoch
 import scalive.runtime.kernel.*
 import scalive.runtime.resources.*
@@ -60,7 +61,15 @@ final private[scalive] class RootTurnJournal private (
 
   def resourceOperationSnapshot: UIO[Vector[ResourceOperation]] = resourceOperations.get
 
-  def streamSnapshot: UIO[StreamStore] = streams.get.map(_.prune)
+  def streamSnapshot: UIO[StreamStore] = streams.get
+
+  /** The flash values, uploads, and streams that this turn's owner renders. */
+  def renderState: UIO[RenderState] =
+    for
+      flashValues <- flash.get
+      registry    <- uploads.get
+      store       <- streams.get
+    yield OwnerRenderState(flashValues, registry, owner, ownerEpoch, store)
 
   def recordUploadCommit(plan: UploadRetirementPlan): UIO[Unit] =
     uploadCommit.update(_ ++ plan)
@@ -89,6 +98,25 @@ final private[scalive] class RootTurnJournal private (
       uploadRollback
     )
 end RootTurnJournal
+
+/** The flash values, uploads, and streams of one LiveView or component, as one render reads them.
+  */
+final private[connection] case class OwnerRenderState(
+  flash: Map[FlashKind, String],
+  uploads: UploadRegistry,
+  owner: OwnerId,
+  ownerEpoch: Epoch,
+  streams: StreamStore)
+    extends RenderState:
+  def upload[R](definition: LiveUploadDef[R]): Option[LiveUpload[R]] =
+    uploads.get(owner, ownerEpoch, UploadKey(definition)) match
+      case Right((_, upload))                      => Some(upload)
+      case Left(UploadRegistryError.NotAllowed(_)) => None
+      case Left(error)                             =>
+        throw IllegalStateException(s"cannot render upload '${definition.name}': $error")
+
+  def stream[A](definition: LiveStreamDef[A, ?]): Option[LiveStream[A]] =
+    streams.get(definition)
 
 private[scalive] object RootTurnJournal:
   def make[Msg, Model](
@@ -204,24 +232,24 @@ final private class JournaledFlash(journal: RootTurnJournal) extends Flash:
   def snapshot: Task[Map[FlashKind, String]]     = journal.flash.get
 
 private object DeferredUploads extends Uploads:
-  def allow[R](definition: LiveUploadDef[R]): Task[LiveUpload[R]] = Deferred.fail("allow upload")
-  def disallow[R](definition: LiveUploadDef[R]): Task[Unit]       = Deferred.fail("disallow upload")
+  def allow[R](definition: LiveUploadDef[R]): Task[Unit]    = Deferred.fail("allow upload")
+  def disallow[R](definition: LiveUploadDef[R]): Task[Unit] = Deferred.fail("disallow upload")
   def get[R](definition: LiveUploadDef[R]): Task[Option[LiveUpload[R]]] =
     Deferred.fail("get upload")
-  def cancel[R](entry: LiveUploadEntry[R]): Task[LiveUpload[R]] = Deferred.fail("cancel upload")
+  def cancel[R](entry: LiveUploadEntry[R]): Task[Unit] = Deferred.fail("cancel upload")
   def consume[R, A](
     entry: LiveUploadEntry[R]
   )(
     callback: CompletedUpload[R] => Task[ConsumeDecision[A]]
-  ): Task[(A, LiveUpload[R])] = Deferred.fail("consume upload")
+  ): Task[A] = Deferred.fail("consume upload")
   def consumeCompleted[R, A](
     definition: LiveUploadDef[R]
   )(
     callback: CompletedUpload[R] => Task[ConsumeDecision[A]]
-  ): Task[(List[A], LiveUpload[R])] = Deferred.fail("consume completed uploads")
+  ): Task[List[A]] = Deferred.fail("consume completed uploads")
 
 final private[connection] class JournaledUploads(journal: RootTurnJournal) extends Uploads:
-  def allow[R](definition: LiveUploadDef[R]): Task[LiveUpload[R]] =
+  def allow[R](definition: LiveUploadDef[R]): Task[Unit] =
     for
       ref    <- UploadRuntime.freshRef
       result <- journal.uploads.modify { current =>
@@ -230,8 +258,8 @@ final private[connection] class JournaledUploads(journal: RootTurnJournal) exten
                       next.snapshotForToken(token).left.map(operationError) -> next
                     case Left(error) => Left(operationError(error)) -> current
                 }
-      upload <- ZIO.fromEither(result)
-    yield upload
+      _ <- ZIO.fromEither(result)
+    yield ()
 
   def disallow[R](definition: LiveUploadDef[R]): Task[Unit] = ZIO.uninterruptible {
     journal.uploads
@@ -251,27 +279,21 @@ final private[connection] class JournaledUploads(journal: RootTurnJournal) exten
         case Left(error)                             => ZIO.fail(operationError(error))
     }
 
-  def cancel[R](entry: LiveUploadEntry[R]): Task[LiveUpload[R]] = ZIO.uninterruptible {
+  def cancel[R](entry: LiveUploadEntry[R]): Task[Unit] = ZIO.uninterruptible {
     journal.uploads
       .modify { current =>
         current.cancel(journal.owner, journal.ownerEpoch, entry) match
           case Right(removal) => Right(removal)              -> removal.registry
           case Left(error)    => Left(operationError(error)) -> current
       }.flatMap(ZIO.fromEither)
-      .flatMap { removal =>
-        journal.recordUploadCommit(removal.retirement) *>
-          ZIO.fromEither(
-            removal.registry
-              .snapshotFor(journal.owner, journal.ownerEpoch, entry).left.map(operationError)
-          )
-      }
+      .flatMap(removal => journal.recordUploadCommit(removal.retirement))
   }
 
   def consume[R, A](
     entry: LiveUploadEntry[R]
   )(
     callback: CompletedUpload[R] => Task[ConsumeDecision[A]]
-  ): Task[(A, LiveUpload[R])] =
+  ): Task[A] =
     for
       begin <- journal.uploads.get.flatMap(current =>
                  ZIO.fromEither(
@@ -294,13 +316,7 @@ final private[connection] class JournaledUploads(journal: RootTurnJournal) exten
                           Vector(UploadRetirementInstruction.Cleanup(operation))
                         )
                       )
-                      journal.recordUploadCommit(transfer) *>
-                        ZIO
-                          .fromEither(
-                            value.registry
-                              .snapshotFor(journal.owner, journal.ownerEpoch, entry)
-                              .left.map(operationError)
-                          ).map(upload => valueOf(decision) -> upload)
+                      journal.recordUploadCommit(transfer).as(valueOf(decision))
                     }
                 }
     yield result
@@ -309,7 +325,7 @@ final private[connection] class JournaledUploads(journal: RootTurnJournal) exten
     definition: LiveUploadDef[R]
   )(
     callback: CompletedUpload[R] => Task[ConsumeDecision[A]]
-  ): Task[(List[A], LiveUpload[R])] =
+  ): Task[List[A]] =
     for
       current <- get(definition).someOrFail(LiveUploadOperationError.NotAllowed(definition.name))
       _       <- ZIO
@@ -322,10 +338,9 @@ final private[connection] class JournaledUploads(journal: RootTurnJournal) exten
              )
       completed = current.entries.filter(_.status == LiveUploadEntryStatus.Completed)
       consumed <- ZIO.foldLeft(completed)(List.empty[A]) { (values, entry) =>
-                    consume(entry)(callback).map { case (value, _) => values :+ value }
+                    consume(entry)(callback).map(value => values :+ value)
                   }
-      upload <- get(definition).someOrFail(LiveUploadOperationError.NotAllowed(definition.name))
-    yield consumed -> upload
+    yield consumed
 
   private def valueOf[A](decision: ConsumeDecision[A]): A = decision match
     case ConsumeDecision.Consume(value)  => value
@@ -349,27 +364,27 @@ end JournaledUploads
 
 final private class JournaledStreams(streams: Ref[StreamStore], applyLimits: Boolean = true)
     extends Streams:
-  def create[A, Id](definition: LiveStreamDef[A, Id], items: Iterable[A]): Task[LiveStream[A]] =
+  def create[A, Id](definition: LiveStreamDef[A, Id], items: Iterable[A]): Task[Unit] =
     update(_.create(effective(definition), items))
   def insertAll[A, Id](
     definition: LiveStreamDef[A, Id],
     items: Iterable[A],
     at: StreamAt
-  ): Task[LiveStream[A]] = update(_.insertAll(effective(definition), items, at))
+  ): Task[Unit] = update(_.insertAll(effective(definition), items, at))
   def reset[A, Id](
     definition: LiveStreamDef[A, Id],
     items: Iterable[A],
     at: StreamAt
-  ): Task[LiveStream[A]] = update(_.reset(effective(definition), items, at))
+  ): Task[Unit] = update(_.reset(effective(definition), items, at))
   def insert[A, Id](
     definition: LiveStreamDef[A, Id],
     item: A,
     at: StreamAt,
     updateOnly: Boolean
-  ): Task[LiveStream[A]] = update(_.insert(effective(definition), item, at, updateOnly))
-  def delete[A, Id](definition: LiveStreamDef[A, Id], id: Id): Task[LiveStream[A]] =
+  ): Task[Unit] = update(_.insert(effective(definition), item, at, updateOnly))
+  def delete[A, Id](definition: LiveStreamDef[A, Id], id: Id): Task[Unit] =
     update(_.delete(effective(definition), id))
-  def deleteByDomId[A, Id](definition: LiveStreamDef[A, Id], domId: String): Task[LiveStream[A]] =
+  def deleteByDomId[A, Id](definition: LiveStreamDef[A, Id], domId: String): Task[Unit] =
     update(_.deleteByDomId(effective(definition), domId))
 
   private def effective[A, Id](definition: LiveStreamDef[A, Id]): LiveStreamDef[A, Id] =
@@ -377,17 +392,17 @@ final private class JournaledStreams(streams: Ref[StreamStore], applyLimits: Boo
 
   private def update[A](
     operation: StreamStore => StreamStore.Replacement[A]
-  ): Task[LiveStream[A]] =
+  ): Task[Unit] =
     streams
       .modify { current =>
         Try(operation(current)).toEither match
-          case Right(replacement) => Right(replacement.stream) -> replacement.store
-          case Left(error)        => Left(error)               -> current
+          case Right(replacement) => Right(())   -> replacement.store
+          case Left(error)        => Left(error) -> current
       }.flatMap(ZIO.fromEither)
 end JournaledStreams
 
 private object DeferredStreams extends Streams:
-  def create[A, Id](definition: LiveStreamDef[A, Id], items: Iterable[A]): Task[LiveStream[A]] =
+  def create[A, Id](definition: LiveStreamDef[A, Id], items: Iterable[A]): Task[Unit] =
     Deferred.fail("create stream")
   def insertAll[A, Id](definition: LiveStreamDef[A, Id], items: Iterable[A], at: StreamAt) =
     Deferred.fail("insert stream items")

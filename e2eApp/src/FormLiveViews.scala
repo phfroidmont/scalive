@@ -541,7 +541,7 @@ class FormStreamLiveView extends LiveView[FormStreamLiveView.Msg, FormStreamLive
   import FormStreamLiveView.*
 
   def mount(ctx: MountContext) =
-    ctx.streams.create(ItemsStream, InitialItems).map(items => Model(items = items))
+    ctx.streams.create(ItemsStream, InitialItems).as(Model())
 
   def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.Validate(_) => E2ELatencyGate.await("validate") *> inc(model, ctx)
@@ -556,7 +556,6 @@ class FormStreamLiveView extends LiveView[FormStreamLiveView.Msg, FormStreamLive
   override def view(model: Signal[Model]) =
     val count      = model.map(_.count)
     val countValue = count.map(_.toString)
-    val items      = model.map(_.items)
 
     div(
       countValue,
@@ -573,7 +572,7 @@ class FormStreamLiveView extends LiveView[FormStreamLiveView.Msg, FormStreamLive
         ul(
           idAttr     := "form-stream",
           phx.update := PhxUpdate.Stream,
-          items.stream { (domId, item) =>
+          ItemsStream.stream { (domId, item) =>
             val itemText = item.map(value => s"*%{id: ${value.id}}")
             li(dom.hook("FormStreamHook", DomRef(domId)), itemText)
           }
@@ -585,9 +584,8 @@ class FormStreamLiveView extends LiveView[FormStreamLiveView.Msg, FormStreamLive
   private def inc(model: Model, ctx: MessageContext) =
     val next = model.streamCount + 1
     ctx.streams
-      .insert(ItemsStream, Item(next)).map(items =>
-        model.copy(items = items, count = model.count + 1, streamCount = next)
-      )
+      .insert(ItemsStream, Item(next))
+      .as(model.copy(count = model.count + 1, streamCount = next))
 end FormStreamLiveView
 
 object FormStreamLiveView:
@@ -597,7 +595,7 @@ object FormStreamLiveView:
     case Ping
 
   final case class Item(id: Int)
-  final case class Model(items: LiveStream[Item], count: Int = 0, streamCount: Int = 3)
+  final case class Model(count: Int = 0, streamCount: Int = 3)
 
   val InitialItems = Vector(Item(1), Item(2), Item(3))
   val ItemsStream  = LiveStreamDef.byId[Item, Int]("items")(_.id)

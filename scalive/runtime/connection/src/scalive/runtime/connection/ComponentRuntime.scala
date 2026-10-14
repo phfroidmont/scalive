@@ -5,6 +5,7 @@ import zio.json.*
 import zio.json.ast.Json
 
 import scalive.*
+import scalive.render.RenderState
 import scalive.render.StreamRequirement
 import scalive.runtime.contracts.ComponentInstanceId
 import scalive.runtime.contracts.Epoch
@@ -23,7 +24,18 @@ final private[connection] class ConnectedComponentEnvironment[RootMsg, RootModel
 
   private type Draft = TurnDraft[RootMsg, RootState[RootMsg, RootModel]]
 
-  override def flash(draft: Draft): Map[FlashKind, String] = draft.model.flash
+  override def renderState(
+    id: ComponentInstanceId,
+    draft: Draft,
+    state: ComponentEnvironmentState
+  ): RenderState =
+    OwnerRenderState(
+      draft.model.flash,
+      draft.model.uploads,
+      OwnerId.Component(lifecycle, id),
+      ownerEpoch,
+      streamStore(state)
+    )
 
   def mount[P, M, A](
     id: ComponentInstanceId,
@@ -340,7 +352,13 @@ final private class ComponentTurn[RootMsg, RootModel] private (
     }
 
   def afterRenderResult: UIO[ComponentAfterRenderResult[RootMsg, RootState[RootMsg, RootModel]]] =
-    snapshot.map { case (draft, state) => ComponentAfterRenderResult(draft, state) }
+    snapshot.map { case (draft, state) =>
+      val component = state.value.asInstanceOf[ComponentState[Any, Any, Any]]
+      ComponentAfterRenderResult(
+        draft,
+        ComponentEnvironmentState(component.copy(streams = component.streams.settle))
+      )
+    }
 
   private def snapshot
     : UIO[(TurnDraft[RootMsg, RootState[RootMsg, RootModel]], ComponentEnvironmentState)] =

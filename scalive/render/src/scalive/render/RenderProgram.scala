@@ -33,7 +33,7 @@ final class RenderProgram[Input, Msg] private (
   private val identity: RenderProgramId,
   private val source: Signal[Input],
   private val rootScope: SignalScope,
-  private val resolveFlash: Input => Map[FlashKind, String],
+  private val resolveState: Input => RenderState,
   private val template: RenderProgram.ElementTemplate[Msg]):
 
   /** Evaluates `input` against an optional committed render from this program. */
@@ -82,8 +82,10 @@ final class RenderProgram[Input, Msg] private (
             val transaction = SignalEvaluation.begin(signalState, revision, source, input)
             ZIO
               .attempt {
-                val flash = resolveFlash(input)
-                if flash == null then Left(RenderError.InvalidHtml("flash resolver returned null"))
+                val state = resolveState(input)
+                val flash = if state == null then null else state.flash
+                if flash == null then
+                  Left(RenderError.InvalidHtml("render state resolver returned null"))
                 else
                   RenderProgram.evaluateElement(
                     template,
@@ -127,9 +129,10 @@ object RenderProgram:
   def compile[Input, Msg](
     view: Signal[Input] => HtmlElement[Msg]
   ): Either[RenderError, RenderProgram[Input, Msg]] =
-    compile(view, _ => Map.empty)
+    compile(view, _ => RenderState.empty)
 
-  /** Compiles a view once and resolves protocol-neutral flash values from each evaluated input.
+  /** Compiles a view once and resolves its runtime-owned state, such as flash values, uploads, and
+    * streams, from each evaluated input.
     *
     * Each declaration retains only its currently committed present projection. Candidate
     * projections remain isolated until commit. Structurally equivalent continuous projections share
@@ -137,9 +140,9 @@ object RenderProgram:
     */
   def compile[Input, Msg](
     view: Signal[Input] => HtmlElement[Msg],
-    resolveFlash: Input => Map[FlashKind, String]
+    resolveState: Input => RenderState
   ): Either[RenderError, RenderProgram[Input, Msg]] =
-    compileOwned(view, resolveFlash, None)
+    compileOwned(view, resolveState, None)
 
   /** Compiles a component's view, like `compile`.
     *
@@ -148,14 +151,14 @@ object RenderProgram:
     */
   def compileComponent[Input, Msg](
     view: Signal[Input] => HtmlElement[Msg],
-    resolveFlash: Input => Map[FlashKind, String],
+    resolveState: Input => RenderState,
     owner: ComponentRef[Msg]
   ): Either[RenderError, RenderProgram[Input, Msg]] =
-    compileOwned(view, resolveFlash, Some(owner))
+    compileOwned(view, resolveState, Some(owner))
 
   private def compileOwned[Input, Msg](
     view: Signal[Input] => HtmlElement[Msg],
-    resolveFlash: Input => Map[FlashKind, String],
+    resolveState: Input => RenderState,
     owner: Option[ComponentRef[Any]]
   ): Either[RenderError, RenderProgram[Input, Msg]] =
     val scope       = SignalScope.root()
@@ -166,8 +169,9 @@ object RenderProgram:
     try
       (for
         identity <- RenderProgramId.fresh()
-        template <- Compiler(allocator, scope, identity, owner).compileElement(view(source))
-      yield RenderProgram(identity, source, scope, resolveFlash, template)) match
+        template <- Compiler(allocator, scope, identity, owner, source.map(resolveState))
+                      .compileElement(view(source))
+      yield RenderProgram(identity, source, scope, resolveState, template)) match
         case Right(program) => Right(program)
         case Left(error)    =>
           scope.close()
@@ -457,7 +461,8 @@ object RenderProgram:
     scope: SignalScope,
     program: RenderProgramId,
     owner: Option[ComponentRef[Any]],
-    lock: Object):
+    lock: Object,
+    state: Signal[RenderState]):
 
     def compileElement[Msg](element: HtmlElement[Msg]): Either[RenderError, ElementTemplate[Msg]] =
       for
@@ -845,6 +850,26 @@ object RenderProgram:
             _  <- scope.validate(stream)
             id <- allocator.template()
           yield SignalStreamTemplate(id, stream, project, this, StreamTemplate.State())
+        case Mod.Content.ManagedStream(definition, project) =>
+          val stream = state.map(
+            _.stream(definition).getOrElse(
+              throw IllegalStateException(
+                s"stream '${definition.name}' was not created by this LiveView or component"
+              )
+            )
+          )
+          compileContent(Mod.Content.SignalStream(stream, project))
+        case Mod.Content.ManagedUpload(definition, body) =>
+          val upload = state.map(_.upload(definition))
+          body(upload.map(_.get)) match
+            case content: Mod.Content[Msg] =>
+              compileChoice(upload.map(_.isDefined), Vector(true -> content))
+            case _ =>
+              Left(
+                RenderError.InvalidHtml(
+                  s"upload '${definition.name}' must render content, not attributes"
+                )
+              )
         case Mod.Content.Component(spec) =>
           for
             _  <- validateComponentSpec(spec)
@@ -940,7 +965,7 @@ object RenderProgram:
       retained match
         case Some(old) =>
           try
-            Compiler(allocator, old.scope, program, owner, lock)
+            Compiler(allocator, old.scope, program, owner, lock, state)
               .compileElement(project(domId, value)).map { compiled =>
                 val aligned =
                   alignElement(compiled, old.element).getOrElse(markStaticScalars(compiled))
@@ -972,7 +997,7 @@ object RenderProgram:
             for
               rowId   <- RowId.fresh()
               element <-
-                Compiler(allocator, childScope, program, owner, lock).compileElement(
+                Compiler(allocator, childScope, program, owner, lock, state).compileElement(
                   project(source)
                 )
             yield StreamRowTemplate(rowId, childScope, source, element)
@@ -998,7 +1023,7 @@ object RenderProgram:
           try
             for
               rowId   <- RowId.fresh()
-              element <- Compiler(allocator, childScope, program, owner, lock)
+              element <- Compiler(allocator, childScope, program, owner, lock, state)
                            .compileElement(project(source))
             yield DynamicKeyedRowTemplate(rowId, childScope, source, element)
           catch
@@ -1202,17 +1227,19 @@ object RenderProgram:
       allocator: IdentityAllocator,
       scope: SignalScope,
       program: RenderProgramId,
-      owner: Option[ComponentRef[Any]]
+      owner: Option[ComponentRef[Any]],
+      state: Signal[RenderState]
     ): Compiler =
-      new Compiler(allocator, scope, program, owner, Object())
+      new Compiler(allocator, scope, program, owner, Object(), state)
 
     def apply(
       allocator: IdentityAllocator,
       scope: SignalScope,
       program: RenderProgramId,
       owner: Option[ComponentRef[Any]],
-      lock: Object
-    ): Compiler = new Compiler(allocator, scope, program, owner, lock)
+      lock: Object,
+      state: Signal[RenderState]
+    ): Compiler = new Compiler(allocator, scope, program, owner, lock, state)
 
   private def evaluateElement[Msg](
     template: ElementTemplate[Msg],

@@ -14,13 +14,12 @@ object ManagedStreamsSpec extends ZIOSpecDefault:
   private val metadata = RootConnectionMetadata(staticChanged = true, connectParams = Map.empty)
 
   private final case class Item(id: String, label: String)
-  private final case class RootModel(stream: LiveStream[Item], marker: String)
+  private final case class RootModel(marker: String)
 
   private enum RootMessage:
     case Insert(item: Item, at: StreamAt = StreamAt.Last, updateOnly: Boolean = false)
     case Delete(id: String)
     case Reset(items: Vector[Item], at: StreamAt = StreamAt.Last)
-    case InsertButKeepOld(item: Item)
     case InsertConcurrently(items: Vector[Item], finalItem: Item)
     case Unrelated
     case FailAfterInsert(
@@ -31,20 +30,18 @@ object ManagedStreamsSpec extends ZIOSpecDefault:
   private final class RootFixture(definition: LiveStreamDef[Item, String], initial: Vector[Item])
       extends LiveView[RootMessage, RootModel]:
     def mount(ctx: MountContext): Task[RootModel] =
-      ctx.streams.create(definition, initial).map(RootModel(_, "mounted"))
+      ctx.streams.create(definition, initial).as(RootModel("mounted"))
 
     def handleMessage(model: RootModel, ctx: MessageContext): RootMessage => Task[RootModel] =
       case RootMessage.Insert(item, at, updateOnly) =>
-        ctx.streams.insert(definition, item, at, updateOnly).map(RootModel(_, "inserted"))
+        ctx.streams.insert(definition, item, at, updateOnly).as(RootModel("inserted"))
       case RootMessage.Delete(id) =>
-        ctx.streams.delete(definition, id).map(RootModel(_, "deleted"))
+        ctx.streams.delete(definition, id).as(RootModel("deleted"))
       case RootMessage.Reset(items, at) =>
-        ctx.streams.reset(definition, items, at).map(RootModel(_, "reset"))
-      case RootMessage.InsertButKeepOld(item) =>
-        ctx.streams.insert(definition, item).as(model.copy(marker = "stale"))
+        ctx.streams.reset(definition, items, at).as(RootModel("reset"))
       case RootMessage.InsertConcurrently(items, finalItem) =>
         ZIO.foreachParDiscard(items)(ctx.streams.insert(definition, _)) *>
-          ctx.streams.insert(definition, finalItem).map(RootModel(_, "concurrent"))
+          ctx.streams.insert(definition, finalItem).as(RootModel("concurrent"))
       case RootMessage.Unrelated => ZIO.succeed(model.copy(marker = "unrelated"))
       case RootMessage.FailAfterInsert(item, entered, release) =>
         ctx.streams.insert(definition, item) *>
@@ -53,7 +50,7 @@ object ManagedStreamsSpec extends ZIOSpecDefault:
     def view(model: Signal[RootModel]): HtmlElement[RootMessage] =
       div(
         dataAttr("marker") := model.map(_.marker),
-        model.map(_.stream).renderIn(div)(item => span(item.map(_.label)))
+        definition.renderIn(div)(item => span(item.map(_.label)))
       )
 
   override def spec = suite("ManagedStreamsSpec")(
@@ -143,7 +140,6 @@ object ManagedStreamsSpec extends ZIOSpecDefault:
           initialHtml.contains("committed"),
           !initialHtml.contains("uncommitted"),
           committedBefore.marker == "mounted",
-          committedBefore.stream.entries.map(_.domId) == Vector("rollback-items-a"),
           failed.left.exists(_.isInstanceOf[ConnectionError.SessionFailed]),
           unpublished.isEmpty
         )
@@ -174,26 +170,16 @@ object ManagedStreamsSpec extends ZIOSpecDefault:
         )
       }
     },
-    test("rendering a stale stream handle fails before publishing inconsistent DOM state") {
+    test("rendering a stream the view never created fails the render") {
       ZIO.scoped {
-        val definition = LiveStreamDef.byId[Item, String]("stale")(_.id)
-        for
-          outputs <- Queue.unbounded[ConnectionOutput]
-          connection <- RootConnection.start(
-                          config,
-                          metadata,
-                          RootFixture(definition, Vector(Item("a", "one"))),
-                          outputs.offer(_).unit
-                        )
-          _      <- outputs.take
-          result <- connection.submitInfo(RootMessage.InsertButKeepOld(Item("b", "two"))).either
-          closed <- connection.awaitClosed.timeout(1.second)
-          output <- outputs.poll
-        yield assertTrue(
-          result.left.exists(_.isInstanceOf[ConnectionError.SessionFailed]),
-          closed.nonEmpty,
-          output.isEmpty
-        )
+        val created = LiveStreamDef.byId[Item, String]("created")(_.id)
+        val missing = LiveStreamDef.byId[Item, String]("missing")(_.id)
+        val root    = new LiveView.Eventless[Unit]:
+          def mount(ctx: MountContext) = ctx.streams.create(created, Vector(Item("a", "one")))
+          def view(model: Signal[Unit]) =
+            div(missing.renderIn(div)(item => span(item.map(_.label))))
+        for result <- RootConnection.start(config, metadata, root, _ => ZIO.unit).either
+        yield assertTrue(result.left.exists(_.isInstanceOf[ConnectionError.SessionFailed]))
       }
     },
     test("parallel stream operations retain every update and a coherent generation") {
@@ -202,38 +188,33 @@ object ManagedStreamsSpec extends ZIOSpecDefault:
         val concurrent = (1 to 32).map(index => Item(index.toString, s"item $index")).toVector
         val finalItem  = Item("final", "final")
         for
+          outputs <- Queue.unbounded[ConnectionOutput]
           connection <- RootConnection.start(
                           config,
                           metadata,
                           RootFixture(definition, Vector(Item("initial", "initial"))),
-                          _ => ZIO.unit
+                          outputs.offer(_).unit
                         )
-          _ <- connection.submitInfo(RootMessage.InsertConcurrently(concurrent, finalItem))
-          model <- connection.inspectModel
-          ids    = model.stream.entries.map(_.domId).toSet
-          expected = ("parallel-initial" +: concurrent.map(item => s"parallel-${item.id}") :+
-                       "parallel-final").toSet
-        yield assertTrue(ids == expected, model.stream.generation == 34L)
+          _      <- outputs.take
+          _      <- connection.submitInfo(RootMessage.InsertConcurrently(concurrent, finalItem))
+          output <- outputs.take
+          ids     = onlyStreamChanges(output).flatMap(_.operations.inserts.map(_.row.domId)).toSet
+          expected = (concurrent.map(item => s"parallel-${item.id}") :+ "parallel-final").toSet
+        yield assertTrue(ids == expected)
       }
     },
     test("a component cannot render a stream owned by its root") {
       ZIO.scoped {
         val definition = LiveStreamDef.byId[Item, String]("foreign")(_.id)
-        val componentDefinition = new LiveComponent.Eventless[LiveStream[Item], Unit]:
-          def mount(props: LiveStream[Item], ctx: MountContext) = ZIO.unit
-          def view(
-            props: Signal[LiveStream[Item]],
-            model: Signal[Unit],
-          ) = props.renderIn(div)(item => span(item.map(_.label)))
+        val componentDefinition = new LiveComponent.Eventless[Unit, Unit]:
+          def mount(props: Unit, ctx: MountContext) = ZIO.unit
+          def view(props: Signal[Unit], model: Signal[Unit]) =
+            definition.renderIn(div)(item => span(item.map(_.label)))
         val instance = component(componentDefinition, "foreign-stream-owner")
-        val root = new LiveView[Unit, LiveStream[Item]]:
-          def mount(ctx: MountContext) =
-            ctx.streams.create(definition, Vector(Item("a", "one")))
-          def handleMessage(model: LiveStream[Item], ctx: MessageContext)
-            : Unit => Task[LiveStream[Item]] = _ => ZIO.succeed(model)
-          def view(model: Signal[LiveStream[Item]]) = div(instance.render(model))
-        for
-          result <- RootConnection.start(config, metadata, root, _ => ZIO.unit).either
+        val root = new LiveView.Eventless[Unit]:
+          def mount(ctx: MountContext) = ctx.streams.create(definition, Vector(Item("a", "one")))
+          def view(model: Signal[Unit]) = div(instance.render(()))
+        for result <- RootConnection.start(config, metadata, root, _ => ZIO.unit).either
         yield assertTrue(result.left.exists(_.isInstanceOf[ConnectionError.SessionFailed]))
       }
     },
@@ -241,28 +222,23 @@ object ManagedStreamsSpec extends ZIOSpecDefault:
       ZIO.scoped {
         val rootDef      = LiveStreamDef.byId[Item, String]("shared")(_.id)
         val componentDef = LiveStreamDef.byId[Item, String]("shared")(_.id)
-        val definition = new LiveComponent[Unit, Item, LiveStream[Item]]:
+        val definition = new LiveComponent[Unit, Item, Unit]:
           def mount(props: Unit, ctx: MountContext) =
             ctx.streams.create(componentDef, Vector(Item("component", "component")))
-          def handleMessage(
-            props: Unit,
-            model: LiveStream[Item],
-            ctx: MessageContext
-          ): Item => Task[LiveStream[Item]] = item => ctx.streams.insert(componentDef, item)
-          def view(
-            props: Signal[Unit],
-            model: Signal[LiveStream[Item]],
-          ) = model.renderIn(div)(item => span(item.map(_.label)))
+          def handleMessage(props: Unit, model: Unit, ctx: MessageContext): Item => Task[Unit] =
+            item => ctx.streams.insert(componentDef, item)
+          def view(props: Signal[Unit], model: Signal[Unit]) =
+            componentDef.renderIn(div)(item => span(item.map(_.label)))
         val instance = component(definition, "shared-owner")
         val root = new LiveView[RootMessage, RootModel]:
           def mount(ctx: MountContext) =
-            ctx.streams.create(rootDef, Vector(Item("root", "root"))).map(RootModel(_, "mounted"))
+            ctx.streams.create(rootDef, Vector(Item("root", "root"))).as(RootModel("mounted"))
           def handleMessage(model: RootModel, ctx: MessageContext): RootMessage => Task[RootModel] =
             case RootMessage.Insert(item, at, updateOnly) =>
-              ctx.streams.insert(rootDef, item, at, updateOnly).map(RootModel(_, "inserted"))
+              ctx.streams.insert(rootDef, item, at, updateOnly).as(RootModel("inserted"))
             case _ => ZIO.succeed(model)
           def view(model: Signal[RootModel]) =
-            div(model.map(_.stream).renderIn(div)(item => span(item.map(_.label))), instance.render(()))
+            div(rootDef.renderIn(div)(item => span(item.map(_.label))), instance.render(()))
         for
           outputs    <- Queue.unbounded[ConnectionOutput]
           connection <- RootConnection.start(config, metadata, root, outputs.offer(_).unit)
@@ -290,7 +266,7 @@ object ManagedStreamsSpec extends ZIOSpecDefault:
         val definition = LiveStreamDef.byId[Item, String]("component-items")(_.id)
         for
           mounts <- Ref.make(0)
-          componentDefinition = new LiveComponent.Eventless[Unit, LiveStream[Item]]:
+          componentDefinition = new LiveComponent.Eventless[Unit, Unit]:
                                   def mount(props: Unit, ctx: MountContext) =
                                     mounts.updateAndGet(_ + 1).flatMap(number =>
                                       ctx.streams.create(
@@ -298,10 +274,8 @@ object ManagedStreamsSpec extends ZIOSpecDefault:
                                         Vector(Item(s"mount-$number", s"mount $number"))
                                       )
                                     )
-                                  def view(
-                                    props: Signal[Unit],
-                                    model: Signal[LiveStream[Item]],
-                                  ) = model.renderIn(div)(item => span(item.map(_.label)))
+                                  def view(props: Signal[Unit], model: Signal[Unit]) =
+                                    definition.renderIn(div)(item => span(item.map(_.label)))
           instance = component(componentDefinition, "replaceable")
           root = new LiveView[Boolean, Boolean]:
                    def mount(ctx: MountContext) = ZIO.succeed(true)
@@ -336,7 +310,7 @@ object ManagedStreamsSpec extends ZIOSpecDefault:
         for
           rootMounts      <- Ref.make(0)
           componentMounts <- Ref.make(0)
-          componentDefinition = new LiveComponent.Eventless[Unit, LiveStream[Item]]:
+          componentDefinition = new LiveComponent.Eventless[Unit, Unit]:
                                   def mount(props: Unit, ctx: MountContext) =
                                     componentMounts.updateAndGet(_ + 1).flatMap(number =>
                                       ctx.streams.create(
@@ -344,25 +318,17 @@ object ManagedStreamsSpec extends ZIOSpecDefault:
                                         Vector(Item(s"c-$number", s"component $number"))
                                       )
                                     )
-                                  def view(
-                                    props: Signal[Unit],
-                                    model: Signal[LiveStream[Item]],
-                                  ) = model.renderIn(ul)(item => li(item.map(_.label)))
+                                  def view(props: Signal[Unit], model: Signal[Unit]) =
+                                    componentDef.renderIn(ul)(item => li(item.map(_.label)))
           instance = component(componentDefinition, "disconnected-stream")
-          root = new LiveView[Unit, LiveStream[Item]]:
+          root = new LiveView.Eventless[Unit]:
                    def mount(ctx: MountContext) =
                      rootMounts.updateAndGet(_ + 1).flatMap(number =>
                        ctx.streams.create(rootDef, Vector(Item(s"r-$number", s"root $number")))
                      )
-                   def handleMessage(model: LiveStream[Item], ctx: MessageContext)
-                     : Unit => Task[LiveStream[Item]] = _ => ZIO.succeed(model)
-                   def view(model: Signal[LiveStream[Item]]) =
-                     div(model.renderIn(ul)(item => li(item.map(_.label))), instance.render(()))
-          turn <- DisconnectedRootTurn.make[Unit, LiveStream[Item]](
-                    root.hooks,
-                    URL.root,
-                    Map.empty
-                  )
+                   def view(model: Signal[Unit]) =
+                     div(rootDef.renderIn(ul)(item => li(item.map(_.label))), instance.render(()))
+          turn <- DisconnectedRootTurn.make[Nothing, Unit](root.hooks, URL.root, Map.empty)
           disconnectedModel <- root.mount(turn.mountContext)
           disconnectedHtml <- DisconnectedComponentRenderer.renderTurnWith(
                                 root.view,

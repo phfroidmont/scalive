@@ -210,7 +210,7 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
                         )
       componentDefinition = new LiveComponent.Eventless[Unit, LiveUpload[String]]:
                               def mount(props: Unit, ctx: MountContext) =
-                                ctx.uploads.allow(componentUpload).tap { upload =>
+                                allowed(ctx.uploads, componentUpload).tap { upload =>
                                   rootRefs.get.flatMap {
                                     case Some((hostedRef, externalRef)) =>
                                       state.offer(TestState(hostedRef, externalRef, upload.ref)).unit
@@ -250,8 +250,8 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
                   }
                def mount(ctx: MountContext) =
                  for
-                   hostedUpload   <- ctx.uploads.allow(hosted)
-                   externalUpload <- ctx.uploads.allow(external)
+                   hostedUpload   <- allowed(ctx.uploads, hosted)
+                   externalUpload <- allowed(ctx.uploads, external)
                    _              <- rootRefs.set(Some(hostedUpload.ref -> externalUpload.ref))
                  yield hostedUpload -> externalUpload
                def view(model: Signal[(LiveUpload[Chunk[Byte]], LiveUpload[String])]) =
@@ -498,6 +498,9 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
   ): Chunk[Byte] =
     PhoenixUploadProtocol
       .encodeBinary(PhoenixUploadBinaryFrame(joinRef, ref, topic, "chunk", bytes)).toOption.get
+
+  private def allowed[R](uploads: Uploads, definition: LiveUploadDef[R]): Task[LiveUpload[R]] =
+    uploads.allow(definition) *> uploads.get(definition).someOrFail(Exception("upload not allowed"))
 
   def spec = suite("ZIO HTTP upload transport")(
     test("lifecycle observer distinguishes initial, reconnect, and rejected root joins") {

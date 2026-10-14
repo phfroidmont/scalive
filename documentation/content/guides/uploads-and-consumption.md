@@ -8,8 +8,7 @@ group = "Interfaces and input"
 
 ## Before you start {#prerequisites}
 
-Start with a LiveView that can retain immutable values in its model and handle
-form change, submit, and upload progress messages. Every upload mode needs the
+Start with a LiveView that handles form change and submit messages. Every upload mode needs the
 working browser connection from
 [Client setup and static assets](static-assets-and-client-setup.md). An external
 upload additionally needs the custom uploader registration shown below.
@@ -19,10 +18,9 @@ upload additionally needs the custom uploader registration shown below.
 Use this small-file path first:
 
 1. define strict acceptance, count, and byte limits;
-2. call `allow` during every mount and retain its upload snapshot;
-3. render `liveFileInput` and progress feedback;
-4. refresh the upload snapshot when progress arrives; and
-5. consume completed entries, then retain the replacement snapshot.
+2. call `allow` during every mount;
+3. render `liveFileInput` and progress feedback from the upload's current state; and
+4. consume completed entries when the form is submitted.
 
 A @:apiSymbol(class:scalive.LiveUploadDef)`LiveUploadDef[Result]`@:@ fixes the upload
 name, selection policy, limits, destination result type, and whether transfer
@@ -35,8 +33,7 @@ the limits strict and expected concurrency modest.
 
 ## Allow the upload during every mount {#allow-the-upload-during-every-mount}
 
-Keep one stable definition value and retain the returned
-@:apiSymbol(class:scalive.LiveUpload)`LiveUpload[Result]`@:@ snapshot:
+Keep one stable definition value and allow it in `mount`:
 
 @:sourceRegion(documentation/fixtures/guides/src/uploads/TextUploadLiveView.scala, uploads-mount)
 
@@ -44,18 +41,22 @@ Disconnected and connected mounts own independent registrations. Calling
 `allow` in `mount` supports both the initial HTML and the connected LiveView
 without sharing state between visitors.
 
-An upload and each `LiveUploadEntry` are immutable point-in-time views.
-Progress, cancellation, and consumption return replacement snapshots. Store
-the returned value or refresh it through `ctx.uploads.get`; rendering an old
-value renders old protocol attributes and status.
+Scalive keeps the upload's state, so the model holds none of it. Selection,
+progress, cancellation, and consumption change that state, and the view follows
+it without a message. A handler that needs it, for example to check that nothing
+is still uploading, reads it with `ctx.uploads.get`.
 
 ## Render selection, drop, and progress controls {#render-selection-drop-and-progress-controls}
 
-Use @:apiSymbol(def:scalive.liveFileInput)`liveFileInput`@:@ rather than assembling
-protocol attributes by hand. Inside `view`, `model` is a `Signal[Model]`, so
-select the upload with `model.map(_.upload)` and pass that signal to the upload
-helpers. Put `upload.dropTarget` on any element that should accept files dropped
-for this upload:
+Render the upload with
+@:apiSymbol(def:scalive.LiveUploadDef.render)`TextFiles.render`@:@. Its body receives
+a @:apiSymbol(class:scalive.LiveUpload)`Signal[LiveUpload[Result]]`@:@ that
+Scalive keeps current, and renders while the upload is allowed. The body can be
+an element or other content, such as the entries' `splitBy`; call `render` again
+where another part of the view needs the upload. Use
+@:apiSymbol(def:scalive.liveFileInput)`liveFileInput`@:@ rather than assembling
+protocol attributes by hand, and put `upload.dropTarget` on any element that
+should accept files dropped for this upload:
 
 @:sourceRegion(documentation/fixtures/guides/src/uploads/TextUploadLiveView.scala, uploads-render)
 
@@ -64,17 +65,18 @@ entry references, accepted values, multiplicity, automatic-upload marker, and
 Phoenix upload hook. A drop target only routes dropped files to that input; it
 does not relax acceptance, count, or size checks.
 
-`upload.onProgress(Msg.Progress)` is the upload's progress binding. Pass it to
-that upload's `liveFileInput`, right after the upload: the browser reports
-progress only from that input, so the binding is accepted nowhere else. Handle
-the message by fetching the latest snapshot rather than trusting raw browser
-metadata:
+The browser reports the files a visitor selects through the form's change
+event, as in Phoenix, so the form needs a change binding even though its
+message has nothing to do here:
 
-@:sourceRegion(documentation/fixtures/guides/src/uploads/TextUploadLiveView.scala, uploads-progress)
+@:sourceRegion(documentation/fixtures/guides/src/uploads/TextUploadLiveView.scala, uploads-validate)
 
-The overload taking `Map[String, String] => Msg` exposes raw `ref`,
-`entry_ref`, `progress`, and optional `error` values. They are client-controlled
-protocol data, not authorization evidence.
+Progress updates the rendered entries on its own. To react to it, for example to
+start another transfer, pass `upload.onProgress(Msg.Progress)` to that upload's
+`liveFileInput`: the browser reports progress only from that input, so the
+binding is accepted nowhere else. The overload taking `Map[String, String] =>
+Msg` exposes raw `ref`, `entry_ref`, `progress`, and optional `error` values.
+They are client-controlled protocol data, not authorization evidence.
 
 Render upload-wide and entry-specific
 @:apiSymbol(def:scalive.uploadErrors)`uploadErrors`@:@ explicitly, as
@@ -101,13 +103,11 @@ what happens next:
 - `Postpone(value)` keeps the entry and result framework-owned so a later attempt, cancellation, disallow, component removal, or lifecycle shutdown can release it.
 
 For this bounded in-memory path, process the completed bytes before returning
-`Consume`, then retain both the callback values and replacement upload snapshot:
+`Consume`; `consumeCompleted` returns the callback values:
 
 @:sourceRegion(documentation/fixtures/guides/src/uploads/TextUploadLiveView.scala, uploads-consume)
 
-Retain the returned replacement upload snapshot even when application code does
-not need the callback results. Cancel with the current entry snapshot and retain
-that returned upload too:
+Cancel an entry with the value the view rendered:
 
 @:sourceRegion(documentation/fixtures/guides/src/uploads/TextUploadLiveView.scala, uploads-cancel)
 

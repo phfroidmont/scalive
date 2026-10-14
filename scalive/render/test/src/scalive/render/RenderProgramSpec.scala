@@ -480,7 +480,7 @@ object RenderProgramSpec extends ZIOSpecDefault:
             projections :+= message
             span(message)
           }),
-        _._2
+        value => RenderState(value._2)
       )
 
       for
@@ -511,7 +511,7 @@ object RenderProgramSpec extends ZIOSpecDefault:
             val rows = items.splitBy(identity)((_, item) => strong(item))
             if message == "first" then div(rows) else span(rows)
           }),
-        _._1
+        value => RenderState(value._1)
       )
 
       for
@@ -574,7 +574,7 @@ object RenderProgramSpec extends ZIOSpecDefault:
             throw RuntimeException(message)
           }, message)
         }),
-        identity
+        RenderState(_)
       )
 
       for
@@ -607,7 +607,7 @@ object RenderProgramSpec extends ZIOSpecDefault:
       val notice = FlashKind("notice")
       val compiled = RenderProgram.compile[Map[FlashKind, String], Nothing](
         _ => div(flash(notice)(message => button(on.click(_ => throw RuntimeException(message)), on.click(_ => throw RuntimeException(message))))),
-        identity
+        RenderState(_)
       )
 
       for
@@ -634,7 +634,7 @@ object RenderProgramSpec extends ZIOSpecDefault:
             )
           else button(on.click(_ => throw RuntimeException(message)), message)
         }),
-        identity
+        RenderState(_)
       )
 
       for

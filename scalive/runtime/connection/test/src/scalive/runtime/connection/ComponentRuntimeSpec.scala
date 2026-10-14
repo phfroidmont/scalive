@@ -520,6 +520,35 @@ object ComponentRuntimeSpec extends ZIOSpecDefault:
         )
       }
     },
+    test("stream operations of a component that patches reach the browser with the patch") {
+      ZIO.scoped {
+        val destination = URL.decode("/component-patch").toOption.get
+        val items       = LiveStreamDef.byId[String, String]("items")(identity)
+        val definition  = new LiveComponent[Unit, Unit, Unit]:
+          def mount(props: Unit, ctx: MountContext) = ctx.streams.create(items, Vector("first"))
+          def handleMessage(props: Unit, model: Unit, ctx: MessageContext): Unit => Task[Unit] =
+            _ =>
+              ctx.streams.insert(items, "inserted") *> ctx.nav.pushPatchUnsafe(destination.encode)
+          def view(props: Signal[Unit], model: Signal[Unit]) =
+            items.renderIn(div)(item => span(item))
+        val instance = component(definition, "patch-stream")
+        val view     = new LiveView[Unit, Unit]:
+          def mount(ctx: MountContext) = ZIO.unit
+          def handleMessage(model: Unit, ctx: MessageContext): Unit => Task[Unit] = _ => ZIO.unit
+          def view(model: Signal[Unit]) = div(instance.render(()))
+        for
+          sink         <- Queue.unbounded[ConnectionOutput]
+          connection   <- RootConnection.start(config, metadata, view, sink.offer(_).unit)
+          _            <- sink.take
+          id           <- connection.inspectComponentIds.map(_.head)
+          command       = CommandId.fresh().toOption.get
+          _            <- connection.submitComponentMessage(command, id, ())
+          _            <- sink.take
+          _            <- connection.submitPatch(CommandId.fresh().toOption.get, destination)
+          acknowledged <- sink.take
+        yield assertTrue(acknowledged.toString.contains("items-inserted"))
+      }
+    },
     test("component redirect publishes navigation and closes") {
       ZIO.scoped {
         val destination = URL.decode("/component-redirect").toOption.get

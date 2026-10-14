@@ -2,7 +2,7 @@ import java.nio.charset.StandardCharsets
 
 import zio.durationInt
 import zio.json.ast.Json
-import zio.{Chunk, Task, ZIO}
+import zio.{Chunk, ZIO}
 
 import scalive.*
 import scalive.codecs.StringAsIsEncoder
@@ -28,59 +28,53 @@ private def issueUploadError(error: LiveUploadError): String =
 class Issue2835LiveView extends LiveView[Issue2835LiveView.Msg, Issue2835LiveView.Model]:
   import Issue2835LiveView.*
 
-  def mount(ctx: MountContext) = ctx.uploads.allow(Upload).map(Model(_))
+  def mount(ctx: MountContext) = ctx.uploads.allow(Upload).as(Model())
 
   def handleMessage(model: Model, ctx: MessageContext) =
-    case Msg.Validate => refresh(model, ctx.uploads)
+    case Msg.Validate => ZIO.succeed(model)
     case Msg.Progress =>
-      refresh(model, ctx.uploads).flatMap { current =>
-        current.upload.entries.find(_.status == LiveUploadEntryStatus.Completed) match
+      ctx.uploads.get(Upload).flatMap { upload =>
+        upload.toList.flatMap(_.entries).find(_.status == LiveUploadEntryStatus.Completed) match
           case Some(entry) =>
             ctx.uploads
               .consume(entry)(completed =>
                 ZIO.succeed(ConsumeDecision.Consume(completed.client.fileName))
-              ).map { case (name, upload) =>
-                current.copy(upload = upload, uploadedFiles = current.uploadedFiles :+ name)
-              }
-          case None => ZIO.succeed(current)
+              ).map(name => model.copy(uploadedFiles = model.uploadedFiles :+ name))
+          case None => ZIO.succeed(model)
       }
 
   override def view(model: Signal[Model]) =
-    val upload = model.map(_.upload)
     div(
-      form(
-        idAttr   := "upload-form",
-        phx.hook := "Issue2835UploadSync",
-        on.change(_ => Msg.Validate),
-        liveFileInput(upload, upload.onProgress(_ => Msg.Progress)),
-        upload.map(_.entries).splitBy(_.ref) { (_, entry) =>
-          articleTag(
-            cls           := "upload-entry",
-            issueDataName := entry.map(_.client.fileName),
-            entry.map(current => s"${current.client.fileName}: ${current.progress}%")
+      Upload.render { upload =>
+        form(
+          idAttr   := "upload-form",
+          phx.hook := "Issue2835UploadSync",
+          on.change(_ => Msg.Validate),
+          liveFileInput(upload, upload.onProgress(_ => Msg.Progress)),
+          upload.map(_.entries).splitBy(_.ref) { (_, entry) =>
+            articleTag(
+              cls           := "upload-entry",
+              issueDataName := entry.map(_.client.fileName),
+              entry.map(current => s"${current.client.fileName}: ${current.progress}%")
+            )
+          },
+          uploadErrors(upload).splitBy(_.toString)((_, error) =>
+            p(cls := "upload-error", error.map(issueUploadError))
           )
-        },
-        uploadErrors(upload).splitBy(_.toString)((_, error) =>
-          p(cls := "upload-error", error.map(issueUploadError))
         )
-      ),
+      },
       ul(
         idAttr := "uploaded-files",
         model.map(_.uploadedFiles).splitBy(identity)((_, name) => li(name))
       )
     )
-
-  private def refresh(model: Model, uploads: Uploads): Task[Model] =
-    uploads.get(Upload).map(_.fold(model)(upload => model.copy(upload = upload)))
 end Issue2835LiveView
 
 object Issue2835LiveView:
   enum Msg:
     case Validate, Progress
 
-  final case class Model(
-    upload: LiveUpload[Chunk[Byte]],
-    uploadedFiles: Vector[String] = Vector.empty)
+  final case class Model(uploadedFiles: Vector[String] = Vector.empty)
 
   private val Upload = LiveUploadDef.inMemory(
     "documents",
@@ -90,21 +84,19 @@ object Issue2835LiveView:
     maxEntriesMode = LiveUploadMaxEntriesMode.Total
   )
 
-class Issue3199LiveView(away: Boolean)
-    extends LiveView[Issue3199LiveView.Msg, Option[LiveStream[Issue3199LiveView.Item]]]:
+class Issue3199LiveView(away: Boolean) extends LiveView[Issue3199LiveView.Msg, Unit]:
   import Issue3199LiveView.*
 
   def mount(ctx: MountContext) =
-    if away then ZIO.succeed(None)
-    else ctx.streams.create(Items, List(Item(1, "Item 1"), Item(2, "Item 2"))).map(Some(_))
+    if away then ZIO.unit
+    else ctx.streams.create(Items, List(Item(1, "Item 1"), Item(2, "Item 2")))
 
-  def handleMessage(model: Option[LiveStream[Item]], ctx: MessageContext) =
+  def handleMessage(model: Unit, ctx: MessageContext) =
     case Msg.Delete(id) =>
-      model match
-        case Some(_) => ctx.streams.delete(Items, id).map(Some(_))
-        case None    => ZIO.succeed(model)
+      if away then ZIO.unit
+      else ctx.streams.delete(Items, id)
 
-  override def view(model: Signal[Option[LiveStream[Item]]]) =
+  override def view(model: Signal[Unit]) =
     if away then h1("Away")
     else
       div(
@@ -118,15 +110,14 @@ class Issue3199LiveView(away: Boolean)
         ul(
           idAttr     := "items",
           phx.update := PhxUpdate.Stream,
-          model
-            .map(_.get).stream((domId, item) =>
-              li(
-                idAttr := domId,
-                dom.onRemove(JS.transition("item-removing", time = 1000.millis)),
-                item.map(_.name),
-                button(on.click(item.map(current => Msg.Delete(current.id))), "Delete")
-              )
+          Items.stream((domId, item) =>
+            li(
+              idAttr := domId,
+              dom.onRemove(JS.transition("item-removing", time = 1000.millis)),
+              item.map(_.name),
+              button(on.click(item.map(current => Msg.Delete(current.id))), "Delete")
             )
+          )
         )
       )
 end Issue3199LiveView
@@ -140,41 +131,39 @@ object Issue3199LiveView:
 class Issue3319LiveView extends LiveView[Issue3319LiveView.Msg, Issue3319LiveView.Model]:
   import Issue3319LiveView.*
 
-  def mount(ctx: MountContext) = ctx.uploads.allow(Upload).map(Model(_))
+  def mount(ctx: MountContext) = ctx.uploads.allow(Upload).as(Model())
 
   def handleMessage(model: Model, ctx: MessageContext) =
-    case Msg.Validate => refresh(model, ctx.uploads)
+    case Msg.Validate => ZIO.succeed(model)
     case Msg.Submit   =>
       ctx.uploads
         .consumeCompleted(Upload)(entry =>
           ZIO.succeed(ConsumeDecision.Consume(entry.client.fileName))
-        ).map { case (names, upload) => model.copy(upload = upload, submitted = names.toVector) }
+        ).map(names => model.copy(submitted = names.toVector))
 
   override def view(model: Signal[Model]) =
-    val upload = model.map(_.upload)
     div(
-      form(
-        idAttr := "upload-form",
-        on.change(_ => Msg.Validate),
-        on.submit(Msg.Submit),
-        liveFileInput(upload, required := true),
-        button(typ                     := "submit", "Submit"),
-        upload
-          .map(_.entries).splitBy(_.ref)((_, entry) =>
-            p(cls := "upload-entry", entry.map(_.client.fileName))
-          )
-      ),
+      Upload.render { upload =>
+        form(
+          idAttr := "upload-form",
+          on.change(_ => Msg.Validate),
+          on.submit(Msg.Submit),
+          liveFileInput(upload, required := true),
+          button(typ                     := "submit", "Submit"),
+          upload
+            .map(_.entries).splitBy(_.ref)((_, entry) =>
+              p(cls := "upload-entry", entry.map(_.client.fileName))
+            )
+        )
+      },
       p(idAttr := "submitted", model.map(_.submitted.mkString(",")))
     )
-
-  private def refresh(model: Model, uploads: Uploads) =
-    uploads.get(Upload).map(_.fold(model)(upload => model.copy(upload = upload)))
 end Issue3319LiveView
 
 object Issue3319LiveView:
   enum Msg:
     case Validate, Submit
-  final case class Model(upload: LiveUpload[Chunk[Byte]], submitted: Vector[String] = Vector.empty)
+  final case class Model(submitted: Vector[String] = Vector.empty)
   private val Upload = LiveUploadDef.inMemory(
     "documents",
     LiveUploadAccept.Any,
@@ -191,43 +180,46 @@ object Issue3368LiveView:
   object UploadComponent extends LiveComponent[Unit, UploadComponent.Msg, UploadComponent.Model]:
     enum Msg:
       case Validate, Save
-    final case class Model(
-      upload: LiveUpload[Chunk[Byte]],
-      savedFiles: Vector[String] = Vector.empty)
+    final case class Model(savedFiles: Vector[String] = Vector.empty)
 
     private val Upload = LiveUploadDef.inMemory(
       "file",
       LiveUploadAccept.only(".jpg", ".jpeg", ".png", ".gif")
     )
 
-    def mount(props: Unit, ctx: MountContext) = ctx.uploads.allow(Upload).map(Model(_))
+    def mount(props: Unit, ctx: MountContext) = ctx.uploads.allow(Upload).as(Model())
 
     def handleMessage(props: Unit, model: Model, ctx: MessageContext) =
       case Msg.Validate =>
-        ctx.uploads.get(Upload).map(_.fold(model)(upload => model.copy(upload = upload)))
+        ZIO.succeed(model)
       case Msg.Save =>
         ctx.uploads
           .consumeCompleted(Upload)(entry =>
             ZIO.succeed(ConsumeDecision.Consume(entry.client.fileName))
-          ).map { case (names, upload) => model.copy(upload, names.toVector) }
+          ).map(names => model.copy(savedFiles = names.toVector))
 
     override def view(props: Signal[Unit], model: Signal[Model]) =
-      val upload = model.map(_.upload)
       div(
-        form(
-          idAttr := "upload-form",
-          on.change(_ => Msg.Validate),
-          on.submit(Msg.Save),
-          div(idAttr := "dropzone", upload.dropTarget, "Drop files here"),
-          liveFileInput(upload),
-          button(typ := "submit", "Upload")
+        Upload.render(upload =>
+          form(
+            idAttr := "upload-form",
+            on.change(_ => Msg.Validate),
+            on.submit(Msg.Save),
+            div(idAttr := "dropzone", upload.dropTarget, "Drop files here"),
+            liveFileInput(upload),
+            button(typ := "submit", "Upload")
+          )
         ),
-        upload
-          .map(_.entries).splitBy(_.ref)((_, entry) =>
-            p(cls := "upload-entry", entry.map(_.client.fileName))
-          ),
-        uploadErrors(upload).splitBy(_.toString)((_, error) =>
-          p(cls := "upload-error", error.map(issueUploadError))
+        Upload.render(upload =>
+          upload
+            .map(_.entries).splitBy(_.ref)((_, entry) =>
+              p(cls := "upload-entry", entry.map(_.client.fileName))
+            )
+        ),
+        Upload.render(upload =>
+          uploadErrors(upload).splitBy(_.toString)((_, error) =>
+            p(cls := "upload-error", error.map(issueUploadError))
+          )
         ),
         p(idAttr := "saved-files", model.map(_.savedFiles.mkString(",")))
       )
@@ -237,48 +229,46 @@ end Issue3368LiveView
 class Issue3391LiveView extends LiveView[Issue3391LiveView.Msg, Issue3391LiveView.Model]:
   import Issue3391LiveView.*
 
-  def mount(ctx: MountContext) = ctx.uploads.allow(Upload).map(Model(_))
+  def mount(ctx: MountContext) = ctx.uploads.allow(Upload).as(Model())
 
   def handleMessage(model: Model, ctx: MessageContext) =
-    case Msg.Validate => refresh(model, ctx.uploads)
+    case Msg.Validate => ZIO.succeed(model)
     case Msg.Progress =>
-      refresh(model, ctx.uploads).flatMap { current =>
-        current.upload.entries.find(_.status == LiveUploadEntryStatus.Completed) match
+      ctx.uploads.get(Upload).flatMap { upload =>
+        upload.toList.flatMap(_.entries).find(_.status == LiveUploadEntryStatus.Completed) match
           case Some(entry) =>
             ctx.uploads
               .consume(entry)(_ => ZIO.succeed(ConsumeDecision.Consume(())))
-              .map { case (_, upload) => current.copy(upload = upload, uploaded = true) }
-          case None => ZIO.succeed(current)
+              .as(model.copy(uploaded = true))
+          case None => ZIO.succeed(model)
       }
-    case Msg.Cancel(entry) => ctx.uploads.cancel(entry).map(upload => model.copy(upload = upload))
+    case Msg.Cancel(entry) => ctx.uploads.cancel(entry).as(model)
     case Msg.Submit        => ZIO.succeed(model.copy(submitted = true))
 
   override def view(model: Signal[Model]) =
-    val upload = model.map(_.upload)
     div(
-      form(
-        idAttr := "upload-form",
-        on.change(_ => Msg.Validate),
-        on.submit(Msg.Submit),
-        liveFileInput(upload, upload.onProgress(_ => Msg.Progress)),
-        button(typ := "submit", "Submit"),
-        upload.map(_.entries).splitBy(_.ref) { (_, entry) =>
-          articleTag(
-            cls := "upload-entry",
-            span(entry.map(current => s"${current.client.fileName}: ${current.progress}%")),
-            button(typ := "button", on.click(entry.map(Msg.Cancel.apply)), "Cancel"),
-            uploadErrors(entry).splitBy(_.toString)((_, error) =>
-              p(cls := "upload-error", error.map(issueUploadError))
+      Upload.render { upload =>
+        form(
+          idAttr := "upload-form",
+          on.change(_ => Msg.Validate),
+          on.submit(Msg.Submit),
+          liveFileInput(upload, upload.onProgress(_ => Msg.Progress)),
+          button(typ := "submit", "Submit"),
+          upload.map(_.entries).splitBy(_.ref) { (_, entry) =>
+            articleTag(
+              cls := "upload-entry",
+              span(entry.map(current => s"${current.client.fileName}: ${current.progress}%")),
+              button(typ := "button", on.click(entry.map(Msg.Cancel.apply)), "Cancel"),
+              uploadErrors(entry).splitBy(_.toString)((_, error) =>
+                p(cls := "upload-error", error.map(issueUploadError))
+              )
             )
-          )
-        }
-      ),
+          }
+        )
+      },
       p(idAttr := "uploaded", model.map(current => s"uploaded: ${current.uploaded}")),
       p(idAttr := "submitted", model.map(current => s"submitted: ${current.submitted}"))
     )
-
-  private def refresh(model: Model, uploads: Uploads) =
-    uploads.get(Upload).map(_.fold(model)(upload => model.copy(upload = upload)))
 end Issue3391LiveView
 
 object Issue3391LiveView:
@@ -286,7 +276,6 @@ object Issue3391LiveView:
     case Validate, Progress, Submit
     case Cancel(entry: LiveUploadEntry[Chunk[Byte]])
   final case class Model(
-    upload: LiveUpload[Chunk[Byte]],
     submitted: Boolean = false,
     uploaded: Boolean = false)
   private val Upload = LiveUploadDef.inMemory(
@@ -362,14 +351,14 @@ class Issue4212LiveView extends LiveView[Issue4212LiveView.Msg, Issue4212LiveVie
   import Issue4212LiveView.*
 
   def mount(ctx: MountContext) =
-    ctx.streams.create(Items, InitialItems).map(items => Model(items))
+    ctx.streams.create(Items, InitialItems).as(Model())
 
   def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.Insert =>
       val counter = model.counter + 1
       ctx.streams
         .insert(Items, Item(s"new$counter", s"New $counter"), at = StreamAt.Index(1))
-        .map(items => Model(items, counter))
+        .as(Model(counter))
 
   override def view(model: Signal[Model]) =
     div(
@@ -377,23 +366,22 @@ class Issue4212LiveView extends LiveView[Issue4212LiveView.Msg, Issue4212LiveVie
       ul(
         idAttr     := "items",
         phx.update := PhxUpdate.Stream,
-        model
-          .map(_.items).stream((domId, item) =>
-            li(
-              idAttr := domId,
-              issue4212Element(
-                idAttr := item.map(current => s"el-${current.id}"),
-                item.map(_.name)
-              )
+        Items.stream((domId, item) =>
+          li(
+            idAttr := domId,
+            issue4212Element(
+              idAttr := item.map(current => s"el-${current.id}"),
+              item.map(_.name)
             )
           )
+        )
       )
     )
 end Issue4212LiveView
 
 object Issue4212LiveView:
   final case class Item(id: String, name: String)
-  final case class Model(items: LiveStream[Item], counter: Int = 0)
+  final case class Model(counter: Int = 0)
   enum Msg:
     case Insert
   private val Items        = LiveStreamDef.byId[Item, String]("items")(_.id)
@@ -616,57 +604,56 @@ object Issue4359LiveView:
 class Issue4368LiveView extends LiveView[Issue4368LiveView.Msg, Issue4368LiveView.Model]:
   import Issue4368LiveView.*
 
-  def mount(ctx: MountContext) = ctx.uploads.allow(Upload).map(Model(_))
+  def mount(ctx: MountContext) = ctx.uploads.allow(Upload).as(Model())
 
   def handleMessage(model: Model, ctx: MessageContext) =
-    case Msg.Validate => refresh(model, ctx.uploads)
+    case Msg.Validate => ZIO.succeed(model)
     case Msg.Progress =>
-      refresh(model, ctx.uploads).flatMap { current =>
-        current.upload.entries.find(_.status == LiveUploadEntryStatus.Completed) match
+      ctx.uploads.get(Upload).flatMap { upload =>
+        upload.toList.flatMap(_.entries).find(_.status == LiveUploadEntryStatus.Completed) match
           case Some(entry) =>
             ctx.uploads
               .consume(entry)(completed =>
                 ZIO.succeed(ConsumeDecision.Consume(completed.client.fileName))
-              ).map { case (name, upload) =>
-                current.copy(upload = upload, consumed = name +: current.consumed)
-              }
-          case None => ZIO.succeed(current)
+              ).map(name => model.copy(consumed = name +: model.consumed))
+          case None => ZIO.succeed(model)
       }
-    case Msg.Cancel(entry) => ctx.uploads.cancel(entry).map(upload => model.copy(upload = upload))
+    case Msg.Cancel(entry) => ctx.uploads.cancel(entry).as(model)
     case Msg.Submit        =>
       ctx.uploads.get(Upload).map {
-        case Some(upload) if upload.entries.nonEmpty => model.copy(upload = upload)
-        case latest => model.copy(upload = latest.getOrElse(model.upload), submitted = true)
+        case Some(upload) if upload.entries.nonEmpty => model
+        case _                                       => model.copy(submitted = true)
       }
 
   override def view(model: Signal[Model]) =
-    val upload = model.map(_.upload)
     div(
       idAttr := "issue-4368",
       form(
         idAttr := "upload-form",
         on.change(_ => Msg.Validate),
         on.submit(Msg.Submit),
-        liveFileInput(upload, upload.onProgress(_ => Msg.Progress)),
+        Upload.render(upload => liveFileInput(upload, upload.onProgress(_ => Msg.Progress))),
         button(typ := "submit", "Submit")
       ),
       p(idAttr := "submitted", model.map(current => s"submitted: ${current.submitted}")),
-      p(idAttr := "consumed", model.map(current => s"consumed: ${current.consumed.mkString(",")}")),
-      upload.map(_.entries).splitBy(_.ref) { (_, entry) =>
-        articleTag(
-          cls           := "upload-entry",
-          issueDataName := entry.map(_.client.fileName),
-          span(entry.map(current => s"${current.client.fileName}: ${current.progress}%")),
-          button(typ := "button", on.click(entry.map(Msg.Cancel.apply)), "Cancel"),
-          uploadErrors(entry).splitBy(_.toString)((_, error) =>
-            p(cls := "upload-error", error.map(issueUploadError))
+      p(
+        idAttr := "consumed",
+        model.map(current => s"consumed: ${current.consumed.mkString(",")}")
+      ),
+      Upload.render(upload =>
+        upload.map(_.entries).splitBy(_.ref) { (_, entry) =>
+          articleTag(
+            cls           := "upload-entry",
+            issueDataName := entry.map(_.client.fileName),
+            span(entry.map(current => s"${current.client.fileName}: ${current.progress}%")),
+            button(typ := "button", on.click(entry.map(Msg.Cancel.apply)), "Cancel"),
+            uploadErrors(entry).splitBy(_.toString)((_, error) =>
+              p(cls := "upload-error", error.map(issueUploadError))
+            )
           )
-        )
-      }
+        }
+      )
     )
-
-  private def refresh(model: Model, uploads: Uploads) =
-    uploads.get(Upload).map(_.fold(model)(upload => model.copy(upload = upload)))
 end Issue4368LiveView
 
 object Issue4368LiveView:
@@ -675,7 +662,6 @@ object Issue4368LiveView:
     case Cancel(entry: LiveUploadEntry[String])
 
   final case class Model(
-    upload: LiveUpload[String],
     consumed: Vector[String] = Vector.empty,
     submitted: Boolean = false)
 

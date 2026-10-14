@@ -1061,8 +1061,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                   committed,
                   interim.work,
                   commandId,
-                  response,
-                  Some(pending.committed.render)
+                  response
                 )
               }
             case Exit.Failure(cause) if cause.isInterruptedOnly =>
@@ -1081,8 +1080,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
           pending.committed,
           work,
           commandId,
-          response,
-          None
+          response
         )
     end match
   end acknowledgePatch
@@ -1092,8 +1090,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     base: Committed[Msg, Model],
     work: ImmutableQueue[Work[Msg, Model]],
     commandId: CommandId,
-    response: Promise[SessionRejection, TurnResult],
-    diffBaseline: Option[CommittedRender[Msg]]
+    response: Promise[SessionRejection, TurnResult]
   ): UIO[Unit] =
     val pending = state.pending
     val replay  = work.enqueueAll(pending.deferred.map(Work.Correlated(_)))
@@ -1139,7 +1136,6 @@ final private[scalive] class SessionKernel[Msg, Model] private (
               replay,
               ZIO.succeed(draft),
               Some(tracked),
-              diffBaseline,
               startedAtNanos = Some(handlerStarted)
             )
           case Exit.Failure(cause) if cause.isInterruptedOnly =>
@@ -1287,7 +1283,6 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     work: ImmutableQueue[Work[Msg, Model]],
     draft: ZIO[Any, SessionFailure, TurnDraft[Msg, Model]],
     response: Option[TrackedCommand],
-    diffBaseline: Option[CommittedRender[Msg]] = None,
     publish: Boolean = true,
     startedAtNanos: Option[Long]
   ): UIO[Unit] =
@@ -1296,7 +1291,6 @@ final private[scalive] class SessionKernel[Msg, Model] private (
       draft,
       work,
       response,
-      diffBaseline = diffBaseline,
       publish = publish,
       startedAtNanos = startedAtNanos
     ).exit.flatMap {
@@ -1500,7 +1494,6 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     work: ImmutableQueue[Work[Msg, Model]],
     command: Option[TrackedCommand],
     componentAction: Option[(ComponentInstanceId, ComponentAction)] = None,
-    diffBaseline: Option[CommittedRender[Msg]] = None,
     publish: Boolean = true,
     startedAtNanos: Option[Long] = None,
     onTurnStarted: UIO[Unit] = ZIO.unit
@@ -1551,7 +1544,6 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                                         nextDraft,
                                         work.size,
                                         componentAction,
-                                        diffBaseline,
                                         commandId,
                                         started,
                                         kind
@@ -1614,7 +1606,6 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     draft: TurnDraft[Msg, Model],
     existingContinuations: Int,
     componentAction: Option[(ComponentInstanceId, ComponentAction)],
-    diffBaseline: Option[CommittedRender[Msg]],
     command: Option[CommandId],
     startedAtNanos: Long,
     observedKind: LifecycleTurnKind
@@ -1727,9 +1718,10 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                                     )
                       _             <- observer.emit(RuntimeEvent.CandidateValidated(correlation))
                       rollbackClaim <- Ref.make(true)
-                      delta = diffBaseline.orElse(previous.map(_.render)) match
-                                case Some(committed) => TreeDiffer.diff(committed.tree, render.tree)
-                                case None            => TreeDiffer.initial(render.tree)
+                      delta = previous match
+                                case Some(committed) =>
+                                  TreeDiffer.diff(committed.published, render.tree)
+                                case None => TreeDiffer.initial(render.tree)
                       _ <- observer.diff(correlation, delta != RenderDelta.Empty)
                       _ <- observer.emit(RuntimeEvent.DiffCompleted(correlation))
                     yield TurnCandidate(
@@ -2216,7 +2208,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                        renderPhase(
                          ZIO.fromEither(
                            RenderProgram
-                             .compileComponent[(P, A, Map[scalive.FlashKind, String]), M](
+                             .compileComponent[(P, A, RenderState), M](
                                input => component.view(input.map(_._1), input.map(_._2)),
                                _._3,
                                ref
@@ -2354,7 +2346,8 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                                        (
                                          finalProps,
                                          refreshed.model,
-                                         componentEnvironment.flash(refreshed.draft)
+                                         componentEnvironment
+                                           .renderState(id, refreshed.draft, refreshed.state)
                                        ),
                                        old.map(_.render),
                                        scope
@@ -2405,7 +2398,11 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                                     (
                                       postChildProps,
                                       postChildResult.model,
-                                      componentEnvironment.flash(postChildResult.draft)
+                                      componentEnvironment.renderState(
+                                        id,
+                                        postChildResult.draft,
+                                        postChildResult.state
+                                      )
                                     ),
                                     old.map(_.render),
                                     replacementScope
@@ -3116,11 +3113,13 @@ final private[scalive] class SessionKernel[Msg, Model] private (
       dormant   = previous.toVector
                   .flatMap(_.components.allValues)
                   .filterNot(component => activeIds.contains(component.id))
-      forest = ComponentForest(candidate.components.roots, components ++ dormant)
-      next   = Committed(
+      forest    = ComponentForest(candidate.components.roots, components ++ dormant)
+      published = if publish then render.tree else previous.fold(render.tree)(_.published)
+      next      = Committed(
                candidate.draft.model,
                candidate.draft.url.orElse(previous.map(_.url)).getOrElse(URL.root),
                render,
+               published,
                forest,
                candidate.resources,
                candidate.managedResources,

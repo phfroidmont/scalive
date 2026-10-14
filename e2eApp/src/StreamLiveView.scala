@@ -15,16 +15,10 @@ class StreamLiveView()
 
   def mount(_params: Option[String], ctx: MountContext) =
     for
-      users          <- ctx.streams.create(UsersStreamDef, InitialUsers)
-      admins         <- ctx.streams.create(AdminsStreamDef, InitialAdmins)
-      componentUsers <- ctx.streams.create(ComponentUsersStreamDef, InitialUsers)
-    yield Model(
-      users = users,
-      admins = admins,
-      componentUsers = componentUsers,
-      count = 0,
-      extraItemWithId = false
-    )
+      _ <- ctx.streams.create(UsersStreamDef, InitialUsers)
+      _ <- ctx.streams.create(AdminsStreamDef, InitialAdmins)
+      _ <- ctx.streams.create(ComponentUsersStreamDef, InitialUsers)
+    yield Model(count = 0, extraItemWithId = false)
 
   override def handleParams(model: Model, params: Option[String], _url: URL, ctx: ParamsContext) =
     ZIO.succeed(model.copy(extraItemWithId = params.isDefined))
@@ -53,7 +47,7 @@ class StreamLiveView()
       div(
         idAttr     := "users",
         phx.update := PhxUpdate.Stream,
-        model.map(_.users).stream { (domId, user) =>
+        UsersStreamDef.stream { (domId, user) =>
           div(
             idAttr            := domId,
             dataAttr("count") := count,
@@ -95,7 +89,7 @@ class StreamLiveView()
       div(
         idAttr     := "admins",
         phx.update := PhxUpdate.Stream,
-        model.map(_.admins).stream { (domId, user) =>
+        AdminsStreamDef.stream { (domId, user) =>
           div(
             idAttr            := domId,
             dataAttr("count") := count,
@@ -126,7 +120,7 @@ class StreamLiveView()
       div(
         idAttr     := "c_users",
         phx.update := PhxUpdate.Stream,
-        model.map(_.componentUsers).stream { (domId, user) =>
+        ComponentUsersStreamDef.stream { (domId, user) =>
           div(
             idAttr := domId,
             user.map(_.name),
@@ -183,62 +177,25 @@ class StreamLiveView()
   private def handle(model: Model, msg: Msg, streams: Streams): Task[Model] =
     msg match
       case Msg.DeleteUser(id) =>
-        streams.delete(UsersStreamDef, id).map(users => model.copy(users = users))
+        streams.delete(UsersStreamDef, id).as(model)
       case Msg.UpdateUser(domId) =>
-        updateUserInStream(model, domId, UsersPrefix, UsersStreamDef, streams)(users =>
-          model.copy(users = users)
-        )
+        updateUserInStream(model, domId, UsersPrefix, UsersStreamDef, streams)
       case Msg.MoveUserToFirst(domId) =>
-        moveUserInStream(
-          model,
-          domId,
-          UsersPrefix,
-          UsersStreamDef,
-          StreamAt.First,
-          streams
-        )(users => model.copy(users = users))
+        moveUserInStream(model, domId, UsersPrefix, UsersStreamDef, StreamAt.First, streams)
       case Msg.MoveUserToLast(domId) =>
-        moveUserInStream(
-          model,
-          domId,
-          UsersPrefix,
-          UsersStreamDef,
-          StreamAt.Last,
-          streams
-        )(users => model.copy(users = users))
+        moveUserInStream(model, domId, UsersPrefix, UsersStreamDef, StreamAt.Last, streams)
       case Msg.DeleteAdmin(id) =>
-        streams.delete(AdminsStreamDef, id).map(admins => model.copy(admins = admins))
+        streams.delete(AdminsStreamDef, id).as(model)
       case Msg.UpdateAdmin(domId) =>
-        updateUserInStream(model, domId, AdminsPrefix, AdminsStreamDef, streams)(admins =>
-          model.copy(admins = admins)
-        )
+        updateUserInStream(model, domId, AdminsPrefix, AdminsStreamDef, streams)
       case Msg.MoveAdminToFirst(domId) =>
-        moveUserInStream(
-          model,
-          domId,
-          AdminsPrefix,
-          AdminsStreamDef,
-          StreamAt.First,
-          streams
-        )(admins => model.copy(admins = admins))
+        moveUserInStream(model, domId, AdminsPrefix, AdminsStreamDef, StreamAt.First, streams)
       case Msg.MoveAdminToLast(domId) =>
-        moveUserInStream(
-          model,
-          domId,
-          AdminsPrefix,
-          AdminsStreamDef,
-          StreamAt.Last,
-          streams
-        )(admins => model.copy(admins = admins))
+        moveUserInStream(model, domId, AdminsPrefix, AdminsStreamDef, StreamAt.Last, streams)
       case Msg.DeleteComponentUser(id) =>
-        streams
-          .delete(ComponentUsersStreamDef, id).map(componentUsers =>
-            model.copy(componentUsers = componentUsers)
-          )
+        streams.delete(ComponentUsersStreamDef, id).as(model)
       case Msg.UpdateComponentUser(domId) =>
-        updateUserInStream(model, domId, ComponentUsersPrefix, ComponentUsersStreamDef, streams)(
-          componentUsers => model.copy(componentUsers = componentUsers)
-        )
+        updateUserInStream(model, domId, ComponentUsersPrefix, ComponentUsersStreamDef, streams)
       case Msg.MoveComponentUserToFirst(domId) =>
         moveUserInStream(
           model,
@@ -247,7 +204,7 @@ class StreamLiveView()
           ComponentUsersStreamDef,
           StreamAt.First,
           streams
-        )(componentUsers => model.copy(componentUsers = componentUsers))
+        )
       case Msg.MoveComponentUserToLast(domId) =>
         moveUserInStream(
           model,
@@ -256,11 +213,11 @@ class StreamLiveView()
           ComponentUsersStreamDef,
           StreamAt.Last,
           streams
-        )(componentUsers => model.copy(componentUsers = componentUsers))
+        )
       case Msg.ResetUsers =>
         streams
           .reset(UsersStreamDef, Nil)
-          .map(users => model.copy(users = users, count = model.count + 1))
+          .as(model.copy(count = model.count + 1))
       case Msg.ReorderUsers =>
         streams
           .reset(
@@ -271,7 +228,7 @@ class StreamLiveView()
               User("4", "mona")
             )
           )
-          .map(users => model.copy(users = users, count = model.count + 1))
+          .as(model.copy(count = model.count + 1))
       case Msg.AppendUsers =>
         streams
           .insertAll(
@@ -279,7 +236,7 @@ class StreamLiveView()
             AppendUsers,
             at = StreamAt.Last
           )
-          .map(users => model.copy(users = users))
+          .as(model)
 
   private def updateUserInStream(
     model: Model,
@@ -287,14 +244,12 @@ class StreamLiveView()
     prefix: String,
     definition: LiveStreamDef[User, String],
     streams: Streams
-  )(
-    setStream: LiveStream[User] => Model
   ): Task[Model] =
     domIdToUserId(prefix, domId) match
       case Some(id) =>
         streams
           .insert(definition, User(id, "updated"))
-          .map(setStream)
+          .as(model)
       case None => ZIO.succeed(model)
 
   private def moveUserInStream(
@@ -304,8 +259,6 @@ class StreamLiveView()
     definition: LiveStreamDef[User, String],
     at: StreamAt,
     streams: Streams
-  )(
-    setStream: LiveStream[User] => Model
   ): Task[Model] =
     domIdToUserId(prefix, domId) match
       case Some(id) =>
@@ -317,7 +270,7 @@ class StreamLiveView()
               User(id, "updated"),
               at = at
             )
-            .map(setStream)
+            .as(model)
       case None => ZIO.succeed(model)
 
   private def evalCode(value: Json): String =
@@ -333,12 +286,7 @@ end StreamLiveView
 object StreamLiveView:
   final case class User(id: String, name: String)
 
-  final case class Model(
-    users: LiveStream[User],
-    admins: LiveStream[User],
-    componentUsers: LiveStream[User],
-    count: Int,
-    extraItemWithId: Boolean)
+  final case class Model(count: Int, extraItemWithId: Boolean)
 
   enum Msg:
     case DeleteUser(id: String)
@@ -388,7 +336,7 @@ class HealthyLiveView extends LiveView.Routed[HealthyLiveView.Msg, HealthyLiveVi
     val category = normalizeCategory(params)
     ctx.streams
       .create(ItemsStreamDef, itemsFor(category))
-      .map(items => Model(category = category, items = items))
+      .as(Model(category = category))
 
   def handleMessage(model: Model, ctx: MessageContext) =
     (_: Msg) => ZIO.succeed(model)
@@ -400,7 +348,7 @@ class HealthyLiveView extends LiveView.Routed[HealthyLiveView.Msg, HealthyLiveVi
         ItemsStreamDef,
         itemsFor(category)
       )
-      .map(items => model.copy(category = category, items = items))
+      .as(model.copy(category = category))
 
   override def view(model: Signal[Model]) =
     div(
@@ -412,14 +360,14 @@ class HealthyLiveView extends LiveView.Routed[HealthyLiveView.Msg, HealthyLiveVi
           )
       ),
       h1(model.map(_.category.capitalize)),
-      model.map(_.items).renderIn(ul)(item => li(item.map(_.name)))
+      ItemsStreamDef.renderIn(ul)(item => li(item.map(_.name)))
     )
 
 end HealthyLiveView
 
 object HealthyLiveView:
   final case class Item(id: Int, name: String)
-  final case class Model(category: String, items: LiveStream[Item])
+  final case class Model(category: String)
 
   enum Msg:
     case Noop
@@ -446,7 +394,7 @@ class StreamResetLiveView()
   def mount(_params: Option[String], ctx: MountContext) =
     ctx.streams
       .create(ItemsStreamDef, InitialItems)
-      .map(items => Model(items = items, usePhxRemove = false))
+      .as(Model(usePhxRemove = false))
 
   override def handleParams(model: Model, params: Option[String], _url: URL, ctx: ParamsContext) =
     ZIO.succeed(model.copy(usePhxRemove = params.isDefined))
@@ -455,15 +403,15 @@ class StreamResetLiveView()
     case Msg.Filter =>
       ctx.streams
         .reset(ItemsStreamDef, FilteredItems)
-        .map(items => model.copy(items = items))
+        .as(model)
     case Msg.Reorder =>
       ctx.streams
         .reset(ItemsStreamDef, ReorderedItems)
-        .map(items => model.copy(items = items))
+        .as(model)
     case Msg.Reset =>
       ctx.streams
         .reset(ItemsStreamDef, InitialItems)
-        .map(items => model.copy(items = items))
+        .as(model)
     case Msg.Prepend =>
       ctx.streams
         .insert(
@@ -471,7 +419,7 @@ class StreamResetLiveView()
           randomItem(),
           at = StreamAt.First
         )
-        .map(items => model.copy(items = items))
+        .as(model)
     case Msg.Append =>
       ctx.streams
         .insert(
@@ -479,7 +427,7 @@ class StreamResetLiveView()
           randomItem(),
           at = StreamAt.Last
         )
-        .map(items => model.copy(items = items))
+        .as(model)
     case Msg.BulkInsert =>
       ctx.streams
         .insertAll(
@@ -491,7 +439,7 @@ class StreamResetLiveView()
           ),
           at = StreamAt.Index(1)
         )
-        .map(items => model.copy(items = items))
+        .as(model)
     case Msg.InsertAtOne =>
       ctx.streams
         .insert(
@@ -499,7 +447,7 @@ class StreamResetLiveView()
           randomItem(),
           at = StreamAt.Index(1)
         )
-        .map(items => model.copy(items = items))
+        .as(model)
     case Msg.InsertExistingAtOne =>
       ctx.streams
         .insert(
@@ -507,7 +455,7 @@ class StreamResetLiveView()
           Item("c", "C"),
           at = StreamAt.Index(1)
         )
-        .map(items => model.copy(items = items))
+        .as(model)
     case Msg.DeleteInsertExistingAtOne =>
       (ctx.streams
         .delete(ItemsStreamDef, "c") *>
@@ -515,7 +463,7 @@ class StreamResetLiveView()
           ItemsStreamDef,
           Item("c", "C"),
           at = StreamAt.Index(1)
-        )).map(items => model.copy(items = items))
+        )).as(model)
     case Msg.PrependExisting =>
       ctx.streams
         .insert(
@@ -523,7 +471,7 @@ class StreamResetLiveView()
           Item("c", "C"),
           at = StreamAt.First
         )
-        .map(items => model.copy(items = items))
+        .as(model)
     case Msg.AppendExisting =>
       ctx.streams
         .insert(
@@ -531,7 +479,7 @@ class StreamResetLiveView()
           Item("c", "C"),
           at = StreamAt.Last
         )
-        .map(items => model.copy(items = items))
+        .as(model)
     case Msg.NewUpdateOnly =>
       ctx.streams
         .insert(
@@ -539,7 +487,7 @@ class StreamResetLiveView()
           Item("e", "E"),
           updateOnly = true
         )
-        .map(items => model.copy(items = items))
+        .as(model)
     case Msg.ExistingUpdateOnly =>
       ctx.streams
         .insert(
@@ -547,17 +495,15 @@ class StreamResetLiveView()
           Item("c", s"C ${UUID.randomUUID().toString}"),
           updateOnly = true
         )
-        .map(items => model.copy(items = items))
+        .as(model)
   end handleMessage
 
   override def view(model: Signal[Model]) =
-    val items = model.map(_.items)
-
     div(
       model
         .map(_.usePhxRemove).choose(
-          streamList(items, withPhxRemove = true),
-          streamList(items, withPhxRemove = false)
+          streamList(withPhxRemove = true),
+          streamList(withPhxRemove = false)
         ),
       button(on.click(Msg.Filter), "Filter"),
       button(on.click(Msg.Reorder), "Reorder"),
@@ -574,12 +520,11 @@ class StreamResetLiveView()
       button(on.click(Msg.ExistingUpdateOnly), "Update C (update only)")
     )
 
-  private def streamList(items: Signal[LiveStream[Item]], withPhxRemove: Boolean)
-    : HtmlElement[Msg] =
+  private def streamList(withPhxRemove: Boolean): HtmlElement[Msg] =
     ul(
       idAttr     := "thelist",
       phx.update := PhxUpdate.Stream,
-      items.stream { (domId, item) =>
+      ItemsStreamDef.stream { (domId, item) =>
         if withPhxRemove then
           li(
             idAttr := domId,
@@ -597,7 +542,7 @@ end StreamResetLiveView
 
 object StreamResetLiveView:
   final case class Item(id: String, name: String)
-  final case class Model(items: LiveStream[Item], usePhxRemove: Boolean)
+  final case class Model(usePhxRemove: Boolean)
 
   enum Msg:
     case Filter
@@ -637,34 +582,28 @@ object StreamResetLiveView:
   )
 end StreamResetLiveView
 
-class StreamResetLCLiveView
-    extends LiveView[StreamResetLCLiveView.Msg, StreamResetLCLiveView.Model]:
+class StreamResetLCLiveView extends LiveView[StreamResetLCLiveView.Msg, Unit]:
   import StreamResetLCLiveView.*
 
   def mount(ctx: MountContext) =
-    ctx.streams
-      .create(ItemsStreamDef, InitialItems)
-      .map(items => Model(items = items))
+    ctx.streams.create(ItemsStreamDef, InitialItems)
 
-  def handleMessage(model: Model, ctx: MessageContext) =
+  def handleMessage(model: Unit, ctx: MessageContext) =
     case Msg.Reorder =>
-      ctx.streams
-        .reset(ItemsStreamDef, ReorderedItems)
-        .map(items => model.copy(items = items))
+      ctx.streams.reset(ItemsStreamDef, ReorderedItems)
 
-  override def view(model: Signal[Model]) =
+  override def view(model: Signal[Unit]) =
     div(
       ul(
         idAttr     := "thelist",
         phx.update := PhxUpdate.Stream,
-        model.map(_.items).stream((domId, item) => li(idAttr := domId, item.map(_.name)))
+        ItemsStreamDef.stream((domId, item) => li(idAttr := domId, item.map(_.name)))
       ),
       button(on.click(Msg.Reorder), "Reorder")
     )
 
 object StreamResetLCLiveView:
   final case class Item(id: String, name: String)
-  final case class Model(items: LiveStream[Item])
 
   enum Msg:
     case Reorder
@@ -696,9 +635,8 @@ class StreamLimitLiveView extends LiveView[StreamLimitLiveView.Msg, StreamLimitL
         ItemsStreamDef.withLimit(streamLimit(initialLimit)),
         (1 to 10).toList.map(Item.apply)
       )
-      .map(items =>
+      .as(
         Model(
-          items = items,
           at = initialAt,
           limit = initialLimit,
           lastId = 10
@@ -715,7 +653,7 @@ class StreamLimitLiveView extends LiveView[StreamLimitLiveView.Msg, StreamLimitL
           (1 to 10).toList.map(Item.apply),
           at = streamAt(nextAt)
         )
-        .map(items => model.copy(items = items, at = nextAt, limit = nextLimit, lastId = 10))
+        .as(model.copy(at = nextAt, limit = nextLimit, lastId = 10))
     case Msg.Insert10 =>
       val items = (1 to 10).toList.map(index => Item(model.lastId + index))
       ctx.streams
@@ -724,7 +662,7 @@ class StreamLimitLiveView extends LiveView[StreamLimitLiveView.Msg, StreamLimitL
           items,
           at = streamAt(model.at)
         )
-        .map(nextItems => model.copy(items = nextItems, lastId = model.lastId + 10))
+        .as(model.copy(lastId = model.lastId + 10))
     case Msg.Insert1 =>
       val item = Item(model.lastId + 1)
       ctx.streams
@@ -733,14 +671,14 @@ class StreamLimitLiveView extends LiveView[StreamLimitLiveView.Msg, StreamLimitL
           item,
           at = streamAt(model.at)
         )
-        .map(nextItems => model.copy(items = nextItems, lastId = model.lastId + 1))
+        .as(model.copy(lastId = model.lastId + 1))
     case Msg.Clear =>
       ctx.streams
         .reset(
           ItemsStreamDef,
           Nil
         )
-        .map(nextItems => model.copy(items = nextItems, lastId = 0))
+        .as(model.copy(lastId = 0))
   end handleMessage
 
   override def view(model: Signal[Model]) =
@@ -782,7 +720,7 @@ class StreamLimitLiveView extends LiveView[StreamLimitLiveView.Msg, StreamLimitL
         idAttr     := "items",
         phx.update := PhxUpdate.Stream,
         rawHtml("\n"),
-        model.map(_.items).stream((domId, item) => li(idAttr := domId, item.map(_.id.toString))),
+        ItemsStreamDef.stream((domId, item) => li(idAttr := domId, item.map(_.id.toString))),
         rawHtml("\n")
       )
     )
@@ -793,7 +731,7 @@ end StreamLimitLiveView
 
 object StreamLimitLiveView:
   final case class Item(id: Int)
-  final case class Model(items: LiveStream[Item], at: Int, limit: Int, lastId: Int)
+  final case class Model(at: Int, limit: Int, lastId: Int)
 
   enum Msg:
     case Configure(at: String, limit: String)
@@ -814,53 +752,27 @@ object StreamLimitLiveView:
     else None
 
 class StreamNestedComponentResetLiveView
-    extends LiveView[
-      StreamNestedComponentResetLiveView.Msg,
-      StreamNestedComponentResetLiveView.Model
-    ]:
+    extends LiveView[StreamNestedComponentResetLiveView.Msg, Unit]:
   import StreamNestedComponentResetLiveView.*
 
   def mount(ctx: MountContext) =
-    for
-      a <- buildParentItem("a", "A", ctx.streams)
-      b <- buildParentItem("b", "B", ctx.streams)
-      c <- buildParentItem("c", "C", ctx.streams)
-      d <- buildParentItem("d", "D", ctx.streams)
-      parents = List(a, b, c, d)
-      items <- ctx.streams.create(ItemsStreamDef, parents)
-    yield Model(
-      items = items,
-      parentsById = parents.iterator.map(parent => parent.id -> parent).toMap
-    )
+    ctx.streams.create(ItemsStreamDef, InitialItems)
 
-  def handleMessage(model: Model, ctx: MessageContext) =
-    case Msg.ReorderNested(id) =>
-      reorderNested(model, id, ctx.streams)
-    case Msg.ReorderParents =>
-      reorderParents(model, ctx.streams)
+  def handleMessage(model: Unit, ctx: MessageContext) =
+    case Msg.ReorderParents => ctx.streams.reset(ItemsStreamDef, ReorderedItems)
 
-  override def view(model: Signal[Model]) =
+  override def view(model: Signal[Unit]) =
     div(
       ul(
         idAttr     := "thelist",
         phx.update := PhxUpdate.Stream,
-        model.map(_.items).stream { (domId, item) =>
+        ItemsStreamDef.stream { (domId, item) =>
+          val nested = component(NestedItemsComponent, domId)
           li(
             idAttr := domId,
             item.map(_.name),
-            div(
-              phx.update := PhxUpdate.Stream,
-              styleAttr  := "display: flex; gap: 4px;",
-              item
-                .map(_.nested).stream((nestedDomId, nestedItem) =>
-                  span(idAttr := nestedDomId, nestedItem.map(_.name))
-                )
-            ),
-            button(
-              on.click(item.map(value => Msg.ReorderNested(value.id))),
-              phx.value("id") := item.map(_.id),
-              "Reorder"
-            )
+            nested.render(domId),
+            button(on.click.to(nested)(NestedItemsComponent.Msg.Reorder), "Reorder")
           )
         }
       ),
@@ -870,124 +782,81 @@ class StreamNestedComponentResetLiveView
         "Reorder"
       )
     )
-
-  private def reorderNested(
-    model: Model,
-    id: String,
-    streams: Streams
-  ): Task[Model] =
-    if id.isEmpty then ZIO.succeed(model)
-    else
-      model.parentsById.get(id) match
-        case None          => ZIO.succeed(model)
-        case Some(current) =>
-          for
-            nested <- streams.reset(
-                        current.nestedDefinition,
-                        reorderedNestedItems
-                      )
-            updatedParent = current.copy(nested = nested)
-            items <- streams.insert(
-                       ItemsStreamDef,
-                       updatedParent,
-                       updateOnly = true
-                     )
-          yield model.copy(
-            items = items,
-            parentsById = model.parentsById.updated(id, updatedParent)
-          )
-
-  private def reorderParents(model: Model, streams: Streams): Task[Model] =
-    for
-      parentA <- model.parentsById.get("a") match
-                   case Some(value) => ZIO.succeed(value)
-                   case None        => buildParentItem("a", "A", streams)
-      parentE <- buildParentItem("e", "E", streams)
-      parentF <- buildParentItem("f", "F", streams)
-      parentG <- buildParentItem("g", "G", streams)
-      parents = List(parentE, parentA, parentF, parentG)
-      items <- streams.reset(ItemsStreamDef, parents)
-    yield model.copy(
-      items = items,
-      parentsById = parents.iterator.map(parent => parent.id -> parent).toMap
-    )
-
-  private def buildParentItem(
-    id: String,
-    name: String,
-    streams: Streams
-  ): Task[ParentItem] =
-    val definition = nestedStreamDef(id)
-    streams
-      .create(definition, defaultNestedItems)
-      .map(nested => ParentItem(id, name, definition, nested))
 end StreamNestedComponentResetLiveView
 
 object StreamNestedComponentResetLiveView:
+  final case class ParentItem(id: String, name: String)
   final case class NestedItem(id: String, name: String)
-  final case class ParentItem(
-    id: String,
-    name: String,
-    nestedDefinition: LiveStreamDef[NestedItem, String],
-    nested: LiveStream[NestedItem])
-  final case class Model(
-    items: LiveStream[ParentItem],
-    parentsById: Map[String, ParentItem])
 
   enum Msg:
-    case ReorderNested(id: String)
     case ReorderParents
 
   private val ItemsStreamDef = LiveStreamDef.byId[ParentItem, String]("items")(_.id)
 
-  private val defaultNestedItems = List(
-    NestedItem("a", "N-A"),
-    NestedItem("b", "N-B"),
-    NestedItem("c", "N-C"),
-    NestedItem("d", "N-D")
+  private val InitialItems = List(
+    ParentItem("a", "A"),
+    ParentItem("b", "B"),
+    ParentItem("c", "C"),
+    ParentItem("d", "D")
   )
 
-  private val reorderedNestedItems = List(
-    NestedItem("e", "N-E"),
-    NestedItem("a", "N-A"),
-    NestedItem("f", "N-F"),
-    NestedItem("g", "N-G")
+  private val ReorderedItems = List(
+    ParentItem("e", "E"),
+    ParentItem("a", "A"),
+    ParentItem("f", "F"),
+    ParentItem("g", "G")
   )
 
-  private def nestedStreamDef(parentId: String): LiveStreamDef[NestedItem, String] =
-    LiveStreamDef[NestedItem, String](
-      s"nested-items-$parentId",
-      _.id,
-      id => s"nested-items-$parentId-$id"
-    )
+  object NestedItemsComponent extends LiveComponent[String, NestedItemsComponent.Msg, Unit]:
+    enum Msg:
+      case Reorder
+
+    private val NestedStreamDef = LiveStreamDef.byId[NestedItem, String]("nested")(_.id)
+
+    def mount(parentDomId: String, ctx: MountContext) =
+      val suffixes =
+        if ctx.connection.isConnected then List("a", "b", "c", "d")
+        else List("e", "f", "g", "h")
+      ctx.streams.create(NestedStreamDef, nestedItems(parentDomId, suffixes))
+
+    def handleMessage(parentDomId: String, model: Unit, ctx: MessageContext) =
+      case Msg.Reorder =>
+        ctx.streams.reset(NestedStreamDef, nestedItems(parentDomId, List("e", "a", "f", "g")))
+
+    override def view(parentDomId: Signal[String], model: Signal[Unit]) =
+      div(
+        idAttr     := parentDomId.map(id => s"$id-nested"),
+        phx.update := PhxUpdate.Stream,
+        styleAttr  := "display: flex; gap: 4px;",
+        NestedStreamDef.stream((domId, item) => span(idAttr := domId, item.map(_.name)))
+      )
+
+    private def nestedItems(parentDomId: String, suffixes: List[String]): List[NestedItem] =
+      suffixes.map(suffix => NestedItem(s"$parentDomId-$suffix", s"N-${suffix.toUpperCase}"))
 end StreamNestedComponentResetLiveView
 
-class StreamInsideForLiveView
-    extends LiveView[StreamInsideForLiveView.Msg, StreamInsideForLiveView.Model]:
+class StreamInsideForLiveView extends LiveView[StreamInsideForLiveView.Msg, Unit]:
   import StreamInsideForLiveView.*
 
   def mount(ctx: MountContext) =
-    ctx.streams
-      .create(ItemsStreamDef, InitialItems)
-      .map(items => Model(items = items))
+    ctx.streams.create(ItemsStreamDef, InitialItems)
 
-  def handleMessage(model: Model, ctx: MessageContext) =
-    (_: Msg) => ZIO.succeed(model)
+  def handleMessage(model: Unit, ctx: MessageContext) =
+    (_: Msg) => ZIO.unit
 
-  override def view(model: Signal[Model]) =
+  override def view(model: Signal[Unit]) =
     div(
       List(1).map(_ =>
         ul(
           idAttr     := "thelist",
           phx.update := PhxUpdate.Stream,
-          model.map(_.items).stream((domId, item) => li(idAttr := domId, item.map(_.name)))
+          ItemsStreamDef.stream((domId, item) => li(idAttr := domId, item.map(_.name)))
         )
       )
     )
 
 object StreamInsideForLiveView:
   final case class Item(id: String, name: String)
-  final case class Model(items: LiveStream[Item])
 
   enum Msg:
     case Noop

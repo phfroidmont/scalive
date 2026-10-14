@@ -45,54 +45,23 @@ trait Components:
 
   /** Renders the file input required by the LiveView upload protocol.
     *
-    * The helper derives the input `id`, `name`, `accept`, and `multiple` state from the current
-    * [[LiveUpload]] snapshot. It also owns the `Phoenix.LiveFileUpload` hook and the
-    * `data-phx-upload-ref`, `data-phx-active-refs`, `data-phx-done-refs`,
-    * `data-phx-preflighted-refs`, and `data-phx-error-refs` protocol attributes.
-    * `data-phx-auto-upload` is present only for automatic uploads. These attributes allow the
-    * browser client to correlate selections and progress with server-side entries; do not remove or
-    * hand-edit them. Refresh the upload snapshot after upload events before rendering it again.
-    * Supply only attributes and bindings in `mods`; an `input` is a void element and cannot contain
-    * child content.
+    * Pass the upload from [[LiveUploadDef.render]]. The helper derives the input `id`, `name`,
+    * `accept`, and `multiple` state from it and follows it as files are selected and uploaded. It
+    * also owns the `Phoenix.LiveFileUpload` hook and the `data-phx-upload-ref`,
+    * `data-phx-active-refs`, `data-phx-done-refs`, `data-phx-preflighted-refs`, and
+    * `data-phx-error-refs` protocol attributes. `data-phx-auto-upload` is present only for
+    * automatic uploads. These attributes allow the browser client to correlate selections and
+    * progress with server-side entries; do not remove or hand-edit them. * Supply only attributes
+    * and bindings in `mods`; an `input` is a void element and cannot contain child content.
     *
     * Validation and transfer failures are not rendered by the input. Read them with
     * [[uploadErrors]] and present them explicitly.
     *
     * @param upload
-    *   the currently allowed upload snapshot to bind to this input
+    *   the upload to bind to this input, as passed to [[LiveUploadDef.render]]'s body
     * @param mods
     *   additional input attributes and bindings; do not pass content or duplicate the protocol
     *   attributes owned by this helper
-    */
-  def liveFileInput[Msg, R](upload: LiveUpload[R], mods: Mod.Input[Msg]*): HtmlElement[Msg] =
-    fileInput(upload, idAttr := upload.ref.value, Mod.flatten(mods))
-
-  /** Renders the file input required by the LiveView upload protocol.
-    *
-    * This form also reports the upload's transfer progress with `progress`, from
-    * `upload.onProgress`. It throws `IllegalArgumentException` when `progress` belongs to another
-    * upload.
-    */
-  def liveFileInput[Msg, R](
-    upload: LiveUpload[R],
-    progress: UploadProgress[Msg],
-    mods: Mod.Input[Msg]*
-  ): HtmlElement[Msg] =
-    val id = progress.upload match
-      case Left(ref) =>
-        requireOwnProgress(upload, ref)
-        idAttr := upload.ref.value
-      case Right(refs) =>
-        idAttr := refs.map { ref =>
-          requireOwnProgress(upload, ref)
-          upload.ref.value
-        }
-    fileInput(upload, id, progress.binding +: Mod.flatten(mods))
-
-  /** Renders the file input required by the LiveView upload protocol.
-    *
-    * This form follows a signal of the upload, such as `model.map(_.upload)`, so the input's
-    * protocol attributes follow the latest snapshot in the model.
     */
   def liveFileInput[Msg, R](
     upload: Signal[LiveUpload[R]],
@@ -102,26 +71,19 @@ trait Components:
 
   /** Renders the file input required by the LiveView upload protocol.
     *
-    * This form follows a signal of the upload and also reports its transfer progress with
-    * `progress`. Rendering fails with `IllegalArgumentException` when `progress` belongs to another
-    * upload.
+    * This form also reports the upload's transfer progress with `progress`, from
+    * `upload.onProgress`. Rendering fails with `IllegalArgumentException` when `progress` belongs
+    * to another upload.
     */
   def liveFileInput[Msg, R](
     upload: Signal[LiveUpload[R]],
     progress: UploadProgress[Msg],
     mods: Mod.Input[Msg]*
   ): HtmlElement[Msg] =
-    val id = progress.upload match
-      case Left(ref) =>
-        idAttr := upload.map { current =>
-          requireOwnProgress(current, ref)
-          current.ref.value
-        }
-      case Right(refs) =>
-        idAttr := upload.combineWithFn(refs) { (current, ref) =>
-          requireOwnProgress(current, ref)
-          current.ref.value
-        }
+    val id = idAttr := upload.combineWithFn(progress.upload) { (current, ref) =>
+      requireOwnProgress(current, ref)
+      current.ref.value
+    }
     signalFileInput(upload, id, progress.binding +: Mod.flatten(mods))
 
   private def requireOwnProgress[R](upload: LiveUpload[R], progress: UploadRef): Unit =
@@ -130,38 +92,6 @@ trait Components:
       s"the progress binding of upload '${progress.value}' was passed to the file input " +
         s"of upload '${upload.name}'"
     )
-
-  private def fileInput[Msg, R](
-    upload: LiveUpload[R],
-    id: Mod.Attr[Nothing],
-    mods: Seq[Mod[Msg]]
-  ): HtmlElement[Msg] =
-    val activeRefs = upload.entries.map(_.ref.value).mkString(",")
-    val doneRefs   = upload.entries
-      .filter(_.status == LiveUploadEntryStatus.Completed)
-      .map(_.ref.value)
-      .mkString(",")
-    val preflightedRefs = upload.entries
-      .filter(isPreflighted)
-      .map(_.ref.value)
-      .mkString(",")
-
-    input(
-      id,
-      phx.hook                         := "Phoenix.LiveFileUpload",
-      typ                              := "file",
-      nameAttr                         := upload.name,
-      accept                           := upload.accept.toHtmlValue,
-      dataAttr("phx-upload-ref")       := upload.ref.value,
-      dataAttr("phx-active-refs")      := activeRefs,
-      dataAttr("phx-done-refs")        := doneRefs,
-      dataAttr("phx-preflighted-refs") := preflightedRefs,
-      dataAttr("phx-error-refs")       := errorRefs(upload),
-      dataPhxAutoUpload                := upload.autoUpload,
-      multiple                         := upload.maxEntries > 1,
-      mods
-    )
-  end fileInput
 
   private def signalFileInput[Msg, R](
     upload: Signal[LiveUpload[R]],
@@ -199,13 +129,7 @@ trait Components:
   /** Returns the errors to show for an upload or one of its entries.
     *
     * This form returns upload-wide errors, such as selecting more files than the definition
-    * permits. Entry-specific validation or transfer errors are available from an entry overload.
-    */
-  def uploadErrors[R](upload: LiveUpload[R]): List[LiveUploadError] = upload.errors
-
-  /** Returns the errors to show for an upload or one of its entries.
-    *
-    * This form returns the upload-wide errors of a signal of the upload.
+    * permits. Entry-specific validation or transfer errors are available from the entry overload.
     */
   def uploadErrors[R](upload: Signal[LiveUpload[R]]): Signal[List[LiveUploadError]] =
     upload.map(_.errors)
@@ -228,23 +152,8 @@ trait Components:
 
   /** Returns the errors to show for an upload or one of its entries.
     *
-    * This form returns the current errors for `entry` as recorded in `upload`, matched by upload
-    * entry reference. `Nil` is returned when the reference is absent from this upload snapshot,
-    * including after that entry has been removed.
-    */
-  def uploadErrors[R](upload: LiveUpload[R], entry: LiveUploadEntry[R]): List[LiveUploadError] =
-    upload.entries.find(_.ref == entry.ref).map(_.errors).getOrElse(Nil)
-
-  /** Returns the errors to show for an upload or one of its entries.
-    *
-    * This form returns the validation or transfer errors attached to `entry`. An entry that is not
-    * in the invalid state has no errors and returns `Nil`.
-    */
-  def uploadErrors[R](entry: LiveUploadEntry[R]): List[LiveUploadError] = entry.errors
-
-  /** Returns the errors to show for an upload or one of its entries.
-    *
-    * This form returns the errors of a signal of an upload entry.
+    * This form returns the validation or transfer errors of one entry, as rendered with
+    * `upload.map(_.entries).splitBy(_.ref)`. An entry that is not invalid has no errors.
     */
   @targetName("uploadEntryErrorsSignal")
   def uploadErrors[R](entry: Signal[LiveUploadEntry[R]]): Signal[List[LiveUploadError]] =

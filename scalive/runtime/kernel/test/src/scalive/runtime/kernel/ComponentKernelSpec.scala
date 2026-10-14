@@ -281,8 +281,12 @@ object ComponentKernelSpec extends ZIOSpecDefault:
             div(flash(notice)(message => span(message)))
         val instance = component(definition, "flash-component")
         val environment = new FakeEnvironment(events):
-          override def flash(draft: TurnDraft[Int, Int]) =
-            if draft.model == 1 then Map(notice -> "candidate flash") else Map.empty
+          override def renderState(
+            id: ComponentInstanceId,
+            draft: TurnDraft[Int, Int],
+            state: ComponentEnvironmentState
+          ) =
+            RenderState(if draft.model == 1 then Map(notice -> "candidate flash") else Map.empty)
           override def message[P, M, A, O](id: ComponentInstanceId, component: LiveComponent[P, M, A], props: P, model: A, value: M, emit: O => Task[Unit], state: ComponentEnvironmentState, draft: TurnDraft[Int, Int]) =
             ZIO.succeed(ComponentCallbackResult(model, draft.copy(model = 1), state))
         for
@@ -325,7 +329,7 @@ object ComponentKernelSpec extends ZIOSpecDefault:
                                else div(retained.render(3), added.render(4))
                              }
                            ),
-                         model => Map(notice -> (if model == 0 then "initial" else "final"))
+                         model => RenderState(Map(notice -> (if model == 0 then "initial" else "final")))
                        )
                      )
           kernel <- SessionKernel.start(config, logic(seen), program, Outbound(), environment)

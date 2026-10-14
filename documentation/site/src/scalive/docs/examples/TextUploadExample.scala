@@ -12,19 +12,16 @@ final class TextUploadExample extends LiveView[TextUploadExample.Msg, TextUpload
   import TextUploadExample.*
 
   def mount(ctx: MountContext): Task[Model] =
-    ctx.uploads.allow(TextFiles).map(Model(_))
+    ctx.uploads.allow(TextFiles).as(Model())
 
   def handleMessage(model: Model, ctx: MessageContext) =
-    case Msg.Validate | Msg.Progress => refresh(model, ctx.uploads)
-    case Msg.Cancel(entry)           =>
-      ctx.uploads.cancel(entry).map(upload => model.copy(upload = upload, notice = None))
-    case Msg.Summarize => summarizeCompleted(model, ctx.uploads)
-    case Msg.Reset     =>
-      ctx.uploads.disallow(TextFiles) *>
-        ctx.uploads.allow(TextFiles).map(Model(_))
+    case Msg.Validate      => ZIO.succeed(model.copy(notice = None))
+    case Msg.Cancel(entry) => ctx.uploads.cancel(entry).as(model.copy(notice = None))
+    case Msg.Summarize     => summarizeCompleted(model, ctx.uploads)
+    case Msg.Reset         =>
+      (ctx.uploads.disallow(TextFiles) *> ctx.uploads.allow(TextFiles)).as(Model())
 
   def view(model: Signal[Model]): HtmlElement[Msg] =
-    val upload = model.map(_.upload)
     div(
       cls := "docs-text-upload",
       p(
@@ -37,43 +34,45 @@ final class TextUploadExample extends LiveView[TextUploadExample.Msg, TextUpload
         dataAttr("text-upload-form") := "",
         on.change(_ => Msg.Validate),
         on.submit(Msg.Summarize),
-        div(
-          cls := "docs-upload-dropzone",
-          upload.dropTarget,
-          label(forId := upload.map(_.ref.value), "Text file"),
-          liveFileInput(
-            upload,
-            upload.onProgress(Msg.Progress),
-            dataAttr("text-upload-input") := ""
-          ),
-          p(cls := "docs-upload-help", "Accepted: .txt and .md. Maximum: one file, 64 KiB."),
-          errorList(uploadErrors(upload)),
+        TextFiles.render { upload =>
           div(
-            cls := "docs-upload-entries",
-            upload.map(_.entries).splitBy(_.ref) { (_, entry) =>
-              articleTag(
-                cls := "docs-upload-entry",
-                div(
-                  strong(entry.map(_.client.fileName)),
-                  span(entry.map(entry => formatBytes(entry.client.sizeBytes)))
-                ),
-                progressTag(
-                  value      := entry.map(_.progress.toString),
-                  maxAttr    := "100",
-                  aria.label := entry.map(entry => s"Upload progress for ${entry.client.fileName}")
-                ),
-                span(
-                  entry.map(entry =>
-                    if entry.status == LiveUploadEntryStatus.Completed then "Ready"
-                    else s"${entry.progress}%"
-                  )
-                ),
-                button(typ := "button", on.click(entry.map(Msg.Cancel(_))), "Cancel"),
-                errorList(uploadErrors(entry))
-              )
-            }
+            cls := "docs-upload-dropzone",
+            upload.dropTarget,
+            label(forId := upload.map(_.ref.value), "Text file"),
+            liveFileInput(
+              upload,
+              dataAttr("text-upload-input") := ""
+            ),
+            p(cls := "docs-upload-help", "Accepted: .txt and .md. Maximum: one file, 64 KiB."),
+            errorList(uploadErrors(upload)),
+            div(
+              cls := "docs-upload-entries",
+              upload.map(_.entries).splitBy(_.ref) { (_, entry) =>
+                articleTag(
+                  cls := "docs-upload-entry",
+                  div(
+                    strong(entry.map(_.client.fileName)),
+                    span(entry.map(entry => formatBytes(entry.client.sizeBytes)))
+                  ),
+                  progressTag(
+                    value      := entry.map(_.progress.toString),
+                    maxAttr    := "100",
+                    aria.label := entry
+                      .map(entry => s"Upload progress for ${entry.client.fileName}")
+                  ),
+                  span(
+                    entry.map(entry =>
+                      if entry.status == LiveUploadEntryStatus.Completed then "Ready"
+                      else s"${entry.progress}%"
+                    )
+                  ),
+                  button(typ := "button", on.click(entry.map(Msg.Cancel(_))), "Cancel"),
+                  errorList(uploadErrors(entry))
+                )
+              }
+            )
           )
-        ),
+        },
         div(
           cls := "docs-upload-actions",
           button(
@@ -117,21 +116,18 @@ final class TextUploadExample extends LiveView[TextUploadExample.Msg, TextUpload
     )
   end view
 
-  private def refresh(model: Model, uploads: Uploads): Task[Model] =
-    uploads.get(TextFiles).map(_.fold(model)(upload => model.copy(upload = upload, notice = None)))
-
   private def summarizeCompleted(model: Model, uploads: Uploads): Task[Model] =
     uploads
       .consumeCompleted(TextFiles) { completed =>
         ZIO.succeed(ConsumeDecision.Consume(summarize(completed)))
-      }.map { case (results, upload) =>
+      }.map { results =>
         val summaries = results.collect { case Right(summary) => summary }
         val rejected  = results.count(_.isLeft)
         val notice    =
           if rejected > 0 then Some("The file was discarded because it was not valid UTF-8 text.")
           else if summaries.isEmpty then Some("Choose a valid .txt or .md file before summarizing.")
           else Some("Summary created. The uploaded bytes were discarded.")
-        model.copy(upload = upload, summaries = model.summaries ++ summaries, notice = notice)
+        model.copy(summaries = model.summaries ++ summaries, notice = notice)
       }
 
   private def summarize(completed: CompletedUpload[Chunk[Byte]]): Either[Unit, Summary] =
@@ -176,14 +172,10 @@ object TextUploadExample:
 
   final case class Summary(id: String, fileName: String, bytes: Long, lines: Int, words: Int)
 
-  final case class Model(
-    upload: LiveUpload[Chunk[Byte]],
-    summaries: Vector[Summary] = Vector.empty,
-    notice: Option[String] = None)
+  final case class Model(summaries: Vector[Summary] = Vector.empty, notice: Option[String] = None)
 
   enum Msg:
     case Validate
-    case Progress
     case Cancel(entry: LiveUploadEntry[Chunk[Byte]])
     case Summarize
     case Reset

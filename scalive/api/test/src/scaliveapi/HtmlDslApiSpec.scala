@@ -32,9 +32,9 @@ object HtmlDslApiSpec extends ZIOSpecDefault:
         val navigation = link.pushNavigateUnsafe("/next", extra, span("Next"))
         val wrapped = focusWrap(DomRef("dialog"), extra)(p("Dialog"), Vector(span("Body")))
         val moved = portal(DomRef("menu"), DomSelector.css("body"), container = sectionTag)(extra)
-        def upload(value: LiveUpload[Unit]) = liveFileInput(value, extra)
-        def items(stream: streams.LiveStream[Int]) =
-          stream.renderIn(ul, extra)(item => li(item.toString))
+        def upload(value: Signal[LiveUpload[Unit]]) = liveFileInput(value, extra)
+        val Items = LiveStreamDef.byId[Int, Int]("items")(identity)
+        val items = Items.renderIn(ul, extra)(item => li(item.map(_.toString)))
         val timed = JS.show(time = 50.millis).hide(time = 1.second).transition("fade", time = 0.millis)
         val search = input(on.keyUp.debounce(300.millis).withValue(identity))
       """)
@@ -186,12 +186,12 @@ object HtmlDslApiSpec extends ZIOSpecDefault:
       val elsewhere = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*
 
-        def page(upload: LiveUpload[zio.Chunk[Byte]]) = div(upload.onProgress("progress"))
+        def page(upload: Signal[LiveUpload[zio.Chunk[Byte]]]) = div(upload.onProgress("progress"))
       """)
       val onInput = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*
 
-        def page(upload: LiveUpload[zio.Chunk[Byte]]) =
+        def page(upload: Signal[LiveUpload[zio.Chunk[Byte]]]) =
           liveFileInput(upload, upload.onProgress("progress"), cls := "hidden")
         def live(upload: Signal[LiveUpload[zio.Chunk[Byte]]]) =
           liveFileInput(upload, upload.onProgress(_ => "progress"))

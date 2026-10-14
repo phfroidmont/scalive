@@ -29,17 +29,15 @@ source of truth.
 
 ## Separate domain state from stream state {#separate-domain-state-from-stream-state}
 
-A @:apiSymbol(class:scalive.LiveStream)`LiveStream[A]`@:@ is an opaque, immutable
-rendering handle. It intentionally does not expose collection operations or its
-entries. Keep queryable domain data separately and store the latest stream
-handle beside it:
+Scalive keeps a stream's rows and sends each turn's inserts and deletes when
+it renders, so the model holds no stream. Keep queryable domain data in the
+model instead:
 
 @:sourceRegion(documentation/fixtures/guides/src/activity/ActivityLiveView.scala, streams-model)
 
-The `Vector` can answer application questions such as the total activity count.
-The stream handle carries the current snapshot and pending DOM operations.
-Stream state belongs to one LiveView or component lifecycle, so mount must
-recreate it after a remount.
+The `Vector` can answer application questions such as the total activity count;
+the stream cannot be queried. Stream state belongs to one LiveView or component
+lifecycle, so mount must recreate it after a remount.
 
 This separation also permits a bounded DOM without discarding domain data. The
 activity example keeps its complete history in a `Vector` while retaining only
@@ -68,7 +66,7 @@ retained domain state.
 ## Create the stream during mount {#create-the-stream-during-mount}
 
 Call @:apiSymbol(def:scalive.Streams.create)`ctx.streams.create`@:@ once for a stream
-name in each lifecycle and retain the returned handle:
+name in each lifecycle:
 
 @:sourceRegion(documentation/fixtures/guides/src/activity/ActivityLiveView.scala, streams-mount)
 
@@ -76,10 +74,10 @@ Creating the same name twice for one owner fails. Definitions are owner-scoped,
 but rendered container and row IDs are still document IDs and must remain unique
 across nested LiveViews and component instances.
 
-## Retain every replacement handle {#retain-every-replacement-handle}
+## Insert and update rows {#insert-and-update-rows}
 
-Every stream operation returns a replacement handle. Store and render that exact
-value; rendering an older handle loses the pending operation:
+Stream operations change the stream Scalive keeps; the next render sends them
+to the browser:
 
 @:sourceRegion(documentation/fixtures/guides/src/activity/ActivityLiveView.scala, streams-insert)
 
@@ -103,7 +101,7 @@ alternative for a trusted rendered DOM ID belonging to that stream. Prefer
 `delete` with a typed domain ID, and do not pass untrusted browser input to the
 DOM-ID operation.
 
-@:apiSymbol(def:scalive.Streams.reset)`reset`@:@ replaces the stream snapshot and
+@:apiSymbol(def:scalive.Streams.reset)`reset`@:@ replaces the stream's rows and
 instructs the browser to rebuild the container. Reset the domain data in the same
 message handler when the user-facing contract resets the whole list:
 
@@ -111,10 +109,9 @@ message handler when the user-facing contract resets the whole list:
 
 ## Render the stream container {#render-the-stream-container}
 
-Inside `view`, `model` is a `Signal[Model]`, so select the stream handle with
-`model.map(_.activityStream)`. @:apiSymbol(extension:scalive.renderIn)`renderIn`@:@
-creates the stream container, assigns its required update mode, and assigns each
-projected row its generated DOM ID:
+Render the stream with @:apiSymbol(extension:scalive.renderIn)`renderIn`@:@ on its
+definition. It creates the stream container, assigns its required update mode,
+and assigns each projected row its generated DOM ID:
 
 @:sourceRegion(documentation/fixtures/guides/src/activity/ActivityLiveView.scala, streams-render)
 
@@ -122,7 +119,8 @@ Each row receives a `Signal[Activity]`. Read its fields with `map`, and build a
 row-specific message the same way:
 `on.click(activity.map(value => Msg.Delete(value.id)))` sends the ID of the row
 that was clicked. Do not override the container or row IDs produced by the
-stream.
+stream. Rendering a stream that the LiveView or component never created fails the
+render.
 
 The complete recipe on this page:
 

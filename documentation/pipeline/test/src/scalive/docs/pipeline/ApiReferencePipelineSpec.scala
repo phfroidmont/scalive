@@ -157,7 +157,7 @@ object ApiReferencePipelineSpec extends ZIOSpecDefault:
       assertTrue(
         div.exists(_.signatures.exists(_.origin.exposure == ApiExposure.Inherited)),
         div.exists(_.signatures.forall(_.source == ApiSource.GeneratedDom)),
-        Set("scalive.LiveStream", "scalive.LiveUpload").forall(name =>
+        Set("scalive.LiveStreamDef", "scalive.LiveUpload").forall(name =>
           symbols.find(_.qualifiedName == name)
             .exists(_.signatures.exists(_.origin.exposure == ApiExposure.Exported))
         ),
@@ -167,7 +167,7 @@ object ApiReferencePipelineSpec extends ZIOSpecDefault:
         ).exists(_.signatures.size == 4),
         liveViewTrait.exists(_.signatures.exists(_.signature == "trait LiveView[Msg, Model]")),
         hasSignature(symbols, "scalive.dropTarget", ApiSymbolKind.Extension,
-          "extension def dropTarget[R](upload: LiveUpload[R]): Mod.Attr[Nothing]"),
+          "extension def dropTarget[R](upload: Signal[LiveUpload[R]]): Mod.Attr[Nothing]"),
         signaturesHideSyntheticParents(symbols),
         hooks.exists(_.signatures.exists(_.signature == "def hooks: LiveHooks[Msg, Model]")),
         routedEventless.exists(_.signatures.exists(_.signature ==

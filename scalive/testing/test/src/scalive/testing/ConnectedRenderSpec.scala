@@ -564,6 +564,33 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
         )
       }
     },
+    test("an upload renders its entries from the runtime as they upload") {
+      val definition = LiveUploadDef.inMemory("notes", LiveUploadAccept.only(".txt"))
+      val view = new LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ctx.uploads.allow(definition)
+        override def view(model: Signal[Unit]) =
+          div(
+            definition.render(upload => liveFileInput(upload)),
+            definition.render(upload =>
+              upload.map(_.entries).splitBy(_.ref)((_, entry) =>
+                span(cls := "entry", entry.map(e => s"${e.client.fileName}:${e.progress}"))
+              )
+            )
+          )
+
+      ZIO.scoped {
+        for
+          connected <- ConnectedRender.join(view)
+          _ <- connected.upload(
+                 definition,
+                 "a.txt",
+                 "text/plain",
+                 Chunk.fromArray("hello".getBytes(java.nio.charset.StandardCharsets.UTF_8))
+               )
+          html <- connected.awaitHtml("entry rendered", 3.seconds)(_.contains("a.txt:100"))
+        yield assertTrue(html.contains("a.txt:100"))
+      }
+    },
     test("streams hosted uploads using the preflight chunk size") {
       val definition = LiveUploadDef.inMemory(
         "small-chunks",
@@ -571,9 +598,9 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
         maxFileSize = 32L,
         chunkSize = 3
       )
-      val view = new LiveView.Eventless[LiveUpload[Chunk[Byte]]]:
+      val view = new LiveView.Eventless[Unit]:
         def mount(ctx: MountContext) = ctx.uploads.allow(definition)
-        override def view(model: Signal[LiveUpload[Chunk[Byte]]]) = liveFileInput(model)
+        override def view(model: Signal[Unit]) = div(definition.render(liveFileInput(_)))
 
       ZIO.scoped {
         for

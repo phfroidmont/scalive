@@ -144,11 +144,10 @@ private[docs] object ExampleRegistry:
           def project(value: ActivityStreamExample.Model) =
             projected(
               "ActivityStreamExample.Model",
-              "Current activity history and stream",
+              "Current activity history",
               constructor(
                 "Model",
                 field("activities", wildcard),
-                field("activityStream", wildcard),
                 field("nextId", number(value.nextId))
               ),
               Vector(
@@ -785,12 +784,6 @@ private[docs] object ExampleRegistry:
                 "Validate selected upload metadata",
                 "TextUploadExample.Msg.Validate"
               )
-            case TextUploadExample.Msg.Progress =>
-              traced(
-                "TextUploadExample.Msg",
-                "Refresh upload progress",
-                "TextUploadExample.Msg.Progress"
-              )
             case TextUploadExample.Msg.Cancel(_) =>
               projected(
                 "TextUploadExample.Msg.Cancel",
@@ -812,14 +805,12 @@ private[docs] object ExampleRegistry:
               "Current upload lifecycle state",
               constructor(
                 "Model",
-                field("upload", wildcard),
                 field("summaries", wildcard),
                 field("notice", wildcard)
               ),
               Vector(
-                "activeEntries" -> value.upload.entries.size.toString,
-                "summaries"     -> value.summaries.size.toString,
-                "totalBytes"    -> value.summaries.map(_.bytes).sum.toString
+                "summaries"  -> value.summaries.size.toString,
+                "totalBytes" -> value.summaries.map(_.bytes).sum.toString
               )
             )
       )

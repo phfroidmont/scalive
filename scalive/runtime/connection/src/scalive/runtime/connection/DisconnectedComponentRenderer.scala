@@ -62,7 +62,7 @@ private[scalive] object DisconnectedComponentRenderer:
   ): Task[A] =
     ZIO
       .fromEither(
-        RenderProgram.compile[(Input, Map[FlashKind, String]), Msg](
+        RenderProgram.compile[(Input, RenderState), Msg](
           value => view(value.map(_._1)),
           _._2
         )
@@ -86,7 +86,7 @@ private[scalive] object DisconnectedComponentRenderer:
     yield result
 
   private def renderJournaledProgramWith[Input, Msg, A](
-    program: RenderProgram[(Input, Map[FlashKind, String]), Msg],
+    program: RenderProgram[(Input, RenderState), Msg],
     input: Input,
     journal: RootTurnJournal,
     nestedResolver: DisconnectedNestedResolver
@@ -116,7 +116,7 @@ private[scalive] object DisconnectedComponentRenderer:
     yield journal
 
   private def stabilize[Input, Msg](
-    program: RenderProgram[(Input, Map[FlashKind, String]), Msg],
+    program: RenderProgram[(Input, RenderState), Msg],
     input: Input,
     journal: RootTurnJournal,
     environment: DisconnectedComponentEnvironment,
@@ -129,8 +129,8 @@ private[scalive] object DisconnectedComponentRenderer:
       )
     else
       for
-        flash       <- journal.flash.get
-        candidate   <- ZIO.acquireRelease(program.evaluate(input -> flash))(_.discard)
+        state       <- journal.renderState
+        candidate   <- ZIO.acquireRelease(program.evaluate(input -> state))(_.discard)
         _           <- environment.validateRequirements(candidate, journal.streams)
         resolutions <- environment.reconcile(candidate.componentRequirements)
         finalFlash  <- journal.flash.get
@@ -286,9 +286,9 @@ final private class DisconnectedComponentEnvironment private (
                            DisconnectedComponentUpdateContext[P, M, A](cached.lifecycle)
                          )
                        )
-            flash     <- root.flash.get
+            state     <- cached.lifecycle.renderState
             candidate <- ZIO.acquireRelease(
-                           cached.program.evaluate((requirement.props, updated, flash))
+                           cached.program.evaluate((requirement.props, updated, state))
                          )(_.discard)
             _              <- validateRequirements(candidate, cached.lifecycle.streams)
             children       <- stageRequirements(candidate.componentRequirements)
@@ -323,16 +323,16 @@ final private class DisconnectedComponentEnvironment private (
           ref = ComponentRef.runtime[M](new Object())
           program <- ZIO.acquireRelease(
                        ZIO.fromEither(
-                         RenderProgram.compileComponent[(P, A, Map[FlashKind, String]), M](
+                         RenderProgram.compileComponent[(P, A, RenderState), M](
                            input => component.view(input.map(_._1), input.map(_._2)),
                            _._3,
                            ref
                          )
                        )
                      )(_.close)
-          flash     <- root.flash.get
+          state     <- lifecycle.renderState
           candidate <- ZIO.acquireRelease(
-                         program.evaluate((requirement.props, updated, flash))
+                         program.evaluate((requirement.props, updated, state))
                        )(_.discard)
           _              <- validateRequirements(candidate, lifecycle.streams)
           children       <- stageRequirements(candidate.componentRequirements)
@@ -398,7 +398,7 @@ private object DisconnectedCachedComponent:
   final case class Value[P, M, A](
     props: P,
     model: A,
-    program: RenderProgram[(P, A, Map[FlashKind, String]), M],
+    program: RenderProgram[(P, A, RenderState), M],
     ref: ComponentRef[M],
     lifecycle: DisconnectedComponentLifecycle[P, M, A],
     candidate: RenderCandidate[M])
@@ -411,6 +411,13 @@ final private class DisconnectedComponentLifecycle[P, M, A] private (
     extends ComponentHookJournal:
   def registry: UIO[ComponentHookRegistry[P, M, A]] =
     hooks.get.map(_.asInstanceOf[ComponentHookRegistry[P, M, A]])
+
+  def renderState: UIO[RenderState] =
+    for
+      flash    <- root.flash.get
+      registry <- root.uploads.get
+      store    <- streams.get
+    yield OwnerRenderState(flash, registry, root.owner, root.ownerEpoch, store)
 
   def updateHooks[P0, M0, A0](
     f: ComponentHookRegistry[P0, M0, A0] => ComponentHookRegistry[P0, M0, A0]

@@ -1178,7 +1178,14 @@ private[scalive] object RootConnection:
                        .fromEither(
                          RenderProgram.compile[RootState[Msg, Model], Msg](
                            signal => lifecycle.view(signal.map(state => state.model -> state.url)),
-                           _.flash
+                           state =>
+                             OwnerRenderState(
+                               state.flash,
+                               state.uploads,
+                               rootOwner,
+                               Epoch.initial,
+                               state.streams
+                             )
                          )
                        )
                        .mapError(ConnectionError.RenderCompilationFailed.apply)
@@ -1441,7 +1448,12 @@ private[scalive] object RootConnection:
                       uploadState        <- journal.uploadSnapshot
                       (uploads, uploadCommit, uploadRollback) = uploadState
                     yield draft.copy(
-                      model = draft.model.copy(hooks = hooks, flash = flash, uploads = uploads),
+                      model = draft.model.copy(
+                        hooks = hooks,
+                        flash = flash,
+                        uploads = uploads,
+                        streams = draft.model.streams.settle
+                      ),
                       effects = draft.effects.copy(clientEvents = clientEvents),
                       componentUpdates = componentUpdates,
                       resourceOperations = resourceOperations,

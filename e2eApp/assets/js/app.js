@@ -176,7 +176,6 @@ const hooks = {
         this.finishUploadSync()
         this.uploadInput = event.target
         this.maxActiveRefs = 0
-        this.uploadProgressObserved = false
         this.uploadSyncMarker = document.createElement("span")
         this.uploadSyncMarker.hidden = true
         this.uploadSyncMarker.className = "phx-change-loading"
@@ -204,26 +203,19 @@ const hooks = {
 
       const refs = (name) =>
         (this.uploadInput.getAttribute(name) || "").split(",").filter(Boolean)
-      const activeCount = refs("data-phx-active-refs").length
-      this.maxActiveRefs = Math.max(this.maxActiveRefs, activeCount)
-      if (
-        this.maxActiveRefs > 0 &&
-        (activeCount < this.maxActiveRefs ||
-          refs("data-phx-done-refs").length > 0 ||
-          refs("data-phx-preflighted-refs").length > 0)
-      ) {
-        this.uploadProgressObserved = true
-      }
-      if (!this.uploadProgressObserved) return
-
-      window.clearTimeout(this.uploadSettleTimeout)
-      this.uploadSettleTimeout = window.setTimeout(() => this.finishUploadSync(), 40)
+      const activeRefs = refs("data-phx-active-refs")
+      const errorRefs = refs("data-phx-error-refs")
+      this.maxActiveRefs = Math.max(this.maxActiveRefs, activeRefs.length)
+      // The selection has settled once only invalid entries remain: every valid one was uploaded
+      // and consumed.
+      const settled =
+        this.maxActiveRefs > 0 && activeRefs.every((ref) => errorRefs.includes(ref))
+      if (settled) this.finishUploadSync()
     },
     finishUploadSync() {
       this.uploadSyncObserver?.disconnect()
       this.uploadSyncMarker?.remove()
       window.clearTimeout(this.uploadSyncTimeout)
-      window.clearTimeout(this.uploadSettleTimeout)
       this.uploadSyncObserver = null
       this.uploadSyncMarker = null
       this.uploadInput = null

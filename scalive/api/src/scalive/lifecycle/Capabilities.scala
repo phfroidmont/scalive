@@ -126,20 +126,20 @@ trait Flash:
 
 /** Allows, inspects, cancels, and consumes the file uploads of one LiveView or component.
   *
-  * Each operation returns a fresh [[LiveUpload]] snapshot; keep it in the model, since rendering an
-  * older snapshot renders old status. Failures caused by the current upload state are
+  * Scalive keeps each upload's state; render it with [[LiveUploadDef.render]], which follows it as
+  * files are selected, uploaded, and cancelled. Failures caused by the current upload state are
   * [[LiveUploadOperationError]] values. See the [file uploads
   * guide](https://scalive.dev/guides/uploads-and-consumption#complete-a-bounded-in-memory-upload).
   */
 trait Uploads:
-  /** Allows uploads for `definition` and returns the upload's snapshot.
+  /** Allows uploads for `definition`.
     *
     * Call it during every mount; the disconnected and connected mounts own independent uploads.
-    * Allowing the same definition again returns the current snapshot. Allowing a different
-    * definition with the same name replaces the upload, and fails with
-    * [[LiveUploadOperationError.ActiveEntries]] while it still tracks entries.
+    * Allowing the same definition again changes nothing. Allowing a different definition with the
+    * same name replaces the upload, and fails with [[LiveUploadOperationError.ActiveEntries]] while
+    * it still tracks entries.
     */
-  def allow[R](definition: LiveUploadDef[R]): Task[LiveUpload[R]]
+  def allow[R](definition: LiveUploadDef[R]): Task[Unit]
 
   /** Removes the upload for `definition`, cancelling its entries and releasing every result the
     * runtime still owns.
@@ -148,20 +148,20 @@ trait Uploads:
     */
   def disallow[R](definition: LiveUploadDef[R]): Task[Unit]
 
-  /** Returns the current snapshot of the upload for `definition`, or `None` when it is not allowed.
+  /** Returns the current state of the upload for `definition`, or `None` when it is not allowed.
     *
-    * Call it when a progress message arrives to refresh the snapshot kept in the model.
+    * Use it in a handler that depends on the upload, for example to check that no entry is still in
+    * progress. The view renders the state with [[LiveUploadDef.render]] instead.
     */
   def get[R](definition: LiveUploadDef[R]): Task[Option[LiveUpload[R]]]
 
-  /** Cancels `entry` and returns the replacement upload snapshot.
+  /** Cancels `entry`.
     *
     * A stale or already removed entry fails with a [[LiveUploadOperationError]].
     */
-  def cancel[R](entry: LiveUploadEntry[R]): Task[LiveUpload[R]]
+  def cancel[R](entry: LiveUploadEntry[R]): Task[Unit]
 
-  /** Passes the completed `entry` to `callback` and returns its value with the replacement upload
-    * snapshot.
+  /** Passes the completed `entry` to `callback` and returns its value.
     *
     * The callback's [[ConsumeDecision]] decides whether the application takes ownership of the
     * result. An invalid or unfinished entry fails with
@@ -171,10 +171,10 @@ trait Uploads:
     entry: LiveUploadEntry[R]
   )(
     callback: CompletedUpload[R] => Task[ConsumeDecision[A]]
-  ): Task[(A, LiveUpload[R])]
+  ): Task[A]
 
   /** Passes each completed entry of `definition` to `callback`, in selection order, and returns
-    * their values with the replacement upload snapshot.
+    * their values.
     *
     * Invalid entries are skipped. It fails with [[LiveUploadOperationError.EntriesInProgress]]
     * while a valid entry is still in progress. Entries are consumed one at a time, so if a callback
@@ -184,13 +184,13 @@ trait Uploads:
     definition: LiveUploadDef[R]
   )(
     callback: CompletedUpload[R] => Task[ConsumeDecision[A]]
-  ): Task[(List[A], LiveUpload[R])]
+  ): Task[List[A]]
 end Uploads
 
 /** Creates and updates the rendered streams of one LiveView or component.
   *
-  * Each operation returns a replacement [[LiveStream]] handle; keep it in the model and render that
-  * exact value, since an older handle loses the pending operations. Every operation after `create`
+  * Scalive keeps each stream's items and sends the operations of a turn when it renders; the view
+  * renders a stream with `renderIn` or `stream` on its definition. Every operation after `create`
   * must use the definition that created the stream.
   */
 trait Streams:
@@ -199,7 +199,7 @@ trait Streams:
     * Call it once per lifecycle, usually in mount; creating the same name twice for one owner
     * fails. The disconnected render keeps every item, whatever the definition's retention limit.
     */
-  def create[A, Id](definition: LiveStreamDef[A, Id], items: Iterable[A]): Task[LiveStream[A]]
+  def create[A, Id](definition: LiveStreamDef[A, Id], items: Iterable[A]): Task[Unit]
 
   /** Inserts `items` at `at`, like repeated [[insert]] calls at the same position.
     *
@@ -210,14 +210,14 @@ trait Streams:
     definition: LiveStreamDef[A, Id],
     items: Iterable[A],
     at: StreamAt = StreamAt.Last
-  ): Task[LiveStream[A]]
+  ): Task[Unit]
 
   /** Replaces every entry with `items` and makes the browser rebuild the stream container. */
   def reset[A, Id](
     definition: LiveStreamDef[A, Id],
     items: Iterable[A],
     at: StreamAt = StreamAt.Last
-  ): Task[LiveStream[A]]
+  ): Task[Unit]
 
   /** Inserts `item` at `at`, or updates its row in place when an entry with the same ID exists.
     *
@@ -228,21 +228,21 @@ trait Streams:
     item: A,
     at: StreamAt = StreamAt.Last,
     updateOnly: Boolean = false
-  ): Task[LiveStream[A]]
+  ): Task[Unit]
 
   /** Removes the entry whose domain ID is `id`.
     *
     * An `id` that is not in the stream is not an error: as in Phoenix, the delete still reaches the
     * browser, which removes nothing when no element has that row's DOM ID.
     */
-  def delete[A, Id](definition: LiveStreamDef[A, Id], id: Id): Task[LiveStream[A]]
+  def delete[A, Id](definition: LiveStreamDef[A, Id], id: Id): Task[Unit]
 
   /** Removes the entry whose rendered DOM ID is `domId`.
     *
     * Prefer [[delete]] with a typed ID. Pass only a trusted DOM ID that belongs to this stream,
     * never untrusted browser input.
     */
-  def deleteByDomId[A, Id](definition: LiveStreamDef[A, Id], domId: String): Task[LiveStream[A]]
+  def deleteByDomId[A, Id](definition: LiveStreamDef[A, Id], domId: String): Task[Unit]
 end Streams
 
 /** Runs finite background tasks owned by a connected LiveView or component.

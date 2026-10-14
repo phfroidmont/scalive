@@ -124,7 +124,7 @@ object UploadWorkerSpec extends ZIOSpecDefault:
 
   private def root(definition: LiveUploadDef[Chunk[Byte]]) = new LiveView[Message, Model]:
     def mount(ctx: MountContext): Task[Model] =
-      ctx.uploads.allow(definition).map(upload => Model(Some(upload), None, 0))
+      ctx.uploads.allow(definition) *> ctx.uploads.get(definition).map(upload => Model(upload, None, 0))
 
     def handleMessage(model: Model, ctx: MessageContext): Message => Task[Model] =
       case Message.Add(amount) =>
@@ -132,14 +132,17 @@ object UploadWorkerSpec extends ZIOSpecDefault:
       case Message.Refresh => ctx.uploads.get(definition).map(upload => model.copy(upload = upload))
       case Message.Cancel =>
         ctx.uploads.get(definition).someOrFail(Exception("upload missing")).flatMap { upload =>
-          ctx.uploads.cancel(upload.entries.head).map(next => model.copy(upload = Some(next)))
+          ctx.uploads.cancel(upload.entries.head) *>
+            ctx.uploads.get(definition).map(next => model.copy(upload = next))
         }
       case Message.Consume =>
         ctx.uploads.get(definition).someOrFail(Exception("upload missing")).flatMap { upload =>
           ctx.uploads
             .consume(upload.entries.head)(completed =>
               ZIO.succeed(ConsumeDecision.Postpone(completed.result))
-            ).map { case (bytes, next) => model.copy(upload = Some(next), consumed = Some(bytes)) }
+            ).flatMap(bytes =>
+              ctx.uploads.get(definition).map(next => model.copy(upload = next, consumed = Some(bytes)))
+            )
         }
       case Message.Disallow => ctx.uploads.disallow(definition).as(model.copy(upload = None))
 
@@ -471,11 +474,11 @@ object UploadWorkerSpec extends ZIOSpecDefault:
           fixture <- writerFixture()
           uploadDef = definition(fixture)
           componentDef = new LiveComponent.Eventless[Unit, LiveUpload[Chunk[Byte]]]:
-                           def mount(props: Unit, ctx: MountContext) = ctx.uploads.allow(uploadDef)
-                           def view(
-                             props: Signal[Unit],
-                             model: Signal[LiveUpload[Chunk[Byte]]],
-                           ) = span()
+                           def mount(props: Unit, ctx: MountContext) =
+                             ctx.uploads.allow(uploadDef) *>
+                               ctx.uploads.get(uploadDef).someOrFail(Exception("upload missing"))
+                           def view(props: Signal[Unit], model: Signal[LiveUpload[Chunk[Byte]]]) =
+                             span()
           instance = component(componentDef, "uploader")
           root = new LiveView[Boolean, Boolean]:
                    def mount(ctx: MountContext) = ZIO.succeed(true)

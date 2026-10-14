@@ -335,7 +335,7 @@ sealed private[scalive] trait MountedComponent[OwnerMsg]:
   def model: Model
   def ref: ComponentRef[Message]
   def render: CommittedRender[Message]
-  def program: RenderProgram[(Props, Model, Map[FlashKind, String]), Message]
+  def program: RenderProgram[(Props, Model, RenderState), Message]
   def parent: Option[ComponentInstanceId]
   def children: Vector[ComponentInstanceId]
   def environmentState: ComponentEnvironmentState
@@ -350,7 +350,7 @@ final private[kernel] case class MountedComponentValue[OwnerMsg, Props0, Message
   model: Model0,
   ref: ComponentRef[Message0],
   render: CommittedRender[Message0],
-  program: RenderProgram[(Props0, Model0, Map[FlashKind, String]), Message0],
+  program: RenderProgram[(Props0, Model0, RenderState), Message0],
   parent: Option[ComponentInstanceId],
   children: Vector[ComponentInstanceId],
   environmentState: ComponentEnvironmentState,
@@ -459,8 +459,14 @@ private[scalive] object ComponentUpdateRequest:
 
 /** Connection-owned lifecycle contexts are adapted at this protocol-neutral boundary. */
 trait ComponentEnvironment[RootMsg, RootModel]:
-  def flash(draft: TurnDraft[RootMsg, RootModel]): Map[FlashKind, String] =
-    Option(draft.model).fold(Map.empty[FlashKind, String])(_ => Map.empty)
+  /** The runtime-owned state that one render of component `id` reads: flash, uploads, and streams.
+    */
+  def renderState(
+    id: ComponentInstanceId,
+    draft: TurnDraft[RootMsg, RootModel],
+    state: ComponentEnvironmentState
+  ): RenderState =
+    Option(draft.model).fold(RenderState.empty)(_ => RenderState.empty)
   def mount[P, M, A](
     id: ComponentInstanceId,
     component: LiveComponent[P, M, A],
@@ -590,6 +596,9 @@ final private[scalive] case class Committed[Msg, Model](
   model: Model,
   url: URL,
   render: CommittedRender[Msg],
+  // The tree the browser last received. A commit that publishes nothing keeps it, so the next
+  // published turn sends that commit's changes too.
+  published: EvaluatedTree,
   components: ComponentForest[Msg],
   resources: PreparedResources,
   managedResources: ResourceIndex[ManagedResource],

@@ -106,8 +106,7 @@ object StreamStoreSpec extends ZIOSpecDefault:
         streamDef,
         List(Item("a", 1), Item("b", 2), Item("c", 3))
       )
-      val committed = created.store.prune(streamDef)
-      val deleted  = committed.store.deleteByDomId(streamDef, "b")
+      val deleted  = created.store.settle.deleteByDomId(streamDef, "b")
       val inserted = deleted.store.insert(streamDef, Item("b", 4), StreamAt.First)
 
       assertTrue(
@@ -129,22 +128,22 @@ object StreamStoreSpec extends ZIOSpecDefault:
         existing.stream.generation == 3L
       )
     },
-    test("prune clears journals without changing identity, generation, or snapshots") {
+    test("a settled stream keeps its operations until the next operation starts a new journal") {
       val streamDef = definition()
       val created = StreamStore.empty.create(streamDef, List(Item("a", 1)))
       val changed = created.store.insert(streamDef, Item("b", 2)).store.deleteByDomId(streamDef, "a")
-      val pruned  = changed.store.prune(streamDef)
-      val all     = changed.store.prune.get(streamDef).get
+      val settled = changed.store.settle
+      val rendered = settled.get(streamDef).get
+      val next     = settled.insert(streamDef, Item("c", 3))
 
       assertTrue(
-        pruned.stream.identity.eq(changed.stream.identity),
-        pruned.stream.generation == changed.stream.generation,
-        values(pruned.stream) == values(changed.stream),
-        pruned.stream.inserted.isEmpty,
-        pruned.stream.deleted.isEmpty,
-        !pruned.stream.reset,
-        all.identity.eq(changed.stream.identity),
-        values(all) == values(changed.stream)
+        rendered eq changed.stream,
+        next.stream.identity.eq(changed.stream.identity),
+        next.stream.generation == changed.stream.generation + 1,
+        values(next.stream) == Vector("b" -> 2, "c" -> 3),
+        next.stream.inserted.map(_.entry.domId) == Vector("c"),
+        next.stream.deleted.isEmpty,
+        !next.stream.reset
       )
     },
     test("definitions are DOM-id coherent and stores reject duplicate or missing targets") {

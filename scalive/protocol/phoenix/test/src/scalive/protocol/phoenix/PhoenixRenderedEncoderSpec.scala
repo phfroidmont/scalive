@@ -1443,7 +1443,7 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
       val notice = FlashKind("notice")
       val compiled = RenderProgram.compile[Map[FlashKind, String], Nothing](
         _ => div("before", flash(notice)(message => span(message)), "after"),
-        identity
+        RenderState(_)
       )
       for
         program <- ZIO.fromEither(compiled)
@@ -1625,7 +1625,7 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
       val ref   = ComponentRef.runtime[String](token)
       val childCompiled = RenderProgram.compileComponent[String, String](
         value => button(on.click("clicked"), value),
-        _ => Map.empty,
+        _ => RenderState.empty,
         ref
       )
       for
@@ -2026,7 +2026,7 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
       val validChild  = RenderProgram.compile[String, Nothing](value => span(value))
       def targeting(owner: ComponentRef[String]) = RenderProgram.compileComponent[String, String](
         value => button(on.click("clicked"), value),
-        _ => Map.empty,
+        _ => RenderState.empty,
         owner
       )
       val staleChild    = targeting(staleRef)

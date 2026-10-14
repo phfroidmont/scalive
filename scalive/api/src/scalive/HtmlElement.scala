@@ -421,7 +421,7 @@ end KeyHtmlAttrBinding
   * throws `IllegalArgumentException` when the input renders.
   */
 final class UploadProgress[+Msg] private[scalive] (
-  private[scalive] val upload: Either[UploadRef, Signal[UploadRef]],
+  private[scalive] val upload: Signal[UploadRef],
   private[scalive] val binding: Mod.Attr[Msg])
 
 /** Builder for a client lifecycle attribute, such as `phx-mounted`, which runs a `JS` command.
@@ -544,7 +544,13 @@ object Mod:
       project: (String, A) => HtmlElement[Msg]) extends Content[Msg]
     private[scalive] case SignalStream[A, Msg](
       value: Signal[streams.LiveStream[A]],
-      project: (String, Signal[A]) => HtmlElement[Msg])            extends Content[Msg]
+      project: (String, Signal[A]) => HtmlElement[Msg]) extends Content[Msg]
+    private[scalive] case ManagedStream[A, Msg](
+      definition: streams.LiveStreamDef[A, ?],
+      project: (String, Signal[A]) => HtmlElement[Msg]) extends Content[Msg]
+    private[scalive] case ManagedUpload[R, Msg](
+      definition: upload.LiveUploadDef[R],
+      body: Signal[upload.LiveUpload[R]] => Mod[Msg])              extends Content[Msg]
     private[scalive] case Tag[Msg](element: HtmlElement[Msg])      extends Content[Msg]
     private[scalive] case Component[Msg](spec: ComponentSpec[Msg]) extends Content[Msg]
     private[scalive] case NestedView(spec: NestedViewSpec)         extends Content[Nothing]

@@ -16,24 +16,17 @@ final class ActivityStreamExample
     case Msg.Add =>
       val template = NewActivityTemplates((model.nextId - 1) % NewActivityTemplates.size)
       val activity = Activity(model.nextId, template._1, template._2)
-      ctx.streams.insert(ActivityStreamDef, activity).map { stream =>
-        model.copy(
-          activities = model.activities :+ activity,
-          activityStream = stream,
-          nextId = model.nextId + 1
-        )
-      }
+      ctx.streams
+        .insert(ActivityStreamDef, activity)
+        .as(model.copy(activities = model.activities :+ activity, nextId = model.nextId + 1))
     case Msg.Delete(activityId) =>
-      ctx.streams.delete(ActivityStreamDef, activityId).map { stream =>
-        model.copy(
-          activities = model.activities.filterNot(_.id == activityId),
-          activityStream = stream
-        )
-      }
+      ctx.streams
+        .delete(ActivityStreamDef, activityId)
+        .as(model.copy(activities = model.activities.filterNot(_.id == activityId)))
     case Msg.Reset =>
-      ctx.streams.reset(ActivityStreamDef, InitialActivities).map { stream =>
-        Model(InitialActivities, stream, InitialNextId)
-      }
+      ctx.streams
+        .reset(ActivityStreamDef, InitialActivities)
+        .as(Model(InitialActivities, InitialNextId))
 
   def view(model: Signal[Model]): HtmlElement[Msg] =
     div(
@@ -63,8 +56,8 @@ final class ActivityStreamExample
           "Insert activity"
         )
       ),
-      model
-        .map(_.activityStream).renderIn(
+      ActivityStreamDef
+        .renderIn(
           ol,
           cls        := "docs-activity-list",
           aria.label := "Recent activity"
@@ -90,18 +83,15 @@ final class ActivityStreamExample
     )
 
   private def initialModel(ctx: MountContext): Task[Model] =
-    ctx.streams.create(ActivityStreamDef, InitialActivities).map { stream =>
-      Model(InitialActivities, stream, InitialNextId)
-    }
+    ctx.streams
+      .create(ActivityStreamDef, InitialActivities)
+      .as(Model(InitialActivities, InitialNextId))
 end ActivityStreamExample
 
 object ActivityStreamExample:
   final case class Activity(id: Int, category: String, summary: String)
 
-  final case class Model(
-    activities: Vector[Activity],
-    activityStream: LiveStream[Activity],
-    nextId: Int)
+  final case class Model(activities: Vector[Activity], nextId: Int)
 
   enum Msg:
     case Add
@@ -126,5 +116,4 @@ object ActivityStreamExample:
     "Components" -> "Updated component props by stable ID",
     "Async work" -> "Completed a deterministic report"
   )
-end ActivityStreamExample
 // docs:end activity-stream-example

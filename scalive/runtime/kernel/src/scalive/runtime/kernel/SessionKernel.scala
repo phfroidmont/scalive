@@ -694,14 +694,17 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                   case Exit.Success(ClientEventInterception.Halt(draft)) =>
                     executeTurn(state, work, ZIO.succeed(draft), Some(tracked))
                   case Exit.Success(ClientEventInterception.Continue(draft)) =>
-                    executeComponentTurn(
-                      state,
-                      work,
-                      client.component,
-                      ComponentAction.Browser(client),
-                      Some(tracked),
-                      initialDraft = Some(draft)
-                    )
+                    resolveComponentClient(state, client) match
+                      case Left(rejection) => response.fail(rejection).unit *> loop(state, work)
+                      case Right((component, action)) =>
+                        executeComponentTurn(
+                          state,
+                          work,
+                          component,
+                          action,
+                          Some(tracked),
+                          initialDraft = Some(draft)
+                        )
                   case Exit.Failure(cause) if cause.isInterruptedOnly =>
                     observeNewTurnFailed(
                       Some(tracked),
@@ -2304,7 +2307,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                                      )
                                    )
                                  )
-                               case Some((target, ComponentAction.Browser(command)))
+                               case Some((target, ComponentAction.Browser(command, message)))
                                    if target == id =>
                                  restore(
                                    phase(SessionStage.ComponentMessage)(
@@ -2315,9 +2318,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                                          effectiveProps,
                                          updated.model,
                                          command,
-                                         componentBindingMessage(old, command).map(
-                                           _.asInstanceOf[M]
-                                         ),
+                                         ZIO.fromEither(message).map(_.asInstanceOf[M]),
                                          output,
                                          updated.state,
                                          updated.draft
@@ -2582,28 +2583,6 @@ final private[scalive] class SessionKernel[Msg, Model] private (
               remaining - 1
             )
         })
-
-  private def componentBindingMessage[P, M, A, O](
-    old: Option[MountedComponentValue[Msg, P, M, A, O]],
-    command: SessionCommand.ComponentClientEvent
-  ): Task[M] =
-    ZIO
-      .fromOption(old).orElseFail(IllegalStateException("component browser target is not mounted"))
-      .flatMap { mounted =>
-        ZIO
-          .fromOption(mounted.render.bindings.resolve(command.binding))
-          .orElseFail(IllegalStateException(s"unknown component binding ${command.binding}"))
-          .flatMap(operation => ZIO.fromEither(operation.dispatch(command.payload)))
-          .flatMap {
-            case BindingDispatch.Owner(message) => ZIO.succeed(message)
-            case targeted: BindingDispatch.Targeted
-                if targeted.target.asInstanceOf[AnyRef] eq mounted.ref.asInstanceOf[AnyRef] =>
-              ZIO.succeed(targeted.message.asInstanceOf[M])
-            case BindingDispatch.Routed(dispatch) =>
-              ZIO.succeed(dispatch.message.asInstanceOf[M])
-            case _ => ZIO.fail(IllegalStateException("component binding targets another component"))
-          }
-      }
 
   private def discardEnvironmentCandidate[P, M, A, O](
     id: ComponentInstanceId,
@@ -3322,6 +3301,45 @@ final private[scalive] class SessionKernel[Msg, Model] private (
           .dispatch(command.payload)
           .left.map(SessionRejection.BindingFailed(command.binding, _))
           .flatMap(dispatch => resolveDispatch(state.committed.components, dispatch))
+
+  /** Resolves a component event against the targeted component's bindings. A binding addressed to
+    * another instance is delivered to that instance as a message, like a routed root binding. An
+    * event without a binding, such as a pushed browser event, stays with the targeted component so
+    * that its hooks can handle it.
+    */
+  private def resolveComponentClient(
+    state: SessionState.Active[Msg, Model],
+    command: SessionCommand.ComponentClientEvent
+  ): Either[SessionRejection, (ComponentInstanceId, ComponentAction)] =
+    val forest = state.committed.components
+
+    def browser(message: Either[Throwable, Any]) =
+      command.component -> ComponentAction.Browser(command, message)
+    forest.get(command.component) match
+      case None          => Left(SessionRejection.StaleComponent(command.component))
+      case Some(mounted) =>
+        mounted.render.bindings.resolve(command.binding) match
+          case None =>
+            val unknown = IllegalStateException(s"unknown component binding ${command.binding}")
+            Right(browser(Left(unknown)))
+          case Some(operation) =>
+            operation.dispatch(command.payload) match
+              case Left(error)                           => Right(browser(Left(error)))
+              case Right(BindingDispatch.Owner(message)) => Right(browser(Right(message)))
+              // `toComponent` addresses the component that the browser targets.
+              case Right(BindingDispatch.Routed(routed: ComponentDispatch.Definition[?, ?, ?])) =>
+                if mounted.key.definition.value eq routed.component.asInstanceOf[AnyRef] then
+                  Right(browser(Right(routed.message)))
+                else Left(SessionRejection.UnknownComponentTarget)
+              case Right(dispatch) =>
+                resolveDispatch(forest, dispatch).map {
+                  case ResolvedClient.Component(component, message)
+                      if component != command.component =>
+                    component -> ComponentAction.Message(message)
+                  case ResolvedClient.Component(_, message) => browser(Right(message))
+                  case ResolvedClient.Root(message)         => browser(Right(message))
+                }
+  end resolveComponentClient
 
   private def resolveDispatch[Owner](
     forest: ComponentForest[Msg],
@@ -4088,7 +4106,7 @@ private[scalive] object SessionKernel:
   private enum ComponentAction:
     case Message(value: Any)
     case ManagedAsync(completion: ManagedAsyncCompletion)
-    case Browser(command: SessionCommand.ComponentClientEvent)
+    case Browser(command: SessionCommand.ComponentClientEvent, message: Either[Throwable, Any])
 
   private enum ResolvedClient[+Owner]:
     case Root(message: Owner)

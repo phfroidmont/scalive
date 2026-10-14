@@ -37,6 +37,12 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
         event: Definition.Event,
         intent: Either[FormSubmitter.DecodeError, Intent])
 
+  private enum ChildMsg:
+    case Clicked
+
+  private enum SiblingMsg:
+    case Ping
+
   private enum ResourceMsg:
     case Tick
 
@@ -202,6 +208,111 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
           _         <- connected.click("[data-component-counter] button")
           count     <- connected.text("[data-component-count]")
         yield assertTrue(count == "1")
+      }
+    },
+    test("delivers a component binding addressed to another component to that component") {
+      object Sibling extends LiveComponent[Unit, SiblingMsg, Int]:
+        def mount(props: Unit, ctx: MountContext) = ZIO.succeed(0)
+        def handleMessage(props: Unit, model: Int, ctx: MessageContext) =
+          case SiblingMsg.Ping => ZIO.succeed(model + 1)
+        override def view(
+          props: Signal[Unit],
+          model: Signal[Int],
+          self: ComponentRef[SiblingMsg]
+        ) =
+          span(dataAttr("sibling-count") := "", model.map(_.toString))
+
+      val sibling = component(Sibling, "sibling")
+      val missing = component(Sibling, "missing")
+
+      object Child extends LiveComponent[Unit, ChildMsg, Int]:
+        def mount(props: Unit, ctx: MountContext) = ZIO.succeed(0)
+        def handleMessage(props: Unit, model: Int, ctx: MessageContext) =
+          case ChildMsg.Clicked => ZIO.succeed(model + 1)
+        override def view(props: Signal[Unit], model: Signal[Int], self: ComponentRef[ChildMsg]) =
+          div(
+            span(dataAttr("child-count") := "", model.map(_.toString)),
+            button(dataAttr("click-child") := "", phx.target(self), on.click(ChildMsg.Clicked)),
+            button(
+              dataAttr("ping-sibling") := "",
+              phx.target(self),
+              on.click.to(sibling)(SiblingMsg.Ping)
+            ),
+            button(
+              dataAttr("ping-missing") := "",
+              phx.target(self),
+              on.click.to(missing)(SiblingMsg.Ping)
+            )
+          )
+
+      val parent = new LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        override def view(model: Signal[Unit]) =
+          div(component(Child, "child").render(()), sibling.render(()))
+
+      ZIO.scoped {
+        for
+          connected    <- ConnectedRender.join(parent)
+          _            <- connected.click("[data-click-child]")
+          _            <- connected.click("[data-ping-sibling]")
+          childCount   <- connected.text("[data-child-count]")
+          siblingCount <- connected.text("[data-sibling-count]")
+          missingPing  <- connected.click("[data-ping-missing]").either
+          joined       <- connected.isJoined
+        yield assertTrue(childCount == "1", siblingCount == "1", missingPing.isLeft, joined)
+      }
+    },
+    test("delivers a component binding addressed by definition to the targeted instance only") {
+      object Other extends LiveComponent[Unit, SiblingMsg, Unit]:
+        def mount(props: Unit, ctx: MountContext) = ZIO.unit
+        def handleMessage(props: Unit, model: Unit, ctx: MessageContext) =
+          case SiblingMsg.Ping => ZIO.unit
+        override def view(
+          props: Signal[Unit],
+          model: Signal[Unit],
+          self: ComponentRef[SiblingMsg]
+        ) = div()
+
+      object Counter extends LiveComponent[String, ChildMsg, Int]:
+        def mount(props: String, ctx: MountContext) = ZIO.succeed(0)
+        def handleMessage(props: String, model: Int, ctx: MessageContext) =
+          case ChildMsg.Clicked => ZIO.succeed(model + 1)
+        override def view(
+          props: Signal[String],
+          model: Signal[Int],
+          self: ComponentRef[ChildMsg]
+        ) =
+          div(
+            span(idAttr := props.map(_ + "-count"), model.map(_.toString)),
+            button(
+              idAttr := props.map(_ + "-click"),
+              phx.target(self),
+              on.click.toComponent(Counter)(ChildMsg.Clicked)
+            ),
+            button(
+              idAttr := props.map(_ + "-other"),
+              phx.target(self),
+              on.click.toComponent(Other)(SiblingMsg.Ping)
+            )
+          )
+
+      val parent = new LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        override def view(model: Signal[Unit]) =
+          div(
+            component(Counter, "first").render("first"),
+            component(Counter, "second").render("second")
+          )
+
+      ZIO.scoped {
+        for
+          connected <- ConnectedRender.join(parent)
+          _         <- connected.click("#first-click")
+          first     <- connected.text("#first-count")
+          second    <- connected.text("#second-count")
+          other     <- connected.click("#first-other").either
+          joined    <- connected.isJoined
+        yield assertTrue(first == "1", second == "0", other.isLeft, joined)
       }
     },
     test("handles keyed and full client flash clearing for root and component targets") {

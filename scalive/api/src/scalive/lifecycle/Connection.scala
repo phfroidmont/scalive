@@ -1,11 +1,12 @@
 package scalive
 
+import zio.ZIO
 import zio.json.ast.Json
 
 /** Makes connected-only lifecycle capabilities explicit.
   *
-  * Match on it to use connected capabilities. Use [[isConnected]] when only the phase matters. See
-  * [two independent
+  * Match on it to use connected capabilities, or use [[whenConnected]] for connected-only work. Use
+  * [[isConnected]] when only the phase matters. See [two independent
   * mounts](https://scalive.dev/learn/lifecycle-and-connection-behavior#two-independent-mounts).
   */
 enum Connection[+Connected]:
@@ -23,6 +24,15 @@ enum Connection[+Connected]:
   def isConnected: Boolean = this match
     case Disconnected => false
     case Connected(_) => true
+
+  /** Runs `effect` with the connected capabilities, and does nothing in the disconnected render.
+    *
+    * Use it for connected-only work whose result the stage does not need, as in
+    * `ctx.connection.whenConnected(_.async.start(Load)(load)(Msg.Loaded(_))).as(model)`.
+    */
+  def whenConnected[R, E](effect: Connected => ZIO[R, E, Any]): ZIO[R, E, Unit] = this match
+    case Disconnected            => ZIO.unit
+    case Connected(capabilities) => effect(capabilities).unit
 
 /** Metadata supplied by a connected client. Values in `connectParams` are untrusted. */
 trait ConnectedMetadata:

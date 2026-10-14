@@ -1,7 +1,9 @@
 package scalive
 
+import zio.Duration
 import zio.Task
 import zio.UIO
+import zio.ZIO
 import zio.json.JsonEncoder
 import zio.stream.ZStream
 
@@ -240,11 +242,12 @@ trait Subscriptions[Msg]:
     *
     * The stream starts once the current mount or message commits. Starting a key that is already
     * registered is treated as a bug and crashes the lifecycle; use [[replace]] when restarting is
-    * intended. `delivery` chooses whether every value is delivered or only the latest.
+    * intended. `delivery` chooses whether every value is delivered, the default, or only the
+    * latest.
     */
   def start(
     key: SubscriptionKey,
-    delivery: SubscriptionDelivery
+    delivery: SubscriptionDelivery = SubscriptionDelivery.Lossless
   )(
     stream: ZStream[Any, Nothing, Msg]
   ): Task[Unit]
@@ -252,13 +255,22 @@ trait Subscriptions[Msg]:
   /** Runs `stream` under `key`, interrupting the stream already registered under it, if any. */
   def replace(
     key: SubscriptionKey,
-    delivery: SubscriptionDelivery
+    delivery: SubscriptionDelivery = SubscriptionDelivery.Lossless
   )(
     stream: ZStream[Any, Nothing, Msg]
   ): Task[Unit]
 
   /** Stops the stream registered under `key`. Cancelling an absent key does nothing. */
   def cancel(key: SubscriptionKey): Task[Unit]
+
+  /** Sends `message` to the owner once `delay` has passed, like Phoenix's `Process.send_after`.
+    *
+    * It replaces the timer or stream already registered under `key`, and [[cancel]] stops it before
+    * it fires.
+    */
+  final def sendAfter(key: SubscriptionKey, delay: Duration)(message: Msg): Task[Unit] =
+    replace(key)(ZStream.fromZIO(ZIO.sleep(delay).as(message)))
+end Subscriptions
 
 /** Acquisition and finalization owned by one connected `LiveView` lifecycle.
   *

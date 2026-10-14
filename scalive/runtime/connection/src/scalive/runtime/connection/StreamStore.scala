@@ -170,11 +170,9 @@ private[scalive] object StreamStore:
 
   val empty: StreamStore = StreamStore(Map.empty)
 
+  // A definition validates its name and limit when it is constructed.
   private def validateDefinition[A, Id](definition: LiveStreamDef[A, Id]): Unit =
     if definition == null then throw NullPointerException("stream definition must not be null")
-    if definition.name == null || definition.name.isEmpty then
-      throw IllegalArgumentException("stream name must be non-empty")
-    validateLimit(definition.limit)
 
   private def validateOperation[A, Id](definition: LiveStreamDef[A, Id], at: StreamAt): Unit =
     validateDefinition(definition)
@@ -183,17 +181,6 @@ private[scalive] object StreamStore:
       case StreamAt.Index(value) if value < 0 =>
         throw IllegalArgumentException(s"stream index must be non-negative: $value")
       case _ => ()
-
-  private def validateLimit(limit: Option[StreamLimit]): Unit =
-    if limit == null then throw NullPointerException("stream limit option must not be null")
-    limit.foreach {
-      case null => throw NullPointerException("stream limit must not be null")
-      case StreamLimit.KeepFirst(count) if count <= 0 =>
-        throw IllegalArgumentException(s"stream limit must be positive: $count")
-      case StreamLimit.KeepLast(count) if count <= 0 =>
-        throw IllegalArgumentException(s"stream limit must be positive: $count")
-      case _ => ()
-    }
 
   private def validateDomId(domId: String): Unit =
     if domId == null || domId.isEmpty then

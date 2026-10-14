@@ -54,10 +54,12 @@ new model. Read it in the connected mount instead:
 @:sourceRegion(documentation/fixtures/learn/src/quickstart/ThermostatLiveView.scala, learn-thermostat-mount)
 
 `ctx.connection` is `Connection.Disconnected` during the first render and
-`Connection.Connected(connected)` once the browser has connected. Only the
-connected branch has `connected.async` and `connected.subscriptions`, so the
-compiler prevents starting background work during the first render. Both
-branches return a model whose reading is
+`Connection.Connected(connected)` once the browser has connected.
+@:apiSymbol(def:scalive.Connection.whenConnected)`whenConnected`@:@ runs its
+function only in the second case. Only the connected capabilities have
+`connected.async` and `connected.subscriptions`, so the compiler prevents
+starting background work during the first render. Either way, mount returns a
+model whose reading is
 @:apiSymbol(enum:scalive.AsyncValue)`AsyncValue.loading`@:@.
 
 @:apiSymbol(def:scalive.Async.start)`connected.async.start`@:@ runs the
@@ -74,7 +76,7 @@ finishes, Scalive sends `Msg.Measured(result)`, where `result` is a
 
 ## Refresh on a timer {#refresh-on-a-timer}
 
-The second statement in the connected branch starts a subscription.
+The second statement in the connected function starts a subscription.
 @:apiSymbol(def:scalive.Subscriptions.start)`connected.subscriptions.start`@:@
 runs a `ZStream` for as long as the page stays connected and sends each value it
 emits as a message. This stream emits `Msg.Refresh` every ten seconds.
@@ -124,9 +126,7 @@ When a service can announce changes itself, subscribe to its stream rather than
 polling. The stream maps each change to a message:
 
 ```scala fragment
-connected.subscriptions.start(Changes, SubscriptionDelivery.Lossless)(
-  orders.placed.map(Msg.OrderPlaced(_))
-)
+connected.subscriptions.start(Changes)(orders.placed.map(Msg.OrderPlaced(_)))
 ```
 
 The [asynchronous work](../guides/async-work.md) and

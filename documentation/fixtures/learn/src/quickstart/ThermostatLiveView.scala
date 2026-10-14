@@ -12,16 +12,13 @@ final class ThermostatLiveView(thermostat: Thermostat)
 
   // docs:start learn-thermostat-mount
   def mount(ctx: MountContext): Task[Model] =
-    ctx.connection match
-      case Connection.Disconnected =>
-        ZIO.succeed(Model(reading = AsyncValue.loading))
-      case Connection.Connected(connected) =>
-        for
-          _ <- connected.async.start(Reading)(thermostat.temperature)(Msg.Measured(_))
-          _ <- connected.subscriptions.start(RefreshTimer, SubscriptionDelivery.Latest)(
-                 ZStream.fromSchedule(Schedule.spaced(RefreshEvery)).as(Msg.Refresh)
-               )
-        yield Model(reading = AsyncValue.loading)
+    ctx.connection
+      .whenConnected(connected =>
+        connected.async.start(Reading)(thermostat.temperature)(Msg.Measured(_)) *>
+          connected.subscriptions.start(RefreshTimer, SubscriptionDelivery.Latest)(
+            ZStream.fromSchedule(Schedule.spaced(RefreshEvery)).as(Msg.Refresh)
+          )
+      ).as(Model(reading = AsyncValue.loading))
   // docs:end learn-thermostat-mount
 
   // docs:start learn-thermostat-handle-message

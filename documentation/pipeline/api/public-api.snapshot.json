@@ -2386,6 +2386,18 @@
       ]
     },
     {
+      "id" : "def:scalive.Connection.whenConnected",
+      "ownerId" : "enum:scalive.Connection",
+      "qualifiedName" : "scalive.Connection.whenConnected",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.Connection.whenConnected:d7f9fafe6e50b48f",
+          "signature" : "def whenConnected[R, E](effect: Connected => zio.ZIO[R, E, Any]): zio.ZIO[R, E, Unit]"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.ContextAppend.append",
       "ownerId" : "trait:scalive.ContextAppend",
       "qualifiedName" : "scalive.ContextAppend.append",
@@ -9448,8 +9460,20 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.Subscriptions.replace:9ba791479f697ed1",
-          "signature" : "def replace(key: SubscriptionKey, delivery: SubscriptionDelivery)(stream: zio.stream.ZStream[Any, Nothing, Msg]): zio.package.Task[Unit]"
+          "id" : "def:scalive.Subscriptions.replace:939a79d2a4603777",
+          "signature" : "def replace(key: SubscriptionKey, delivery: SubscriptionDelivery = ...)(stream: zio.stream.ZStream[Any, Nothing, Msg]): zio.package.Task[Unit]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.Subscriptions.sendAfter",
+      "ownerId" : "trait:scalive.Subscriptions",
+      "qualifiedName" : "scalive.Subscriptions.sendAfter",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.Subscriptions.sendAfter:0f83faa10cdf1f75",
+          "signature" : "def sendAfter(key: SubscriptionKey, delay: zio.package.Duration)(message: Msg): zio.package.Task[Unit]"
         }
       ]
     },
@@ -9460,8 +9484,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.Subscriptions.start:9a2c9969f966bee7",
-          "signature" : "def start(key: SubscriptionKey, delivery: SubscriptionDelivery)(stream: zio.stream.ZStream[Any, Nothing, Msg]): zio.package.Task[Unit]"
+          "id" : "def:scalive.Subscriptions.start:4e1d5934cf658ee1",
+          "signature" : "def start(key: SubscriptionKey, delivery: SubscriptionDelivery = ...)(stream: zio.stream.ZStream[Any, Nothing, Msg]): zio.package.Task[Unit]"
         }
       ]
     },

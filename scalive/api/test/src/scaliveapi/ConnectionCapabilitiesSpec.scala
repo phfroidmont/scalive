@@ -126,16 +126,41 @@ object ConnectionCapabilitiesSpec extends ZIOSpecDefault:
 
       assertTrue(validErrors.isEmpty, invalidErrors.nonEmpty)
     },
-    test("subscription delivery policy is required") {
+    test("subscriptions default to lossless delivery and schedule delayed messages") {
       val errors = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*
+        import zio.*
         import zio.stream.ZStream
 
-        def invalid(ctx: MessageContext[Unit, Unit]) =
-          ctx.subscriptions.start(SubscriptionKey("ticks"))(ZStream.succeed(()))
+        def valid(ctx: MessageContext[Unit, Unit]) =
+          ctx.subscriptions.start(SubscriptionKey("ticks"))(ZStream.succeed(())) *>
+            ctx.subscriptions.replace(SubscriptionKey("ticks"))(ZStream.succeed(())) *>
+            ctx.subscriptions.sendAfter(SubscriptionKey("reminder"), 5.seconds)(())
+      """)
+      val wrongMessageErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        import zio.*
+
+        def invalid(ctx: MessageContext[Int, Unit]) =
+          ctx.subscriptions.sendAfter(SubscriptionKey("reminder"), 5.seconds)("wrong")
       """)
 
-      assertTrue(errors.nonEmpty)
+      assertTrue(errors.isEmpty, wrongMessageErrors.nonEmpty)
+    },
+    test("connected-only work in mount runs through whenConnected") {
+      val errors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        import zio.*
+        import zio.stream.ZStream
+
+        def mount(ctx: MountContext[Int, String]): Task[String] =
+          ctx.connection
+            .whenConnected(connected =>
+              connected.subscriptions.start(SubscriptionKey("ticks"))(ZStream.succeed(1))
+            ).as("ready")
+      """)
+
+      assertTrue(errors.isEmpty)
     },
     test("component disconnected phases gate connected operations") {
       val directErrors = scala.compiletime.testing.typeCheckErrors("""
@@ -222,14 +247,7 @@ object ConnectionCapabilitiesSpec extends ZIOSpecDefault:
             SubscriptionDelivery.Lossless
           )(ZStream.succeed("wrong"))
       """)
-      val missingDeliveryErrors = scala.compiletime.testing.typeCheckErrors("""
-        import scalive.*
-        import zio.stream.ZStream
-        def invalid(ctx: ComponentMessageContext[Unit, Int, Unit]) =
-          ctx.subscriptions.start(SubscriptionKey("ticks"))(ZStream.succeed(1))
-      """)
-
-      assertTrue(errors.isEmpty, wrongMessageErrors.nonEmpty, missingDeliveryErrors.nonEmpty)
+      assertTrue(errors.isEmpty, wrongMessageErrors.nonEmpty)
     },
     test("server-executed commands accept client-only commands and reject pushes") {
       val errors = scala.compiletime.testing.typeCheckErrors("""

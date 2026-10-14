@@ -180,8 +180,7 @@ object StreamStoreSpec extends ZIOSpecDefault:
         deleted.stream.deleted == Vector("items-1")
       )
     },
-    test("validates names, ids, positions, limits, and throwing id functions") {
-      val emptyName   = definition("")
+    test("validates ids, positions, and throwing id functions") {
       val emptyId = LiveStreamDef[Item, String]("items", _.id, _ => "")
       val throwingId = LiveStreamDef[Item, String](
         "items",
@@ -193,18 +192,13 @@ object StreamStoreSpec extends ZIOSpecDefault:
         _.id,
         _ => throw RuntimeException("boom")
       )
-      val badFirst  = definition(limit = Some(StreamLimit.KeepFirst(0)))
-      val badLast   = definition(limit = Some(StreamLimit.KeepLast(Int.MinValue)))
       val streamDef = definition()
       val created   = StreamStore.empty.create(streamDef, Nil)
 
       assertTrue(
-        fails(StreamStore.empty.create(emptyName, Nil)),
         fails(StreamStore.empty.create(emptyId, List(Item("", 1)))),
         fails(StreamStore.empty.create(throwingId, List(Item("a", 1)))),
         fails(StreamStore.empty.create(throwingDomId, List(Item("a", 1)))),
-        fails(StreamStore.empty.create(badFirst, Nil)),
-        fails(StreamStore.empty.create(badLast, Nil)),
         fails(created.store.insert(streamDef, Item("a", 1), StreamAt.Index(-1))),
         fails(created.store.deleteByDomId(streamDef, "")),
         values(created.stream).isEmpty

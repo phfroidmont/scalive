@@ -22,24 +22,22 @@ fail.
 ## Start a subscription when the page connects {#start-a-subscription-when-the-page-connects}
 
 Most pages subscribe in `mount`, once the browser has connected, and stay
-subscribed while the page is open. Match
-@:apiSymbol(def:scalive.LifecycleContext.connection)`ctx.connection`@:@ and start
-the stream in the connected branch:
+subscribed while the page is open. Start the stream from the connected
+capabilities of
+@:apiSymbol(def:scalive.LifecycleContext.connection)`ctx.connection`@:@:
 
 @:sourceRegion(documentation/fixtures/learn/src/quickstart/ThermostatLiveView.scala, learn-thermostat-mount)
 
 @:apiSymbol(def:scalive.RootMountConnected.subscriptions)`connected.subscriptions`@:@
-exists only in the `Connection.Connected` branch, so the disconnected HTTP
-render cannot start a stream. Every connected mount, including the one after a
+exists only in a connected lifecycle, so the disconnected HTTP render cannot
+start a stream. Every connected mount, including the one after a
 reconnect, subscribes again. This stream emits `Msg.Refresh` every ten seconds.
 
 When a service announces changes itself, subscribe to its stream rather than
 polling, and map each change to a message:
 
 ```scala fragment
-connected.subscriptions.start(Changes, SubscriptionDelivery.Lossless)(
-  orders.placed.map(Msg.OrderPlaced(_))
-)
+connected.subscriptions.start(Changes)(orders.placed.map(Msg.OrderPlaced(_)))
 ```
 
 Loading a snapshot and subscribing to its changes separately can miss or reorder
@@ -83,15 +81,27 @@ the rendered controls describe the registered state:
 
 @:sourceRegion(documentation/site/src/scalive/docs/examples/SubscriptionClockExample.scala, subscription-clock-cancel)
 
+## Send a message later {#send-a-message-later}
+
+@:apiSymbol(def:scalive.Subscriptions.sendAfter)`sendAfter`@:@ sends one message to
+the owner after a delay, like Phoenix's `Process.send_after`:
+
+```scala fragment
+ctx.subscriptions.sendAfter(DismissNotice, 5.seconds)(Msg.DismissNotice)
+```
+
+It is a one-message subscription under its key: scheduling again under the same
+key replaces the pending message, and `cancel` stops it before it is sent.
+
 ## Choose a delivery policy {#choose-a-delivery-policy}
 
-The required @:apiSymbol(enum:scalive.SubscriptionDelivery)`SubscriptionDelivery`@:@
-argument controls backpressure at the LiveView mailbox. `Lossless` delivers
-every emitted message in order; use it when every transition matters. `Latest`
-coalesces pending delivery so newer messages supersede older ones; use it for
-high-frequency state snapshots or refresh signals where only the newest value
-matters. The clock deliberately uses `Lossless` for both start and replacement
-so every tick is counted.
+The @:apiSymbol(enum:scalive.SubscriptionDelivery)`SubscriptionDelivery`@:@
+argument controls backpressure at the LiveView mailbox. `Lossless`, the default,
+delivers every emitted message in order; use it when every transition matters.
+`Latest` coalesces pending delivery so newer messages supersede older ones; use
+it for high-frequency state snapshots or refresh signals where only the newest
+value matters. The clock deliberately uses `Lossless` for both start and
+replacement so every tick is counted.
 
 Root subscription messages pass through the root's typed info lifecycle hooks
 before `handleMessage`. Registrations exist only for the connected lifecycle and

@@ -43,6 +43,9 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
   private enum SiblingMsg:
     case Ping
 
+  private enum TimerMsg:
+    case Replaced, Kept, Cancelled
+
   private enum ResourceMsg:
     case Tick
 
@@ -99,6 +102,33 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
           _         <- connected.leave
           left      <- connected.isJoined
         yield assertTrue(initial == "0", clicked == "1", sent == "2", joined, !left)
+      }
+    },
+    test("delivers delayed messages, replacing or cancelling them by key") {
+      val replaced  = SubscriptionKey("replaced")
+      val cancelled = SubscriptionKey("cancelled")
+      val view      = new LiveView[TimerMsg, Vector[TimerMsg]]:
+        def mount(ctx: MountContext) =
+          ctx.connection
+            .whenConnected { connected =>
+              val timers = connected.subscriptions
+              timers.sendAfter(replaced, 20.millis)(TimerMsg.Replaced) *>
+                timers.sendAfter(replaced, 40.millis)(TimerMsg.Kept) *>
+                timers.sendAfter(cancelled, 20.millis)(TimerMsg.Cancelled) *>
+                timers.cancel(cancelled)
+            }.as(Vector.empty)
+        def handleMessage(model: Vector[TimerMsg], ctx: MessageContext) =
+          message => ZIO.succeed(model :+ message)
+        override def view(model: Signal[Vector[TimerMsg]]) =
+          span(idAttr := "received", model.map(_.mkString(",")))
+
+      ZIO.scoped {
+        for
+          connected <- ConnectedRender.join(view)
+          _         <- connected.awaitHtml("the kept timer", 3.seconds)(_.contains("Kept"))
+          _         <- ZIO.sleep(100.millis)
+          received  <- connected.text("#received")
+        yield assertTrue(received == "Kept")
       }
     },
     test("dispatches typed form change and submit bindings") {

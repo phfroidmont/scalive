@@ -52,9 +52,9 @@ enum StreamLimit:
   * Every item must produce a stable, non-empty DOM id that is unique within the stream and, as an
   * HTML invariant, within the rendered document. Equal ids identify the same stream entry and cause
   * an in-place update rather than a second row. Changing an item's id does not delete its old row.
-  * The runtime rejects an empty name, an empty generated id, a throwing `id` or `domId`, an invalid
-  * position, or a non-positive limit when an operation uses the definition; construction itself is
-  * unchecked.
+  * Construction throws `IllegalArgumentException` for an empty name or a non-positive limit. The
+  * runtime rejects an empty generated id, a throwing `id` or `domId`, or an invalid position when
+  * an operation uses the definition.
   *
   * @tparam A
   *   the stream item type
@@ -76,31 +76,28 @@ final class LiveStreamDef[A, Id] private (
   val domId: Id => String,
   val limit: Option[StreamLimit],
   private[scalive] val identity: LiveStreamDefIdentity):
-  /** Returns a copy that retains at most the first `count` items.
-    *
-    * Validation that `count` is positive is deferred until an operation applies the limit.
-    */
+  require(name != null && name.nonEmpty, "stream name must be non-empty")
+  limit.foreach {
+    case StreamLimit.KeepFirst(count) =>
+      require(count > 0, s"stream limit must be positive: $count")
+    case StreamLimit.KeepLast(count) => require(count > 0, s"stream limit must be positive: $count")
+  }
+
+  /** Returns a copy that retains at most the first `count` items, which must be positive. */
   def keepFirst(count: Int): LiveStreamDef[A, Id] =
     withLimit(Some(StreamLimit.KeepFirst(count)))
 
-  /** Returns a copy that retains at most the last `count` items.
-    *
-    * Validation that `count` is positive is deferred until an operation applies the limit.
-    */
+  /** Returns a copy that retains at most the last `count` items, which must be positive. */
   def keepLast(count: Int): LiveStreamDef[A, Id] =
     withLimit(Some(StreamLimit.KeepLast(count)))
 
-  /** Returns a copy using `limit`; `None` disables retention pruning.
-    *
-    * Limit validation is deferred until an operation applies the limit.
-    */
+  /** Returns a copy using `limit`; `None` disables retention pruning. */
   def withLimit(limit: Option[StreamLimit]): LiveStreamDef[A, Id] =
     LiveStreamDef(name, id, domId, limit, identity)
 
   /** Returns a copy with no retention limit. */
   def withoutLimit: LiveStreamDef[A, Id] =
     withLimit(None)
-end LiveStreamDef
 
 /** Convenience constructors for [[LiveStreamDef]]. */
 object LiveStreamDef:

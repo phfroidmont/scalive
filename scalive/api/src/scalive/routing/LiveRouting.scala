@@ -605,7 +605,7 @@ final class LivePath[A] private[scalive] (path: PathCodec[A])
     * A literal string matches itself; a codec such as `PathCodec.int("id")` decodes one segment and
     * adds its value to the path values.
     */
-  def /[B](that: PathCodec[B])(using combiner: Combiner[A, B]): LivePath[combiner.Out] =
+  def /[B, Out](that: PathCodec[B])(using combiner: Combiner.WithOut[A, B, Out]): LivePath[Out] =
     LivePath(pathCodec / that)
 
   /** Adds query parameters to the parameters a routed LiveView receives.
@@ -615,40 +615,43 @@ final class LivePath[A] private[scalive] (path: PathCodec[A])
     */
   def query[Query](
     codec: QueryCodec[Query]
-  )(using
-    combiner: Combiner[A, Query]
-  ): LiveRoute[A, combiner.Out] =
+  )[Out](
+    using combiner: Combiner.WithOut[A, Query, Out]
+  ): LiveRoute[A, Out] =
     LiveRoute(pathCodec, LiveParamsCodec.fromQuery(codec))
 
   /** Adds query parameters to the parameters a routed LiveView receives.
     *
     * This form adds one required parameter, as in `query[Int]("page")`.
     */
-  def query[Query: Schema](
+  def query[Query](
     name: String
-  )(using
-    combiner: Combiner[A, Query]
-  ): LiveRoute[A, combiner.Out] =
+  )(using schema: Schema[Query]
+  )[Out](
+    using combiner: Combiner.WithOut[A, Query, Out]
+  ): LiveRoute[A, Out] =
     query(HttpCodec.query[Query](name))
 
   /** Adds an optional query parameter, which decodes to `None` when it is absent, as in
     * `queryOptional[String]("q")`.
     */
-  def queryOptional[Query: Schema](
+  def queryOptional[Query](
     name: String
-  )(using
-    combiner: Combiner[A, Option[Query]]
-  ): LiveRoute[A, combiner.Out] =
+  )(using schema: Schema[Query]
+  )[Out](
+    using combiner: Combiner.WithOut[A, Option[Query], Out]
+  ): LiveRoute[A, Out] =
     query(HttpCodec.query[Query](name).optional)
 
   /** Adds query parameters to the parameters a routed LiveView receives.
     *
     * This form derives the parameters from the fields of `Query`'s schema.
     */
-  def query[Query: Schema](
-    using
-    combiner: Combiner[A, Query]
-  ): LiveRoute[A, combiner.Out] =
+  def query[Query](
+    using schema: Schema[Query]
+  )[Out](
+    using combiner: Combiner.WithOut[A, Query, Out]
+  ): LiveRoute[A, Out] =
     query(HttpCodec.query[Query])
 
   /** Decodes the route's values into another parameter type that can still build links. */
@@ -900,10 +903,17 @@ final class LiveRouter private[scalive] (
 
   /** Builds the application from registered routes and named live sessions.
     *
-    * Routes that read session context must be inside the [[LiveSessionBuilder]] that produces it.
+    * Routes that read session context must be inside the [[LiveSessionBuilder]] that produces it;
+    * the compiler reports each one passed here directly.
     */
-  def apply[R](
-    routes: (LiveRegistration[R] { type Input = Any } | LiveSession[R])*
+  inline def apply[R](
+    inline routes: (LiveRegistration[R] | LiveSession[R])*
+  ): LiveApplication[R] =
+    LiveRouterChecks.requireRouterRoutes(routes)
+    application(routes)
+
+  private[scalive] def application[R](
+    routes: Seq[LiveRegistration[R] | LiveSession[R]]
   ): LiveApplication[R] =
     LiveApplication(routes.toVector, socketPath, layouts, rootLayout)
 end LiveRouter

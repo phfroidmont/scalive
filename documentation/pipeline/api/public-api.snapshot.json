@@ -6308,8 +6308,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.LivePath./:29f79a67f4485ecb",
-          "signature" : "def /[B](that: zio.http.codec.PathCodec[B])(using combiner: zio.http.codec.Combiner[A, B]): LivePath[combiner.Out]"
+          "id" : "def:scalive.LivePath./:a22b3e546d2f2d92",
+          "signature" : "def /[B, Out](that: zio.http.codec.PathCodec[B])(using combiner: zio.http.codec.Combiner.WithOut[A, B, Out]): LivePath[Out]"
         }
       ]
     },
@@ -6332,16 +6332,16 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.LivePath.query:1025116c54afb40e",
-          "signature" : "def query[Query](codec: zio.http.codec.package.QueryCodec[Query])(using combiner: zio.http.codec.Combiner[A, Query]): LiveRoute[A, combiner.Out]"
+          "id" : "def:scalive.LivePath.query:0e56f5b76e7790b5",
+          "signature" : "def query[Query](name: String)(using schema: zio.schema.Schema[Query])[Out](using combiner: zio.http.codec.Combiner.WithOut[A, Query, Out]): LiveRoute[A, Out]"
         },
         {
-          "id" : "def:scalive.LivePath.query:256f71b83d61430e",
-          "signature" : "def query[Query](using evidence$1: zio.schema.Schema[Query], combiner: zio.http.codec.Combiner[A, Query]): LiveRoute[A, combiner.Out]"
+          "id" : "def:scalive.LivePath.query:af2c74966595112f",
+          "signature" : "def query[Query](using schema: zio.schema.Schema[Query])[Out](using combiner: zio.http.codec.Combiner.WithOut[A, Query, Out]): LiveRoute[A, Out]"
         },
         {
-          "id" : "def:scalive.LivePath.query:9427edabe9a6a6b6",
-          "signature" : "def query[Query](name: String)(using evidence$1: zio.schema.Schema[Query], combiner: zio.http.codec.Combiner[A, Query]): LiveRoute[A, combiner.Out]"
+          "id" : "def:scalive.LivePath.query:e0894a87d0efad3e",
+          "signature" : "def query[Query](codec: zio.http.codec.package.QueryCodec[Query])[Out](using combiner: zio.http.codec.Combiner.WithOut[A, Query, Out]): LiveRoute[A, Out]"
         }
       ]
     },
@@ -6352,8 +6352,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.LivePath.queryOptional:0f71e5c4b0b75c85",
-          "signature" : "def queryOptional[Query](name: String)(using evidence$1: zio.schema.Schema[Query], combiner: zio.http.codec.Combiner[A, Option[Query]]): LiveRoute[A, combiner.Out]"
+          "id" : "def:scalive.LivePath.queryOptional:030264e63528f8eb",
+          "signature" : "def queryOptional[Query](name: String)(using schema: zio.schema.Schema[Query])[Out](using combiner: zio.http.codec.Combiner.WithOut[A, Option[Query], Out]): LiveRoute[A, Out]"
         }
       ]
     },
@@ -6784,8 +6784,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.LiveRouter.apply:9d3b68491d2613b0",
-          "signature" : "def apply[R](routes: |[(LiveRegistration[R] { type Input = Any }), LiveSession[R]]*): LiveApplication[R]"
+          "id" : "def:scalive.LiveRouter.apply:dd77dc201d51b1ab",
+          "signature" : "def apply[R](routes: |[LiveRegistration[R], LiveSession[R]]*): LiveApplication[R]"
         }
       ]
     },

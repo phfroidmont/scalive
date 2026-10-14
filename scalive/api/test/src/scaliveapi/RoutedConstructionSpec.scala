@@ -103,7 +103,7 @@ object RoutedConstructionSpec extends ZIOSpecDefault:
 
       assertTrue(
         errors.exists(_.message.contains(
-          "Item.type cannot be mounted on a route whose parameters are"
+          "Item.type cannot be mounted on a route whose parameters are Option[String]"
         ))
       )
     },
@@ -192,15 +192,6 @@ object RoutedConstructionSpec extends ZIOSpecDefault:
             (live / "billing").context((user, org) => Billing(user, org))
           )
       """)
-      val atRouter = scala.compiletime.testing.typeCheckErrors("""
-        import scalive.*
-        import zio.*
-        final case class User(name: String)
-        final class Account(user: User) extends LiveView.Eventless[Unit]:
-          def mount(ctx: MountContext) = ZIO.unit
-          def view(model: Signal[Unit]) = div()
-        val application = Live.router((live / "account").context((user: User) => Account(user)))
-      """)
       val wrongSession = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*
         import zio.*
@@ -219,7 +210,60 @@ object RoutedConstructionSpec extends ZIOSpecDefault:
         )
       """)
 
-      assertTrue(sessionScoped.isEmpty, atRouter.nonEmpty, wrongSession.nonEmpty)
+      assertTrue(
+        sessionScoped.isEmpty,
+        wrongSession.exists(_.message.contains("Required: Org => Account"))
+      )
+    },
+    test("the router explains routes that read session context") {
+      inline val definitions = """
+        import scalive.*
+        import zio.*
+        final case class User(name: String)
+        final case class Access(canEdit: Boolean)
+        final class Account(user: User) extends LiveView.Eventless[Unit]:
+          def mount(ctx: MountContext) = ZIO.unit
+          def view(model: Signal[Unit]) = div()
+        object Home extends LiveView.Eventless[Unit]:
+          def mount(ctx: MountContext) = ZIO.unit
+          def view(model: Signal[Unit]) = div()
+        val access = LiveRouteMountAspect.make[Any, Unit, User, Access]((_, _) => ZIO.succeed(Access(true)))
+      """
+      val direct = scala.compiletime.testing.typeCheckErrors(definitions + """
+        val application = Live.router(
+          live -> Home,
+          (live / "account").context((user: User) => Account(user))
+        )
+      """)
+      val declared = scala.compiletime.testing.typeCheckErrors(definitions + """
+        val account     = (live / "account").context((user: User) => Account(user))
+        val application = Live.router(account)
+      """)
+      val aspect = scala.compiletime.testing.typeCheckErrors(definitions + """
+        val application = Live.router((live / "workspace").withMountAspect(access) -> Home)
+      """)
+      val spliced = scala.compiletime.testing.typeCheckErrors(definitions + """
+        val routes      = Vector((live / "account").context((user: User) => Account(user)))
+        val application = Live.router(routes*)
+      """)
+      val unknown = scala.compiletime.testing.typeCheckErrors(definitions + """
+        val account: LiveRegistration[Any] = (live / "account").context((user: User) => Account(user))
+        val application = Live.router(account)
+      """)
+      val accepted = scala.compiletime.testing.typeCheckErrors(definitions + """
+        val routes: Vector[LiveRegistration[Any] { type Input = Any }] = Vector(live -> Home)
+        val application = Live.router((routes :+ ((live / "x") -> Home))*)
+      """)
+      val message = "This route reads User from a named live session"
+
+      assertTrue(
+        direct.map(_.message).exists(_.startsWith(message)),
+        declared.map(_.message).exists(_.startsWith(message)),
+        aspect.map(_.message).exists(_.startsWith(message)),
+        spliced.map(_.message).exists(_.startsWith(message)),
+        unknown.map(_.message).exists(_.contains("does not say which session context")),
+        accepted.isEmpty
+      )
     },
     test("services come from an effectful factory, with or without context") {
       val errors = scala.compiletime.testing.typeCheckErrors("""

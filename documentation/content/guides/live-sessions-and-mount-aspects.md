@@ -53,7 +53,9 @@ why the work is split this way.
 
 Routes in the session receive the context through `context`, as in
 `Routes.account.context((user: CurrentUser) => AccountLiveView(user))`. The
-compiler rejects a route that needs context the session does not provide.
+compiler rejects a route that needs context the session does not provide, and
+reports a route that reads session context but is passed straight to
+`Live.router`.
 Layouts installed on the session can read the context too:
 
 @:sourceRegion(documentation/fixtures/guides/src/sessions/Sessions.scala, sessions-account-layout)

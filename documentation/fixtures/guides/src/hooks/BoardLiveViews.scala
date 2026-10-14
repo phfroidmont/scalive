@@ -40,7 +40,7 @@ object Board:
 final class LoggedBoardLiveView(user: User) extends LiveView[Board.Msg, Board.Model]:
   import Board.*
 
-  // docs:start hooks-static-root
+  // docs:start hooks-static-liveview
   override def hooks: LiveHooks[Msg, Model] =
     LiveHooks
       .empty[Msg, Model]
@@ -50,7 +50,7 @@ final class LoggedBoardLiveView(user: User) extends LiveView[Board.Msg, Board.Mo
       .onInfo { (model, msg, _) =>
         ZIO.logDebug(s"server message=$msg").as(LiveHookResult.cont(model))
       }
-  // docs:end hooks-static-root
+  // docs:end hooks-static-liveview
 
   def mount(ctx: MountContext): Task[Model] =
     ZIO.succeed(Model(user, Nil))

@@ -102,7 +102,7 @@ This keeps policy at the broadest boundary that needs it.
 | Inputs | Phase-specific request and preceding session context | Decoded destination path values, destination URL, and preceding context |
 | Timing | Disconnected mount, initial connected mount, and connected navigation within the named live session | Every disconnected or connected mount of that route, including connected navigation |
 | Serialization | Minimal signed claims cross from HTTP to the connected lifecycle | No claims; output is never serialized |
-| Failure boundary | HTTP `Response` when disconnected; `LiveMountFailure` when connected | `LiveRouteMountFailure` defines both HTTP and connected outcomes |
+| Failure boundary | HTTP `Response` when disconnected; `LiveSessionMountFailure` when connected | `LiveRouteMountFailure` defines both HTTP and connected outcomes |
 | Intended use | Identity and policy shared by a route group | Destination-specific loading, admission, and authorization |
 
 Both kinds decide whether a lifecycle may start and produce typed context.
@@ -165,7 +165,7 @@ shows the complete flow.
 ## Use failure semantics deliberately {#use-failure-semantics-deliberately}
 
 Disconnected session-aspect failures are ordinary HTTP responses. Connected
-session failures use @:apiSymbol(enum:scalive.LiveMountFailure)`LiveMountFailure`@:@:
+session failures use @:apiSymbol(enum:scalive.LiveSessionMountFailure)`LiveSessionMountFailure`@:@:
 
 - redirect to a typed location when the visitor can recover elsewhere;
 - reject as unauthorized when no navigation is appropriate; or
@@ -189,7 +189,7 @@ rejection:
 - `unauthorized`, `forbidden`, and `notFound` render HTTP 401, 403, and 404
   respectively, while all reject connected admission as unauthorized; and
 - `custom` supplies an explicit disconnected `Response` and connected
-  `LiveMountFailure` for uncommon policies.
+  `LiveSessionMountFailure` for uncommon policies.
 
 Use `notFound` when hiding record existence is part of policy, as the workspace
 aspect's service does, `forbidden` when the HTTP distinction is useful, and

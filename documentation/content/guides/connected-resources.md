@@ -19,7 +19,7 @@ messages, or when it must be replaced or cancelled while the page stays open.
 
 The @:apiSymbol(trait:scalive.ConnectedResources)`ConnectedResources`@:@
 capability is exposed through the connected mount branch as
-@:apiSymbol(def:scalive.RootMountConnected.resources)`connected.resources`@:@.
+@:apiSymbol(def:scalive.MountConnected.resources)`connected.resources`@:@.
 Call @:apiSymbol(def:scalive.ConnectedResources.acquireRelease)`acquireRelease`@:@
 there and provide a non-failing finalizer. The registration example keeps the
 acquired handle in its model:
@@ -101,7 +101,7 @@ initializers. Do not rely on registration side effects in a factory or while
 building the render graph.
 
 Execution is sequential and fail-fast. A `Task` failure is a mount failure, not an
-authentication rejection or a `LiveMountFailure` result. Use mount aspects and
+authentication rejection or a `LiveSessionMountFailure` result. Use mount aspects and
 admission for controlled authorization outcomes. All initializers and direct
 connected-mount acquisitions use the same existing `ConnectedResources` scope.
 If an initializer or the remaining mount/initial render fails, lifecycle closure

@@ -58,7 +58,7 @@ object AuthMountAspect:
         ZIO.serviceWithZIO[AuthService](auth =>
           auth
             .resume(claims.publicSessionId)
-            .someOrFail(LiveMountFailure.redirect(Pages.login.location))
+            .someOrFail(LiveSessionMountFailure.redirect(Pages.login.location))
             .map(connectedAuth(auth, _))
         )
     )

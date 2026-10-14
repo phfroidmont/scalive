@@ -29,7 +29,7 @@ trait LifecycleContext[+Connected]:
   * capabilities are reached through [[connection]]. See [the
   * lifecycle](https://scalive.dev/learn/lifecycle-and-connection-behavior).
   */
-trait MountContext[Msg, Model] extends LifecycleContext[RootMountConnected[Msg]]:
+trait MountContext[Msg, Model] extends LifecycleContext[MountConnected[Msg]]:
   /** Redirects or navigates away instead of rendering this page. */
   def nav: MountNavigation
 
@@ -43,7 +43,7 @@ trait MountContext[Msg, Model] extends LifecycleContext[RootMountConnected[Msg]]
   def streams: Streams
 
   /** Installs lifecycle hooks for this lifecycle only. */
-  def hooks: RootHooks[Msg, Model]
+  def hooks: LifecycleHooks[Msg, Model]
 
 /** Capabilities available while a [[LiveView]] handles a message.
   *
@@ -78,11 +78,11 @@ trait MessageContext[Msg, Model] extends ConnectedMetadata:
   def components: ComponentUpdates
 
   /** Installs or removes lifecycle hooks for this lifecycle only. */
-  def hooks: RootHooks[Msg, Model]
+  def hooks: LifecycleHooks[Msg, Model]
 
 /** Capabilities available while a [[LiveView.Routed LiveView.Routed]] handles new route parameters.
   */
-trait ParamsContext[Msg, Model] extends LifecycleContext[RootParamsConnected[Msg]]:
+trait ParamsContext[Msg, Model] extends LifecycleContext[ParamsConnected[Msg]]:
   /** Patches the URL, navigates to another LiveView, or redirects. */
   def nav: Navigation
 
@@ -96,7 +96,7 @@ trait ParamsContext[Msg, Model] extends LifecycleContext[RootParamsConnected[Msg
   def streams: Streams
 
   /** Installs or removes lifecycle hooks for this lifecycle only. */
-  def hooks: RootHooks[Msg, Model]
+  def hooks: LifecycleHooks[Msg, Model]
 
 /** Capabilities available while a [[LiveView.Routed LiveView.Routed]] handles a message.
   *
@@ -130,7 +130,7 @@ private[scalive] object RoutedContexts:
       def subscriptions: Subscriptions[Msg]             = underlying.subscriptions
       def client: Client                                = underlying.client
       def components: ComponentUpdates                  = underlying.components
-      def hooks: RootHooks[Msg, Model]                  = underlying.hooks
+      def hooks: LifecycleHooks[Msg, Model]             = underlying.hooks
       def staticChanged: Boolean                        = underlying.staticChanged
       def connectParams: Map[String, zio.json.ast.Json] = underlying.connectParams
 
@@ -139,21 +139,21 @@ private[scalive] object RoutedContexts:
     location: Params => Either[LiveLocation.EncodeError, LiveLocation]
   ): RoutedParamsContext[Msg, Model, Params] =
     new RoutedParamsContext[Msg, Model, Params]:
-      val nav                          = RoutedNavigation(underlying.nav, location)
-      def flash: Flash                 = underlying.flash
-      def uploads: Uploads             = underlying.uploads
-      def streams: Streams             = underlying.streams
-      def hooks: RootHooks[Msg, Model] = underlying.hooks
-      def connection: Connection[RootParamsConnected[Msg]] = underlying.connection
+      val nav                                          = RoutedNavigation(underlying.nav, location)
+      def flash: Flash                                 = underlying.flash
+      def uploads: Uploads                             = underlying.uploads
+      def streams: Streams                             = underlying.streams
+      def hooks: LifecycleHooks[Msg, Model]            = underlying.hooks
+      def connection: Connection[ParamsConnected[Msg]] = underlying.connection
 
 /** Capabilities available to the after-render hooks of a [[LiveView]].
   *
   * After-render hooks run after the disconnected HTTP render and after each connected render. The
   * browser client is reached through [[connection]] once connected.
   */
-trait AfterRenderContext[Msg, Model] extends LifecycleContext[RootAfterRenderConnected]:
+trait AfterRenderContext[Msg, Model] extends LifecycleContext[AfterRenderConnected]:
   /** Installs or removes lifecycle hooks for this lifecycle only. */
-  def hooks: RootHooks[Msg, Model]
+  def hooks: LifecycleHooks[Msg, Model]
 
 /** Capabilities available while a [[LiveComponent]] mounts. */
 trait ComponentMountContext[Props, Msg, Model] extends LifecycleContext[ComponentConnected[Msg]]:
@@ -167,7 +167,7 @@ trait ComponentMountContext[Props, Msg, Model] extends LifecycleContext[Componen
   def streams: Streams
 
   /** Installs lifecycle hooks for this component instance only. */
-  def hooks: ComponentHooks[Props, Msg, Model]
+  def hooks: ComponentLifecycleHooks[Props, Msg, Model]
 
 /** Capabilities available while a [[LiveComponent]] receives new props. */
 trait ComponentUpdateContext[Props, Msg, Model] extends LifecycleContext[ComponentConnected[Msg]]:
@@ -181,7 +181,7 @@ trait ComponentUpdateContext[Props, Msg, Model] extends LifecycleContext[Compone
   def streams: Streams
 
   /** Installs or removes lifecycle hooks for this component instance only. */
-  def hooks: ComponentHooks[Props, Msg, Model]
+  def hooks: ComponentLifecycleHooks[Props, Msg, Model]
 
 /** Capabilities available while a [[LiveComponent]] handles a message.
   *
@@ -218,7 +218,7 @@ trait ComponentMessageContext[Props, Msg, Model] extends ConnectedMetadata:
   def components: ComponentUpdates
 
   /** Installs or removes lifecycle hooks for this component instance only. */
-  def hooks: ComponentHooks[Props, Msg, Model]
+  def hooks: ComponentLifecycleHooks[Props, Msg, Model]
   private[scalive] def emit[Output](
     channel: ComponentOutputChannel[Output],
     output: Output
@@ -233,4 +233,4 @@ end ComponentMessageContext
   */
 trait ComponentAfterRenderContext[Props, Msg, Model] extends LifecycleContext[ConnectedMetadata]:
   /** Installs or removes lifecycle hooks for this component instance only. */
-  def hooks: ComponentHooks[Props, Msg, Model]
+  def hooks: ComponentLifecycleHooks[Props, Msg, Model]

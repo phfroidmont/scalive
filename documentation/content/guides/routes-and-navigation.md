@@ -209,7 +209,7 @@ literal or percent-encoded control characters and schemes other than HTTP or
 HTTPS before recording the navigation.
 
 Mount-admission failures are different:
-`LiveRouteMountFailure.redirectUnsafe` and `LiveMountFailure.redirectUnsafe`
+`LiveRouteMountFailure.redirectUnsafe` and `LiveSessionMountFailure.redirectUnsafe`
 accept an unchecked `URL` and perform no same-origin or local-path validation.
 Use them only for trusted destinations. Never concatenate untrusted input into
 any unsafe destination; parse it and enforce an application allowlist first.

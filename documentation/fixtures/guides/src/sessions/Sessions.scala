@@ -16,7 +16,7 @@ final case class WorkspaceAccess(workspaceId: String, canEdit: Boolean)
 
 trait Authentication:
   def authenticate(request: Request): IO[Response, AuthenticatedSession]
-  def resume(sessionId: SessionId): IO[LiveMountFailure, CurrentUser]
+  def resume(sessionId: SessionId): IO[LiveSessionMountFailure, CurrentUser]
 
 trait Workspaces:
   def authorize(user: CurrentUser, workspaceId: String): IO[LiveRouteMountFailure, WorkspaceAccess]

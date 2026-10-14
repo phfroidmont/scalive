@@ -310,7 +310,7 @@ end Subscriptions
 
 /** Acquisition and finalization owned by one connected `LiveView` lifecycle.
   *
-  * This capability is exposed through [[RootMountConnected.resources]] and route/session connected
+  * This capability is exposed through [[MountConnected.resources]] and route/session connected
   * resource initializers. Applications must not retain it for later acquisition.
   */
 trait ConnectedResources:

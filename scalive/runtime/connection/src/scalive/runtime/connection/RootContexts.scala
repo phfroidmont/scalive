@@ -532,8 +532,8 @@ final private class JournaledComponentUpdates(journal: RootTurnJournal) extends 
     instance: LiveComponentOutputInstance[Props, Msg, Model, Output],
     props: Props
   ): Task[Unit] = journal.componentUpdates.update(_ :+ ComponentUpdateRequest(instance, props))
-final private class DeferredRootHooks[Msg, Model] extends RootHooks[Msg, Model]:
-  val rawEvent: RootRawEventHooks[Msg, Model] = new RootRawEventHooks[Msg, Model]:
+final private class DeferredRootHooks[Msg, Model] extends LifecycleHooks[Msg, Model]:
+  val rawEvent: RawEventHooks[Msg, Model] = new RawEventHooks[Msg, Model]:
     def attach(
       id: String
     )(
@@ -541,7 +541,7 @@ final private class DeferredRootHooks[Msg, Model] extends RootHooks[Msg, Model]:
     ): Task[Unit]                      = Deferred.fail("attach raw event hook")
     def detach(id: String): Task[Unit] = Deferred.fail("detach raw event hook")
 
-  val browserEvent: RootBrowserEventHooks[Msg, Model] = new RootBrowserEventHooks[Msg, Model]:
+  val browserEvent: BrowserEventHooks[Msg, Model] = new BrowserEventHooks[Msg, Model]:
     def attach[A: JsonDecoder](
       id: String,
       event: BrowserToServerEvent[A]
@@ -550,7 +550,7 @@ final private class DeferredRootHooks[Msg, Model] extends RootHooks[Msg, Model]:
     ): Task[Unit]                      = Deferred.fail("attach browser event hook")
     def detach(id: String): Task[Unit] = Deferred.fail("detach browser event hook")
 
-  val event: RootEventHooks[Msg, Model] = new RootEventHooks[Msg, Model]:
+  val event: EventHooks[Msg, Model] = new EventHooks[Msg, Model]:
     def attach(
       id: String
     )(
@@ -558,7 +558,7 @@ final private class DeferredRootHooks[Msg, Model] extends RootHooks[Msg, Model]:
     ): Task[Unit]                      = Deferred.fail("attach event hook")
     def detach(id: String): Task[Unit] = Deferred.fail("detach event hook")
 
-  val params: RootParamsHooks[Msg, Model] = new RootParamsHooks[Msg, Model]:
+  val params: ParamsHooks[Msg, Model] = new ParamsHooks[Msg, Model]:
     def attach(
       id: String
     )(
@@ -566,7 +566,7 @@ final private class DeferredRootHooks[Msg, Model] extends RootHooks[Msg, Model]:
     ): Task[Unit]                      = Deferred.fail("attach params hook")
     def detach(id: String): Task[Unit] = Deferred.fail("detach params hook")
 
-  val info: RootInfoHooks[Msg, Model] = new RootInfoHooks[Msg, Model]:
+  val info: InfoHooks[Msg, Model] = new InfoHooks[Msg, Model]:
     def attach(
       id: String
     )(
@@ -574,7 +574,7 @@ final private class DeferredRootHooks[Msg, Model] extends RootHooks[Msg, Model]:
     ): Task[Unit]                      = Deferred.fail("attach info hook")
     def detach(id: String): Task[Unit] = Deferred.fail("detach info hook")
 
-  val async: RootAsyncHooks[Msg, Model] = new RootAsyncHooks[Msg, Model]:
+  val async: AsyncHooks[Msg, Model] = new AsyncHooks[Msg, Model]:
     def attach(
       id: String
     )(
@@ -584,7 +584,7 @@ final private class DeferredRootHooks[Msg, Model] extends RootHooks[Msg, Model]:
     ): Task[Unit]                      = Deferred.fail("attach async hook")
     def detach(id: String): Task[Unit] = Deferred.fail("detach async hook")
 
-  val afterRender: RootAfterRenderHooks[Msg, Model] = new RootAfterRenderHooks[Msg, Model]:
+  val afterRender: AfterRenderHooks[Msg, Model] = new AfterRenderHooks[Msg, Model]:
     def attach(
       id: String
     )(
@@ -594,8 +594,8 @@ final private class DeferredRootHooks[Msg, Model] extends RootHooks[Msg, Model]:
 end DeferredRootHooks
 
 final private class JournaledRootHooks[Msg, Model](journal: RootTurnJournal)
-    extends RootHooks[Msg, Model]:
-  val rawEvent: RootRawEventHooks[Msg, Model] = new RootRawEventHooks[Msg, Model]:
+    extends LifecycleHooks[Msg, Model]:
+  val rawEvent: RawEventHooks[Msg, Model] = new RawEventHooks[Msg, Model]:
     def attach(
       id: String
     )(
@@ -615,7 +615,7 @@ final private class JournaledRootHooks[Msg, Model](journal: RootTurnJournal)
       registry.copy(dynamicRaw = RootHookRegistry.detach(registry.dynamicRaw, id))
     )
 
-  val browserEvent: RootBrowserEventHooks[Msg, Model] = new RootBrowserEventHooks[Msg, Model]:
+  val browserEvent: BrowserEventHooks[Msg, Model] = new BrowserEventHooks[Msg, Model]:
     def attach[A: JsonDecoder](
       id: String,
       event: BrowserToServerEvent[A]
@@ -634,7 +634,7 @@ final private class JournaledRootHooks[Msg, Model](journal: RootTurnJournal)
       registry.copy(dynamicBrowser = RootHookRegistry.detach(registry.dynamicBrowser, id))
     )
 
-  val event: RootEventHooks[Msg, Model] = new RootEventHooks[Msg, Model]:
+  val event: EventHooks[Msg, Model] = new EventHooks[Msg, Model]:
     def attach(
       id: String
     )(
@@ -655,7 +655,7 @@ final private class JournaledRootHooks[Msg, Model](journal: RootTurnJournal)
       registry.copy(dynamicEvent = RootHookRegistry.detach(registry.dynamicEvent, id))
     )
 
-  val params: RootParamsHooks[Msg, Model] = new RootParamsHooks[Msg, Model]:
+  val params: ParamsHooks[Msg, Model] = new ParamsHooks[Msg, Model]:
     def attach(
       id: String
     )(
@@ -676,7 +676,7 @@ final private class JournaledRootHooks[Msg, Model](journal: RootTurnJournal)
       registry.copy(dynamicParams = RootHookRegistry.detach(registry.dynamicParams, id))
     )
 
-  val info: RootInfoHooks[Msg, Model] = new RootInfoHooks[Msg, Model]:
+  val info: InfoHooks[Msg, Model] = new InfoHooks[Msg, Model]:
     def attach(
       id: String
     )(
@@ -697,7 +697,7 @@ final private class JournaledRootHooks[Msg, Model](journal: RootTurnJournal)
       registry.copy(dynamicInfo = RootHookRegistry.detach(registry.dynamicInfo, id))
     )
 
-  val async: RootAsyncHooks[Msg, Model] = new RootAsyncHooks[Msg, Model]:
+  val async: AsyncHooks[Msg, Model] = new AsyncHooks[Msg, Model]:
     def attach(
       id: String
     )(
@@ -723,7 +723,7 @@ final private class JournaledRootHooks[Msg, Model](journal: RootTurnJournal)
       registry.copy(dynamicAsync = RootHookRegistry.detach(registry.dynamicAsync, id))
     )
 
-  val afterRender: RootAfterRenderHooks[Msg, Model] = new RootAfterRenderHooks[Msg, Model]:
+  val afterRender: AfterRenderHooks[Msg, Model] = new AfterRenderHooks[Msg, Model]:
     def attach(id: String)(hook: (Model, AfterRenderContext[Msg, Model]) => Task[Unit]) =
       journal.updateHooks[Msg, Model](registry =>
         registry.copy(
@@ -745,7 +745,7 @@ final private class RootConnected[Msg](
   metadata: RootConnectionMetadata,
   journal: RootTurnJournal,
   resourcesCapability: ConnectedResources)
-    extends RootMountConnected[Msg]:
+    extends MountConnected[Msg]:
   val staticChanged: Boolean            = metadata.staticChanged
   val connectParams: Map[String, Json]  = metadata.connectParams
   val async: Async[Msg]                 = JournaledAsync(journal)
@@ -755,9 +755,9 @@ final private class RootConnected[Msg](
   val components: ComponentUpdates      = JournaledComponentUpdates(journal)
 
 final private[connection] class RootMountContext[Msg, Model] private (
-  val connection: Connection[RootMountConnected[Msg]],
+  val connection: Connection[MountConnected[Msg]],
   val nav: MountNavigation,
-  val hooks: RootHooks[Msg, Model],
+  val hooks: LifecycleHooks[Msg, Model],
   val flash: Flash,
   val uploads: Uploads,
   val streams: Streams)
@@ -822,7 +822,7 @@ final private[connection] class RootMessageContext[Msg, Model](
   val subscriptions: Subscriptions[Msg] = JournaledSubscriptions(journal)
   val client: Client                    = JournaledClient(journal)
   val components: ComponentUpdates      = JournaledComponentUpdates(journal)
-  val hooks: RootHooks[Msg, Model]      = JournaledRootHooks(journal)
+  val hooks: LifecycleHooks[Msg, Model] = JournaledRootHooks(journal)
 
 final private[connection] class RootParamsContext[Msg, Model](
   metadata: RootConnectionMetadata,
@@ -830,9 +830,9 @@ final private[connection] class RootParamsContext[Msg, Model](
   journal: RootTurnJournal,
   connected: Boolean)
     extends ParamsContext[Msg, Model]:
-  val connection: Connection[RootParamsConnected[Msg]] =
+  val connection: Connection[ParamsConnected[Msg]] =
     if connected then
-      Connection.Connected(new RootParamsConnected[Msg]:
+      Connection.Connected(new ParamsConnected[Msg]:
         val staticChanged                     = metadata.staticChanged
         val connectParams                     = metadata.connectParams
         val async: Async[Msg]                 = JournaledAsync(journal)
@@ -840,24 +840,24 @@ final private[connection] class RootParamsContext[Msg, Model](
         val client: Client                    = JournaledClient(journal)
         val components: ComponentUpdates      = JournaledComponentUpdates(journal))
     else Connection.Disconnected
-  val nav: Navigation              = new RootNavigation(currentUrl, journal, allowPatch = true)
-  val flash: Flash                 = JournaledFlash(journal)
-  val uploads: Uploads             = JournaledUploads(journal)
-  val streams: Streams             = JournaledStreams(journal.streams, applyLimits = connected)
-  val hooks: RootHooks[Msg, Model] = JournaledRootHooks(journal)
+  val nav: Navigation                   = new RootNavigation(currentUrl, journal, allowPatch = true)
+  val flash: Flash                      = JournaledFlash(journal)
+  val uploads: Uploads                  = JournaledUploads(journal)
+  val streams: Streams                  = JournaledStreams(journal.streams, applyLimits = connected)
+  val hooks: LifecycleHooks[Msg, Model] = JournaledRootHooks(journal)
 
 final private[connection] class RootAfterRenderContext[Msg, Model](
   metadata: RootConnectionMetadata,
   journal: RootTurnJournal,
   connected: Boolean = true)
     extends AfterRenderContext[Msg, Model]:
-  val connection: Connection[RootAfterRenderConnected] =
+  val connection: Connection[AfterRenderConnected] =
     if connected then
       Connection.Connected(
-        new RootAfterRenderConnected:
+        new AfterRenderConnected:
           val staticChanged = metadata.staticChanged
           val connectParams = metadata.connectParams
           val client        = JournaledClient(journal)
       )
     else Connection.Disconnected
-  val hooks: RootHooks[Msg, Model] = JournaledRootHooks(journal)
+  val hooks: LifecycleHooks[Msg, Model] = JournaledRootHooks(journal)

@@ -59,7 +59,7 @@ trait ConnectedMetadata:
   * Reach them by matching `ctx.connection` in `mount`. Work started here belongs to the lifecycle
   * and stops when it closes; a reconnect mounts again and starts it again.
   */
-trait RootMountConnected[Msg] extends ConnectedMetadata:
+trait MountConnected[Msg] extends ConnectedMetadata:
   /** Starts finite background work whose result returns as a message.
     *
     * See [asynchronous
@@ -92,7 +92,7 @@ trait RootMountConnected[Msg] extends ConnectedMetadata:
   * Reach them by matching `ctx.connection` in `handleParams`. Work started here belongs to the
   * lifecycle and stops when it closes.
   */
-trait RootParamsConnected[Msg] extends ConnectedMetadata:
+trait ParamsConnected[Msg] extends ConnectedMetadata:
   /** Starts finite background work whose result returns as a message. */
   def async: Async[Msg]
 
@@ -110,7 +110,7 @@ trait RootParamsConnected[Msg] extends ConnectedMetadata:
   *
   * Reach them by matching `ctx.connection` in the hook.
   */
-trait RootAfterRenderConnected extends ConnectedMetadata:
+trait AfterRenderConnected extends ConnectedMetadata:
   /** Pushes events and JavaScript commands to the browser. */
   def client: Client
 

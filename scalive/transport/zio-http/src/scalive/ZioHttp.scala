@@ -24,12 +24,12 @@ object ZioHttp:
     * sessions share a name.
     */
   final class AssemblyException(message: String) extends IllegalArgumentException(message)
-  final private case class ConnectedMountRejected(failure: LiveMountFailure)
+  final private case class ConnectedMountRejected(failure: LiveSessionMountFailure)
       extends Exception(
         failure match
-          case LiveMountFailure.Unauthorized(Some(reason)) =>
+          case LiveSessionMountFailure.Unauthorized(Some(reason)) =>
             s"connected mount rejected: $reason"
-          case LiveMountFailure.Stale(Some(reason)) =>
+          case LiveSessionMountFailure.Stale(Some(reason)) =>
             s"connected mount rejected: $reason"
           case _ => "connected mount rejected"
       )
@@ -670,7 +670,11 @@ object ZioHttp:
           val context     = connected.context
           val rootContext = LiveRootLayoutContext(path, request, url, context)
           (ZIO
-            .fail(ConnectedMountRejected(LiveMountFailure.unauthorized("root layout key differs")))
+            .fail(
+              ConnectedMountRejected(
+                LiveSessionMountFailure.unauthorized("root layout key differs")
+              )
+            )
             .unless(selectedRoot.key(rootContext) == claims.rootLayoutKey) *>
             make(path, context, url).map { lifecycle =>
               val initialized = lifecycle.copy(mount =
@@ -837,7 +841,7 @@ object ZioHttp:
     input: In,
     claims: Vector[String],
     transport: Option[TransportAdmission]
-  ): ZIO[R, LiveMountFailure, ConnectedPipelineResult[Ctx]] = pipeline match
+  ): ZIO[R, LiveSessionMountFailure, ConnectedPipelineResult[Ctx]] = pipeline match
     case _: LiveSessionMountPipeline.Identity[In] =>
       ZIO.succeed(ConnectedPipelineResult(input, claims, None))
     case thenNode: LiveSessionMountPipeline.Then[
@@ -857,13 +861,13 @@ object ZioHttp:
         transport
       ).flatMap { previous =>
         previous.remainingClaims.headOption match
-          case None          => ZIO.fail(LiveMountFailure.unauthorized("missing mount claims"))
+          case None => ZIO.fail(LiveSessionMountFailure.unauthorized("missing mount claims"))
           case Some(encoded) =>
             ZIO
               .fromEither(
                 thenNode.aspect.claimsCodec
                   .decodeJson(encoded).left.map(_ =>
-                    LiveMountFailure.unauthorized("malformed mount claims")
+                    LiveSessionMountFailure.unauthorized("malformed mount claims")
                   )
               ).flatMap(claim =>
                 thenNode.aspect.connected(claim, mountRequest, previous.context).map { output =>
@@ -893,17 +897,18 @@ object ZioHttp:
         transport
       ).flatMap { previous =>
         previous.remainingClaims.headOption match
-          case None          => ZIO.fail(LiveMountFailure.unauthorized("missing mount claims"))
+          case None => ZIO.fail(LiveSessionMountFailure.unauthorized("missing mount claims"))
           case Some(encoded) =>
             val admitted = for
-              physical <- ZIO
-                            .fromOption(transport).orElseFail(
-                              LiveMountFailure.unauthorized("physical admission is unavailable")
-                            )
+              physical <-
+                ZIO
+                  .fromOption(transport).orElseFail(
+                    LiveSessionMountFailure.unauthorized("physical admission is unavailable")
+                  )
               claim <- ZIO.fromEither(
                          controlled.aspect.claimsCodec
                            .decodeJson(encoded).left.map(_ =>
-                             LiveMountFailure.unauthorized("malformed mount claims")
+                             LiveSessionMountFailure.unauthorized("malformed mount claims")
                            )
                        )
               connections <- ZIO.environmentWith[LiveConnections[id]](
@@ -916,7 +921,7 @@ object ZioHttp:
                              physical.disconnect
                            ).tapError(_ => physical.disconnect)
                            .mapError(_ =>
-                             LiveMountFailure.unauthorized(
+                             LiveSessionMountFailure.unauthorized(
                                "physical connection is already bound to another session"
                              )
                            )
@@ -985,7 +990,7 @@ object ZioHttp:
     input: In,
     claims: SessionMountClaims,
     transport: Option[TransportAdmission]
-  ): ZIO[R, LiveMountFailure, ConnectedContext[Ctx]] = context match
+  ): ZIO[R, LiveSessionMountFailure, ConnectedContext[Ctx]] = context match
     case _: LiveRouteContext.Direct[A] =>
       rejectExtraClaims(claims).as(ConnectedContext((), None))
     case _: LiveRouteContext.Required[A, Ctx] =>
@@ -1009,7 +1014,7 @@ object ZioHttp:
                            transport
                          )
         _ <- ZIO
-               .fail(LiveMountFailure.unauthorized("unexpected session mount claims"))
+               .fail(LiveSessionMountFailure.unauthorized("unexpected session mount claims"))
                .when(sessionResult.remainingClaims.nonEmpty)
                .onError(_ => ZIO.foreachDiscard(sessionResult.admission)(_.reject))
         routeContext <- runConnectedContext(
@@ -1021,7 +1026,7 @@ object ZioHttp:
                           transport
                         ).onError(_ => ZIO.foreachDiscard(sessionResult.admission)(_.rollback))
         _ <- ZIO
-               .fail(LiveMountFailure.unauthorized("multiple connection admissions"))
+               .fail(LiveSessionMountFailure.unauthorized("multiple connection admissions"))
                .when(sessionResult.admission.nonEmpty && routeContext.admission.nonEmpty)
                .onError(_ =>
                  ZIO.foreachDiscard(sessionResult.admission ++ routeContext.admission)(_.reject)
@@ -1031,9 +1036,9 @@ object ZioHttp:
         sessionResult.admission.orElse(routeContext.admission)
       )
 
-  private def rejectExtraClaims(claims: SessionMountClaims): IO[LiveMountFailure, Unit] =
+  private def rejectExtraClaims(claims: SessionMountClaims): IO[LiveSessionMountFailure, Unit] =
     ZIO
-      .fail(LiveMountFailure.unauthorized("unexpected mount claims"))
+      .fail(LiveSessionMountFailure.unauthorized("unexpected mount claims"))
       .when(claims.values.nonEmpty).unit
 
   private[scalive] def disconnectedParamsContext[Msg, Model](
@@ -2415,13 +2420,13 @@ object ZioHttp:
     topic: String,
     error: Throwable
   ): PhoenixEnvelope = error match
-    case ConnectedMountRejected(LiveMountFailure.Redirect(to)) =>
+    case ConnectedMountRejected(LiveSessionMountFailure.Redirect(to)) =>
       PhoenixOutput.joinErrorRedirect(joinRef, ref, topic, to.href)
-    case ConnectedMountRejected(LiveMountFailure.RedirectUnsafe(to)) =>
+    case ConnectedMountRejected(LiveSessionMountFailure.RedirectUnsafe(to)) =>
       PhoenixOutput.joinErrorRedirect(joinRef, ref, topic, to.encode)
-    case ConnectedMountRejected(_: LiveMountFailure.Unauthorized) =>
+    case ConnectedMountRejected(_: LiveSessionMountFailure.Unauthorized) =>
       PhoenixOutput.error(joinRef, ref, topic, unauthorizedReason)
-    case ConnectedMountRejected(_: LiveMountFailure.Stale) =>
+    case ConnectedMountRejected(_: LiveSessionMountFailure.Stale) =>
       PhoenixOutput.error(joinRef, ref, topic, staleReason)
     case _ => PhoenixOutput.error(joinRef, ref, topic)
 

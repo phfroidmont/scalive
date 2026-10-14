@@ -37,7 +37,7 @@ final case class LiveSessionMountAspect[R, -In, Claims, Ctx] private[scalive] (
     (LiveSessionMountRequest, In) => ZIO[R, Response, (Claims, Ctx)]
   ),
   private[scalive] val connected: (
-    (Claims, LiveSessionMountRequest, In) => ZIO[R, LiveMountFailure, Ctx]
+    (Claims, LiveSessionMountRequest, In) => ZIO[R, LiveSessionMountFailure, Ctx]
   )
 )(using private[scalive] val claimsCodec: JsonCodec[Claims]):
 
@@ -76,14 +76,14 @@ object LiveSessionMountAspect:
   /** Creates a session aspect that consumes context from a preceding session aspect. */
   def make[R, In, Claims: JsonCodec, Ctx](
     disconnected: (LiveSessionMountRequest, In) => ZIO[R, Response, (Claims, Ctx)],
-    connected: (Claims, LiveSessionMountRequest, In) => ZIO[R, LiveMountFailure, Ctx]
+    connected: (Claims, LiveSessionMountRequest, In) => ZIO[R, LiveSessionMountFailure, Ctx]
   ): LiveSessionMountAspect[R, In, Claims, Ctx] =
     LiveSessionMountAspect(disconnected, connected)
 
   /** Creates a session aspect that does not consume context from a preceding aspect. */
   def fromRequest[R, Claims: JsonCodec, Ctx](
     disconnected: LiveSessionMountRequest => ZIO[R, Response, (Claims, Ctx)],
-    connected: (Claims, LiveSessionMountRequest) => ZIO[R, LiveMountFailure, Ctx]
+    connected: (Claims, LiveSessionMountRequest) => ZIO[R, LiveSessionMountFailure, Ctx]
   ): LiveSessionMountAspect[R, Any, Claims, Ctx] =
     LiveSessionMountAspect(
       (request, _) => disconnected(request),

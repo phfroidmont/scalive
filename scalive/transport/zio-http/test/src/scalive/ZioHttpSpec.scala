@@ -727,20 +727,20 @@ object ZioHttpSpec extends ZIOSpecDefault:
       val redirect     = LiveRouteMountFailure.redirect(login)
       val custom = LiveRouteMountFailure.custom(
         Response.badRequest,
-        LiveMountFailure.stale("refresh policy")
+        LiveSessionMountFailure.stale("refresh policy")
       )
 
       assertTrue(
         unauthorized.disconnectedResponse.status == Status.Unauthorized,
-        unauthorized.connectedFailure == LiveMountFailure.unauthorized("login required"),
+        unauthorized.connectedFailure == LiveSessionMountFailure.unauthorized("login required"),
         forbidden.disconnectedResponse.status == Status.Forbidden,
-        forbidden.connectedFailure == LiveMountFailure.unauthorized("policy denied"),
+        forbidden.connectedFailure == LiveSessionMountFailure.unauthorized("policy denied"),
         missing.disconnectedResponse.status == Status.NotFound,
-        missing.connectedFailure == LiveMountFailure.unauthorized("record hidden"),
+        missing.connectedFailure == LiveSessionMountFailure.unauthorized("record hidden"),
         redirect.disconnectedResponse.status == Status.SeeOther,
-        redirect.connectedFailure == LiveMountFailure.redirect(login),
+        redirect.connectedFailure == LiveSessionMountFailure.redirect(login),
         custom.disconnectedResponse.status == Status.BadRequest,
-        custom.connectedFailure == LiveMountFailure.stale("refresh policy")
+        custom.connectedFailure == LiveSessionMountFailure.stale("refresh policy")
       )
     },
     test("a disconnected route mount rejection logs its reason") {

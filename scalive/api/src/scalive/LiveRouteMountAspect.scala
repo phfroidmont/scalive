@@ -61,7 +61,7 @@ enum LiveRouteMountFailure:
     * @param connected
     *   The failure that ends a connected mount.
     */
-  case Custom(disconnected: Response, connected: LiveMountFailure)
+  case Custom(disconnected: Response, connected: LiveSessionMountFailure)
 
   private[scalive] def disconnectedResponse: Response = this match
     case Redirect(to)        => to.seeOther
@@ -71,14 +71,14 @@ enum LiveRouteMountFailure:
     case NotFound(_)         => Response.notFound
     case Custom(response, _) => response
 
-  private[scalive] def connectedFailure: LiveMountFailure = this match
-    case Redirect(to)         => LiveMountFailure.redirect(to)
-    case RedirectUnsafe(to)   => LiveMountFailure.redirectUnsafe(to)
-    case Unauthorized(reason) => LiveMountFailure.Unauthorized(reason)
+  private[scalive] def connectedFailure: LiveSessionMountFailure = this match
+    case Redirect(to)         => LiveSessionMountFailure.redirect(to)
+    case RedirectUnsafe(to)   => LiveSessionMountFailure.redirectUnsafe(to)
+    case Unauthorized(reason) => LiveSessionMountFailure.Unauthorized(reason)
     case Forbidden(reason)    =>
-      LiveMountFailure.Unauthorized(reason.orElse(Some("route mount forbidden")))
+      LiveSessionMountFailure.Unauthorized(reason.orElse(Some("route mount forbidden")))
     case NotFound(reason) =>
-      LiveMountFailure.Unauthorized(reason.orElse(Some("route mount not found")))
+      LiveSessionMountFailure.Unauthorized(reason.orElse(Some("route mount not found")))
     case Custom(_, failure) => failure
 end LiveRouteMountFailure
 
@@ -134,7 +134,7 @@ object LiveRouteMountFailure:
   /** Rejects the mount with an explicit HTTP response and connected failure. */
   def custom(
     disconnected: Response,
-    connected: LiveMountFailure
+    connected: LiveSessionMountFailure
   ): LiveRouteMountFailure = Custom(disconnected, connected)
 end LiveRouteMountFailure
 

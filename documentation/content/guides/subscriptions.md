@@ -28,7 +28,7 @@ capabilities of
 
 @:sourceRegion(documentation/fixtures/learn/src/quickstart/ThermostatLiveView.scala, learn-thermostat-mount)
 
-@:apiSymbol(def:scalive.RootMountConnected.subscriptions)`connected.subscriptions`@:@
+@:apiSymbol(def:scalive.MountConnected.subscriptions)`connected.subscriptions`@:@
 exists only in a connected lifecycle, so the disconnected HTTP render cannot
 start a stream. Every connected mount, including the one after a
 reconnect, subscribes again. This stream emits `Msg.Refresh` every ten seconds.

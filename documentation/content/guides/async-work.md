@@ -51,7 +51,7 @@ the work in the connected branch:
 
 @:sourceRegion(documentation/fixtures/learn/src/quickstart/ThermostatLiveView.scala, learn-thermostat-mount)
 
-@:apiSymbol(def:scalive.RootMountConnected.async)`connected.async`@:@ exists
+@:apiSymbol(def:scalive.MountConnected.async)`connected.async`@:@ exists
 only in the `Connection.Connected` branch, so the disconnected HTTP render cannot
 start background work. Return a model that renders a loading state from both
 branches. Every connected mount, including the one after a reconnect, starts the

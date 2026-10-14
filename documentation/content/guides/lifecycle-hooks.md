@@ -37,13 +37,13 @@ defines that boundary. Connected-turn guards are a routing feature;
 [Guard every connected application turn](#connected-turn-guards) covers them
 after the hook sections.
 
-## Declare static root hooks {#static-root-hooks}
+## Declare static LiveView hooks {#static-liveview-hooks}
 
 To run code at one lifecycle stage for every message a view receives, override
 `LiveView.hooks`. This view logs each browser message and each server message
 before its handler runs:
 
-@:sourceRegion(documentation/fixtures/guides/src/hooks/BoardLiveViews.scala, hooks-static-root)
+@:sourceRegion(documentation/fixtures/guides/src/hooks/BoardLiveViews.scala, hooks-static-liveview)
 
 Start from `LiveHooks.empty[Msg, Model]` and chain one call per hook. Each hook
 here returns `LiveHookResult.cont(model)` so processing continues;
@@ -56,7 +56,7 @@ companion has one shortcut per stage, such as `LiveHooks.onEvent { ... }` or
 `LiveHooks.afterRender { ... }`. A shortcut takes its types from the declared
 `hooks` type.
 
-Static root hooks are installed before both the disconnected HTTP lifecycle and
+Static LiveView hooks are installed before both the disconnected HTTP lifecycle and
 the connected lifecycle. Those lifecycles have independent models and hook
 registries; dynamic changes made during disconnected rendering do not carry into
 the connected lifecycle.
@@ -70,7 +70,7 @@ Component hooks also receive the current props:
 
 @:sourceRegion(documentation/fixtures/guides/src/hooks/CardComponent.scala, hooks-static-component)
 
-Chaining and single-stage shortcuts work as they do for root hooks. Scalive
+Chaining and single-stage shortcuts work as they do for LiveView hooks. Scalive
 installs the declarations separately for every `(component class, logical id)`
 instance. The registry survives rerenders of that instance and is discarded
 when the instance is removed. Rendering the same component class later with the
@@ -259,8 +259,8 @@ payloads. Both roots and components provide this stage.
 ### Keep after-render hooks observational {#after-render-limits}
 
 To act once a render completes, for example to push the rendered state to the
-browser, add an `afterRender` hook. The root `AfterRenderContext` exposes a
-phase-aware connection and dynamic root hooks. The connected capabilities
+browser, add an `afterRender` hook. The LiveView's `AfterRenderContext` exposes a
+phase-aware connection and its lifecycle hooks. The connected capabilities
 expose `client`; obtaining it by matching the connection makes disconnected use
 impossible:
 
@@ -268,7 +268,7 @@ impossible:
 
 `RenderedEvent` is a `ServerToBrowserEvent[Rendered]`. The example uses the
 single-stage `LiveHooks.afterRender` shortcut from
-[Declare static root hooks](#static-root-hooks).
+[Declare static LiveView hooks](#static-liveview-hooks).
 
 After-render hooks run in registration order, but every hook receives the same
 rendered model; they return `Task[Unit]`, cannot thread a replacement model,
@@ -283,8 +283,8 @@ and resource starts into mount, update, or normal message handling.
 ### Keep ownership and cleanup local {#ownership-cleanup}
 
 Hooks need no teardown callback: lifecycle end and component removal discard
-their registries. Dynamic root hooks live until detached or until their
-disconnected or connected root lifecycle ends. Dynamic component hooks live
+their registries. A LiveView's dynamic hooks live until detached or until its
+disconnected or connected lifecycle ends. Dynamic component hooks live
 until detached or until that exact component instance is removed.
 
 Hook-managed external resources still need an owner. Prefer `ctx.async`,

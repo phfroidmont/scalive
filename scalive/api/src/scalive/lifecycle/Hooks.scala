@@ -359,30 +359,30 @@ end ComponentLiveHooks
   * disconnected render has its own registry, which the connected lifecycle does not inherit. See
   * [dynamic hooks](https://scalive.dev/guides/lifecycle-hooks#dynamic-hooks).
   */
-trait RootHooks[Msg, Model]:
+trait LifecycleHooks[Msg, Model]:
   /** Attaches and detaches raw event hooks, which see each client event before binding lookup. */
-  def rawEvent: RootRawEventHooks[Msg, Model]
+  def rawEvent: RawEventHooks[Msg, Model]
 
   /** Attaches and detaches handlers for named events pushed from browser JavaScript. */
-  def browserEvent: RootBrowserEventHooks[Msg, Model]
+  def browserEvent: BrowserEventHooks[Msg, Model]
 
   /** Attaches and detaches hooks that run when a binding sends the view a message. */
-  def event: RootEventHooks[Msg, Model]
+  def event: EventHooks[Msg, Model]
 
   /** Attaches and detaches hooks that run when a routed view receives new URL parameters. */
-  def params: RootParamsHooks[Msg, Model]
+  def params: ParamsHooks[Msg, Model]
 
   /** Attaches and detaches hooks that run for messages that do not come from a binding. */
-  def info: RootInfoHooks[Msg, Model]
+  def info: InfoHooks[Msg, Model]
 
   /** Attaches and detaches hooks that run when a task the view started completes. */
-  def async: RootAsyncHooks[Msg, Model]
+  def async: AsyncHooks[Msg, Model]
 
   /** Attaches and detaches hooks that run after each render. */
-  def afterRender: RootAfterRenderHooks[Msg, Model]
+  def afterRender: AfterRenderHooks[Msg, Model]
 
 /** The dynamic raw event hooks of one LiveView lifecycle. */
-trait RootRawEventHooks[Msg, Model]:
+trait RawEventHooks[Msg, Model]:
   /** Attaches `hook` under `id`, to run on each client event before binding lookup.
     *
     * The hook receives the event envelope as a [[LiveEvent]], including events targeted at a
@@ -399,7 +399,7 @@ trait RootRawEventHooks[Msg, Model]:
   def detach(id: String): Task[Unit]
 
 /** The dynamic named browser event handlers of one LiveView lifecycle. */
-trait RootBrowserEventHooks[Msg, Model]:
+trait BrowserEventHooks[Msg, Model]:
   /** Attaches `hook` under `id`, to handle the browser event `event` pushed to the view.
     *
     * The hook runs after the raw event hooks continue and receives the payload decoded as `A`. It
@@ -418,7 +418,7 @@ trait RootBrowserEventHooks[Msg, Model]:
   def detach(id: String): Task[Unit]
 
 /** The dynamic event hooks of one LiveView lifecycle. */
-trait RootEventHooks[Msg, Model]:
+trait EventHooks[Msg, Model]:
   /** Attaches `hook` under `id`, to run when a binding sends the view a message, before
     * `handleMessage`.
     *
@@ -435,7 +435,7 @@ trait RootEventHooks[Msg, Model]:
   def detach(id: String): Task[Unit]
 
 /** The dynamic params hooks of one LiveView lifecycle. */
-trait RootParamsHooks[Msg, Model]:
+trait ParamsHooks[Msg, Model]:
   /** Attaches `hook` under `id`, to run with the new URL before `handleParams`.
     *
     * Every LiveView runs these hooks after mount and each time its URL changes; a nested LiveView
@@ -453,7 +453,7 @@ trait RootParamsHooks[Msg, Model]:
   def detach(id: String): Task[Unit]
 
 /** The dynamic info hooks of one LiveView lifecycle. */
-trait RootInfoHooks[Msg, Model]:
+trait InfoHooks[Msg, Model]:
   /** Attaches `hook` under `id`, to run before `handleMessage` for each message that does not come
     * from a binding, such as a subscription value.
     *
@@ -470,7 +470,7 @@ trait RootInfoHooks[Msg, Model]:
   def detach(id: String): Task[Unit]
 
 /** The dynamic async hooks of one LiveView lifecycle. */
-trait RootAsyncHooks[Msg, Model]:
+trait AsyncHooks[Msg, Model]:
   /** Attaches `hook` under `id`, to run when a task the view started completes, before its message
     * reaches `handleMessage`.
     *
@@ -488,7 +488,7 @@ trait RootAsyncHooks[Msg, Model]:
   def detach(id: String): Task[Unit]
 
 /** The dynamic after-render hooks of one LiveView lifecycle. */
-trait RootAfterRenderHooks[Msg, Model]:
+trait AfterRenderHooks[Msg, Model]:
   /** Attaches `hook` under `id`, to run after each render of the view and its components.
     *
     * Every hook receives the rendered model; it cannot replace the model or halt, and a failure
@@ -512,7 +512,7 @@ trait RootAfterRenderHooks[Msg, Model]:
   * its stage. Hooks also receive the instance's current props. See [dynamic
   * hooks](https://scalive.dev/guides/lifecycle-hooks#dynamic-hooks).
   */
-trait ComponentHooks[Props, Msg, Model]:
+trait ComponentLifecycleHooks[Props, Msg, Model]:
   /** Attaches and detaches raw event hooks, which see each event routed to this instance. */
   def rawEvent: ComponentRawEventHooks[Props, Msg, Model]
 

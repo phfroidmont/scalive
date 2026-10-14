@@ -29,7 +29,7 @@ object SessionsSpec extends ZIOSpecDefault:
             case _ => ZIO.fail(Response.status(Status.Unauthorized))
         def resume(sessionId: SessionId) =
           if sessionId.value == "ada-session" then ZIO.succeed(ada)
-          else ZIO.fail(LiveMountFailure.unauthorized)
+          else ZIO.fail(LiveSessionMountFailure.unauthorized)
     ) ++ ZLayer.succeed[Workspaces](
       new Workspaces:
         def authorize(user: CurrentUser, workspaceId: String) =

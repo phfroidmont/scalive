@@ -506,7 +506,7 @@ private object ComponentHookRegistry:
 end ComponentHookRegistry
 
 final private class JournaledComponentHooks[P, M, A](turn: ComponentHookJournal)
-    extends ComponentHooks[P, M, A]:
+    extends ComponentLifecycleHooks[P, M, A]:
   val rawEvent = new ComponentRawEventHooks[P, M, A]:
     def attach(
       id: String

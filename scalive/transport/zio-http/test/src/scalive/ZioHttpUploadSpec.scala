@@ -58,7 +58,7 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
           valid <- state.active.get.map(_.contains(claims.sessionId))
           user <-
             if valid then ZIO.succeed(TestCurrentUser(claims.sessionId.value))
-            else ZIO.fail(LiveMountFailure.unauthorized("revoked test session"))
+            else ZIO.fail(LiveSessionMountFailure.unauthorized("revoked test session"))
         yield user
     )
 
@@ -1017,7 +1017,7 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
           val phaseContext = LiveSessionMountAspect.fromRequest[Any, String, String](
             _ => ZIO.succeed("root-layout" -> "disconnected-root"),
             (_, _) =>
-              if rejectedAt == "admission" then ZIO.fail(LiveMountFailure.unauthorized("revoked"))
+              if rejectedAt == "admission" then ZIO.fail(LiveSessionMountFailure.unauthorized("revoked"))
               else ZIO.succeed("connected-root")
           )
           val routeAspect = LiveRouteMountAspect.make[Any, Unit, String, Unit]((_, context) =>

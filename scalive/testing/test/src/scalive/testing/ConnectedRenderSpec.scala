@@ -1341,7 +1341,7 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
           _     <- state.revalidations.update(_ + 1)
           valid <- state.active.get.map(_.contains(claims.sessionId))
           user  <- if valid then ZIO.succeed(TestUser(claims.sessionId.value))
-                   else ZIO.fail(LiveMountFailure.unauthorized("revoked test session"))
+                   else ZIO.fail(LiveSessionMountFailure.unauthorized("revoked test session"))
         yield user
     )
 

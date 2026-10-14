@@ -408,7 +408,7 @@ object AuthFlowSpec extends ZIOSpecDefault:
           case _ => false
         },
         reconnect.left.exists {
-          case LiveMountFailure.Redirect(location) =>
+          case LiveSessionMountFailure.Redirect(location) =>
             location.href == AuthLabRoutes.LoginPath
           case _ => false
         }

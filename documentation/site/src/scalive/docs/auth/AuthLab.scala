@@ -41,7 +41,7 @@ object AuthMountAspect:
           .serviceWithZIO[AuthService](auth =>
             auth
               .resume(claims.publicSessionId)
-              .someOrFail(LiveMountFailure.redirect(AuthLabRoutes.login.location))
+              .someOrFail(LiveSessionMountFailure.redirect(AuthLabRoutes.login.location))
               .map(connectedAuth(auth, _))
           )
     )

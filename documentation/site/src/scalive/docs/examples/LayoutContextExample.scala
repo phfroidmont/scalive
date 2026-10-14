@@ -99,20 +99,22 @@ object LayoutContextExample:
     .withLayout(DocumentLayout, _.document)
     .withRootLayout(DocumentRoot, _.document)
     .withMountAspect(accountAudit)
-  val accountRoute = (scalive.live / "account").context { (context: (AccountContext, String)) =>
-    EventlessPage(s"account-${context._1.document.language}-${context._2}", "Account title")
-  }
   val accountOverride = (scalive.live / "account" / "variant")
     .withMountAspect(accountVariant)
-    .withLayout(DocumentLayout, _._2)
-    .withRootLayout(DocumentRoot, _._2)(EventlessPage("account-variant", "Variant title"))
+    .withLayout(DocumentLayout, _._3)
+    .withRootLayout(DocumentRoot, _._3) -> EventlessPage("account-variant", "Variant title")
 
   val application = scalive.Live.router
     .withLayout(ApplicationLayout)
     .withRootLayout(ApplicationRoot)(
       defaultRoute,
       publicSession,
-      accountBuilder(accountRoute, accountOverride)
+      accountBuilder(
+        (scalive.live / "account").context((account, audit) =>
+          EventlessPage(s"account-${account.document.language}-$audit", "Account title")
+        ),
+        accountOverride
+      )
     )
 end LayoutContextExample
 // docs:end shared-document-shell

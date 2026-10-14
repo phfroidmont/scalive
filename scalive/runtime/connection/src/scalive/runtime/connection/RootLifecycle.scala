@@ -15,7 +15,8 @@ final private[scalive] case class RootLifecycle[Msg, Model](
   handleMessage: (Model, MessageContext[Msg, Model], Msg) => Task[Model],
   prepareParams: URL => Task[RootParamsHandler[Msg, Model]],
   view: Signal[(Model, URL)] => HtmlElement[Msg],
-  connectedTurnGuard: LiveConnectedTurnGuard[Unit] = LiveConnectedTurnGuard.empty)
+  connectedTurnGuard: LiveConnectedTurnGuard[Unit] = LiveConnectedTurnGuard.empty,
+  acceptsPatch: URL => Boolean = _ => true)
 
 final private[scalive] case class RootParamsHandler[Msg, Model](
   runHooks: Boolean,

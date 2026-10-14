@@ -105,10 +105,10 @@ object LiveView:
     type MountContext = scalive.MountContext[Msg, Model]
 
     /** The capabilities passed to [[handleMessage]]. */
-    type MessageContext = scalive.MessageContext[Msg, Model]
+    type MessageContext = scalive.RoutedMessageContext[Msg, Model, Params]
 
     /** The capabilities passed to [[handleParams]]. */
-    type ParamsContext = scalive.ParamsContext[Msg, Model]
+    type ParamsContext = scalive.RoutedParamsContext[Msg, Model, Params]
 
     /** The capabilities passed to after-render hooks. */
     type AfterRenderContext = scalive.AfterRenderContext[Msg, Model]

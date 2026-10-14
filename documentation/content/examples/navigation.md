@@ -1,6 +1,6 @@
 {%
 title = "Typed documentation navigation"
-description = "Named route builders encode real documentation search parameters into checked LiveLocation values."
+description = "Named routes encode real documentation search parameters into checked LiveLocation values."
 order = 15
 section = examples
 %}

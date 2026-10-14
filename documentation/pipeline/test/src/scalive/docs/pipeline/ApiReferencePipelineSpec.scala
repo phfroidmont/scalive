@@ -146,7 +146,7 @@ object ApiReferencePipelineSpec extends ZIOSpecDefault:
       val routedMount   = symbols.find(_.qualifiedName == "scalive.LiveView.Routed.mount")
       val routedEventless = symbols.find(_.qualifiedName == "scalive.LiveView.Routed.Eventless")
       val guardConnectedTurns = symbols.find(
-        _.qualifiedName == "scalive.LiveSessionBuilder.Admitted.guardConnectedTurns"
+        _.qualifiedName == "scalive.LiveRouteSetup.WithContext.guardConnectedTurns"
       )
       val documentation = liveViewTrait.toVector.flatMap(_.signatures).flatMap(_.documentation)
       val links = documentation.flatMap(_.body).flatMap {

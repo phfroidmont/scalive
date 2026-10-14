@@ -37,7 +37,7 @@ object ConnectedRender:
     */
   def join[Msg, Model](liveView: LiveView[Msg, Model]): RIO[Scope, ConnectedView[Msg]] =
     join(
-      Live.router(scalive.live(liveView)),
+      Live.router(scalive.live -> liveView),
       DefaultConfig,
       Request.get(URL.root)
     ).map(_.asInstanceOf[ConnectedView[Msg]])

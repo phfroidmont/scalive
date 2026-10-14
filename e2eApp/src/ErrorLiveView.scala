@@ -99,8 +99,8 @@ object ErrorLiveView:
     child: Boolean = false)
 
   object QueryParams:
-    val decoder: LiveParamsDecoder[Unit, QueryParams] =
-      LiveParamsDecoder.custom(
+    val codec: LiveParamsCodec[Unit, QueryParams] =
+      LiveParamsCodec.custom(
         decodeFn = (_, url) =>
           Right(
             QueryParams(
@@ -108,6 +108,19 @@ object ErrorLiveView:
               connectedMountRaise = url.queryParam("connected-mount").contains("raise"),
               connectedChildMountRaise = url.queryParam("connected-child-mount-raise"),
               child = url.queryParam("child").isDefined
+            )
+          ),
+        encodeFn = params =>
+          val values = Vector(
+            Option.when(params.deadMountRaise)("dead-mount"           -> "raise"),
+            Option.when(params.connectedMountRaise)("connected-mount" -> "raise"),
+            params.connectedChildMountRaise.map("connected-child-mount-raise" -> _),
+            Option.when(params.child)("child" -> "")
+          ).flatten
+          Right(
+            LiveParamsCodec.Encoded(
+              (),
+              zio.http.QueryParams(values.map((name, value) => name -> zio.Chunk(value))*)
             )
           )
       )

@@ -96,9 +96,7 @@ object Application:
       // docs:start sessions-workspace-route
       Routes.workspace
         .withMountAspect(Aspects.workspaceAccess)
-        .context((context: (CurrentUser, WorkspaceAccess)) =>
-          WorkspaceLiveView(context._1, context._2)
-        )
+        .context((user, access) => WorkspaceLiveView(user, access))
       // docs:end sessions-workspace-route
     )
   // docs:end sessions-account

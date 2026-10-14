@@ -98,6 +98,54 @@ trait ParamsContext[Msg, Model] extends LifecycleContext[RootParamsConnected[Msg
   /** Installs or removes lifecycle hooks for this lifecycle only. */
   def hooks: RootHooks[Msg, Model]
 
+/** Capabilities available while a [[LiveView.Routed LiveView.Routed]] handles a message.
+  *
+  * Like [[MessageContext]], with navigation that can also patch by the view's parameters, as in
+  * `ctx.nav.pushPatch(SearchParams(query))`.
+  */
+trait RoutedMessageContext[Msg, Model, Params] extends MessageContext[Msg, Model]:
+  /** Patches the URL by parameters or location, navigates to another LiveView, or redirects. */
+  def nav: RoutedNavigation[Params]
+
+/** Capabilities available while a [[LiveView.Routed LiveView.Routed]] handles new parameters.
+  *
+  * Like [[ParamsContext]], with navigation that can also patch by the view's parameters, for
+  * example to replace an invalid URL with a canonical one.
+  */
+trait RoutedParamsContext[Msg, Model, Params] extends ParamsContext[Msg, Model]:
+  /** Patches the URL by parameters or location, navigates to another LiveView, or redirects. */
+  def nav: RoutedNavigation[Params]
+
+private[scalive] object RoutedContexts:
+  def message[Msg, Model, Params](
+    underlying: MessageContext[Msg, Model],
+    location: Params => Either[LiveLocation.EncodeError, LiveLocation]
+  ): RoutedMessageContext[Msg, Model, Params] =
+    new RoutedMessageContext[Msg, Model, Params]:
+      val nav                                           = RoutedNavigation(underlying.nav, location)
+      def flash: Flash                                  = underlying.flash
+      def uploads: Uploads                              = underlying.uploads
+      def streams: Streams                              = underlying.streams
+      def async: Async[Msg]                             = underlying.async
+      def subscriptions: Subscriptions[Msg]             = underlying.subscriptions
+      def client: Client                                = underlying.client
+      def components: ComponentUpdates                  = underlying.components
+      def hooks: RootHooks[Msg, Model]                  = underlying.hooks
+      def staticChanged: Boolean                        = underlying.staticChanged
+      def connectParams: Map[String, zio.json.ast.Json] = underlying.connectParams
+
+  def params[Msg, Model, Params](
+    underlying: ParamsContext[Msg, Model],
+    location: Params => Either[LiveLocation.EncodeError, LiveLocation]
+  ): RoutedParamsContext[Msg, Model, Params] =
+    new RoutedParamsContext[Msg, Model, Params]:
+      val nav                          = RoutedNavigation(underlying.nav, location)
+      def flash: Flash                 = underlying.flash
+      def uploads: Uploads             = underlying.uploads
+      def streams: Streams             = underlying.streams
+      def hooks: RootHooks[Msg, Model] = underlying.hooks
+      def connection: Connection[RootParamsConnected[Msg]] = underlying.connection
+
 /** Capabilities available to the after-render hooks of a [[LiveView]].
   *
   * After-render hooks run after the disconnected HTTP render and after each connected render. The

@@ -15,7 +15,7 @@ object ZioHttpApiSpec extends ZIOSpecDefault:
           def mount(ctx: MountContext) = ZIO.succeed(())
           def view(model: Signal[Unit]) = div()
 
-        val application = Live.router(live(View))
+        val application = Live.router(live -> View)
         val config = ZioHttpConfig(
           "01234567890123456789012345678901",
           Duration.ofMinutes(30),
@@ -38,7 +38,7 @@ object ZioHttpApiSpec extends ZIOSpecDefault:
           def mount(ctx: MountContext) = ZIO.unit
           def view(model: Signal[Unit]) = div()
 
-        val application = Live.router(live(View))
+        val application = Live.router(live -> View)
         val config = ZioHttpConfig(
           "01234567890123456789012345678901",
           Duration.ofMinutes(30),
@@ -59,7 +59,7 @@ object ZioHttpApiSpec extends ZIOSpecDefault:
           def mount(ctx: MountContext) = ZIO.succeed(())
           def view(model: Signal[Unit]) = div()
 
-        ZioHttp.routes(Live.router(live(View)))
+        ZioHttp.routes(Live.router(live -> View))
       """)
 
       assertTrue(errors.nonEmpty)
@@ -80,7 +80,7 @@ object ZioHttpApiSpec extends ZIOSpecDefault:
           secureCookie = true,
           allowedWebSocketOrigins = Set(WebSocketOrigin.https("example.com"))
         ).toOption.get
-        ZioHttp.routes(Live.router(live(View)), LiveSecurity(config))
+        ZioHttp.routes(Live.router(live -> View), LiveSecurity(config))
       """)
 
       assertTrue(errors.nonEmpty)

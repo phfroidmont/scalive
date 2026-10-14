@@ -377,7 +377,11 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
         Mod.flatten(mods)
       )
 
-    /** Renders a link that patches this LiveView's URL to `to` and adds a history entry. */
+    /** Renders a link that patches this LiveView's URL to `to` and adds a history entry.
+      *
+      * `to` must be a location of this LiveView's route; a patch to another route stops the
+      * LiveView. Use `pushNavigate` for other routes.
+      */
     def pushPatch[Msg](to: LiveLocation, mods: Mod.Input[Msg]*): HtmlElement[Msg] =
       pushPatchUnsafe(to.href, mods*)
 

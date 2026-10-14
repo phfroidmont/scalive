@@ -1,5 +1,5 @@
 import zio.ZIO
-import zio.http.URL
+import zio.http.{QueryParams, URL}
 import zio.json.ast.Json
 
 import scalive.*
@@ -22,8 +22,8 @@ final case class FormQueryParams(
   noUnusedFieldInput: Boolean = false)
 
 object FormQueryParams:
-  val decoder: LiveParamsDecoder[Unit, FormQueryParams] =
-    LiveParamsDecoder.custom(
+  val codec: LiveParamsCodec[Unit, FormQueryParams] =
+    LiveParamsCodec.custom(
       decodeFn = (_, url) =>
         Right(
           FormQueryParams(
@@ -39,8 +39,29 @@ object FormQueryParams:
             noUnusedFieldForm = url.queryParam("phx-no-unused-field-form").isDefined,
             noUnusedFieldInput = url.queryParam("phx-no-unused-field-input").isDefined
           )
+        ),
+      encodeFn = params =>
+        val flags = Vector(
+          Option.when(params.liveComponent)("live-component"  -> ""),
+          Option.when(params.noId)("no-id"                    -> ""),
+          Option.when(params.noChangeEvent)("no-change-event" -> ""),
+          Option.when(params.jsChange)("js-change"            -> ""),
+          params.autoRecover.map("phx-auto-recover" -> _),
+          Option.when(params.disabledFieldset)("disabled-fieldset"           -> "true"),
+          Option.when(params.checkboxes)("checkboxes"                        -> "1"),
+          Option.when(params.portal)("portal"                                -> ""),
+          Option.when(params.latencyMode)("phx-change"                       -> "validate"),
+          Option.when(params.noUnusedFieldForm)("phx-no-unused-field-form"   -> ""),
+          Option.when(params.noUnusedFieldInput)("phx-no-unused-field-input" -> "")
+        ).flatten
+        Right(
+          LiveParamsCodec.Encoded(
+            (),
+            QueryParams(flags.map((name, value) => name -> zio.Chunk(value))*)
+          )
         )
     )
+end FormQueryParams
 
 class FormLiveView(initialQuery: FormQueryParams = FormQueryParams())
     extends LiveView.Routed[FormLiveView.Msg, FormLiveView.Model, FormQueryParams]:
@@ -52,7 +73,9 @@ class FormLiveView(initialQuery: FormQueryParams = FormQueryParams())
   override def handleParams(model: Model, params: FormQueryParams, _url: URL, ctx: ParamsContext) =
     ZIO.succeed(model.copy(query = params))
 
-  def handleMessage(model: Model, ctx: MessageContext) =
+  def handleMessage(model: Model, ctx: MessageContext) = update(model, ctx)
+
+  def update(model: Model, ctx: scalive.MessageContext[Msg, Model]): Msg => zio.Task[Model] =
     case Msg.Validate(event) =>
       maybeAwait(model, "validate").as(model.copy(values = model.values ++ event.raw.asMap))
     case Msg.Save(_) =>
@@ -71,7 +94,7 @@ class FormLiveView(initialQuery: FormQueryParams = FormQueryParams())
         else if event.bindingId == "sandbox:eval" then
           E2ESandboxEval.handle(model, event.bindingId, event.value)
         else ZIO.succeed(LiveEventHookResult.cont(applyRawFormValue(model, event.value)))
-      }.onRawEvent { (model: Model, event: LiveEvent, ctx: MessageContext) =>
+      }.onRawEvent { (model: Model, event: LiveEvent, ctx: scalive.MessageContext[Msg, Model]) =>
         if event.cid.nonEmpty then ZIO.succeed(LiveEventHookResult.cont(model))
         else
           event.bindingId match
@@ -381,7 +404,7 @@ private class NestedFormContentLiveView(initialQuery: FormQueryParams)
   override def hooks = delegate.hooks
 
   def handleMessage(model: FormLiveView.Model, ctx: MessageContext) =
-    delegate.handleMessage(model, ctx)
+    delegate.update(model, ctx)
 
   override def view(model: Signal[FormLiveView.Model]) =
     delegate.view(model)

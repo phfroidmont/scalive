@@ -304,7 +304,7 @@ object ExampleCatalog:
     id = "navigation",
     title = "Typed documentation navigation",
     description =
-      "Named route builders encode real documentation search parameters into checked LiveLocation values.",
+      "Named routes encode real documentation search parameters into checked LiveLocation values.",
     category = ExampleCategory.BrowserAndNavigation,
     topics = Vector("routing", "navigation", "typed parameters", "search"),
     aliases = Vector(

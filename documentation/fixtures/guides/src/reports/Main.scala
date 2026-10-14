@@ -10,7 +10,7 @@ import scalive.*
 
 // docs:start services-route
 object Routes:
-  val reports = (live / "reports").from((reports: Reports) => ReportsLiveView(reports))
+  val reports = (live / "reports").from(ZIO.serviceWith[Reports](ReportsLiveView(_)))
 // docs:end services-route
 
 // docs:start services-main

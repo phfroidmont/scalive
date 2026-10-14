@@ -25,7 +25,7 @@ connection-local state.
 - `ReportsExample` takes a `Reports` service as a constructor parameter and
   calls `reports.recent` in `mount` and on refresh.
 - `ReportsExample.route` registers the route with
-  `.from((reports: Reports) => ReportsExample(reports))`. The route adds
+  `.from(ZIO.serviceWith[Reports](ReportsExample(_)))`. The route adds
   `Reports` to the application's requirements, and the server provides it with
   `Reports.inMemory`.
 - A service failure becomes the `Failed` model, which renders "Reports are

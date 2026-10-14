@@ -41,9 +41,13 @@ object RootSliceApp extends ZIOAppDefault:
   private val nestedStickyB         = live / "nested" / "b"
   private val navigationGuard       = (live / "navigation-guard").queryOptional[String]("step")
   private val navigationGuardTarget = live / "navigation-guard" / "target"
-  private val redirectLoop          = (live / "navigation" / "redirectloop").paramsDecodeOnly(
-    LiveParamsDecoder.custom[Unit, Boolean]((_, url) =>
-      Right(url.queryParam("loop").contains("true"))
+  private val redirectLoop          = (live / "navigation" / "redirectloop").params(
+    LiveParamsCodec.custom[Unit, Boolean](
+      (_, url) => Right(url.queryParam("loop").contains("true")),
+      loop =>
+        val query =
+          if loop then zio.http.QueryParams("loop" -> "true") else zio.http.QueryParams.empty
+        Right(LiveParamsCodec.Encoded((), query))
     )
   )
   private val issue3686A = live / "issues" / "3686" / "a"

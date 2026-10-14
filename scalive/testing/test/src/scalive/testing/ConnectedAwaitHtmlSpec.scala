@@ -22,7 +22,7 @@ object ConnectedAwaitHtmlSpec extends ZIOSpecDefault:
     second: Promise[Nothing, Unit],
     third: Promise[Nothing, Unit]):
     def open: Task[ConnectedClient[Any]] =
-      ConnectedRender.open(scalive.Live.router(scalive.live(view)), config, Request.get(URL.root))
+      ConnectedRender.open(scalive.Live.router(scalive.live -> view), config, Request.get(URL.root))
 
   private val config = ZioHttpConfig(
     "01234567890123456789012345678901",
@@ -351,8 +351,8 @@ object ConnectedAwaitHtmlSpec extends ZIOSpecDefault:
         def mount(ctx: MountContext)           = ZIO.unit
         override def view(model: Signal[Unit]) = div("destination")
       val application = scalive.Live.router(
-        scalive.live(source),
-        (scalive.live / "next")(destination)
+        scalive.live -> source,
+        (scalive.live / "next") -> destination
       )
 
       ZIO.scoped {

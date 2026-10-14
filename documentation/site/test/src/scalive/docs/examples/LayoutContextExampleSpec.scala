@@ -103,9 +103,9 @@ object LayoutContextExampleSpec extends ZIOSpecDefault:
 
       val root         = LiveRootLayout.identity.forContext[Any](identity)
       val applications = Vector(
-        scalive.Live.router.withRootLayout(root)(scalive.live(Page)),
+        scalive.Live.router.withRootLayout(root)(scalive.live -> Page),
         scalive.Live.router(
-          scalive.Live.session("identity").withRootLayout(root)(scalive.live(Page))
+          scalive.Live.session("identity").withRootLayout(root)(scalive.live -> Page)
         )
       )
 

@@ -73,8 +73,8 @@ the user may open the requested workspace:
 @:sourceRegion(documentation/fixtures/guides/src/sessions/Sessions.scala, sessions-workspace-access)
 
 It receives a @:apiSymbol(class:scalive.LiveRouteMountRequest)`LiveRouteMountRequest`@:@
-with the route's typed parameters and URL, plus the context produced so far,
-here the session's `CurrentUser`. Install it on a route builder with
+with the route's decoded path values and URL, plus the context produced so far,
+here the session's `CurrentUser`. Install it on the route's registration with
 `withMountAspect`:
 
 @:sourceRegion(documentation/fixtures/guides/src/sessions/Sessions.scala, sessions-workspace-route)
@@ -97,7 +97,7 @@ This keeps policy at the broadest boundary that needs it.
 | Boundary | `LiveSessionMountAspect` | `LiveRouteMountAspect` |
 | --- | --- | --- |
 | Installation scope | A named live session | One route declaration |
-| Inputs | Phase-specific request and preceding session context | Typed destination parameters, destination URL, and preceding context |
+| Inputs | Phase-specific request and preceding session context | Decoded destination path values, destination URL, and preceding context |
 | Timing | Disconnected mount, initial connected mount, and connected navigation within the named live session | Every disconnected or connected mount of that route, including connected navigation |
 | Serialization | Minimal signed claims cross from HTTP to the connected lifecycle | No claims; output is never serialized |
 | Failure boundary | HTTP `Response` when disconnected; `LiveMountFailure` when connected | `LiveRouteMountFailure` defines both HTTP and connected outcomes |
@@ -135,19 +135,20 @@ route aspects intentionally cannot read them.
 
 Context accumulates from left to right. In the account session, the session
 aspect produces `CurrentUser` and the route aspect adds `WorkspaceAccess`, so
-the workspace route's factory receives `(CurrentUser, WorkspaceAccess)`. One
-more aspect would produce `((CurrentUser, WorkspaceAccess), NextContext)`.
+the workspace route's factory receives `(CurrentUser, WorkspaceAccess)` as two
+parameters. One more aspect would produce
+`(CurrentUser, WorkspaceAccess, NextContext)`.
 
 The default `ContextAppend` discards only the initial `Any` identity context and
-accumulates each later output as a pair without flattening. Define a custom
+appends each later output to one flat tuple. Define a custom
 `ContextAppend` only when a domain-specific accumulated type is clearer and its
 `left` projection can recover the preceding context.
 
 Mount admission does not rerun merely because another application turn arrives
 while a view remains mounted. Append a route
-@:apiSymbol(def:scalive.LiveRouteMountAspectBuilder.guardConnectedTurns)`guardConnectedTurns`@:@
+@:apiSymbol(def:scalive.LiveRouteSetup.WithContext.guardConnectedTurns)`guardConnectedTurns`@:@
 or session
-@:apiSymbol(def:scalive.LiveSessionBuilder.Admitted.guardConnectedTurns)`guardConnectedTurns`@:@
+@:apiSymbol(def:scalive.LiveSessionBuilder.guardConnectedTurns)`guardConnectedTurns`@:@
 after the aspects or admission that produce its context when policy must be
 checked before every later application turn. Session guards run before route
 guards and are inherited by nested LiveViews. See
@@ -197,13 +198,12 @@ protected state.
 ## Attach connected resource initialization {#connected-resource-initialization}
 
 Install `withConnectedResources` on the named live-session builder for every
-root mounted in that group, or on a route builder for one destination. It is
-available on plain, typed, and admitted session builders and on ordinary and
-routed route builders. Each callback receives the builder's current context and
+root mounted in that group, or on a route registration for one destination.
+Each callback receives the context available where it is installed and
 `ConnectedResources`, returning `Task[Result]` with `Result <: Unit`.
 
-Install after the aspect that supplies the callback's required context. A plain
-builder supplies `Any`; a later `.context(factory)` is not a context declaration
+Install after the aspect that supplies the callback's required context. Before
+any aspect, the context is `Any`; a later `.context(factory)` is not a context declaration
 for an earlier initializer. If another aspect or admission is appended afterward,
 the initializer retains its installation-time context via projection. Its
 execution still waits for **all** session and route admission/context checks,

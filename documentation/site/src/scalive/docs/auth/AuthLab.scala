@@ -241,12 +241,11 @@ final class ProfileLiveView(currentUser: CurrentUser) extends LiveView.Eventless
     )
 
 object AuthLab:
-  val loginRoute: LiveRouteFragment[Any] { type Input = Any } =
-    AuthLabRoutes.login(LoginLiveView())
+  val loginRoute: LiveRegistration[Any] { type Input = Any } =
+    AuthLabRoutes.login -> LoginLiveView()
 
   // docs:start authentication-protected-session
-  val protectedSession
-    : LiveRouteFragment[AuthService & LiveConnections[PublicSessionId]] { type Input = Any } =
+  val protectedSession: LiveSession[AuthService & LiveConnections[PublicSessionId]] =
     Live
       .session("documentation-authentication-lab")
       .withAdmission(AuthMountAspect.authenticated)(_.publicSessionId)

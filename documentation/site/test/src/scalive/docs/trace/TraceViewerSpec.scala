@@ -46,7 +46,7 @@ object TraceViewerSpec extends ZIOSpecDefault:
                      example,
                      store
                    )
-          application = scalive.Live.router(scalive.live(viewer))
+          application = scalive.Live.router(scalive.live -> viewer)
           connected <- ConnectedRender.join(
                          application,
                          transportConfig,

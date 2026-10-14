@@ -6,6 +6,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import org.jsoup.Jsoup
 import zio.*
 import zio.http.{Request, URL}
+import zio.http.codec.PathCodec
 import zio.json.JsonCodec
 import zio.json.ast.Json
 import zio.test.*
@@ -549,7 +550,7 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
           )
 
       val application = scalive.Live.router(
-        scalive.live.guardConnectedTurns(_ => ZIO.unit)(parent)
+        scalive.live.guardConnectedTurns(_ => ZIO.unit) -> parent
       )
 
       ZIO.scoped {
@@ -560,6 +561,90 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
           rootJoined   <- root.isJoined
           nestedJoined <- nested.isJoined
         yield assertTrue(rootJoined, nestedJoined)
+      }
+    },
+    test("routed LiveViews patch by their own parameters") {
+      val search = scalive.live.queryOptional[String]("q")
+      val view   = new LiveView.Routed[NavigationMsg, Option[String], Option[String]]:
+        def mount(params: Option[String], ctx: MountContext) = ZIO.succeed(params)
+        def handleMessage(model: Option[String], ctx: MessageContext) =
+          case NavigationMsg.Patch => ctx.nav.pushPatch(Some("typed")).as(model)
+        override def handleParams(
+          model: Option[String],
+          params: Option[String],
+          url: URL,
+          ctx: ParamsContext
+        ) = ZIO.succeed(params)
+        def view(model: Signal[Option[String]]) =
+          div(
+            button(dataAttr("patch") := "", on.click(NavigationMsg.Patch), "Patch"),
+            span(dataAttr("query") := "", model.map(_.getOrElse("none")))
+          )
+
+      ZIO.scoped {
+        for
+          root    <- ConnectedRender.join(scalive.Live.router(search -> view), config, Request.get(URL.root))
+          before  <- root.text("[data-query]")
+          _       <- root.click("[data-patch]")
+          after   <- (ZIO.yieldNow *> root.text("[data-query]"))
+                       .repeatUntil(_ == "typed")
+                       .timeout(3.seconds)
+          joined  <- root.isJoined
+        yield assertTrue(before == "none", after.contains("typed"), joined)
+      }
+    },
+    test("a patch to another route's location stops the LiveView") {
+      val otherRoute = scalive.live / "other"
+      val other      = new LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext)           = ZIO.unit
+        override def view(model: Signal[Unit]) = div("other")
+
+      val source = new LiveView[NavigationMsg, Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        def handleMessage(model: Unit, ctx: MessageContext) =
+          case NavigationMsg.Patch => ctx.nav.pushPatch(otherRoute.location).as(model)
+        override def view(model: Signal[Unit]) =
+          button(dataAttr("patch") := "", on.click(NavigationMsg.Patch), "Patch")
+
+      val application = scalive.Live.router(scalive.live -> source, otherRoute -> other)
+
+      ZIO.scoped {
+        for
+          root    <- ConnectedRender.join(application, config, Request.get(URL.root))
+          _       <- root.click("[data-patch]")
+          stopped <- (ZIO.yieldNow *> root.isJoined)
+                       .repeatUntil(joined => !joined)
+                       .timeout(3.seconds)
+        yield assertTrue(stopped.isDefined)
+      }
+    },
+    test("a patch whose URL resolves to an earlier route stops the LiveView") {
+      val newItem = new LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext)           = ZIO.unit
+        override def view(model: Signal[Unit]) = div("new item")
+
+      val item = new LiveView.Routed[NavigationMsg, String, String]:
+        def mount(params: String, ctx: MountContext) = ZIO.succeed(params)
+        def handleMessage(model: String, ctx: MessageContext) =
+          case NavigationMsg.Patch => ctx.nav.pushPatch("new").as(model)
+        override def handleParams(model: String, params: String, url: URL, ctx: ParamsContext) =
+          ZIO.succeed(params)
+        def view(model: Signal[String]) =
+          button(dataAttr("patch") := "", on.click(NavigationMsg.Patch), model)
+
+      val application = scalive.Live.router(
+        scalive.live / "items" / "new"                     -> newItem,
+        scalive.live / "items" / PathCodec.string("id") -> item
+      )
+
+      ZIO.scoped {
+        for
+          root    <- ConnectedRender.join(application, config, Request.get(url("/items/1")))
+          _       <- root.click("[data-patch]")
+          stopped <- (ZIO.yieldNow *> root.isJoined)
+                       .repeatUntil(joined => !joined)
+                       .timeout(3.seconds)
+        yield assertTrue(stopped.isDefined)
       }
     },
     test("routed joins execute physical session admission") {
@@ -762,8 +847,8 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
         override def view(model: Signal[(Long, String)]) = content(model)
 
       val application = scalive.Live.router(
-        scalive.live(source),
-        (scalive.live / "next")(destination)
+        scalive.live -> source,
+        (scalive.live / "next") -> destination
       )
 
       ZIO.scoped {
@@ -810,7 +895,7 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
         result <- ZIO.scoped {
                     for
                       client <- ConnectedRender.open(
-                                  scalive.Live.router(scalive.live(view)),
+                                  scalive.Live.router(scalive.live -> view),
                                   config,
                                   Request.get(URL.root)
                                 )
@@ -882,8 +967,8 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
         override def view(model: Signal[Unit]) = div(dataAttr("destination") := "", "destination")
 
       val application = scalive.Live.router(
-        scalive.live(source),
-        (scalive.live / "next")(destination)
+        scalive.live -> source,
+        (scalive.live / "next") -> destination
       )
 
       ZIO.scoped {
@@ -980,7 +1065,7 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
       )
       val destination = (scalive.live / "denied")
         .withMountAspect(denied)
-        .withConnectedResources((_, resources) => startResource(resources)) {
+        .withConnectedResources((_, resources) => startResource(resources)) -> {
           factories.incrementAndGet()
           new LiveView.Eventless[Unit]:
             def mount(ctx: MountContext)  = ZIO.unit
@@ -1042,7 +1127,7 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
       val denied = LiveRouteMountAspect.make[Any, Unit, TestUser, Unit]((_, _) =>
         ZIO.fail(LiveRouteMountFailure.forbidden("destination access revoked"))
       )
-      val deniedRoute = (scalive.live / "denied").withMountAspect(denied) {
+      val deniedRoute = (scalive.live / "denied").withMountAspect(denied) -> {
         factories.incrementAndGet()
         new LiveView.Eventless[Unit]:
           def mount(ctx: MountContext) = ZIO.unit
@@ -1115,8 +1200,8 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
                         override def view(model: Signal[Unit]) =
                           div(dataAttr("async-destination") := "", "destination")
         application = scalive.Live.router(
-                        scalive.live(source),
-                        (scalive.live / "next")(destination)
+                        scalive.live -> source,
+                        (scalive.live / "next") -> destination
                       )
         result <- ZIO.scoped {
                     for
@@ -1266,7 +1351,7 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
         )
 
     val application = scalive.Live.router(
-      scalive.live.guardConnectedTurns(_ => ZIO.fail(failure))(parent)
+      scalive.live.guardConnectedTurns(_ => ZIO.fail(failure)) -> parent
     )
 
     for

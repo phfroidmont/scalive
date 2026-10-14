@@ -1,9 +1,13 @@
 package scalive
 
+import scala.annotation.implicitNotFound
 import scala.annotation.targetName
 
+import zio.IO
 import zio.Tag
-import zio.http.Request
+import zio.Task
+import zio.URIO
+import zio.ZIO
 import zio.http.codec.{Combiner, HttpCodec, PathCodec, QueryCodec}
 import zio.schema.Schema
 
@@ -57,22 +61,14 @@ object LiveRouteMountPipeline:
     append: ContextAppend.Aux[Ctx, Out, Result])
       extends LiveRouteMountPipeline[R & R1, A, In, Result]
 
-/** Selects how a completed route obtains the context passed to its lifecycle factory and layouts.
-  */
+/** Selects how a registered route obtains the context passed to its factory and layouts. */
 sealed private[scalive] trait LiveRouteContext[R, A, In, Ctx]
 
 object LiveRouteContext:
-  final case class Direct[A]()                    extends LiveRouteContext[Any, A, Any, Any]
-  final case class Environment[R, A](tag: Tag[R]) extends LiveRouteContext[R, A, Any, R]
-  final case class Required[A, Ctx]()             extends LiveRouteContext[Any, A, Ctx, Ctx]
+  final case class Direct[A]()        extends LiveRouteContext[Any, A, Any, Any]
+  final case class Required[A, Ctx]() extends LiveRouteContext[Any, A, Ctx, Ctx]
   final case class Mounted[R, A, In, Ctx](pipeline: LiveRouteMountPipeline[R, A, In, Ctx])
       extends LiveRouteContext[R, A, In, Ctx]
-
-  /** Resolves an existing route context before adding one application-environment service. */
-  final case class WithEnvironment[R0, R1, A, In, Ctx](
-    previous: LiveRouteContext[R0, A, In, Ctx],
-    service: Tag[R1])
-      extends LiveRouteContext[R0 & R1, A, In, (Ctx, R1)]
 
   /** Retains the lifecycle order and the proof that session context supplies route input. */
   final case class SessionMounted[RS, RR, A, SessionCtx, RouteIn, RouteCtx](
@@ -81,13 +77,9 @@ object LiveRouteContext:
     routeInput: SessionCtx => RouteIn)
       extends LiveRouteContext[RS & RR, A, Any, (SessionCtx, RouteCtx)]
 
-/** The sole existential boundary joining a complete typed route to the heterogeneous catalog. */
+/** The sole existential boundary joining a registered route to the heterogeneous catalog. */
 sealed private[scalive] trait LiveRouteDefinition[A]:
-  type Environment
   type Input
-  type Context
-  type Msg
-  type Model
 
   private[scalive] def withSession[R, SessionCtx](
     pipeline: LiveSessionMountPipeline[R, Any, SessionCtx],
@@ -96,25 +88,20 @@ sealed private[scalive] trait LiveRouteDefinition[A]:
     sessionLayouts: Vector[LiveLayout[Any, SessionCtx]],
     sessionRootLayout: Option[LiveRootLayout[Any, SessionCtx]],
     supplies: SessionCtx <:< Input
-  ): LiveRouteDefinition[A] {
-    type Environment = LiveRouteDefinition.this.Environment & R; type Input = Any
-  }
+  ): LiveRouteDefinition[A] { type Input = Any }
 
 object LiveRouteDefinition:
-  final case class Ordinary[R, A, In, Ctx, Message, State](
+  final case class Route[RC, RF, A, P, In, Ctx](
     pathCodec: PathCodec[A],
-    context: LiveRouteContext[R, A, In, Ctx],
-    factory: (A, Request, Ctx) => LiveView[Message, State],
+    paramsCodec: LiveParamsCodec[A, P],
+    context: LiveRouteContext[RC, A, In, Ctx],
+    factory: Ctx => URIO[RF, LiveRouteView.Mounted[P]],
     connectedTurnGuards: LiveConnectedTurnGuard[Ctx],
     connectedResourceInitializers: LiveConnectedResourceInitializers[Ctx],
     layouts: Vector[LiveLayout[A, Ctx]],
     rootLayout: Option[LiveRootLayout[A, Ctx]])
       extends LiveRouteDefinition[A]:
-    type Environment = R
-    type Input       = In
-    type Context     = Ctx
-    type Msg         = Message
-    type Model       = State
+    type Input = In
 
     def withSession[R1, SessionCtx](
       pipeline: LiveSessionMountPipeline[R1, Any, SessionCtx],
@@ -123,56 +110,12 @@ object LiveRouteDefinition:
       sessionLayouts: Vector[LiveLayout[Any, SessionCtx]],
       sessionRootLayout: Option[LiveRootLayout[Any, SessionCtx]],
       supplies: SessionCtx <:< In
-    ) =
-      Ordinary(
+    ): LiveRouteDefinition[A] { type Input = Any } =
+      Route[R1 & RC, RF, A, P, Any, (SessionCtx, Ctx)](
         pathCodec,
-        LiveRouteContext.SessionMounted(pipeline, context, supplies),
-        (path, request, contexts) => factory(path, request, contexts._2),
-        sessionGuards
-          .contramap((_: (SessionCtx, Ctx))._1)
-          .andThen(connectedTurnGuards.contramap((_: (SessionCtx, Ctx))._2)),
-        sessionInitializers
-          .contramap((_: (SessionCtx, Ctx))._1)
-          .andThen(connectedResourceInitializers.contramap((_: (SessionCtx, Ctx))._2)),
-        sessionLayouts.map(_.forContext((_: (SessionCtx, Ctx))._1)) ++
-          layouts.map(_.forContext((_: (SessionCtx, Ctx))._2)),
-        rootLayout
-          .map(_.forContext((_: (SessionCtx, Ctx))._2))
-          .orElse(
-            sessionRootLayout.map(_.forContext((_: (SessionCtx, Ctx))._1))
-          )
-      )
-  end Ordinary
-
-  final case class Routed[R, A, In, Ctx, Message, State, Params](
-    pathCodec: PathCodec[A],
-    context: LiveRouteContext[R, A, In, Ctx],
-    factory: (A, Request, Ctx) => LiveView.Routed[Message, State, Params],
-    paramsCodec: LiveParamsDecoder[A, Params],
-    connectedTurnGuards: LiveConnectedTurnGuard[Ctx],
-    connectedResourceInitializers: LiveConnectedResourceInitializers[Ctx],
-    layouts: Vector[LiveLayout[A, Ctx]],
-    rootLayout: Option[LiveRootLayout[A, Ctx]])
-      extends LiveRouteDefinition[A]:
-    type Environment = R
-    type Input       = In
-    type Context     = Ctx
-    type Msg         = Message
-    type Model       = State
-
-    def withSession[R1, SessionCtx](
-      pipeline: LiveSessionMountPipeline[R1, Any, SessionCtx],
-      sessionGuards: LiveConnectedTurnGuard[SessionCtx],
-      sessionInitializers: LiveConnectedResourceInitializers[SessionCtx],
-      sessionLayouts: Vector[LiveLayout[Any, SessionCtx]],
-      sessionRootLayout: Option[LiveRootLayout[Any, SessionCtx]],
-      supplies: SessionCtx <:< In
-    ) =
-      Routed(
-        pathCodec,
-        LiveRouteContext.SessionMounted(pipeline, context, supplies),
-        (path, request, contexts) => factory(path, request, contexts._2),
         paramsCodec,
+        LiveRouteContext.SessionMounted(pipeline, context, supplies),
+        contexts => factory(contexts._2),
         sessionGuards
           .contramap((_: (SessionCtx, Ctx))._1)
           .andThen(connectedTurnGuards.contramap((_: (SessionCtx, Ctx))._2)),
@@ -183,19 +126,54 @@ object LiveRouteDefinition:
           layouts.map(_.forContext((_: (SessionCtx, Ctx))._2)),
         rootLayout
           .map(_.forContext((_: (SessionCtx, Ctx))._2))
-          .orElse(
-            sessionRootLayout.map(_.forContext((_: (SessionCtx, Ctx))._1))
-          )
+          .orElse(sessionRootLayout.map(_.forContext((_: (SessionCtx, Ctx))._1)))
       )
-  end Routed
+  end Route
 end LiveRouteDefinition
 
-/** A declarative route, hidden behind [[LiveRouteFragment]] during normal application assembly. */
-sealed abstract class LiveRoute[R, A] private[scalive] extends LiveRouteFragment[R]:
-  private[scalive] val definition: LiveRouteDefinition[A] {
-    type Environment = R
-    type Input       = LiveRoute.this.Input
+/** Evidence that a route whose parameters are `Params` can mount `View`.
+  *
+  * Any [[LiveView]] fits any route. A [[LiveView.Routed LiveView.Routed]] fits a route whose
+  * parameters are the ones it takes.
+  */
+@implicitNotFound(
+  "${View} cannot be mounted on a route whose parameters are ${Params}: a LiveView.Routed must take the route's parameters, and a LiveView fits any route"
+)
+sealed trait LiveRouteView[View, Params]:
+  private[scalive] def erase(view: View): LiveRouteView.Mounted[Params]
+
+/** The two ways a LiveView fits a route. */
+object LiveRouteView:
+  private[scalive] type Mounted[Params] = LiveView[?, ?] | LiveView.Routed[?, ?, Params]
+
+  /** Any [[LiveView]] fits any route. */
+  given ordinary[View <: LiveView[?, ?], Params]: LiveRouteView[View, Params] with
+    private[scalive] def erase(view: View): Mounted[Params] = view
+
+  /** A [[LiveView.Routed LiveView.Routed]] fits a route with the parameters it takes. */
+  given routed[View <: LiveView.Routed[?, ?, Params], Params]: LiveRouteView[View, Params] with
+    private[scalive] def erase(view: View): Mounted[Params] = view
+
+/** A route registered with the LiveView it mounts, as returned by `->`, `from`, or `context`.
+  *
+  * Pass it to `Live.router`, or to a named live session when it reads the session's context.
+  *
+  * @tparam R
+  *   the services its factory and mount aspects need from the server's environment
+  */
+sealed abstract class LiveRegistration[-R] private[scalive]:
+  /** The context this route reads from an enclosing named live session, `Any` when it reads none.
+    *
+    * The router accepts only registrations whose input is `Any`. A route that reads session
+    * context, through `context` or a route mount aspect, must be passed to a session that produces
+    * it.
+    */
+  type Input
+
+  private[scalive] val definition: LiveRouteDefinition[?] {
+    type Input = LiveRegistration.this.Input
   }
+
   private[scalive] def attachSession[RS, SessionCtx](
     pipeline: LiveSessionMountPipeline[RS, Any, SessionCtx],
     guards: LiveConnectedTurnGuard[SessionCtx],
@@ -203,1242 +181,546 @@ sealed abstract class LiveRoute[R, A] private[scalive] extends LiveRouteFragment
     layouts: Vector[LiveLayout[Any, SessionCtx]],
     rootLayout: Option[LiveRootLayout[Any, SessionCtx]],
     supplies: SessionCtx <:< Input
-  ): Vector[LiveRouteFragment[R & RS] { type Input = Any }] =
-    Vector(
-      LiveRoute(
-        definition.withSession(pipeline, guards, initializers, layouts, rootLayout, supplies)
-      )
+  ): LiveRegistration[R & RS] { type Input = Any } =
+    LiveRegistration(
+      definition.withSession(pipeline, guards, initializers, layouts, rootLayout, supplies)
     )
 
-object LiveRoute:
-  private[scalive] def apply[R, A, Need](
-    value: LiveRouteDefinition[A] { type Environment = R; type Input = Need }
-  ): LiveRoute[R, A] { type Input = Need } =
-    new LiveRoute[R, A]:
+private[scalive] object LiveRegistration:
+  def apply[R, Need](
+    value: LiveRouteDefinition[?] { type Input = Need }
+  ): LiveRegistration[R] { type Input = Need } =
+    new LiveRegistration[R]:
       type Input = Need
       val definition = value
 
-/** A completed route or typed group of routes accepted by application assembly. */
-sealed trait LiveRouteFragment[-R]:
-  /** The context this fragment needs from an enclosing named live session, `Any` when it needs
-    * none.
-    *
-    * The router accepts only fragments whose input is `Any`. A route that reads session context,
-    * through `context` or a route mount aspect, must be passed to a session that produces it.
-    */
-  type Input
-
-  private[scalive] def declarations: Vector[LiveRoute[?, ?]] = this match
-    case route: LiveRoute[?, ?]  => Vector(route)
-    case session: LiveSession[?] => session.routes.flatMap(_.declarations)
-
-/** Declares a LiveView route: its path, how its LiveView is built, and the layouts around it.
+/** A route being registered: layouts, connected-turn guards, connected resources, and mount
+  * aspects, in any order, then the LiveView it mounts.
   *
-  * Start from `live`, add path segments with `/`, and finish with `->` for a LiveView that needs
-  * nothing, [[from]] for one built from a service, or [[context]] for one built from the context of
-  * a named live session. Call [[query]] or [[params]] first when the LiveView reads URL parameters;
-  * it then extends [[LiveView.Routed LiveView.Routed]]. Keep the declaration in a named value to
-  * build links to it with [[location]].
-  *
-  * See the [routes guide](https://scalive.dev/guides/routes-and-navigation).
+  * A [[LiveRoute]] is itself a registration with no setup, so `Routes.search -> SearchLiveView()`
+  * registers it directly. Each setup call returns a new registration and leaves the route value
+  * unchanged. See the [routes guide](https://scalive.dev/guides/routes-and-navigation).
   *
   * @tparam A
-  *   the values decoded from the path, `Unit` when it has none
+  *   the values decoded from the path, which layouts receive
+  * @tparam P
+  *   the parameters a [[LiveView.Routed LiveView.Routed]] receives
   */
-class LiveRouteBuilder[A] private[scalive] (
+sealed class LiveRouteSetup[A, P] private[scalive] (
   private[scalive] val pathCodec: PathCodec[A],
-  private val layouts: Vector[LiveLayout[A, Any]] = Vector.empty,
-  private val rootLayout: Option[LiveRootLayout[A, Any]] = None,
-  private val connectedTurnGuards: LiveConnectedTurnGuard[Any] = LiveConnectedTurnGuard.empty,
-  private val connectedResourceInitializers: LiveConnectedResourceInitializers[Any] =
-    LiveConnectedResourceInitializers.empty):
+  private[scalive] val paramsCodec: LiveParamsCodec[A, P],
+  private val layouts: Vector[LiveLayout[A, Any]],
+  private val rootLayout: Option[LiveRootLayout[A, Any]],
+  private val connectedTurnGuards: LiveConnectedTurnGuard[Any],
+  private val connectedResourceInitializers: LiveConnectedResourceInitializers[Any]):
 
-  /** Appends path segments, as in `live / "projects" / PathCodec.string("project")`.
-    *
-    * A literal string matches itself; a codec such as `PathCodec.int("id")` decodes one segment and
-    * adds its value to the route's path values. Layouts, guards, and connected resources installed
-    * before `/` keep applying to the longer path.
-    */
-  def /[B](that: PathCodec[B])(using combiner: Combiner[A, B]): LiveRouteSeed[combiner.Out] =
-    val previousParams: combiner.Out => A = out => combiner.separate(out)._1
-    LiveRouteSeed(
-      pathCodec / that,
-      layouts.map(_.forPathParams(previousParams)),
-      rootLayout.map(_.forPathParams(previousParams)),
-      connectedTurnGuards,
+  private def setup(
+    layouts: Vector[LiveLayout[A, Any]] = layouts,
+    rootLayout: Option[LiveRootLayout[A, Any]] = rootLayout,
+    connectedTurnGuards: LiveConnectedTurnGuard[Any] = connectedTurnGuards,
+    connectedResourceInitializers: LiveConnectedResourceInitializers[Any] =
       connectedResourceInitializers
-    )
-
-  /** Appends setup for this route's connected resources, before connected mount. Callbacks run in
-    * declaration order, after session setup, and receive the context available here. They do not
-    * run during disconnected rendering and are not inherited by nested LiveViews.
-    */
-  def withConnectedResources[Result <: Unit](
-    initialize: (Any, ConnectedResources) => zio.Task[Result]
-  ): LiveRouteBuilder[A] =
-    LiveRouteBuilder(
+  ): LiveRouteSetup[A, P] =
+    new LiveRouteSetup(
       pathCodec,
+      paramsCodec,
       layouts,
       rootLayout,
       connectedTurnGuards,
-      connectedResourceInitializers.andThen(LiveConnectedResourceInitializers(initialize))
-    )
-
-  /** Builds a link or navigation destination for this route.
-    *
-    * Pass the path values, as in `Routes.project.location("scalive")`. Throws
-    * [[LiveLocation.EncodingException]] when a value cannot be encoded; use [[locationEither]] to
-    * handle that case.
-    */
-  def location(value: A): LiveLocation =
-    locationEither(value).fold(error => throw new LiveLocation.EncodingException(error), identity)
-
-  /** Builds a link or navigation destination for this route, or returns why encoding failed. */
-  def locationEither(value: A): Either[LiveLocation.EncodeError, LiveLocation] =
-    LiveLocation.encode(pathCodec, LiveParamsCodec.Encoded(value, zio.http.QueryParams.empty))
-
-  /** Builds a link or navigation destination for this route.
-    *
-    * This form applies to a path without values, as in `Routes.home.location`.
-    */
-  @targetName("unitLocation")
-  def location(using ev: A =:= Unit): LiveLocation = location(ev.flip(()))
-
-  /** Builds a link or navigation destination for this route, or returns why encoding failed. */
-  @targetName("unitLocationEither")
-  def locationEither(using ev: A =:= Unit): Either[LiveLocation.EncodeError, LiveLocation] =
-    locationEither(ev.flip(()))
-
-  /** Adds query parameters, after which the route registers a [[LiveView.Routed LiveView.Routed]].
-    *
-    * The LiveView receives the path values and the decoded query together as its parameters. This
-    * form takes a ZIO HTTP query codec; `query[Int]("page")` names one parameter, and
-    * `query[Filters]` derives several from a schema.
-    */
-  def query[Query](
-    codec: QueryCodec[Query]
-  )(using
-    combiner: Combiner[A, Query]
-  ): LiveEncodableRouteParamsBuilder[A, combiner.Out] =
-    LiveEncodableRouteParamsBuilder(
-      pathCodec,
-      LiveParamsCodec.fromQuery(codec),
-      layouts,
-      rootLayout,
-      connectedTurnGuards,
-      connectedResourceInitializers
-    )
-
-  /** Adds query parameters, after which the route registers a [[LiveView.Routed LiveView.Routed]].
-    *
-    * The LiveView receives the path values and the decoded query together as its parameters. This
-    * form adds one required parameter, as in `query[Int]("page")`.
-    */
-  def query[Query: Schema](
-    name: String
-  )(using
-    combiner: Combiner[A, Query]
-  ): LiveEncodableRouteParamsBuilder[A, combiner.Out] =
-    query(HttpCodec.query[Query](name))
-
-  /** Adds an optional query parameter, after which the route registers a
-    * [[LiveView.Routed LiveView.Routed]].
-    *
-    * The parameter decodes to `None` when it is absent, as in `queryOptional[String]("q")`.
-    */
-  def queryOptional[Query: Schema](
-    name: String
-  )(using
-    combiner: Combiner[A, Option[Query]]
-  ): LiveEncodableRouteParamsBuilder[A, combiner.Out] =
-    query(HttpCodec.query[Query](name).optional)
-
-  /** Adds query parameters, after which the route registers a [[LiveView.Routed LiveView.Routed]].
-    *
-    * The LiveView receives the path values and the decoded query together as its parameters. This
-    * form derives the parameters from the fields of `Query`'s schema.
-    */
-  def query[Query: Schema](
-    using
-    combiner: Combiner[A, Query]
-  ): LiveEncodableRouteParamsBuilder[A, combiner.Out] =
-    query(HttpCodec.query[Query])
-
-  /** Passes the route's values to a [[LiveView.Routed LiveView.Routed]] as its parameters.
-    *
-    * Without an argument, the parameters are the path values. Pass a [[LiveParamsCodec]] to decode
-    * them into another type that can still build links.
-    */
-  def params: LiveEncodableRouteParamsBuilder[A, A] =
-    LiveEncodableRouteParamsBuilder(
-      pathCodec,
-      LiveParamsCodec.path[A],
-      layouts,
-      rootLayout,
-      connectedTurnGuards,
-      connectedResourceInitializers
-    )
-
-  /** Passes the route's values to a [[LiveView.Routed LiveView.Routed]] as its parameters.
-    *
-    * Without an argument, the parameters are the path values. Pass a [[LiveParamsCodec]] to decode
-    * them into another type that can still build links.
-    */
-  def params[Params](
-    codec: LiveParamsCodec[A, Params]
-  ): LiveEncodableRouteParamsBuilder[A, Params] =
-    LiveEncodableRouteParamsBuilder(
-      pathCodec,
-      codec,
-      layouts,
-      rootLayout,
-      connectedTurnGuards,
-      connectedResourceInitializers
-    )
-
-  /** Decodes the route's parameters with a decoder that cannot build links.
-    *
-    * Prefer [[params]] with a codec. The resulting route has no `location`.
-    */
-  def paramsDecodeOnly[Params](
-    decoder: LiveParamsDecoder[A, Params]
-  ): LiveRouteParamsBuilder[A, Params] =
-    LiveRouteParamsBuilder(
-      pathCodec,
-      decoder,
-      layouts,
-      rootLayout,
-      connectedTurnGuards,
-      connectedResourceInitializers
-    )
-
-  /** Appends a policy check before each connected application turn.
-    *
-    * Guards at one boundary run in declaration order; session guards run before route guards. The
-    * callback receives the context available at this builder. Succeed with `Unit` to continue, or
-    * fail with [[LiveConnectedTurnFailure]] for a controlled halt, redirect, reload, or disconnect.
-    * Guards are inherited by nested LiveViews and do not run during mount, disconnected rendering,
-    * or framework cleanup.
-    */
-  def guardConnectedTurns[Result <: Unit](
-    guard: Any => zio.IO[LiveConnectedTurnFailure, Result]
-  ): LiveRouteBuilder[A] =
-    LiveRouteBuilder(
-      pathCodec,
-      layouts,
-      rootLayout,
-      connectedTurnGuards.andThen(LiveConnectedTurnGuard(guard)),
       connectedResourceInitializers
     )
 
   /** Wraps this route's LiveView in `layout`.
     *
-    * Route layouts sit inside router and session layouts and nest in installation order. Install
-    * them before [[params]] or [[query]]. See the [layouts
-    * guide](https://scalive.dev/guides/layouts#give-one-route-its-own-layout).
+    * Route layouts sit inside router and session layouts and nest in installation order. See the
+    * [layouts guide](https://scalive.dev/guides/layouts#give-one-route-its-own-layout).
     */
-  def withLayout(layout: LiveLayout[A, Any]): LiveRouteBuilder[A] =
-    LiveRouteBuilder(
-      pathCodec,
-      layouts :+ layout,
-      rootLayout,
-      connectedTurnGuards,
-      connectedResourceInitializers
-    )
+  def withLayout(layout: LiveLayout[A, Any]): LiveRouteSetup[A, P] =
+    setup(layouts = layouts :+ layout)
 
   /** Renders this route's document with `layout`, replacing the session's or router's root layout.
     */
-  def withRootLayout(layout: LiveRootLayout[A, Any]): LiveRouteBuilder[A] =
-    LiveRouteBuilder(
-      pathCodec,
-      layouts,
-      Some(layout),
-      connectedTurnGuards,
-      connectedResourceInitializers
+  def withRootLayout(layout: LiveRootLayout[A, Any]): LiveRouteSetup[A, P] =
+    setup(rootLayout = Some(layout))
+
+  /** Appends a policy check before each connected application turn.
+    *
+    * Guards at one boundary run in declaration order; session guards run before route guards.
+    * Succeed with `Unit` to continue, or fail with [[LiveConnectedTurnFailure]] for a controlled
+    * halt, redirect, reload, or disconnect. Guards are inherited by nested LiveViews and do not run
+    * during mount, disconnected rendering, or framework cleanup.
+    */
+  def guardConnectedTurns[Result <: Unit](
+    guard: Any => IO[LiveConnectedTurnFailure, Result]
+  ): LiveRouteSetup[A, P] =
+    setup(connectedTurnGuards = connectedTurnGuards.andThen(LiveConnectedTurnGuard(guard)))
+
+  /** Appends setup for this route's connected resources, before connected mount.
+    *
+    * Callbacks run in declaration order, after session setup. They do not run during disconnected
+    * rendering and are not inherited by nested LiveViews.
+    */
+  def withConnectedResources[Result <: Unit](
+    initialize: (Any, ConnectedResources) => Task[Result]
+  ): LiveRouteSetup[A, P] =
+    setup(connectedResourceInitializers =
+      connectedResourceInitializers.andThen(LiveConnectedResourceInitializers(initialize))
     )
 
-  /** Starts a typed route mount pipeline. The resulting context is supplied to route factories. */
+  /** Runs `aspect` before this route mounts and passes its output to the LiveView's factory.
+    *
+    * The aspect receives the route's parameters and URL, and `In`, the context of the enclosing
+    * named live session. See [route mount
+    * aspects](https://scalive.dev/guides/live-sessions-and-mount-aspects#derive-route-context).
+    */
   def withMountAspect[R, In, Out, Result](
     aspect: LiveRouteMountAspect[R, A, In, Out]
   )(using append: ContextAppend.Aux[In, Out, Result]
-  ): LiveRouteMountAspectBuilder[R, A, In, Result] =
-    LiveRouteMountAspectBuilder(
+  ): LiveRouteSetup.WithContext[R, A, P, In, Result] =
+    val before = (_: Result) => ()
+    LiveRouteSetup.WithContext(
       pathCodec,
+      paramsCodec,
       LiveRouteMountPipeline.Identity[A, In]().andThen(aspect),
-      layouts.map(_.forContext((_: Result) => ())),
-      rootLayout.map(_.forContext((_: Result) => ())),
-      connectedTurnGuards.contramap((_: Result) => ()),
-      connectedResourceInitializers.contramap((_: Result) => ())
+      layouts.map(_.forContext(before)),
+      rootLayout.map(_.forContext(before)),
+      connectedTurnGuards.contramap(before),
+      connectedResourceInitializers.contramap(before)
     )
 
-  /** Registers the LiveView this route mounts.
-    *
-    * `view` is evaluated for the disconnected render and again for each connected mount. Prefer
-    * `->`, which reads better in a router.
-    */
-  def apply[Msg, Model](view: => LiveView[Msg, Model]): LiveRoute[Any, A] { type Input = Any } =
-    ordinary((_, _) => view)
-
-  /** Registers the LiveView this route mounts.
-    *
-    * `factory` receives the HTTP request of the disconnected render. For a connected mount it
-    * receives a GET request for the page's path and query, without the browser's headers or
-    * cookies; read those in a session mount aspect instead.
-    */
-  def apply[Msg, Model](
-    factory: Request => LiveView[Msg, Model]
-  ): LiveRoute[Any, A] { type Input = Any } =
-    ordinary((_, request) => factory(request))
-
-  /** Registers a LiveView built from the context of the named live session around this route.
-    *
-    * `factory` receives the context, as in
-    * `.context((user: CurrentUser) => AccountLiveView(user))`. The route compiles only inside a
-    * session whose mount aspects produce that context. See [live
-    * sessions](https://scalive.dev/guides/live-sessions-and-mount-aspects).
-    */
-  def context[Ctx, Msg, Model](
-    factory: Ctx => LiveView[Msg, Model]
-  ): LiveRoute[Any, A] { type Input = Ctx } =
-    context((_, _, context) => factory(context))
-
-  /** Registers a LiveView built from the context of the named live session around this route.
-    *
-    * `factory` also receives one service from the application environment, which the route adds to
-    * the application's requirements.
-    */
-  def context[Ctx, R: Tag, Msg, Model](
-    factory: (Ctx, R) => LiveView[Msg, Model]
-  ): LiveRoute[R, A] { type Input = Ctx } =
-    context((_, _, context, service) => factory(context, service))
-
-  /** Registers a LiveView built from the context of the named live session around this route.
-    *
-    * `factory` also receives the path values and the request.
-    */
-  def context[Ctx, Msg, Model](
-    factory: (A, Request, Ctx) => LiveView[Msg, Model]
-  ): LiveRoute[Any, A] { type Input = Ctx } =
-    LiveRoute(
-      LiveRouteDefinition.Ordinary(
-        pathCodec,
-        LiveRouteContext.Required(),
-        factory,
-        connectedTurnGuards.contramap((_: Ctx) => ()),
-        connectedResourceInitializers.contramap((_: Ctx) => ()),
-        layouts.map(_.forContext((_: Ctx) => ())),
-        rootLayout.map(_.forContext((_: Ctx) => ()))
-      )
-    )
-
-  /** Registers a LiveView built from the context of the named live session around this route.
-    *
-    * `factory` also receives the path values, the request, and one service from the application
-    * environment.
-    */
-  def context[Ctx, R: Tag, Msg, Model](
-    factory: (A, Request, Ctx, R) => LiveView[Msg, Model]
-  ): LiveRoute[R, A] { type Input = Ctx } =
-    val requiredLayouts    = layouts.map(_.forContext((_: Ctx) => ()))
-    val requiredRootLayout = rootLayout.map(_.forContext((_: Ctx) => ()))
-    LiveRoute(
-      LiveRouteDefinition.Ordinary(
-        pathCodec,
-        LiveRouteContext.WithEnvironment(LiveRouteContext.Required(), summon[Tag[R]]),
-        (path, request, contexts) => factory(path, request, contexts._1, contexts._2),
-        connectedTurnGuards.contramap((_: (Ctx, R)) => ()),
-        connectedResourceInitializers.contramap((_: (Ctx, R)) => ()),
-        requiredLayouts.map(_.forContext((_: (Ctx, R))._1)),
-        requiredRootLayout.map(_.forContext((_: (Ctx, R))._1))
-      )
-    )
-
-  /** Registers the LiveView this route mounts, as in `live / "counter" -> CounterLiveView()`.
+  /** Registers the LiveView this route mounts, as in `Routes.counter -> CounterLiveView()`.
     *
     * `view` is evaluated for the disconnected render and again for each connected mount. Use
-    * [[from]] when the LiveView needs a service.
+    * [[from]] when the LiveView needs services, and [[context]] when it reads session context.
     */
-  infix def ->[Msg, Model](
-    view: => LiveView[Msg, Model]
-  ): LiveRoute[Any, A] { type Input = Any } = apply(view)
+  infix def ->[View](
+    view: => View
+  )(using
+    mount: LiveRouteView[View, P]
+  ): LiveRegistration[Any] { type Input = Any } =
+    register(LiveRouteContext.Direct[A](), _ => ZIO.succeed(mount.erase(view)))
 
-  /** Registers a LiveView built from one service in the application environment.
+  /** Registers a LiveView built from services in the application environment.
     *
     * The route adds `R` to the application's environment requirement, so the server must provide
-    * it. Scalive calls the factory for the disconnected render and for each connected mount. To use
-    * several services, group them in one. See the [services
+    * it, as in `from(ZIO.serviceWith[Reports](ReportsLiveView(_)))`. Scalive runs `factory` for the
+    * disconnected render and for each connected mount. See the [services
     * guide](https://scalive.dev/guides/services-and-zlayer-injection).
     */
-  def from[R: Tag, Msg, Model](
-    factory: R => LiveView[Msg, Model]
-  ): LiveRoute[R, A] { type Input = Any } =
-    from((_: A, _: Request, service: R) => factory(service))
+  def from[R, View](
+    factory: URIO[R, View]
+  )(using
+    mount: LiveRouteView[View, P]
+  ): LiveRegistration[R] { type Input = Any } =
+    register(LiveRouteContext.Direct[A](), _ => factory.map(mount.erase))
 
-  /** Registers a LiveView built from one service in the application environment.
+  /** Registers a LiveView built from the context of the named live session around this route.
     *
-    * `factory` also receives the path values and the request.
+    * The route compiles only inside a session that produces `Ctx`, as in
+    * `.context((user: CurrentUser) => AccountLiveView(user))`. Inside the session, a tuple context
+    * arrives as separate parameters, as in `.context((user, locale) => ...)`. See [live
+    * sessions](https://scalive.dev/guides/live-sessions-and-mount-aspects).
     */
-  def from[R: Tag, Msg, Model](
-    factory: (A, Request, R) => LiveView[Msg, Model]
-  ): LiveRoute[R, A] { type Input = Any } =
-    LiveRoute(
-      LiveRouteDefinition.Ordinary(
-        pathCodec,
-        LiveRouteContext.Environment(summon[Tag[R]]),
-        factory,
-        connectedTurnGuards.contramap((_: R) => ()),
-        connectedResourceInitializers.contramap((_: R) => ()),
-        layouts.map(_.forContext((_: R) => ())),
-        rootLayout.map(_.forContext((_: R) => ()))
-      )
+  def context[Ctx, View](
+    factory: Ctx => View
+  )(using
+    mount: LiveRouteView[View, P]
+  ): LiveRegistration[Any] { type Input = Ctx } =
+    register(
+      LiveRouteContext.Required[A, Ctx](),
+      context => ZIO.succeed(mount.erase(factory(context)))
     )
 
-  private def ordinary[Msg, Model](
-    factory: (A, Request) => LiveView[Msg, Model]
-  ): LiveRoute[Any, A] { type Input = Any } =
-    LiveRoute(
-      LiveRouteDefinition.Ordinary(
+  /** Registers a LiveView built from services in the application environment.
+    *
+    * This form also reads the context of the enclosing named live session, as in
+    * `from((user: CurrentUser) => ZIO.serviceWith[Reports](ReportsLiveView(user, _)))`.
+    */
+  def from[Ctx, R, View](
+    factory: Ctx => URIO[R, View]
+  )(using
+    mount: LiveRouteView[View, P]
+  ): LiveRegistration[R] { type Input = Ctx } =
+    register(LiveRouteContext.Required[A, Ctx](), context => factory(context).map(mount.erase))
+
+  private def register[R, In, Ctx](
+    context: LiveRouteContext[Any, A, In, Ctx],
+    factory: Ctx => URIO[R, LiveRouteView.Mounted[P]]
+  ): LiveRegistration[R] { type Input = In } =
+    LiveRegistration(
+      LiveRouteDefinition.Route[Any, R, A, P, In, Ctx](
         pathCodec,
-        LiveRouteContext.Direct(),
-        (path, request, _) => factory(path, request),
+        paramsCodec,
+        context,
+        factory,
         connectedTurnGuards,
         connectedResourceInitializers,
         layouts,
         rootLayout
       )
     )
-end LiveRouteBuilder
+end LiveRouteSetup
 
-object LiveRouteBuilder:
-  private[scalive] def apply[A](
+/** Registration forms once a route mount aspect has produced context. */
+object LiveRouteSetup:
+  /** A route being registered after its mount aspects, whose setup and LiveView read their context.
+    *
+    * Accepts the same setup as [[LiveRouteSetup]], in any order. Layouts, guards, and connected
+    * resources receive the context produced by the aspects before them.
+    *
+    * @tparam R
+    *   the services the mount aspects need
+    * @tparam A
+    *   the values decoded from the path
+    * @tparam P
+    *   the parameters a [[LiveView.Routed LiveView.Routed]] receives
+    * @tparam In
+    *   the context the route reads from an enclosing named live session
+    * @tparam Ctx
+    *   the context produced so far, which the LiveView's factory receives
+    */
+  final class WithContext[R, A, P, In, Ctx] private[scalive] (
     pathCodec: PathCodec[A],
-    layouts: Vector[LiveLayout[A, Any]] = Vector.empty,
-    rootLayout: Option[LiveRootLayout[A, Any]] = None,
-    connectedTurnGuards: LiveConnectedTurnGuard[Any] = LiveConnectedTurnGuard.empty,
-    connectedResourceInitializers: LiveConnectedResourceInitializers[Any] =
-      LiveConnectedResourceInitializers.empty
-  ): LiveRouteBuilder[A] =
-    new LiveRouteBuilder(
-      pathCodec,
-      layouts,
-      rootLayout,
-      connectedTurnGuards,
-      connectedResourceInitializers
-    )
+    paramsCodec: LiveParamsCodec[A, P],
+    pipeline: LiveRouteMountPipeline[R, A, In, Ctx],
+    layouts: Vector[LiveLayout[A, Ctx]],
+    rootLayout: Option[LiveRootLayout[A, Ctx]],
+    connectedTurnGuards: LiveConnectedTurnGuard[Ctx],
+    connectedResourceInitializers: LiveConnectedResourceInitializers[Ctx]):
 
-/** Route construction after a mount aspect has produced typed lifecycle context. */
-final class LiveRouteMountAspectBuilder[R, A, Need, Ctx] private[scalive] (
-  private val pathCodec: PathCodec[A],
-  private val pipeline: LiveRouteMountPipeline[R, A, Need, Ctx],
-  private val layouts: Vector[LiveLayout[A, Ctx]],
-  private val rootLayout: Option[LiveRootLayout[A, Ctx]],
-  private val connectedTurnGuards: LiveConnectedTurnGuard[Ctx],
-  private val connectedResourceInitializers: LiveConnectedResourceInitializers[Ctx]):
+    private def setup(
+      layouts: Vector[LiveLayout[A, Ctx]] = layouts,
+      rootLayout: Option[LiveRootLayout[A, Ctx]] = rootLayout,
+      connectedTurnGuards: LiveConnectedTurnGuard[Ctx] = connectedTurnGuards,
+      connectedResourceInitializers: LiveConnectedResourceInitializers[Ctx] =
+        connectedResourceInitializers
+    ): WithContext[R, A, P, In, Ctx] =
+      WithContext(
+        pathCodec,
+        paramsCodec,
+        pipeline,
+        layouts,
+        rootLayout,
+        connectedTurnGuards,
+        connectedResourceInitializers
+      )
 
-  /** Appends connected setup using the context available at this declaration. */
-  def withConnectedResources[Result <: Unit](
-    initialize: (Ctx, ConnectedResources) => zio.Task[Result]
-  ): LiveRouteMountAspectBuilder[R, A, Need, Ctx] =
-    LiveRouteMountAspectBuilder(
-      pathCodec,
-      pipeline,
-      layouts,
-      rootLayout,
-      connectedTurnGuards,
-      connectedResourceInitializers.andThen(LiveConnectedResourceInitializers(initialize))
-    )
+    /** Runs another mount aspect after the previous ones and adds its output to the context. */
+    def withMountAspect[R1, Out, Result](
+      aspect: LiveRouteMountAspect[R1, A, Ctx, Out]
+    )(using append: ContextAppend.Aux[Ctx, Out, Result]
+    ): WithContext[R & R1, A, P, In, Result] =
+      WithContext(
+        pathCodec,
+        paramsCodec,
+        pipeline.andThen(aspect),
+        layouts.map(_.forContext(append.left)),
+        rootLayout.map(_.forContext(append.left)),
+        connectedTurnGuards.contramap(append.left),
+        connectedResourceInitializers.contramap(append.left)
+      )
 
-  /** Runs another mount aspect after the previous ones and adds its output to the context. */
-  def withMountAspect[R1, Out, Result](
-    aspect: LiveRouteMountAspect[R1, A, Ctx, Out]
-  )(using append: ContextAppend.Aux[Ctx, Out, Result]
-  ): LiveRouteMountAspectBuilder[R & R1, A, Need, Result] =
-    LiveRouteMountAspectBuilder(
-      pathCodec,
-      pipeline.andThen(aspect),
-      layouts.map(_.forContext(append.left)),
-      rootLayout.map(_.forContext(append.left)),
-      connectedTurnGuards.contramap(append.left),
-      connectedResourceInitializers.contramap(append.left)
-    )
+    /** Wraps this route's LiveView in a layout that can read the aspects' context. */
+    def withLayout(layout: LiveLayout[A, Ctx]): WithContext[R, A, P, In, Ctx] =
+      setup(layouts = layouts :+ layout)
 
-  /** Appends a policy check before each connected application turn.
-    *
-    * Guards at one boundary run in declaration order; session guards run before route guards. The
-    * callback receives the context available at this builder. Succeed with `Unit` to continue, or
-    * fail with [[LiveConnectedTurnFailure]] for a controlled halt, redirect, reload, or disconnect.
-    * Guards are inherited by nested LiveViews and do not run during mount, disconnected rendering,
-    * or framework cleanup.
-    */
-  def guardConnectedTurns[Result <: Unit](
-    guard: Ctx => zio.IO[LiveConnectedTurnFailure, Result]
-  ): LiveRouteMountAspectBuilder[R, A, Need, Ctx] =
-    LiveRouteMountAspectBuilder(
-      pathCodec,
-      pipeline,
-      layouts,
-      rootLayout,
-      connectedTurnGuards.andThen(LiveConnectedTurnGuard(guard)),
-      connectedResourceInitializers
-    )
+    /** Wraps this route's LiveView in a layout that can read the aspects' context.
+      *
+      * This form selects the layout's input from the context available here. The pure selector
+      * adapts only the layout; later aspects preserve this selection.
+      */
+    def withLayout[LayoutContext](
+      layout: LiveLayout[A, LayoutContext],
+      select: Ctx => LayoutContext
+    ): WithContext[R, A, P, In, Ctx] = withLayout(layout.forContext(select))
 
-  /** Wraps this route's LiveView in a layout that can read the aspects' context. */
-  def withLayout(layout: LiveLayout[A, Ctx]): LiveRouteMountAspectBuilder[R, A, Need, Ctx] =
-    LiveRouteMountAspectBuilder(
-      pathCodec,
-      pipeline,
-      layouts :+ layout,
-      rootLayout,
-      connectedTurnGuards,
-      connectedResourceInitializers
-    )
+    /** Renders this route's document with a root layout that can read the aspects' context. */
+    def withRootLayout(layout: LiveRootLayout[A, Ctx]): WithContext[R, A, P, In, Ctx] =
+      setup(rootLayout = Some(layout))
 
-  /** Wraps this route's LiveView in a layout that can read the aspects' context.
-    *
-    * This form selects the layout's input from the context available at this declaration. The pure
-    * selector adapts only the layout; later aspects preserve this context selection.
-    */
-  def withLayout[LayoutContext](
-    layout: LiveLayout[A, LayoutContext],
-    select: Ctx => LayoutContext
-  ): LiveRouteMountAspectBuilder[R, A, Need, Ctx] = withLayout(layout.forContext(select))
+    /** Renders this route's document with a root layout that can read the aspects' context.
+      *
+      * This form selects the layout's input from the context available here. Key and view select
+      * independently, so the selector must be pure and deterministic.
+      */
+    def withRootLayout[LayoutContext](
+      layout: LiveRootLayout[A, LayoutContext],
+      select: Ctx => LayoutContext
+    ): WithContext[R, A, P, In, Ctx] = withRootLayout(layout.forContext(select))
 
-  /** Renders this route's document with a root layout that can read the aspects' context. */
-  def withRootLayout(
-    layout: LiveRootLayout[A, Ctx]
-  ): LiveRouteMountAspectBuilder[R, A, Need, Ctx] =
-    LiveRouteMountAspectBuilder(
-      pathCodec,
-      pipeline,
-      layouts,
-      Some(layout),
-      connectedTurnGuards,
-      connectedResourceInitializers
-    )
+    /** Appends a policy check before each connected application turn, with the aspects' context.
+      *
+      * Guards at one boundary run in declaration order; session guards run before route guards.
+      * Succeed with `Unit` to continue, or fail with [[LiveConnectedTurnFailure]] for a controlled
+      * halt, redirect, reload, or disconnect.
+      */
+    def guardConnectedTurns[Result <: Unit](
+      guard: Ctx => IO[LiveConnectedTurnFailure, Result]
+    ): WithContext[R, A, P, In, Ctx] =
+      setup(connectedTurnGuards = connectedTurnGuards.andThen(LiveConnectedTurnGuard(guard)))
 
-  /** Renders this route's document with a root layout that can read the aspects' context.
-    *
-    * This form selects the layout's input from this declaration's context. Key and view select
-    * independently, so the selector must be pure and deterministic.
-    */
-  def withRootLayout[LayoutContext](
-    layout: LiveRootLayout[A, LayoutContext],
-    select: Ctx => LayoutContext
-  ): LiveRouteMountAspectBuilder[R, A, Need, Ctx] = withRootLayout(layout.forContext(select))
+    /** Appends connected setup that receives the aspects' context. */
+    def withConnectedResources[Result <: Unit](
+      initialize: (Ctx, ConnectedResources) => Task[Result]
+    ): WithContext[R, A, P, In, Ctx] =
+      setup(connectedResourceInitializers =
+        connectedResourceInitializers.andThen(LiveConnectedResourceInitializers(initialize))
+      )
 
-  /** Passes the route's values to a [[LiveView.Routed LiveView.Routed]] as its parameters, like
-    * [[LiveRouteBuilder.params]].
-    */
-  def params[Params](
-    codec: LiveParamsCodec[A, Params]
-  ): LiveRouteMountAspectParamsBuilder[R, A, Need, Ctx, Params] =
-    LiveRouteMountAspectParamsBuilder(
-      pathCodec,
+    /** Registers the LiveView this route mounts after its mount aspects succeed. */
+    infix def ->[View](
+      view: => View
+    )(using
+      mount: LiveRouteView[View, P]
+    ): LiveRegistration[R] { type Input = In } =
+      register(_ => ZIO.succeed(mount.erase(view)))
+
+    /** Registers a LiveView built from services in the application environment.
+      *
+      * The services are provided after the mount aspects succeed.
+      */
+    def from[R1, View](
+      factory: URIO[R1, View]
+    )(using
+      mount: LiveRouteView[View, P]
+    ): LiveRegistration[R & R1] { type Input = In } =
+      register(_ => factory.map(mount.erase))
+
+    /** Registers a LiveView built from the aspects' context.
+      *
+      * A tuple context arrives as separate parameters, as in
+      * `.context((user, access) => WorkspaceLiveView(user, access))`.
+      */
+    def context[View](
+      factory: Ctx => View
+    )(using
+      mount: LiveRouteView[View, P]
+    ): LiveRegistration[R] { type Input = In } =
+      register(context => ZIO.succeed(mount.erase(factory(context))))
+
+    /** Registers a LiveView built from services in the application environment.
+      *
+      * This form also reads the aspects' context.
+      */
+    def from[R1, View](
+      factory: Ctx => URIO[R1, View]
+    )(using
+      mount: LiveRouteView[View, P]
+    ): LiveRegistration[R & R1] { type Input = In } =
+      register(context => factory(context).map(mount.erase))
+
+    private def register[R1](
+      factory: Ctx => URIO[R1, LiveRouteView.Mounted[P]]
+    ): LiveRegistration[R & R1] { type Input = In } =
+      LiveRegistration(
+        LiveRouteDefinition.Route[R, R1, A, P, In, Ctx](
+          pathCodec,
+          paramsCodec,
+          LiveRouteContext.Mounted(pipeline),
+          factory,
+          connectedTurnGuards,
+          connectedResourceInitializers,
+          layouts,
+          rootLayout
+        )
+      )
+  end WithContext
+end LiveRouteSetup
+
+/** A route value: a path and its parameter codec, which builds links and registers a LiveView.
+  *
+  * Declare routes once, usually in a `Routes` object, then build links with [[location]] and
+  * register them in `Live.router`. Every route can encode its parameters, so every route builds
+  * links.
+  *
+  * @tparam A
+  *   the values decoded from the path
+  * @tparam P
+  *   the parameters a [[LiveView.Routed LiveView.Routed]] on this route receives
+  */
+sealed class LiveRoute[A, P] private[scalive] (
+  path: PathCodec[A],
+  codec: LiveParamsCodec[A, P])
+    extends LiveRouteSetup[A, P](
+      path,
       codec,
-      pipeline,
-      layouts,
-      rootLayout,
-      connectedTurnGuards,
-      connectedResourceInitializers
-    )
+      Vector.empty,
+      None,
+      LiveConnectedTurnGuard.empty,
+      LiveConnectedResourceInitializers.empty
+    ):
 
-  /** Passes the route's values to a [[LiveView.Routed LiveView.Routed]] as its parameters, like
-    * [[LiveRouteBuilder.params]].
+  /** Builds a link or navigation destination for this route.
+    *
+    * Pass the parameters a routed LiveView receives, as in
+    * `Routes.search.location(Some("LiveView"))`. Throws [[LiveLocation.EncodingException]] when a
+    * value cannot be encoded; use [[locationEither]] to handle that case.
     */
-  def params: LiveRouteMountAspectParamsBuilder[R, A, Need, Ctx, A] =
-    params(LiveParamsCodec.path[A])
+  def location(params: P): LiveLocation =
+    locationEither(params).fold(error => throw new LiveLocation.EncodingException(error), identity)
 
-  /** Adds query parameters, after which the route registers a [[LiveView.Routed LiveView.Routed]],
-    * like [[LiveRouteBuilder.query]].
+  /** Builds a link or navigation destination for this route, or returns why encoding failed. */
+  def locationEither(params: P): Either[LiveLocation.EncodeError, LiveLocation] =
+    paramsCodec.encode(params).flatMap(LiveLocation.encode(pathCodec, _))
+
+  /** Builds a link or navigation destination for this route.
+    *
+    * This form applies to a route without parameters, as in `Routes.home.location`.
+    */
+  @targetName("unitLocation")
+  def location(using ev: P =:= Unit): LiveLocation = location(ev.flip(()))
+
+  /** Builds a link or navigation destination for this route, or returns why encoding failed. */
+  @targetName("unitLocationEither")
+  def locationEither(using ev: P =:= Unit): Either[LiveLocation.EncodeError, LiveLocation] =
+    locationEither(ev.flip(()))
+
+  /** Converts the parameters into a domain type, keeping the route able to build links.
+    *
+    * `decodeParams` runs on each decoded URL and `encodeParams` on each [[location]] call, so they
+    * must be inverses.
+    */
+  def mapParams[P2](decodeParams: P => P2)(encodeParams: P2 => P): LiveRoute[A, P2] =
+    LiveRoute(pathCodec, paramsCodec.imap(decodeParams)(encodeParams))
+end LiveRoute
+
+private[scalive] object LiveRoute:
+  def apply[A, P](path: PathCodec[A], codec: LiveParamsCodec[A, P]): LiveRoute[A, P] =
+    new LiveRoute(path, codec)
+
+/** A route whose parameters are its path values, extended with `/`.
+  *
+  * Start from `live`, add segments with `/`, and add query parameters with [[query]] or
+  * [[queryOptional]]. A [[LiveView.Routed LiveView.Routed]] on a path receives the path values as
+  * its parameters, as in `(live / "items" / PathCodec.int("id")) -> ItemLiveView()`.
+  *
+  * @tparam A
+  *   the values decoded from the path, `Unit` when it has none
+  */
+final class LivePath[A] private[scalive] (path: PathCodec[A])
+    extends LiveRoute[A, A](path, LiveParamsCodec.path[A]):
+
+  /** Appends path segments, as in `live / "projects" / PathCodec.string("project")`.
+    *
+    * A literal string matches itself; a codec such as `PathCodec.int("id")` decodes one segment and
+    * adds its value to the path values.
+    */
+  def /[B](that: PathCodec[B])(using combiner: Combiner[A, B]): LivePath[combiner.Out] =
+    LivePath(pathCodec / that)
+
+  /** Adds query parameters to the parameters a routed LiveView receives.
+    *
+    * The LiveView receives the path values and the decoded query together. This form takes a ZIO
+    * HTTP query codec.
     */
   def query[Query](
     codec: QueryCodec[Query]
   )(using
     combiner: Combiner[A, Query]
-  ): LiveRouteMountAspectParamsBuilder[R, A, Need, Ctx, combiner.Out] =
-    params(LiveParamsCodec.fromQuery(codec))
+  ): LiveRoute[A, combiner.Out] =
+    LiveRoute(pathCodec, LiveParamsCodec.fromQuery(codec))
 
-  /** Adds query parameters, after which the route registers a [[LiveView.Routed LiveView.Routed]],
-    * like [[LiveRouteBuilder.query]].
+  /** Adds query parameters to the parameters a routed LiveView receives.
+    *
+    * This form adds one required parameter, as in `query[Int]("page")`.
     */
   def query[Query: Schema](
     name: String
   )(using
     combiner: Combiner[A, Query]
-  ): LiveRouteMountAspectParamsBuilder[R, A, Need, Ctx, combiner.Out] =
+  ): LiveRoute[A, combiner.Out] =
     query(HttpCodec.query[Query](name))
 
-  /** Adds an optional query parameter, after which the route registers a
-    * [[LiveView.Routed LiveView.Routed]].
+  /** Adds an optional query parameter, which decodes to `None` when it is absent, as in
+    * `queryOptional[String]("q")`.
     */
   def queryOptional[Query: Schema](
     name: String
   )(using
     combiner: Combiner[A, Option[Query]]
-  ): LiveRouteMountAspectParamsBuilder[R, A, Need, Ctx, combiner.Out] =
+  ): LiveRoute[A, combiner.Out] =
     query(HttpCodec.query[Query](name).optional)
 
-  /** Adds query parameters, after which the route registers a [[LiveView.Routed LiveView.Routed]],
-    * like [[LiveRouteBuilder.query]].
+  /** Adds query parameters to the parameters a routed LiveView receives.
+    *
+    * This form derives the parameters from the fields of `Query`'s schema.
     */
   def query[Query: Schema](
     using
     combiner: Combiner[A, Query]
-  ): LiveRouteMountAspectParamsBuilder[R, A, Need, Ctx, combiner.Out] =
+  ): LiveRoute[A, combiner.Out] =
     query(HttpCodec.query[Query])
 
-  /** Registers the LiveView this route mounts after its mount aspects succeed.
-    *
-    * `view` is evaluated for the disconnected render and again for each connected mount. Use
-    * [[context]] when the LiveView reads the aspects' context.
-    */
-  def apply[Msg, Model](view: => LiveView[Msg, Model]): LiveRoute[R, A] { type Input = Need } =
-    context((_, _, _) => view)
+  /** Decodes the route's values into another parameter type that can still build links. */
+  def params[Params](codec: LiveParamsCodec[A, Params]): LiveRoute[A, Params] =
+    LiveRoute(pathCodec, codec)
+end LivePath
 
-  /** Registers a LiveView built from the context produced by this route's mount aspects.
-    *
-    * `factory` receives the context, as in `.context((access: ProjectAccess) => ...)`.
-    */
-  def context[Msg, Model](
-    factory: Ctx => LiveView[Msg, Model]
-  ): LiveRoute[R, A] { type Input = Need } =
-    context((_, _, context) => factory(context))
+private[scalive] object LivePath:
+  def apply[A](path: PathCodec[A]): LivePath[A] = new LivePath(path)
 
-  /** Registers a LiveView built from the context produced by this route's mount aspects.
-    *
-    * `factory` also receives one service from the application environment, which the route adds to
-    * the application's requirements.
-    */
-  def context[R1: Tag, Msg, Model](
-    factory: (Ctx, R1) => LiveView[Msg, Model]
-  ): LiveRoute[R & R1, A] { type Input = Need } =
-    context[R1, Msg, Model]((_: A, _: Request, context: Ctx, service: R1) =>
-      factory(context, service)
-    )
-
-  /** Registers a LiveView built from the context produced by this route's mount aspects.
-    *
-    * `factory` also receives the path values and the request.
-    */
-  def context[Msg, Model](
-    factory: (A, Request, Ctx) => LiveView[Msg, Model]
-  ): LiveRoute[R, A] { type Input = Need } =
-    LiveRoute(
-      LiveRouteDefinition.Ordinary(
-        pathCodec,
-        LiveRouteContext.Mounted(pipeline),
-        factory,
-        connectedTurnGuards,
-        connectedResourceInitializers,
-        layouts,
-        rootLayout
-      )
-    )
-
-  /** Registers a LiveView built from the context produced by this route's mount aspects.
-    *
-    * `factory` also receives the path values, the request, and one service from the application
-    * environment.
-    */
-  def context[R1: Tag, Msg, Model](
-    factory: (A, Request, Ctx, R1) => LiveView[Msg, Model]
-  ): LiveRoute[R & R1, A] { type Input = Need } =
-    LiveRoute(
-      LiveRouteDefinition.Ordinary(
-        pathCodec,
-        LiveRouteContext.WithEnvironment(LiveRouteContext.Mounted(pipeline), summon[Tag[R1]]),
-        (path, request, contexts) => factory(path, request, contexts._1, contexts._2),
-        connectedTurnGuards.contramap((_: (Ctx, R1))._1),
-        connectedResourceInitializers.contramap((_: (Ctx, R1))._1),
-        layouts.map(_.forContext((_: (Ctx, R1))._1)),
-        rootLayout.map(_.forContext((_: (Ctx, R1))._1))
-      )
-    )
-end LiveRouteMountAspectBuilder
-
-object LiveRouteMountAspectBuilder:
-  private[scalive] def apply[R, A, Need, Ctx](
-    pathCodec: PathCodec[A],
-    pipeline: LiveRouteMountPipeline[R, A, Need, Ctx],
-    layouts: Vector[LiveLayout[A, Ctx]],
-    rootLayout: Option[LiveRootLayout[A, Ctx]],
-    connectedTurnGuards: LiveConnectedTurnGuard[Ctx],
-    connectedResourceInitializers: LiveConnectedResourceInitializers[Ctx]
-  ): LiveRouteMountAspectBuilder[R, A, Need, Ctx] =
-    new LiveRouteMountAspectBuilder(
-      pathCodec,
-      pipeline,
-      layouts,
-      rootLayout,
-      connectedTurnGuards,
-      connectedResourceInitializers
-    )
-
-/** Parameterized route construction after mount aspects have produced context. */
-final class LiveRouteMountAspectParamsBuilder[R, A, Need, Ctx, Params] private[scalive] (
-  private val pathCodec: PathCodec[A],
-  private val paramsCodec: LiveParamsCodec[A, Params],
-  private val pipeline: LiveRouteMountPipeline[R, A, Need, Ctx],
-  private val layouts: Vector[LiveLayout[A, Ctx]],
-  private val rootLayout: Option[LiveRootLayout[A, Ctx]],
-  private val connectedTurnGuards: LiveConnectedTurnGuard[Ctx],
-  private val connectedResourceInitializers: LiveConnectedResourceInitializers[Ctx]):
-
-  /** Appends connected setup using the context available at this declaration. */
-  def withConnectedResources[Result <: Unit](
-    initialize: (Ctx, ConnectedResources) => zio.Task[Result]
-  ): LiveRouteMountAspectParamsBuilder[R, A, Need, Ctx, Params] =
-    LiveRouteMountAspectParamsBuilder(
-      pathCodec,
-      paramsCodec,
-      pipeline,
-      layouts,
-      rootLayout,
-      connectedTurnGuards,
-      connectedResourceInitializers.andThen(LiveConnectedResourceInitializers(initialize))
-    )
-
-  /** Appends a policy check before each connected application turn.
-    *
-    * Guards at one boundary run in declaration order; session guards run before route guards. The
-    * callback receives the context available at this builder. Succeed with `Unit` to continue, or
-    * fail with [[LiveConnectedTurnFailure]] for a controlled halt, redirect, reload, or disconnect.
-    * Guards are inherited by nested LiveViews and do not run during mount, disconnected rendering,
-    * or framework cleanup.
-    */
-  def guardConnectedTurns[Result <: Unit](
-    guard: Ctx => zio.IO[LiveConnectedTurnFailure, Result]
-  ): LiveRouteMountAspectParamsBuilder[R, A, Need, Ctx, Params] =
-    LiveRouteMountAspectParamsBuilder(
-      pathCodec,
-      paramsCodec,
-      pipeline,
-      layouts,
-      rootLayout,
-      connectedTurnGuards.andThen(LiveConnectedTurnGuard(guard)),
-      connectedResourceInitializers
-    )
-
-  /** Builds a link or navigation destination for this route from its parameters.
-    *
-    * Throws [[LiveLocation.EncodingException]] when a value cannot be encoded; use
-    * [[locationEither]] to handle that case.
-    */
-  def location(params: Params): LiveLocation =
-    locationEither(params).fold(error => throw new LiveLocation.EncodingException(error), identity)
-
-  /** Builds a link or navigation destination for this route, or returns why encoding failed. */
-  def locationEither(params: Params): Either[LiveLocation.EncodeError, LiveLocation] =
-    paramsCodec.encode(params).flatMap(LiveLocation.encode(pathCodec, _))
-
-  /** Registers the routed LiveView this route mounts after its mount aspects succeed.
-    *
-    * `view` is evaluated for the disconnected render and again for each connected mount. Use
-    * [[context]] when the LiveView reads the aspects' context.
-    */
-  def apply[Msg, Model](
-    view: => LiveView.Routed[Msg, Model, Params]
-  ): LiveRoute[R, A] { type Input = Need } =
-    context((_, _, _) => view)
-
-  /** Registers a routed LiveView built from the context produced by this route's mount aspects.
-    *
-    * `factory` receives the context.
-    */
-  def context[Msg, Model](
-    factory: Ctx => LiveView.Routed[Msg, Model, Params]
-  ): LiveRoute[R, A] { type Input = Need } =
-    context((_, _, context) => factory(context))
-
-  /** Registers a routed LiveView built from the context produced by this route's mount aspects.
-    *
-    * `factory` also receives one service from the application environment, which the route adds to
-    * the application's requirements.
-    */
-  def context[R1: Tag, Msg, Model](
-    factory: (Ctx, R1) => LiveView.Routed[Msg, Model, Params]
-  ): LiveRoute[R & R1, A] { type Input = Need } =
-    context[R1, Msg, Model]((_: A, _: Request, context: Ctx, service: R1) =>
-      factory(context, service)
-    )
-
-  /** Registers a routed LiveView built from the context produced by this route's mount aspects.
-    *
-    * `factory` also receives the path values and the request.
-    */
-  def context[Msg, Model](
-    factory: (A, Request, Ctx) => LiveView.Routed[Msg, Model, Params]
-  ): LiveRoute[R, A] { type Input = Need } =
-    LiveRoute(
-      LiveRouteDefinition.Routed(
-        pathCodec,
-        LiveRouteContext.Mounted(pipeline),
-        factory,
-        paramsCodec,
-        connectedTurnGuards,
-        connectedResourceInitializers,
-        layouts,
-        rootLayout
-      )
-    )
-
-  /** Registers a routed LiveView built from the context produced by this route's mount aspects.
-    *
-    * `factory` also receives the path values, the request, and one service from the application
-    * environment.
-    */
-  def context[R1: Tag, Msg, Model](
-    factory: (A, Request, Ctx, R1) => LiveView.Routed[Msg, Model, Params]
-  ): LiveRoute[R & R1, A] { type Input = Need } =
-    LiveRoute(
-      LiveRouteDefinition.Routed(
-        pathCodec,
-        LiveRouteContext.WithEnvironment(LiveRouteContext.Mounted(pipeline), summon[Tag[R1]]),
-        (path, request, contexts) => factory(path, request, contexts._1, contexts._2),
-        paramsCodec,
-        connectedTurnGuards.contramap((_: (Ctx, R1))._1),
-        connectedResourceInitializers.contramap((_: (Ctx, R1))._1),
-        layouts.map(_.forContext((_: (Ctx, R1))._1)),
-        rootLayout.map(_.forContext((_: (Ctx, R1))._1))
-      )
-    )
-end LiveRouteMountAspectParamsBuilder
-
-object LiveRouteMountAspectParamsBuilder:
-  private[scalive] def apply[R, A, Need, Ctx, Params](
-    pathCodec: PathCodec[A],
-    paramsCodec: LiveParamsCodec[A, Params],
-    pipeline: LiveRouteMountPipeline[R, A, Need, Ctx],
-    layouts: Vector[LiveLayout[A, Ctx]],
-    rootLayout: Option[LiveRootLayout[A, Ctx]],
-    connectedTurnGuards: LiveConnectedTurnGuard[Ctx],
-    connectedResourceInitializers: LiveConnectedResourceInitializers[Ctx]
-  ): LiveRouteMountAspectParamsBuilder[R, A, Need, Ctx, Params] =
-    new LiveRouteMountAspectParamsBuilder(
-      pathCodec,
-      paramsCodec,
-      pipeline,
-      layouts,
-      rootLayout,
-      connectedTurnGuards,
-      connectedResourceInitializers
-    )
-
-/** The root route seed exposed as `live`. */
-final class LiveRouteSeed[A] private[scalive] (
-  pathCodec: PathCodec[A],
-  layouts: Vector[LiveLayout[A, Any]],
-  rootLayout: Option[LiveRootLayout[A, Any]],
-  connectedTurnGuards: LiveConnectedTurnGuard[Any],
-  connectedResourceInitializers: LiveConnectedResourceInitializers[Any])
-    extends LiveRouteBuilder[A](
-      pathCodec,
-      layouts,
-      rootLayout,
-      connectedTurnGuards,
-      connectedResourceInitializers
-    )
-
-object LiveRouteSeed:
-  private[scalive] def apply[A](
-    pathCodec: PathCodec[A],
-    layouts: Vector[LiveLayout[A, Any]] = Vector.empty,
-    rootLayout: Option[LiveRootLayout[A, Any]] = None,
-    connectedTurnGuards: LiveConnectedTurnGuard[Any] = LiveConnectedTurnGuard.empty,
-    connectedResourceInitializers: LiveConnectedResourceInitializers[Any] =
-      LiveConnectedResourceInitializers.empty
-  ): LiveRouteSeed[A] =
-    new LiveRouteSeed(
-      pathCodec,
-      layouts,
-      rootLayout,
-      connectedTurnGuards,
-      connectedResourceInitializers
-    )
-
-/** Declares a route whose decoded path and query values are the parameters of a
-  * [[LiveView.Routed LiveView.Routed]].
-  *
-  * `query`, `queryOptional`, and `params` on [[LiveRouteBuilder]] return this builder. Finish it
-  * like an ordinary route, with `->`, [[from]], or [[context]]. See the [routes
-  * guide](https://scalive.dev/guides/routes-and-navigation#mount-and-react-to-parameters).
-  */
-class LiveRouteParamsBuilder[A, Params] private[scalive] (
-  protected val pathCodec: PathCodec[A],
-  protected val paramsCodec: LiveParamsDecoder[A, Params],
-  protected val layouts: Vector[LiveLayout[A, Any]],
-  protected val rootLayout: Option[LiveRootLayout[A, Any]],
-  protected val connectedTurnGuards: LiveConnectedTurnGuard[Any],
-  protected val connectedResourceInitializers: LiveConnectedResourceInitializers[Any]):
-
-  /** Appends connected setup before this route's connected mount. */
-  def withConnectedResources[Result <: Unit](
-    initialize: (Any, ConnectedResources) => zio.Task[Result]
-  ): LiveRouteParamsBuilder[A, Params] =
-    LiveRouteParamsBuilder(
-      pathCodec,
-      paramsCodec,
-      layouts,
-      rootLayout,
-      connectedTurnGuards,
-      connectedResourceInitializers.andThen(LiveConnectedResourceInitializers(initialize))
-    )
-
-  /** Converts the decoded parameters with a function that cannot be reversed.
-    *
-    * The resulting route can no longer build links with `location`. Prefer
-    * [[LiveEncodableRouteParamsBuilder.mapParams]] when the conversion can be reversed.
-    */
-  def mapParamsDecodeOnly[Params2](
-    decodeParams: Params => Params2
-  ): LiveRouteParamsBuilder[A, Params2] =
-    LiveRouteParamsBuilder(
-      pathCodec,
-      paramsCodec.mapDecodeOnly(decodeParams),
-      layouts,
-      rootLayout,
-      connectedTurnGuards,
-      connectedResourceInitializers
-    )
-
-  /** Appends a policy check before each connected application turn.
-    *
-    * Guards at one boundary run in declaration order; session guards run before route guards. The
-    * callback receives the context available at this builder. Succeed with `Unit` to continue, or
-    * fail with [[LiveConnectedTurnFailure]] for a controlled halt, redirect, reload, or disconnect.
-    * Guards are inherited by nested LiveViews and do not run during mount, disconnected rendering,
-    * or framework cleanup.
-    */
-  def guardConnectedTurns[Result <: Unit](
-    guard: Any => zio.IO[LiveConnectedTurnFailure, Result]
-  ): LiveRouteParamsBuilder[A, Params] =
-    LiveRouteParamsBuilder(
-      pathCodec,
-      paramsCodec,
-      layouts,
-      rootLayout,
-      connectedTurnGuards.andThen(LiveConnectedTurnGuard(guard)),
-      connectedResourceInitializers
-    )
-
-  /** Registers the routed LiveView this route mounts.
-    *
-    * `view` is evaluated for the disconnected render and again for each connected mount. Prefer
-    * `->`, which reads better in a router.
-    */
-  def apply[Msg, Model](
-    view: => LiveView.Routed[Msg, Model, Params]
-  ): LiveRoute[Any, A] { type Input = Any } =
-    routed((_, _) => view)
-
-  /** Registers the routed LiveView this route mounts.
-    *
-    * `factory` receives the HTTP request of the disconnected render. For a connected mount it
-    * receives a GET request for the page's path and query, without the browser's headers or
-    * cookies.
-    */
-  def apply[Msg, Model](
-    factory: Request => LiveView.Routed[Msg, Model, Params]
-  ): LiveRoute[Any, A] { type Input = Any } = routed((_, request) => factory(request))
-
-  /** Registers a routed LiveView built from the context of the named live session around this
-    * route.
-    *
-    * `factory` receives the context. The route compiles only inside a session whose mount aspects
-    * produce that context.
-    */
-  def context[Ctx, Msg, Model](
-    factory: Ctx => LiveView.Routed[Msg, Model, Params]
-  ): LiveRoute[Any, A] { type Input = Ctx } =
-    context((_, _, context) => factory(context))
-
-  /** Registers a routed LiveView built from the context of the named live session around this
-    * route.
-    *
-    * `factory` also receives one service from the application environment, which the route adds to
-    * the application's requirements.
-    */
-  def context[Ctx, R: Tag, Msg, Model](
-    factory: (Ctx, R) => LiveView.Routed[Msg, Model, Params]
-  ): LiveRoute[R, A] { type Input = Ctx } =
-    context((_, _, context, service) => factory(context, service))
-
-  /** Registers a routed LiveView built from the context of the named live session around this
-    * route.
-    *
-    * `factory` also receives the path values and the request.
-    */
-  def context[Ctx, Msg, Model](
-    factory: (A, Request, Ctx) => LiveView.Routed[Msg, Model, Params]
-  ): LiveRoute[Any, A] { type Input = Ctx } =
-    LiveRoute(
-      LiveRouteDefinition.Routed(
-        pathCodec,
-        LiveRouteContext.Required(),
-        factory,
-        paramsCodec,
-        connectedTurnGuards.contramap((_: Ctx) => ()),
-        connectedResourceInitializers.contramap((_: Ctx) => ()),
-        layouts.map(_.forContext((_: Ctx) => ())),
-        rootLayout.map(_.forContext((_: Ctx) => ()))
-      )
-    )
-
-  /** Registers a routed LiveView built from the context of the named live session around this
-    * route.
-    *
-    * `factory` also receives the path values, the request, and one service from the application
-    * environment.
-    */
-  def context[Ctx, R: Tag, Msg, Model](
-    factory: (A, Request, Ctx, R) => LiveView.Routed[Msg, Model, Params]
-  ): LiveRoute[R, A] { type Input = Ctx } =
-    val requiredLayouts    = layouts.map(_.forContext((_: Ctx) => ()))
-    val requiredRootLayout = rootLayout.map(_.forContext((_: Ctx) => ()))
-    LiveRoute(
-      LiveRouteDefinition.Routed(
-        pathCodec,
-        LiveRouteContext.WithEnvironment(LiveRouteContext.Required(), summon[Tag[R]]),
-        (path, request, contexts) => factory(path, request, contexts._1, contexts._2),
-        paramsCodec,
-        connectedTurnGuards.contramap((_: (Ctx, R)) => ()),
-        connectedResourceInitializers.contramap((_: (Ctx, R)) => ()),
-        requiredLayouts.map(_.forContext((_: (Ctx, R))._1)),
-        requiredRootLayout.map(_.forContext((_: (Ctx, R))._1))
-      )
-    )
-
-  /** Registers the routed LiveView this route mounts, as in `Routes.search -> SearchLiveView()`.
-    *
-    * `view` is evaluated for the disconnected render and again for each connected mount. Use
-    * [[from]] when the LiveView needs a service.
-    */
-  infix def ->[Msg, Model](
-    view: => LiveView.Routed[Msg, Model, Params]
-  ): LiveRoute[Any, A] { type Input = Any } =
-    apply(view)
-
-  /** Registers a routed LiveView built from one service in the application environment.
-    *
-    * The route adds `R` to the application's environment requirement, so the server must provide
-    * it. Scalive calls the factory for the disconnected render and for each connected mount. See
-    * the [services guide](https://scalive.dev/guides/services-and-zlayer-injection).
-    */
-  def from[R: Tag, Msg, Model](
-    factory: R => LiveView.Routed[Msg, Model, Params]
-  ): LiveRoute[R, A] { type Input = Any } =
-    from((_: A, _: Request, service: R) => factory(service))
-
-  /** Registers a routed LiveView built from one service in the application environment.
-    *
-    * `factory` also receives the path values and the request.
-    */
-  def from[R: Tag, Msg, Model](
-    factory: (A, Request, R) => LiveView.Routed[Msg, Model, Params]
-  ): LiveRoute[R, A] { type Input = Any } =
-    LiveRoute(
-      LiveRouteDefinition.Routed(
-        pathCodec,
-        LiveRouteContext.Environment(summon[Tag[R]]),
-        factory,
-        paramsCodec,
-        connectedTurnGuards.contramap((_: R) => ()),
-        connectedResourceInitializers.contramap((_: R) => ()),
-        layouts.map(_.forContext((_: R) => ())),
-        rootLayout.map(_.forContext((_: R) => ()))
-      )
-    )
-
-  private def routed[Msg, Model](
-    factory: (A, Request) => LiveView.Routed[Msg, Model, Params]
-  ): LiveRoute[Any, A] { type Input = Any } =
-    LiveRoute(
-      LiveRouteDefinition.Routed(
-        pathCodec,
-        LiveRouteContext.Direct(),
-        (path, request, _) => factory(path, request),
-        paramsCodec,
-        connectedTurnGuards,
-        connectedResourceInitializers,
-        layouts,
-        rootLayout
-      )
-    )
-end LiveRouteParamsBuilder
-
-object LiveRouteParamsBuilder:
-  private[scalive] def apply[A, Params](
-    pathCodec: PathCodec[A],
-    paramsCodec: LiveParamsDecoder[A, Params],
-    layouts: Vector[LiveLayout[A, Any]],
-    rootLayout: Option[LiveRootLayout[A, Any]],
-    connectedTurnGuards: LiveConnectedTurnGuard[Any],
-    connectedResourceInitializers: LiveConnectedResourceInitializers[Any]
-  ): LiveRouteParamsBuilder[A, Params] =
-    new LiveRouteParamsBuilder(
-      pathCodec,
-      paramsCodec,
-      layouts,
-      rootLayout,
-      connectedTurnGuards,
-      connectedResourceInitializers
-    )
-
-/** A [[LiveRouteParamsBuilder]] that can also encode its parameters into links with [[location]].
-  *
-  * @param codec
-  *   The codec that decodes the route's parameters from a URL and encodes them back into links.
-  */
-final class LiveEncodableRouteParamsBuilder[A, Params] private[scalive] (
-  pathCodec: PathCodec[A],
-  val codec: LiveParamsCodec[A, Params],
-  layouts: Vector[LiveLayout[A, Any]],
-  rootLayout: Option[LiveRootLayout[A, Any]],
-  connectedTurnGuards: LiveConnectedTurnGuard[Any],
-  connectedResourceInitializers: LiveConnectedResourceInitializers[Any])
-    extends LiveRouteParamsBuilder[A, Params](
-      pathCodec,
-      codec,
-      layouts,
-      rootLayout,
-      connectedTurnGuards,
-      connectedResourceInitializers
-    ):
-  /** Appends connected setup while retaining parameter encoding and location construction. */
-  override def withConnectedResources[Result <: Unit](
-    initialize: (Any, ConnectedResources) => zio.Task[Result]
-  ): LiveEncodableRouteParamsBuilder[A, Params] =
-    LiveEncodableRouteParamsBuilder(
-      pathCodec,
-      codec,
-      layouts,
-      rootLayout,
-      connectedTurnGuards,
-      connectedResourceInitializers.andThen(LiveConnectedResourceInitializers(initialize))
-    )
-
-  /** Appends a policy check before each connected application turn.
-    *
-    * Guards at one boundary run in declaration order; session guards run before route guards. The
-    * callback receives the context available at this builder. Succeed with `Unit` to continue, or
-    * fail with [[LiveConnectedTurnFailure]] for a controlled halt, redirect, reload, or disconnect.
-    * Guards are inherited by nested LiveViews and do not run during mount, disconnected rendering,
-    * or framework cleanup.
-    */
-  override def guardConnectedTurns[Result <: Unit](
-    guard: Any => zio.IO[LiveConnectedTurnFailure, Result]
-  ): LiveEncodableRouteParamsBuilder[A, Params] =
-    LiveEncodableRouteParamsBuilder(
-      pathCodec,
-      codec,
-      layouts,
-      rootLayout,
-      connectedTurnGuards.andThen(LiveConnectedTurnGuard(guard)),
-      connectedResourceInitializers
-    )
-
-  /** Converts the decoded parameters into a domain type, keeping the route able to build links.
-    *
-    * `decodeParams` runs on each decoded URL and `encodeParams` on each [[location]] call, so they
-    * must be inverses.
-    */
-  def mapParams[Params2](
-    decodeParams: Params => Params2
-  )(
-    encodeParams: Params2 => Params
-  ): LiveEncodableRouteParamsBuilder[A, Params2] =
-    LiveEncodableRouteParamsBuilder(
-      pathCodec,
-      codec.imap(decodeParams)(encodeParams),
-      layouts,
-      rootLayout,
-      connectedTurnGuards,
-      connectedResourceInitializers
-    )
-
-  /** Builds a link or navigation destination for this route from its parameters.
-    *
-    * Pass the parameters the LiveView receives, as in `Routes.search.location(Some("LiveView"))`.
-    * Throws [[LiveLocation.EncodingException]] when a value cannot be encoded; use
-    * [[locationEither]] to handle that case.
-    */
-  def location(params: Params): LiveLocation =
-    locationEither(params).fold(error => throw new LiveLocation.EncodingException(error), identity)
-
-  /** Builds a link or navigation destination for this route, or returns why encoding failed. */
-  def locationEither(params: Params): Either[LiveLocation.EncodeError, LiveLocation] =
-    codec.encode(params).flatMap(LiveLocation.encode(pathCodec, _))
-end LiveEncodableRouteParamsBuilder
-
-object LiveEncodableRouteParamsBuilder:
-  private[scalive] def apply[A, Params](
-    pathCodec: PathCodec[A],
-    codec: LiveParamsCodec[A, Params],
-    layouts: Vector[LiveLayout[A, Any]],
-    rootLayout: Option[LiveRootLayout[A, Any]],
-    connectedTurnGuards: LiveConnectedTurnGuard[Any],
-    connectedResourceInitializers: LiveConnectedResourceInitializers[Any]
-  ): LiveEncodableRouteParamsBuilder[A, Params] =
-    new LiveEncodableRouteParamsBuilder(
-      pathCodec,
-      codec,
-      layouts,
-      rootLayout,
-      connectedTurnGuards,
-      connectedResourceInitializers
-    )
-
-/** A named, environment-typed group of declarative routes.
+/** A named, environment-typed group of registered routes.
   *
   * @param name
   *   The name passed to `Live.session`, unique within an application.
   */
 final class LiveSession[-R] private[scalive] (
   val name: String,
-  private[scalive] val routes: Vector[LiveRouteFragment[R] { type Input = Any }])
-    extends LiveRouteFragment[R]:
-  /** The context a session needs from outside, always `Any`, so the router accepts it directly. */
-  type Input = Any
+  private[scalive] val routes: Vector[LiveRegistration[R] { type Input = Any }])
 
-object LiveSession:
-  private[scalive] def apply[R](
+private[scalive] object LiveSession:
+  def apply[R](
     name: String,
-    routes: Vector[LiveRouteFragment[R] { type Input = Any }]
+    routes: Vector[LiveRegistration[R] { type Input = Any }]
   ): LiveSession[R] = new LiveSession(name, routes)
 
 /** Declares a named live session: a group of routes that share navigation, layouts, and mount
   * policy.
   *
   * Create one with `Live.session(name)`, add mount aspects, layouts, and guards, then pass the
-  * routes, as in `Live.session("account").withMountAspect(currentUser)(Routes.account...)`. Live
-  * navigation stays inside a session; navigating to a route outside it loads a new document. See
-  * [live sessions](https://scalive.dev/guides/live-sessions-and-mount-aspects).
+  * routes, as in `Live.session("account").withMountAspect(currentUser)(...)`. Live navigation stays
+  * inside a session; navigating to a route outside it loads a new document. See [live
+  * sessions](https://scalive.dev/guides/live-sessions-and-mount-aspects).
   *
   * @tparam R
   *   the services the session's mount aspects need
   * @tparam Ctx
   *   the context the session's mount aspects produce for its routes
+  * @tparam Admitted
+  *   whether the session has declared its admission, which it can do once
   * @param name
   *   The name passed to `Live.session`.
   */
-final class LiveSessionBuilder[R, Ctx] private[scalive] (
+final class LiveSessionBuilder[R, Ctx, Admitted <: Boolean] private[scalive] (
   val name: String,
   private val pipeline: LiveSessionMountPipeline[R, Any, Ctx],
   private val connectedTurnGuards: LiveConnectedTurnGuard[Ctx],
   private val connectedResourceInitializers: LiveConnectedResourceInitializers[Ctx],
   private val layouts: Vector[LiveLayout[Any, Ctx]],
   private val rootLayout: Option[LiveRootLayout[Any, Ctx]]):
-  /** Appends session setup before route setup and connected mount, in declaration order. */
-  def withConnectedResources[Result <: Unit](
-    initialize: (Ctx, ConnectedResources) => zio.Task[Result]
-  ): LiveSessionBuilder[R, Ctx] =
-    LiveSessionBuilder(
+
+  private def setup(
+    connectedTurnGuards: LiveConnectedTurnGuard[Ctx] = connectedTurnGuards,
+    connectedResourceInitializers: LiveConnectedResourceInitializers[Ctx] =
+      connectedResourceInitializers,
+    layouts: Vector[LiveLayout[Any, Ctx]] = layouts,
+    rootLayout: Option[LiveRootLayout[Any, Ctx]] = rootLayout
+  ): LiveSessionBuilder[R, Ctx, Admitted] =
+    new LiveSessionBuilder(
       name,
       pipeline,
       connectedTurnGuards,
-      connectedResourceInitializers.andThen(LiveConnectedResourceInitializers(initialize)),
+      connectedResourceInitializers,
       layouts,
       rootLayout
+    )
+
+  /** Appends session setup before route setup and connected mount, in declaration order. */
+  def withConnectedResources[Result <: Unit](
+    initialize: (Ctx, ConnectedResources) => Task[Result]
+  ): LiveSessionBuilder[R, Ctx, Admitted] =
+    setup(connectedResourceInitializers =
+      connectedResourceInitializers.andThen(LiveConnectedResourceInitializers(initialize))
     )
 
   /** Runs `aspect` before every route in this session mounts and adds its output to the context.
@@ -1450,8 +732,8 @@ final class LiveSessionBuilder[R, Ctx] private[scalive] (
   def withMountAspect[R1, Claims, Out, Result](
     aspect: LiveSessionMountAspect[R1, Ctx, Claims, Out]
   )(using append: ContextAppend.Aux[Ctx, Out, Result]
-  ): LiveSessionBuilder[R & R1, Result] =
-    LiveSessionBuilder(
+  ): LiveSessionBuilder[R & R1, Result, Admitted] =
+    new LiveSessionBuilder(
       name,
       pipeline.andThen(aspect),
       connectedTurnGuards.contramap(append.left),
@@ -1471,9 +753,10 @@ final class LiveSessionBuilder[R, Ctx] private[scalive] (
     connectionId: Claims => Id
   )(using
     append: ContextAppend.Aux[Ctx, Out, Result],
-    connections: Tag[LiveConnections[Id]]
-  ): LiveSessionBuilder.Admitted[R & R1 & LiveConnections[Id], Result] =
-    LiveSessionBuilder.Admitted(
+    connections: Tag[LiveConnections[Id]],
+    once: LiveSessionBuilder.FirstAdmission[Admitted]
+  ): LiveSessionBuilder[R & R1 & LiveConnections[Id], Result, true] =
+    new LiveSessionBuilder(
       name,
       pipeline.admitThen(aspect, connectionId, connections),
       connectedTurnGuards.contramap(append.left),
@@ -1484,77 +767,56 @@ final class LiveSessionBuilder[R, Ctx] private[scalive] (
 
   /** Wraps every route in this session in a layout.
     *
-    * Session layouts sit inside the router's layout and around route layouts, and nest in
+    * Session layouts sit inside the router's layouts and around route layouts, and nest in
     * installation order.
     */
-  def withLayout(value: LiveLayout[Any, Ctx]): LiveSessionBuilder[R, Ctx] =
-    LiveSessionBuilder(
-      name,
-      pipeline,
-      connectedTurnGuards,
-      connectedResourceInitializers,
-      layouts :+ value,
-      rootLayout
-    )
+  def withLayout(value: LiveLayout[Any, Ctx]): LiveSessionBuilder[R, Ctx, Admitted] =
+    setup(layouts = layouts :+ value)
 
   /** Wraps every route in this session in a layout.
     *
-    * This form selects the layout's input from the context available at this declaration. The pure
-    * selector adapts only the layout; later aspects preserve this context selection.
+    * This form selects the layout's input from the context available here. The pure selector adapts
+    * only the layout; later aspects preserve this selection.
     */
   def withLayout[LayoutContext](
     layout: LiveLayout[Any, LayoutContext],
     select: Ctx => LayoutContext
-  ): LiveSessionBuilder[R, Ctx] = withLayout(layout.forContext(select))
+  ): LiveSessionBuilder[R, Ctx, Admitted] = withLayout(layout.forContext(select))
 
   /** Renders the document of every route in this session, replacing the router's root layout. */
-  def withRootLayout(value: LiveRootLayout[Any, Ctx]): LiveSessionBuilder[R, Ctx] =
-    LiveSessionBuilder(
-      name,
-      pipeline,
-      connectedTurnGuards,
-      connectedResourceInitializers,
-      layouts,
-      Some(value)
-    )
+  def withRootLayout(value: LiveRootLayout[Any, Ctx]): LiveSessionBuilder[R, Ctx, Admitted] =
+    setup(rootLayout = Some(value))
 
   /** Renders the document of every route in this session, replacing the router's root layout.
     *
-    * This form selects the layout's input from this declaration's context. Key and view select
+    * This form selects the layout's input from the context available here. Key and view select
     * independently, so the selector must be pure and deterministic.
     */
   def withRootLayout[LayoutContext](
     layout: LiveRootLayout[Any, LayoutContext],
     select: Ctx => LayoutContext
-  ): LiveSessionBuilder[R, Ctx] = withRootLayout(layout.forContext(select))
+  ): LiveSessionBuilder[R, Ctx, Admitted] = withRootLayout(layout.forContext(select))
 
   /** Appends a policy check before each connected application turn.
     *
     * Guards at one boundary run in declaration order; session guards run before route guards. The
-    * callback receives the context available at this builder. Succeed with `Unit` to continue, or
-    * fail with [[LiveConnectedTurnFailure]] for a controlled halt, redirect, reload, or disconnect.
-    * Guards are inherited by nested LiveViews and do not run during mount, disconnected rendering,
-    * or framework cleanup.
+    * callback receives the context available here. Succeed with `Unit` to continue, or fail with
+    * [[LiveConnectedTurnFailure]] for a controlled halt, redirect, reload, or disconnect. Guards
+    * are inherited by nested LiveViews and do not run during mount, disconnected rendering, or
+    * framework cleanup.
     */
   def guardConnectedTurns[Result <: Unit](
-    guard: Ctx => zio.IO[LiveConnectedTurnFailure, Result]
-  ): LiveSessionBuilder[R, Ctx] =
-    LiveSessionBuilder(
-      name,
-      pipeline,
-      connectedTurnGuards.andThen(LiveConnectedTurnGuard(guard)),
-      connectedResourceInitializers,
-      layouts,
-      rootLayout
-    )
+    guard: Ctx => IO[LiveConnectedTurnFailure, Result]
+  ): LiveSessionBuilder[R, Ctx, Admitted] =
+    setup(connectedTurnGuards = connectedTurnGuards.andThen(LiveConnectedTurnGuard(guard)))
 
   /** Puts `routes` in this session and returns it for the router.
     *
-    * A route registered with `context` compiles only when this session produces the context it
-    * reads. Sessions do not nest, so `routes` cannot include another session.
+    * A route that reads context compiles only when this session produces the context it reads.
+    * Sessions do not nest, so `routes` cannot include another session.
     */
-  def apply[R1](routes: (LiveRoute[? >: R1, ?] { type Input >: Ctx })*): LiveSession[R & R1] =
-    val attached = routes.toVector.flatMap { route =>
+  def apply[R1](routes: (LiveRegistration[R1] { type Input >: Ctx })*): LiveSession[R & R1] =
+    val attached = routes.toVector.map { route =>
       route.attachSession(
         pipeline,
         connectedTurnGuards,
@@ -1567,170 +829,16 @@ final class LiveSessionBuilder[R, Ctx] private[scalive] (
     LiveSession(name, attached)
 end LiveSessionBuilder
 
-/** The companion of [[LiveSessionBuilder]], which holds the builder returned by `withAdmission`. */
+/** Evidence types of [[LiveSessionBuilder]]. */
 object LiveSessionBuilder:
-  private[scalive] def apply[R, Ctx](
-    name: String,
-    pipeline: LiveSessionMountPipeline[R, Any, Ctx],
-    connectedTurnGuards: LiveConnectedTurnGuard[Ctx],
-    connectedResourceInitializers: LiveConnectedResourceInitializers[Ctx],
-    layouts: Vector[LiveLayout[Any, Ctx]],
-    rootLayout: Option[LiveRootLayout[Any, Ctx]]
-  ): LiveSessionBuilder[R, Ctx] =
-    new LiveSessionBuilder(
-      name,
-      pipeline,
-      connectedTurnGuards,
-      connectedResourceInitializers,
-      layouts,
-      rootLayout
-    )
+  /** Evidence that a session has not declared its admission yet. */
+  @implicitNotFound("A live session has at most one admission.")
+  sealed trait FirstAdmission[Admitted <: Boolean]
 
-  /** Session construction after its one admission boundary has been declared.
-    *
-    * @param name
-    *   The name passed to `Live.session`.
-    */
-  final class Admitted[R, Ctx] private[scalive] (
-    val name: String,
-    private val pipeline: LiveSessionMountPipeline[R, Any, Ctx],
-    private val connectedTurnGuards: LiveConnectedTurnGuard[Ctx],
-    private val connectedResourceInitializers: LiveConnectedResourceInitializers[Ctx],
-    private val layouts: Vector[LiveLayout[Any, Ctx]],
-    private val rootLayout: Option[LiveRootLayout[Any, Ctx]]):
-    /** Appends session setup using the context available after admission. */
-    def withConnectedResources[Result <: Unit](
-      initialize: (Ctx, ConnectedResources) => zio.Task[Result]
-    ): Admitted[R, Ctx] =
-      Admitted(
-        name,
-        pipeline,
-        connectedTurnGuards,
-        connectedResourceInitializers.andThen(LiveConnectedResourceInitializers(initialize)),
-        layouts,
-        rootLayout
-      )
-
-    /** Runs `aspect` before every route in this session mounts and adds its output to the context.
-      *
-      * The aspect runs after the admission aspect and receives its context.
-      */
-    def withMountAspect[R1, Claims, Out, Result](
-      aspect: LiveSessionMountAspect[R1, Ctx, Claims, Out]
-    )(using append: ContextAppend.Aux[Ctx, Out, Result]
-    ): Admitted[R & R1, Result] =
-      Admitted(
-        name,
-        pipeline.andThen(aspect),
-        connectedTurnGuards.contramap(append.left),
-        connectedResourceInitializers.contramap(append.left),
-        layouts.map(_.forContext(append.left)),
-        rootLayout.map(_.forContext(append.left))
-      )
-
-    /** Wraps every route in this session in a layout.
-      *
-      * Session layouts sit inside the router's layout and around route layouts, and nest in
-      * installation order.
-      */
-    def withLayout(value: LiveLayout[Any, Ctx]): Admitted[R, Ctx] =
-      Admitted(
-        name,
-        pipeline,
-        connectedTurnGuards,
-        connectedResourceInitializers,
-        layouts :+ value,
-        rootLayout
-      )
-
-    /** Wraps every route in this session in a layout.
-      *
-      * This form selects the layout's input from the context available at this declaration. The
-      * pure selector adapts only the layout; later aspects preserve this context selection.
-      */
-    def withLayout[LayoutContext](
-      layout: LiveLayout[Any, LayoutContext],
-      select: Ctx => LayoutContext
-    ): Admitted[R, Ctx] = withLayout(layout.forContext(select))
-
-    /** Renders the document of every route in this session, replacing the router's root layout. */
-    def withRootLayout(value: LiveRootLayout[Any, Ctx]): Admitted[R, Ctx] =
-      Admitted(
-        name,
-        pipeline,
-        connectedTurnGuards,
-        connectedResourceInitializers,
-        layouts,
-        Some(value)
-      )
-
-    /** Renders the document of every route in this session, replacing the router's root layout.
-      *
-      * This form selects the layout's input from this declaration's context. Key and view select
-      * independently, so the selector must be pure and deterministic.
-      */
-    def withRootLayout[LayoutContext](
-      layout: LiveRootLayout[Any, LayoutContext],
-      select: Ctx => LayoutContext
-    ): Admitted[R, Ctx] = withRootLayout(layout.forContext(select))
-
-    /** Appends a policy check before each connected application turn.
-      *
-      * Guards at one boundary run in declaration order; session guards run before route guards. The
-      * callback receives the context available at this builder. Succeed with `Unit` to continue, or
-      * fail with [[LiveConnectedTurnFailure]] for a controlled halt, redirect, reload, or
-      * disconnect. Guards are inherited by nested LiveViews and do not run during mount,
-      * disconnected rendering, or framework cleanup.
-      */
-    def guardConnectedTurns[Result <: Unit](
-      guard: Ctx => zio.IO[LiveConnectedTurnFailure, Result]
-    ): Admitted[R, Ctx] =
-      Admitted(
-        name,
-        pipeline,
-        connectedTurnGuards.andThen(LiveConnectedTurnGuard(guard)),
-        connectedResourceInitializers,
-        layouts,
-        rootLayout
-      )
-
-    /** Puts `routes` in this session and returns it for the router.
-      *
-      * A route registered with `context` compiles only when this session produces the context it
-      * reads. Sessions do not nest, so `routes` cannot include another session.
-      */
-    def apply[R1](routes: (LiveRoute[? >: R1, ?] { type Input >: Ctx })*): LiveSession[R & R1] =
-      val attached = routes.toVector.flatMap { route =>
-        route.attachSession(
-          pipeline,
-          connectedTurnGuards,
-          connectedResourceInitializers,
-          layouts,
-          rootLayout,
-          summon[Ctx <:< route.Input]
-        )
-      }
-      LiveSession(name, attached)
-  end Admitted
-
-  private[scalive] object Admitted:
-    def apply[R, Ctx](
-      name: String,
-      pipeline: LiveSessionMountPipeline[R, Any, Ctx],
-      connectedTurnGuards: LiveConnectedTurnGuard[Ctx],
-      connectedResourceInitializers: LiveConnectedResourceInitializers[Ctx],
-      layouts: Vector[LiveLayout[Any, Ctx]],
-      rootLayout: Option[LiveRootLayout[Any, Ctx]]
-    ): Admitted[R, Ctx] =
-      new Admitted(
-        name,
-        pipeline,
-        connectedTurnGuards,
-        connectedResourceInitializers,
-        layouts,
-        rootLayout
-      )
-end LiveSessionBuilder
+  /** The evidence for a session without an admission. */
+  object FirstAdmission:
+    /** Proves that the session has no admission yet. */
+    given notAdmitted: FirstAdmission[false] = new FirstAdmission[false] {}
 
 /** All routes and layouts of a Scalive application, built by `Live.router(...)`.
   *
@@ -1739,7 +847,7 @@ end LiveSessionBuilder
   * @tparam R
   *   the services the routes need from the server's environment
   * @param routes
-  *   The routes and named live sessions passed to the router, in declaration order.
+  *   The registered routes and named live sessions passed to the router, in declaration order.
   * @param socketPath
   *   The path of the LiveView WebSocket, `/live` unless set with [[LiveRouter.withSocketPath]].
   * @param layouts
@@ -1750,14 +858,14 @@ end LiveSessionBuilder
   *   [[LiveRouter.withRootLayout]], it is [[LiveRootLayout.identity]].
   */
 final class LiveApplication[-R] private[scalive] (
-  val routes: Vector[LiveRouteFragment[R]],
+  val routes: Vector[LiveRegistration[R] | LiveSession[R]],
   val socketPath: PathCodec[Unit],
   val layouts: Vector[LiveLayout[Any, Any]],
   val rootLayout: LiveRootLayout[Any, Any])
 
-object LiveApplication:
-  private[scalive] def apply[R](
-    routes: Vector[LiveRouteFragment[R]],
+private[scalive] object LiveApplication:
+  def apply[R](
+    routes: Vector[LiveRegistration[R] | LiveSession[R]],
     socketPath: PathCodec[Unit],
     layouts: Vector[LiveLayout[Any, Any]],
     rootLayout: LiveRootLayout[Any, Any]
@@ -1790,16 +898,18 @@ final class LiveRouter private[scalive] (
   def withRootLayout(value: LiveRootLayout[Any, Any]): LiveRouter =
     LiveRouter(socketPath, layouts, value)
 
-  /** Builds the application from routes and named live sessions.
+  /** Builds the application from registered routes and named live sessions.
     *
     * Routes that read session context must be inside the [[LiveSessionBuilder]] that produces it.
     */
-  def apply[R](routes: (LiveRouteFragment[R] { type Input = Any })*): LiveApplication[R] =
+  def apply[R](
+    routes: (LiveRegistration[R] { type Input = Any } | LiveSession[R])*
+  ): LiveApplication[R] =
     LiveApplication(routes.toVector, socketPath, layouts, rootLayout)
 end LiveRouter
 
-object LiveRouter:
-  private[scalive] def apply(
+private[scalive] object LiveRouter:
+  def apply(
     socketPath: PathCodec[Unit],
     layouts: Vector[LiveLayout[Any, Any]],
     rootLayout: LiveRootLayout[Any, Any]
@@ -1808,7 +918,7 @@ object LiveRouter:
 /** Entry points for declaring a Scalive application. */
 object Live:
   /** Starts an application, as in
-    * `Live.router.withRootLayout(RootLayout())(live -> HomeLiveView())`.
+    * `Live.router.withRootLayout(RootLayout())(Routes.home -> HomeLiveView())`.
     *
     * Pass the result to `ZioHttp.routes` to serve it. See the [quick
     * start](https://scalive.dev/learn/quick-start).
@@ -1817,14 +927,14 @@ object Live:
     LiveRouter(PathCodec.empty / "live", Vector.empty, LiveRootLayout.identity)
 
   /** Starts a route from a ZIO HTTP path codec. Most routes start from `live` instead. */
-  def route[A](pathCodec: PathCodec[A]): LiveRouteSeed[A] = LiveRouteSeed(pathCodec)
+  def route[A](pathCodec: PathCodec[A]): LivePath[A] = LivePath(pathCodec)
 
   /** Starts a named live session, a group of routes that share navigation and mount policy.
     *
     * Names must be unique within the application.
     */
-  def session(name: String): LiveSessionBuilder[Any, Any] =
-    LiveSessionBuilder(
+  def session(name: String): LiveSessionBuilder[Any, Any, false] =
+    new LiveSessionBuilder(
       name,
       LiveSessionMountPipeline.Identity[Any](),
       LiveConnectedTurnGuard.empty,
@@ -1833,9 +943,8 @@ object Live:
       None
     )
 
-/** The root path `/`, from which routes are declared, as in
-  * `live / "counter" -> CounterLiveView()`.
+/** The root path `/`, from which routes are declared, as in `live / "counter"`.
   *
   * See the [routes guide](https://scalive.dev/guides/routes-and-navigation).
   */
-val live: LiveRouteSeed[Unit] = LiveRouteSeed(PathCodec.empty)
+val live: LivePath[Unit] = LivePath(PathCodec.empty)

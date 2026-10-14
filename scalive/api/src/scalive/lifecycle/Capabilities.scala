@@ -53,7 +53,8 @@ trait Navigation extends MountNavigation:
   /** Changes the URL to `to`, a location of this LiveView's route, and adds a history entry.
     *
     * The LiveView stays mounted and receives the new parameters in
-    * [[LiveView.Routed.handleParams]]. Use it for filters, pagination, and tabs.
+    * [[LiveView.Routed.handleParams]]. Use it for filters, pagination, and tabs. A location of
+    * another route stops the LiveView, as Phoenix does; navigate there instead.
     */
   def pushPatch(to: LiveLocation): Task[Unit] = pushPatchUnsafe(to.href)
 
@@ -65,6 +66,41 @@ trait Navigation extends MountNavigation:
 
   /** Like [[replacePatch]], for a raw URL that the route types do not check. */
   def replacePatchUnsafe(to: String): Task[Unit]
+
+/** The navigation of a [[LiveView.Routed LiveView.Routed]], which can also patch by parameters.
+  *
+  * Patching by parameters encodes them with the view's own route, so the patch always stays on that
+  * route.
+  */
+trait RoutedNavigation[-Params] extends Navigation:
+  /** Changes the URL to this view's route with `params` and adds a history entry.
+    *
+    * The LiveView stays mounted and receives `params` in [[LiveView.Routed.handleParams]]. Fails
+    * with [[LiveLocation.EncodingException]] when `params` cannot be encoded.
+    */
+  def pushPatch(params: Params): Task[Unit]
+
+  /** Changes the URL to this view's route with `params`, replacing the current history entry. */
+  def replacePatch(params: Params): Task[Unit]
+
+private[scalive] object RoutedNavigation:
+  def apply[Params](
+    underlying: Navigation,
+    location: Params => Either[LiveLocation.EncodeError, LiveLocation]
+  ): RoutedNavigation[Params] =
+    new RoutedNavigation[Params]:
+      def pushNavigateUnsafe(to: String): Task[Unit]    = underlying.pushNavigateUnsafe(to)
+      def replaceNavigateUnsafe(to: String): Task[Unit] = underlying.replaceNavigateUnsafe(to)
+      def redirectUnsafe(to: String): Task[Unit]        = underlying.redirectUnsafe(to)
+      def pushPatchUnsafe(to: String): Task[Unit]       = underlying.pushPatchUnsafe(to)
+      def replacePatchUnsafe(to: String): Task[Unit]    = underlying.replacePatchUnsafe(to)
+      def pushPatch(params: Params): Task[Unit]         =
+        encoded(params).flatMap(underlying.pushPatch)
+      def replacePatch(params: Params): Task[Unit] =
+        encoded(params).flatMap(underlying.replacePatch)
+
+      private def encoded(params: Params) =
+        ZIO.fromEither(location(params)).mapError(new LiveLocation.EncodingException(_))
 
 /** Short messages shown to the visitor, keyed by [[FlashKind]].
   *

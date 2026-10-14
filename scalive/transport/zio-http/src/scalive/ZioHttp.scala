@@ -178,19 +178,21 @@ object ZioHttp:
       )
 
     val declarations = application.routes.flatMap {
-      case route: LiveRoute[?, ?]  => Vector(None -> route)
-      case session: LiveSession[?] =>
-        session.routes.flatMap(_.declarations).map(Some(session.name) -> _)
+      case route: LiveRegistration[?] => Vector(None -> route)
+      case session: LiveSession[?]    => session.routes.map(Some(session.name) -> _)
     }
-    val catalog = declarations.zipWithIndex.map { case ((sessionName, route), index) =>
-      CompiledRoute.erase(
-        index,
-        sessionName,
-        route.definition,
-        application.layouts,
-        application.rootLayout
-      )
-    }
+    // A patch must resolve to the route already mounted, as live navigation would resolve it.
+    lazy val catalog: Vector[CompiledRoute[R]] =
+      declarations.zipWithIndex.map { case ((sessionName, route), index) =>
+        CompiledRoute.erase(
+          index,
+          sessionName,
+          route.definition,
+          application.layouts,
+          application.rootLayout,
+          url => catalog.find(_.matches(url)).map(_.index)
+        )
+      }
     // PathCodec does not expose structural equality. RoutePattern.toString is ZIO HTTP's stable
     // rendered pattern evidence and is also what its diagnostics use.
     val duplicatePaths = catalog.groupBy(_.pathDescription).collect {
@@ -564,42 +566,32 @@ object ZioHttp:
       declaredSession: Option[String],
       definition: LiveRouteDefinition[A],
       applicationLayouts: Vector[LiveLayout[Any, Any]],
-      applicationRootLayout: LiveRootLayout[Any, Any]
+      applicationRootLayout: LiveRootLayout[Any, Any],
+      resolveRoute: URL => Option[Int]
     ): CompiledRoute[R] = definition match
-      case ordinary: LiveRouteDefinition.Ordinary[r, A, in, ctx, message, state] =>
-        val compiled = ordinaryRoute(
+      case route: LiveRouteDefinition.Route[rc, rf, A, p, in, ctx] =>
+        compile(
           routeIndex,
           declaredSession,
-          ordinary,
+          route,
           applicationLayouts,
-          applicationRootLayout
-        )
-        compiled.asInstanceOf[CompiledRoute[R]]
-      case routed: LiveRouteDefinition.Routed[r, A, in, ctx, message, state, params] =>
-        val compiled = routedRoute(
-          routeIndex,
-          declaredSession,
-          routed,
-          applicationLayouts,
-          applicationRootLayout
-        )
-        compiled.asInstanceOf[CompiledRoute[R]]
+          applicationRootLayout,
+          resolveRoute
+        ).asInstanceOf[CompiledRoute[R]]
 
-    private def base[R, A, In, Ctx, Message, State](
+    private def compile[RC, RF, A, P, In, Ctx](
       routeIndex: Int,
       declaredSession: Option[String],
-      codec: PathCodec[A],
-      contextDefinition: LiveRouteContext[R, A, In, Ctx],
-      connectedResourceInitializers: LiveConnectedResourceInitializers[Ctx],
-      layouts: Vector[LiveLayout[A, Ctx]],
-      root: Option[LiveRootLayout[A, Ctx]],
+      definition: LiveRouteDefinition.Route[RC, RF, A, P, In, Ctx],
       applicationLayouts: Vector[LiveLayout[Any, Any]],
       applicationRoot: LiveRootLayout[Any, Any],
-      make: (A, Request, Ctx, URL) => Task[RootLifecycle[Message, State]]
-    ): CompiledRoute[R] = new CompiledRoute[R]:
+      resolveRoute: URL => Option[Int]
+    ): CompiledRoute[RC & RF] = new CompiledRoute[RC & RF]:
       type PathParams = A
-      type Msg        = Message
-      type Model      = State
+      type Msg        = Any
+      type Model      = Any
+
+      private val codec = definition.pathCodec
 
       val index           = routeIndex
       val sessionName     = declaredSession
@@ -608,32 +600,56 @@ object ZioHttp:
       val routeIdentity   = s"$routeIndex:$pathDescription"
 
       private def selectedRoot: LiveRootLayout[A, Ctx] =
-        root.getOrElse(applicationRoot.asInstanceOf[LiveRootLayout[A, Ctx]])
+        definition.rootLayout.getOrElse(applicationRoot.asInstanceOf[LiveRootLayout[A, Ctx]])
 
       def rootLayoutKey(path: A, request: Request, erasedContext: Any): String =
         selectedRoot.key(
           LiveRootLayoutContext(path, request, request.url, erasedContext.asInstanceOf[Ctx])
         )
 
+      private def decodePath(url: URL): A =
+        codec.decode(url.path).fold(error => throw Exception(error), identity)
+
+      // Parameters decode before the factory runs, so an invalid URL builds no view.
+      private def make(path: A, context: Ctx, url: URL): RIO[RF, RootLifecycle[Any, Any]] =
+        val guard = definition.connectedTurnGuards.contramap((_: Unit) => context)
+        for
+          params <- definition.paramsCodec.decode(path, url)
+          view   <- ZIO.suspend(definition.factory(context)).catchAllDefect(ZIO.fail(_))
+          lifecycle = view match
+                        case routed: LiveView.Routed[?, ?, ?] =>
+                          routedLifecycle(
+                            definition,
+                            routed.asInstanceOf[LiveView.Routed[Any, Any, P]],
+                            params,
+                            url,
+                            guard
+                          )
+                        case view: LiveView[?, ?] =>
+                          RootLifecycle.ordinary(view.asInstanceOf[LiveView[Any, Any]], url, guard)
+        yield lifecycle.copy(acceptsPatch =
+          destination => resolveRoute(destination).contains(index)
+        )
+
       protected def disconnectedLifecycle(path: A, request: Request) =
         runDisconnectedContext(
-          contextDefinition,
+          definition.context,
           path,
           request,
           ().asInstanceOf[In]
         ).flatMap { case (context, claims) =>
-          make(path, request, context, request.url)
+          make(path, context, request.url)
             .map { lifecycle =>
               val composed = composeLayouts(
                 lifecycle,
                 request,
                 context,
-                layouts,
+                definition.layouts,
                 applicationLayouts,
-                url => codec.decode(url.path).fold(error => throw Exception(error), identity)
+                decodePath
               )
               (composed, context: Any, claims, selectedRoot.asInstanceOf[LiveRootLayout[A, Any]])
-            }.mapError(error => Response.internalServerError)
+            }.mapError(_ => Response.internalServerError)
         }
 
       protected def connectedLifecycle(
@@ -644,7 +660,7 @@ object ZioHttp:
         admission: Option[TransportAdmission]
       ) =
         runConnectedContext(
-          contextDefinition,
+          definition.context,
           path,
           request,
           ().asInstanceOf[In],
@@ -656,14 +672,14 @@ object ZioHttp:
           (ZIO
             .fail(ConnectedMountRejected(LiveMountFailure.unauthorized("root layout key differs")))
             .unless(selectedRoot.key(rootContext) == claims.rootLayoutKey) *>
-            make(path, request, context, url).map { lifecycle =>
+            make(path, context, url).map { lifecycle =>
               val initialized = lifecycle.copy(mount =
                 mountContext =>
                   ZIO.suspendSucceed {
                     val initialize = mountContext.connection match
                       case Connection.Disconnected         => ZIO.unit
                       case Connection.Connected(connected) =>
-                        connectedResourceInitializers.run(context, connected.resources)
+                        definition.connectedResourceInitializers.run(context, connected.resources)
                     initialize *> lifecycle.mount(mountContext)
                   }
               )
@@ -672,10 +688,9 @@ object ZioHttp:
                   initialized,
                   request,
                   context,
-                  layouts,
+                  definition.layouts,
                   applicationLayouts,
-                  destination =>
-                    codec.decode(destination.path).fold(error => throw Exception(error), identity)
+                  decodePath
                 ),
                 connected.admission
               )
@@ -683,94 +698,58 @@ object ZioHttp:
         }
       end connectedLifecycle
 
-    private def ordinaryRoute[R, A, In, Ctx, Message, State](
-      index: Int,
-      sessionName: Option[String],
-      definition: LiveRouteDefinition.Ordinary[R, A, In, Ctx, Message, State],
-      applicationLayouts: Vector[LiveLayout[Any, Any]],
-      applicationRoot: LiveRootLayout[Any, Any]
-    ): CompiledRoute[R] =
-      base(
-        index,
-        sessionName,
-        definition.pathCodec,
-        definition.context,
-        definition.connectedResourceInitializers,
-        definition.layouts,
-        definition.rootLayout,
-        applicationLayouts,
-        applicationRoot,
-        (path, request, context, url) =>
-          ZIO.attempt(
-            RootLifecycle.ordinary(
-              definition.factory(path, request, context),
-              url,
-              definition.connectedTurnGuards.contramap((_: Unit) => context)
-            )
-          )
-      )
-
-    private def routedRoute[R, A, In, Ctx, Message, State, Params](
-      index: Int,
-      sessionName: Option[String],
-      definition: LiveRouteDefinition.Routed[R, A, In, Ctx, Message, State, Params],
-      applicationLayouts: Vector[LiveLayout[Any, Any]],
-      applicationRoot: LiveRootLayout[Any, Any]
-    ): CompiledRoute[R] =
-      base(
-        index,
-        sessionName,
-        definition.pathCodec,
-        definition.context,
-        definition.connectedResourceInitializers,
-        definition.layouts,
-        definition.rootLayout,
-        applicationLayouts,
-        applicationRoot,
-        (path, request, context, url) =>
-          for
-            initialParams <- definition.paramsCodec.decode(path, url)
-            view          <- ZIO.attempt(definition.factory(path, request, context))
-          yield RootLifecycle(
-            initialUrl = url,
-            hooks = view.hooks,
-            pageTitle = view.pageTitle,
-            mount = ctx => view.mount(initialParams, ctx),
-            handleMessage = (model, ctx, message) => view.handleMessage(model, ctx)(message),
-            prepareParams = destination =>
-              definition.pathCodec.decode(destination.path) match
-                case Left(error) =>
-                  ZIO.succeed(
+    private def routedLifecycle[RC, RF, A, P, In, Ctx](
+      definition: LiveRouteDefinition.Route[RC, RF, A, P, In, Ctx],
+      view: LiveView.Routed[Any, Any, P],
+      initialParams: P,
+      url: URL,
+      guard: LiveConnectedTurnGuard[Unit]
+    ): RootLifecycle[Any, Any] =
+      val location = (params: P) =>
+        definition.paramsCodec.encode(params).flatMap(LiveLocation.encode(definition.pathCodec, _))
+      def paramsContext(ctx: ParamsContext[Any, Any]) = RoutedContexts.params(ctx, location)
+      RootLifecycle(
+        initialUrl = url,
+        hooks = view.hooks,
+        pageTitle = view.pageTitle,
+        mount = ctx => view.mount(initialParams, ctx),
+        handleMessage = (model, ctx, message) =>
+          view.handleMessage(model, RoutedContexts.message(ctx, location))(message),
+        prepareParams = destination =>
+          definition.pathCodec.decode(destination.path) match
+            case Left(error) =>
+              ZIO.succeed(
+                RootParamsHandler(
+                  runHooks = false,
+                  (model, ctx) =>
+                    view.handleParamsDecodeError(
+                      model,
+                      LiveParamsCodec.DecodeError(error),
+                      destination,
+                      paramsContext(ctx)
+                    )
+                )
+              )
+            case Right(destinationPath) =>
+              definition.paramsCodec
+                .decode(destinationPath, destination).fold(
+                  error =>
                     RootParamsHandler(
                       runHooks = false,
                       (model, ctx) =>
-                        view.handleParamsDecodeError(
-                          model,
-                          LiveParamsCodec.DecodeError(error),
-                          destination,
-                          ctx
-                        )
-                    )
-                  )
-                case Right(destinationPath) =>
-                  definition.paramsCodec
-                    .decode(destinationPath, destination).fold(
-                      error =>
-                        RootParamsHandler(
-                          runHooks = false,
-                          (model, ctx) =>
-                            view.handleParamsDecodeError(model, error, destination, ctx)
-                        ),
-                      params =>
-                        RootParamsHandler(
-                          runHooks = true,
-                          (model, ctx) => view.handleParams(model, params, destination, ctx)
-                        )
+                        view.handleParamsDecodeError(model, error, destination, paramsContext(ctx))
                     ),
-            view = input => view.view(input.map(_._1)),
-            connectedTurnGuard = definition.connectedTurnGuards.contramap((_: Unit) => context)
-          )
+                  params =>
+                    RootParamsHandler(
+                      runHooks = true,
+                      (model, ctx) =>
+                        view.handleParams(model, params, destination, paramsContext(ctx))
+                    )
+                ),
+        view = input => view.view(input.map(_._1)),
+        connectedTurnGuard = guard
       )
+    end routedLifecycle
   end CompiledRoute
 
   private def composeLayouts[A, Ctx, Msg, Model](
@@ -965,22 +944,9 @@ object ZioHttp:
     request: Request,
     input: In
   ): ZIO[R, Response, (Ctx, SessionMountClaims)] = context match
-    case _: LiveRouteContext.Direct[A] => ZIO.succeed(((), SessionMountClaims(Vector.empty)))
-    case environment: LiveRouteContext.Environment[r, A] =>
-      ZIO
-        .environmentWith[r](_.get(using environment.tag)).map(
-          _ -> SessionMountClaims(Vector.empty)
-        )
+    case _: LiveRouteContext.Direct[A]        => ZIO.succeed(((), SessionMountClaims(Vector.empty)))
     case _: LiveRouteContext.Required[A, Ctx] =>
       ZIO.succeed(input -> SessionMountClaims(Vector.empty))
-    case environment: LiveRouteContext.WithEnvironment[r0, r1, A, In, previous] =>
-      runDisconnectedContext(environment.previous, path, request, input).flatMap {
-        case (context, claims) =>
-          ZIO
-            .environmentWith[r1](_.get(using environment.service)).map(service =>
-              (context -> service) -> claims
-            )
-      }
     case mounted: LiveRouteContext.Mounted[r, A, In, Ctx] =>
       runRoutePipeline(mounted.pipeline, LiveRouteMountRequest(path, request.url), input)
         .tapError(failure =>
@@ -1022,19 +988,8 @@ object ZioHttp:
   ): ZIO[R, LiveMountFailure, ConnectedContext[Ctx]] = context match
     case _: LiveRouteContext.Direct[A] =>
       rejectExtraClaims(claims).as(ConnectedContext((), None))
-    case environment: LiveRouteContext.Environment[r, A] =>
-      rejectExtraClaims(claims) *>
-        ZIO.environmentWith[r](_.get(using environment.tag)).map(ConnectedContext(_, None))
     case _: LiveRouteContext.Required[A, Ctx] =>
       rejectExtraClaims(claims).as(ConnectedContext(input, None))
-    case environment: LiveRouteContext.WithEnvironment[r0, r1, A, In, previous] =>
-      runConnectedContext(environment.previous, path, request, input, claims, transport).flatMap {
-        previous =>
-          ZIO
-            .environmentWith[r1](_.get(using environment.service)).map(service =>
-              ConnectedContext(previous.context -> service, previous.admission)
-            ).onError(_ => ZIO.foreachDiscard(previous.admission)(_.rollback))
-      }
     case mounted: LiveRouteContext.Mounted[r, A, In, Ctx] =>
       for
         _      <- rejectExtraClaims(claims)

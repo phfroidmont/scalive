@@ -37,7 +37,7 @@ that use them.
 | Use lifecycle capabilities | @:apiSymbol(trait:scalive.MountContext)`MountContext`@:@, @:apiSymbol(trait:scalive.MessageContext)`MessageContext`@:@, and @:apiSymbol(enum:scalive.Connection)`Connection`@:@ |
 | Render from the model | @:apiSymbol(trait:scalive.Signal)`Signal`@:@ |
 | Bind browser events | @:apiSymbol(object:scalive.on)`on`@:@ and @:apiSymbol(class:scalive.HtmlAttrBinding)`HtmlAttrBinding`@:@ |
-| Declare routes | @:apiSymbol(val:scalive.live)`live`@:@, @:apiSymbol(class:scalive.LiveRouteBuilder)`LiveRouteBuilder`@:@, and @:apiSymbol(val:scalive.Live.router)`Live.router`@:@ |
+| Declare routes | @:apiSymbol(val:scalive.live)`live`@:@, @:apiSymbol(class:scalive.LiveRoute)`LiveRoute`@:@, and @:apiSymbol(val:scalive.Live.router)`Live.router`@:@ |
 | Group routes that share mount policy | @:apiSymbol(class:scalive.LiveSessionBuilder)`LiveSessionBuilder`@:@ |
 | Render the document and shared chrome | @:apiSymbol(trait:scalive.LiveRootLayout)`LiveRootLayout`@:@ and @:apiSymbol(trait:scalive.LiveLayout)`LiveLayout`@:@ |
 | Serve the application | @:apiSymbol(def:scalive.ZioHttp.routes)`ZioHttp.routes`@:@ |

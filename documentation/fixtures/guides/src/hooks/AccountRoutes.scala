@@ -32,5 +32,5 @@ object AccountRoutes:
           if active then ZIO.unit
           else ZIO.fail(LiveConnectedTurnFailure.reload("account access changed"))
         )
-      )(AccountLiveView())
+      ) -> AccountLiveView()
   // docs:end hooks-route-guard

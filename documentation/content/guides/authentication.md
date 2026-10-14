@@ -141,7 +141,8 @@ explains that contract. The public session ID stays in the signed claims instead
 of becoming part of every route's context.
 
 `ProfileLiveView` projects `CurrentUser` from the admitted `ConnectedAuth`. Its
-`Accounts` parameter comes from the application environment; see
+factory, registered with `from`, reads `Accounts` from the application
+environment; see
 [Provide one shared authentication service](#provide-one-shared-authentication-service).
 The status view is authentication-agnostic even though the same admission
 protects it.
@@ -166,7 +167,7 @@ for the complete timing and failure semantics.
 
 The mount aspect runs only when a lifecycle starts. To recheck the session
 before later connected work, such as events and server messages, declare
-@:apiSymbol(def:scalive.LiveSessionBuilder.Admitted.guardConnectedTurns)`guardConnectedTurns`@:@
+@:apiSymbol(def:scalive.LiveSessionBuilder.guardConnectedTurns)`guardConnectedTurns`@:@
 after admission. The lab installs the guard and projects only the immutable
 user into its view:
 
@@ -245,13 +246,11 @@ requirement. For one backend instance, provide each layer once at
 Here `routes` combines `ZioHttp.routes(application, config)` with the login and
 logout routes, as the lab does with `AuthHttpRoutes(security).routes`.
 
-`Accounts.live` provides the second parameter of the
-[profile route's factory](#authenticate-both-mount-phases),
-`(auth: ConnectedAuth, accounts: Accounts) => ...`. The `.context` API infers
-that one application service from the typed factory without an explicit
-service type argument. Only `ConnectedAuth` is supplied by admission. `Accounts`
-is resolved from the ZIO environment independently and is never serialized into
-mount claims or passed to layouts.
+`Accounts.live` provides the service that the
+[profile route's factory](#authenticate-both-mount-phases) reads with
+`ZIO.serviceWith[Accounts]`. Only `ConnectedAuth` is supplied by admission.
+`Accounts` is resolved from the ZIO environment independently and is never
+serialized into mount claims or passed to layouts.
 
 Keep the service responsible for credentials, session authenticity, expiry,
 revocation, capacity, and rate limits. Keep the session mount aspect responsible

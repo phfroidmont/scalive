@@ -39,7 +39,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
           val _ = observed.incrementAndGet()
           RuntimeObserver.logging
       val routes = ZioHttp.routes(
-        scalive.Live.router(scalive.live(View)),
+        scalive.Live.router(scalive.live -> View),
         config,
         observerFactory
       )
@@ -59,7 +59,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
         def mount(ctx: MountContext) = ZIO.unit
         def view(model: Signal[Unit]) = div()
 
-      val routes  = ZioHttp.routes(scalive.Live.router(scalive.live(View)), config)
+      val routes  = ZioHttp.routes(scalive.Live.router(scalive.live -> View), config)
       val upgrade = Request.get(URL.decode("/live/websocket").toOption.get)
       val allowed = upgrade
         .addHeader(Header.Custom("origin", "HTTPS://SCALIVE.TEST:443"))
@@ -104,7 +104,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
         }
         def view(model: Signal[Int]) = div(model.map(_.toString))
 
-      val application = scalive.Live.router(scalive.live {
+      val application = scalive.Live.router(scalive.live -> {
         View(factories.incrementAndGet())
       })
       for
@@ -155,7 +155,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
 
       for
         response <- run(
-                      ZioHttp.routes(scalive.Live.router(scalive.live(View)), config),
+                      ZioHttp.routes(scalive.Live.router(scalive.live -> View), config),
                       Request.get(URL.root)
                     )
         body   <- response.body.asString.orDie
@@ -176,7 +176,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
 
       for
         response <- run(
-                      ZioHttp.routes(scalive.Live.router(scalive.live(View)), config),
+                      ZioHttp.routes(scalive.Live.router(scalive.live -> View), config),
                       Request.get(URL.root)
                     )
         body     <- response.body.asString.orDie
@@ -207,7 +207,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
 
       for
         response <- run(
-                      ZioHttp.routes(scalive.Live.router(scalive.live(Parent)), config),
+                      ZioHttp.routes(scalive.Live.router(scalive.live -> Parent), config),
                       Request.get(URL.root)
                     )
         body <- response.body.asString.orDie
@@ -267,7 +267,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
           events <- Ref.make(Vector.empty[LifecycleEvent])
           observer = LifecycleObserver.fromFunction(event => events.update(_ :+ event))
           response <- run(
-                        ZioHttp.routes(scalive.Live.router(scalive.live(view)), config, observer),
+                        ZioHttp.routes(scalive.Live.router(scalive.live -> view), config, observer),
                         Request.get(URL.root)
                       )
           body     <- response.body.asString.orDie
@@ -311,7 +311,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
 
       for
         response <- run(
-                      ZioHttp.routes(scalive.Live.router(scalive.live(Parent)), config),
+                      ZioHttp.routes(scalive.Live.router(scalive.live -> Parent), config),
                       Request.get(URL.decode("/?tab=two").toOption.get)
                     )
         body <- response.body.asString.orDie
@@ -332,7 +332,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
                      AssertionError("flash token was not issued")
                    )
         request = Request.get(URL.root).addCookie(Cookie.Request("__phoenix_flash__", token))
-        response <- run(ZioHttp.routes(scalive.Live.router(scalive.live(View)), config), request)
+        response <- run(ZioHttp.routes(scalive.Live.router(scalive.live -> View), config), request)
         body     <- response.body.asString.orDie
         claims  <- ZioHttpSecurity.verifySession(
                      config,
@@ -381,7 +381,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
                      AssertionError("flash token was not issued")
                    )
         request = Request.get(URL.root).addCookie(Cookie.Request("__phoenix_flash__", token))
-        response <- run(ZioHttp.routes(scalive.Live.router(scalive.live(View)), config), request)
+        response <- run(ZioHttp.routes(scalive.Live.router(scalive.live -> View), config), request)
         body     <- response.body.asString.orDie
         claims  <- ZioHttpSecurity.verifySession(
                      config,
@@ -408,7 +408,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
 
       for
         response <- run(
-                      ZioHttp.routes(scalive.Live.router(scalive.live(View)), config),
+                      ZioHttp.routes(scalive.Live.router(scalive.live -> View), config),
                       Request.get(URL.root)
                     )
         body   <- response.body.asString.orDie
@@ -473,7 +473,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
 
       for
         response <- run(
-                      ZioHttp.routes(scalive.Live.router(scalive.live(View)), config),
+                      ZioHttp.routes(scalive.Live.router(scalive.live -> View), config),
                       Request.get(URL.root)
                     )
         body   <- response.body.asString.orDie
@@ -653,7 +653,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
         observer = LifecycleObserver.fromFunction(event => events.update(_ :+ event))
         response <- run(
                       ZioHttp.routes(
-                        scalive.Live.router(scalive.live(Broken)),
+                        scalive.Live.router(scalive.live -> Broken),
                         config,
                         observer
                       ),
@@ -751,7 +751,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
         ZIO.fail(LiveRouteMountFailure.forbidden("account suspended"))
       )
       val application =
-        scalive.Live.router((scalive.live / "account").withMountAspect(suspended)(Account))
+        scalive.Live.router((scalive.live / "account").withMountAspect(suspended) -> Account)
 
       for
         response <- run(
@@ -775,7 +775,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
         def mount(ctx: MountContext) = ZIO.unit
         def view(model: Signal[Unit]) = div()
 
-      val application = scalive.Live.router(scalive.live {
+      val application = scalive.Live.router(scalive.live -> {
         factories.incrementAndGet()
         View
       })
@@ -867,7 +867,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
         def mount(ctx: MountContext) = ZIO.unit
         def view(model: Signal[Unit]) = div()
 
-      val application  = scalive.Live.router((scalive.live / "page")(View))
+      val application  = scalive.Live.router((scalive.live / "page") -> View)
       val directRoutes = ZioHttp.validate(application)
       val pageUrl       = URL.decode("/page?tab=one#discarded").toOption.get
 
@@ -936,7 +936,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
       val application = scalive.Live.router(
         scalive.live / "a" -> View,
         scalive.live / "b" -> View,
-        (scalive.live / "guard").withMountAspect(routeAspect)(View),
+        (scalive.live / "guard").withMountAspect(routeAspect) -> View,
         scalive.Live.session("other")(scalive.live / "c" -> View)
       )
       val catalog = ZioHttp.validate(application)
@@ -1082,7 +1082,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
 
       for
         response <- run(
-                      ZioHttp.routes(scalive.Live.router(scalive.live.params(View)), config),
+                      ZioHttp.routes(scalive.Live.router(scalive.live -> View), config),
                       Request.get(URL.root)
                     )
         body <- response.body.asString.orDie
@@ -1114,7 +1114,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
 
       for
         response <- run(
-                      ZioHttp.routes(scalive.Live.router(scalive.live.params(View)), config),
+                      ZioHttp.routes(scalive.Live.router(scalive.live -> View), config),
                       Request.get(URL.root)
                     )
         body <- response.body.asString.orDie
@@ -1167,7 +1167,10 @@ object ZioHttpSpec extends ZIOSpecDefault:
     test("initial routed decode failure happens before factory and mount") {
       val factories = AtomicInteger()
       val mounts     = AtomicInteger()
-      val decoder = LiveParamsDecoder.custom[Unit, Unit]((_, _) => Left("invalid params"))
+      val decoder = LiveParamsCodec.custom[Unit, Unit](
+        (_, _) => Left("invalid params"),
+        _ => Right(LiveParamsCodec.Encoded((), QueryParams.empty))
+      )
       object View extends LiveView.Routed.Eventless[Unit, Unit]:
         def mount(params: Unit, ctx: MountContext) = ZIO.succeed(mounts.incrementAndGet()).unit
         def view(model: Signal[Unit]) = div()
@@ -1175,7 +1178,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
       for
         response <- run(
                       ZioHttp.routes(
-                        scalive.Live.router(scalive.live.paramsDecodeOnly(decoder) {
+                        scalive.Live.router(scalive.live.params(decoder) -> {
                           factories.incrementAndGet()
                           View
                         }),
@@ -1191,8 +1194,9 @@ object ZioHttpSpec extends ZIOSpecDefault:
     },
     test("routed connected lifecycle mounts, handles params, and recovers patch decode failures") {
       val events = scala.collection.mutable.ArrayBuffer.empty[String]
-      val decoder = LiveParamsDecoder.custom[Unit, String]((_, url) =>
-        if url.queryParam("bad").nonEmpty then Left("bad patch") else Right("decoded")
+      val decoder = LiveParamsCodec.custom[Unit, String](
+        (_, url) => if url.queryParam("bad").nonEmpty then Left("bad patch") else Right("decoded"),
+        _ => Right(LiveParamsCodec.Encoded((), QueryParams.empty))
       )
       object View extends LiveView.Routed.Eventless[String, String]:
         def mount(params: String, ctx: MountContext) = ZIO.succeed {
@@ -1208,7 +1212,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
           ctx: ParamsContext
         ) = ZIO.succeed { events += s"recover:${error.message}"; "recovered" }
         def view(model: Signal[String]) = div(model)
-      val application = scalive.Live.router(scalive.live.paramsDecodeOnly(decoder)(View))
+      val application = scalive.Live.router(scalive.live.params(decoder) -> View)
       val route = ZioHttp.validate(application).head.asInstanceOf[
         ZioHttp.CompiledRoute[Any] { type Msg = Nothing; type Model = String }
       ]
@@ -1235,11 +1239,11 @@ object ZioHttpSpec extends ZIOSpecDefault:
     test("environment routes receive the provided service") {
       final case class Greeting(value: String)
       val application = scalive.Live.router(
-        scalive.live.from[Greeting, Nothing, String]((_, _, greeting) =>
+        scalive.live.from(ZIO.serviceWith[Greeting](greeting =>
           new LiveView.Eventless[String]:
             def mount(ctx: MountContext) = ZIO.succeed(greeting.value)
             def view(model: Signal[String]) = div(model)
-        )
+        ))
       )
 
       for
@@ -1264,7 +1268,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
         scalive.Live
           .session("context-service")
           .withMountAspect(aspect)(
-            scalive.live.context((user: String, greeting: Greeting) => View(user, greeting))
+            scalive.live.from((user: String) => ZIO.serviceWith[Greeting](View(user, _)))
           )
       )
       val environment = ZEnvironment(Greeting("hello"))
@@ -1296,9 +1300,9 @@ object ZioHttpSpec extends ZIOSpecDefault:
       object View extends LiveView.Eventless[Unit]:
         def mount(ctx: MountContext) = ZIO.unit
         def view(model: Signal[Unit]) = div()
-      val duplicateRoutes = scalive.Live.router(scalive.live(View), scalive.live(View))
+      val duplicateRoutes = scalive.Live.router(scalive.live -> View, scalive.live -> View)
       val duplicateSessions = scalive.Live.router(
-        scalive.Live.session("same")(scalive.live(View)),
+        scalive.Live.session("same")(scalive.live -> View),
         scalive.Live.session("same")(scalive.live / "other" -> View)
       )
 
@@ -1330,10 +1334,9 @@ object ZioHttpSpec extends ZIOSpecDefault:
       object View extends LiveView.Eventless[Unit]:
         def mount(ctx: MountContext) = ZIO.succeed { events += "mount" }
         def view(model: Signal[Unit]) = div()
-      val route = scalive.live.withMountAspect(routeAspect).context {
-        (_, _, _: (String, String)) =>
-          events += "factory"
-          View
+      val route = scalive.live.withMountAspect(routeAspect).context { _ =>
+        events += "factory"
+        View
       }
       val application = scalive.Live.router(
         scalive.Live.session("main").withMountAspect(sessionAspect)(route)
@@ -1396,7 +1399,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
       val application = scalive.Live.router
         .withLayout(AppLayout)
         .withRootLayout(ApplicationRoot)(
-          scalive.live.withLayout(RouteLayout).withRootLayout(RouteRoot)(View)
+          scalive.live.withLayout(RouteLayout).withRootLayout(RouteRoot) -> View
         )
 
       for
@@ -1421,7 +1424,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
       object Inner extends LiveLayout[Any, Any]:
         def view[Msg](content: HtmlElement[Msg], context: LiveLayoutContext[Any, Any]) =
           articleTag(idAttr := "inner", content)
-      val application = scalive.Live.router.withLayout(Outer).withLayout(Inner)(scalive.live(View))
+      val application = scalive.Live.router.withLayout(Outer).withLayout(Inner)(scalive.live -> View)
 
       for
         response <- run(ZioHttp.routes(application, config), Request.get(URL.root))
@@ -1608,7 +1611,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
         def mount(ctx: MountContext) = ZIO.unit
         def view(model: Signal[Unit]) = div()
 
-      val routes = ZioHttp.routes(scalive.Live.router(scalive.live(View)), config)
+      val routes = ZioHttp.routes(scalive.Live.router(scalive.live -> View), config)
 
       for
         first     <- run(routes, Request.get(URL.root))
@@ -1660,8 +1663,8 @@ object ZioHttpSpec extends ZIOSpecDefault:
     test("connected resource initializers are lazy, ordered, and retain their typed context") {
       final case class Greeting(value: String)
       type SessionContext = (String, Int)
-      type RouteContext   = (SessionContext, String)
-      type FinalContext   = (RouteContext, Boolean)
+      type RouteContext   = (String, Int, String)
+      type FinalContext   = (String, Int, String, Boolean)
       val sessionAspect = LiveSessionMountAspect.fromRequest[Any, String, String](
         _ => ZIO.succeed("claim" -> "disconnected"),
         (_, _) => ZIO.succeed("connected")
@@ -1694,22 +1697,23 @@ object ZioHttpSpec extends ZIOSpecDefault:
                         )
                         .withMountAspect(routeAspect)
                         .withConnectedResources((context: RouteContext, resources) =>
-                          initialize(s"route:${context._2}", resources)
+                          initialize(s"route:${context._3}", resources)
                         )
                         .withMountAspect(laterRouteAspect)
             pageMount =
               (context: FinalContext, greeting: Greeting, connected: Boolean) =>
                 ZIO
                   .when(connected)(
-                    events.update(_ :+ s"page:${context._1._2}:${context._2}:${greeting.value}")
+                    events.update(_ :+ s"page:${context._3}:${context._4}:${greeting.value}")
                   ).unit
             route =
               if routed then
-                builder.params
+                builder
                   .withConnectedResources((context, resources) =>
-                    initialize(s"route-later:${context._2}", resources)
+                    initialize(s"route-later:${context._4}", resources)
                   )
-                  .context((context: FinalContext, greeting: Greeting) =>
+                  .from((context: FinalContext) =>
+                    ZIO.serviceWith[Greeting](greeting =>
                     new LiveView.Routed.Eventless[Unit, Unit]:
                       override val hooks = LiveHooks
                         .empty[Nothing, Unit].onParams((model, _, ctx) =>
@@ -1731,18 +1735,19 @@ object ZioHttpSpec extends ZIOSpecDefault:
                             events.update(_ :+ "params")
                           ).unit
                       def view(model: Signal[Unit]) = div("routed")
-                  )
+                  ))
               else
                 builder
                   .withConnectedResources((context, resources) =>
-                    initialize(s"route-later:${context._2}", resources)
+                    initialize(s"route-later:${context._4}", resources)
                   )
-                  .context((context: FinalContext, greeting: Greeting) =>
+                  .from((context: FinalContext) =>
+                    ZIO.serviceWith[Greeting](greeting =>
                     new LiveView.Eventless[Unit]:
                       def mount(ctx: MountContext) =
                         pageMount(context, greeting, ctx.connection != Connection.Disconnected)
                       def view(model: Signal[Unit]) = div("ordinary")
-                  )
+                  ))
             application = scalive.Live.router(
                             scalive.Live
                               .session("resources")
@@ -1884,7 +1889,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
                     case "effect-defect"   => ZIO.dieMessage("initializer died")
                     case _                 => ZIO.unit
                 )
-                .withConnectedResources((_, _) => ZIO.succeed(skipped.incrementAndGet()).unit)(view)
+                .withConnectedResources((_, _) => ZIO.succeed(skipped.incrementAndGet()).unit) -> view
             )
             for
               events <- Ref.make(Vector.empty[LifecycleEvent])
@@ -1921,78 +1926,6 @@ object ZioHttpSpec extends ZIOSpecDefault:
             end for
         }.map(_.reduce(_ && _))
     } @@ TestAspect.withLiveClock,
-    test("slash preserves previously installed guards, resources, layouts, and root keys") {
-      val event       = BrowserToServerEvent[Json]("slash-event")
-      val guards      = AtomicInteger()
-      val initialized = AtomicInteger()
-      val released    = AtomicInteger()
-      val view        = new LiveView[Nothing, Unit]:
-        override val hooks = LiveHooks
-          .empty[Nothing, Unit]
-          .onBrowserEvent(event)((model, _, _) => ZIO.succeed(model))
-        def mount(ctx: MountContext)                                               = ZIO.unit
-        def handleMessage(model: Unit, ctx: MessageContext): Nothing => Task[Unit] = identity
-        def view(model: Signal[Unit]) = div("slash-page")
-      object OrganizationLayout extends LiveLayout[Int, Any]:
-        def view[Msg](content: HtmlElement[Msg], context: LiveLayoutContext[Int, Any]) =
-          mainTag(
-            idAttr := "preserved-layout",
-            context.params.map(id => s"organization:$id"),
-            content
-          )
-      object OrganizationRoot extends LiveRootLayout[Int, Any]:
-        override def key(context: LiveRootLayoutContext[Int, Any]) =
-          s"organization:${context.params}"
-        def view[Msg](
-          content: HtmlElement[Msg],
-          title: Option[String],
-          context: LiveRootLayoutContext[Int, Any]
-        ) = htmlRootTag(bodyTag(dataAttr("organization") := context.params.toString, content))
-      val builder = (scalive.live / "organizations" / PathCodec.int("id"))
-        .guardConnectedTurns(_ => ZIO.succeed(guards.incrementAndGet()).unit)
-        .withConnectedResources((_, resources) =>
-          resources
-            .acquireRelease(ZIO.succeed(initialized.incrementAndGet()))(_ =>
-              ZIO.succeed(released.incrementAndGet()).unit
-            ).unit
-        )
-        .withLayout(OrganizationLayout)
-        .withRootLayout(OrganizationRoot)
-      val application = scalive.Live.router((builder / "retained" / PathCodec.string("name"))(view))
-
-      withServer(application) { port =>
-        for
-          rendered <- run(
-                        ZioHttp.routes(application, config),
-                        Request.get(URL.decode("/organizations/17/retained/example").toOption.get)
-                      )
-          html   <- rendered.body.asString
-          page   <- bootstrap(port, "/organizations/17/retained/example")
-          claims <- ZioHttpSecurity
-                      .verifySession(config, page.session)
-                      .mapError(error => Exception(error.toString))
-          socket <- connect(port, page)
-          joined <- joinRoot(socket, page)
-          reply  <- sendEvent(socket, page, "2", event.value)
-          retained = released.get()
-          _       <- socket.close
-          cleaned <- ZIO
-                       .succeed(released.get()).repeatUntil(_ > 0)
-                       .timeoutFail(Exception("slash resource was not released"))(5.seconds)
-        yield assertTrue(
-          claims.rootLayoutKey == "organization:17",
-          html.contains("data-organization=\"17\""),
-          status(joined) == "ok",
-          response(joined).toJson.contains("preserved-layout"),
-          response(joined).toJson.contains("organization:17"),
-          status(reply) == "ok",
-          guards.get() == 1,
-          initialized.get() == 1,
-          retained == 0,
-          cleaned == 1
-        )
-      }
-    } @@ TestAspect.withLiveClock,
     test("public session and route guards capture connected context and wrap browser events only") {
       val event  = BrowserToServerEvent[Json]("guarded-event")
       val events = scala.collection.mutable.ArrayBuffer.empty[String]
@@ -2008,8 +1941,8 @@ object ZioHttpSpec extends ZIOSpecDefault:
         .guardConnectedTurns((context: (String, String)) =>
           ZIO.succeed(events += s"route-guard:${context._2}").unit
         )
-        .context { (_, _, context: (String, String)) =>
-          events += s"factory:${context._1}:${context._2}"
+        .context { (session, route) =>
+          events += s"factory:$session:$route"
           new LiveView[Nothing, Unit]:
             override val hooks = LiveHooks.empty[Nothing, Unit]
               .onBrowserEvent(event)((model, _, _) =>
@@ -2072,7 +2005,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
         def view(model: Signal[Int]) = div(model.map(_.toString))
       val application = scalive.Live.router(
         (scalive.live / "reload")
-          .guardConnectedTurns(_ => ZIO.fail(LiveConnectedTurnFailure.reload("test")))(view)
+          .guardConnectedTurns(_ => ZIO.fail(LiveConnectedTurnFailure.reload("test"))) -> view
       )
 
       withServer(application) { port =>
@@ -2103,9 +2036,9 @@ object ZioHttpSpec extends ZIOSpecDefault:
         def mount(ctx: MountContext) = ZIO.fail(Exception("broken"))
         def view(model: Signal[Unit]) = div()
       val application = scalive.Live.router(
-        scalive.live(page("home")),
-        (scalive.live / "next")(page("next")),
-        (scalive.live / "broken")(broken)
+        scalive.live -> page("home"),
+        (scalive.live / "next") -> page("next"),
+        (scalive.live / "broken") -> broken
       )
 
       zio.test.Live.live(for
@@ -2190,7 +2123,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
         def view(model: Signal[Int]) = div(model.map(_.toString))
       val application = scalive.Live.router(
         scalive.live
-          .guardConnectedTurns(_ => ZIO.fail(LiveConnectedTurnFailure.disconnect("test")))(view)
+          .guardConnectedTurns(_ => ZIO.fail(LiveConnectedTurnFailure.disconnect("test"))) -> view
       )
 
       zio.test.Live.live(withServer(application) { port =>
@@ -2242,7 +2175,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
                             if disconnect.get() == 0 then ZIO.unit
                             else ZIO.fail(LiveConnectedTurnFailure.disconnect("server turn"))
                           )
-                        )(view)
+                        ) -> view
                       )
         result <- withServer(application) { port =>
         for

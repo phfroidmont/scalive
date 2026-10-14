@@ -73,21 +73,20 @@ message type, so it has no message type to send. Use links, as above,
 
 ## Give one route its own layout {#give-one-route-its-own-layout}
 
-Install a layout on a route builder to wrap only that route. The registration
-above adds a header to each project page:
+Install a layout on a route registration to wrap only that route. The
+registration above adds a header to each project page:
 
 @:sourceRegion(documentation/fixtures/guides/src/layouts/Application.scala, layouts-route-layout)
 
-A route layout can read the route's decoded parameters. `ProjectLayout`
+A route layout can read the route's decoded path values. `ProjectLayout`
 declares `String`, the type of the `project` path segment, so `ctx.params` is a
 `Signal[String]`:
 
 @:sourceRegion(documentation/fixtures/guides/src/layouts/ProjectLayout.scala, layouts-project-layout)
 
-The compiler checks that a route layout's parameter type matches the route.
-Install route layouts before `.params` or `.query`. When a route prefix with a
-layout is extended with `/`, the layout keeps receiving the parameters of the
-prefix it was installed on.
+The compiler checks that a route layout's parameter type matches the route's
+path values. Query parameters are not part of them. Install the layout in any
+order with the route's other setup.
 
 ## Know where each layout applies {#know-where-each-layout-applies}
 
@@ -151,8 +150,8 @@ Live.session("account")
 ```
 
 The builder supplies the selector's input type. These two-argument overloads
-exist on named live session builders, including admitted ones, and on route
-builders after a mount aspect, before `.params` or `.query`. The router accepts
+exist on named live session builders and on route registrations after a mount
+aspect. The router accepts
 only layouts whose context type is `Any`; install a context-dependent root
 layout on a session or route.
 

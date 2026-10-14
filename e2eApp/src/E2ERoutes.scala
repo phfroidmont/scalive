@@ -22,25 +22,24 @@ object E2ERoutes:
       .queryOptional[String]("container")
 
   val navigationBItemRoute =
-    navigationBItemLocation.mapParamsDecodeOnly { case (id, container) =>
+    navigationBItemLocation.mapParams { case (id, container) =>
       NavigationLiveViews.BParams(container.contains("1"), Some(id))
-    }
+    }(params => (params.itemId.getOrElse(""), Option.when(params.withContainerRequested)("1")))
 
   val navigationRedirectLoop =
     (live / "navigation" / "redirectloop").query[NavigationLiveViews.RedirectLoopParams]
 
   val stream     = (live / "stream").queryOptional[String]("empty_item")
-  val healthy    = (live / "healthy" / PathCodec.string("category")).params
+  val healthy    = live / "healthy" / PathCodec.string("category")
   val components = (live / "components").query[ComponentsLiveView.UrlParams]
   val portal     = (live / "portal").query[PortalLiveView.QueryParams]
 
-  val formLocation = live / "form"
-  val form         = formLocation.paramsDecodeOnly(FormQueryParams.decoder)
+  val form = (live / "form").params(FormQueryParams.codec)
 
   val issue3047A     = live / "issues" / "3047" / "a"
   val issue3047B     = live / "issues" / "3047" / "b"
   val issue3194Other = live / "issues" / "3194" / "other"
-  val issue3200      = (live / "issues" / "3200" / PathCodec.string("tab")).params
+  val issue3200      = live / "issues" / "3200" / PathCodec.string("tab")
   val issue3496B     = live / "issues" / "3496" / "b"
   val issue3529      = (live / "issues" / "3529").queryOptional[String]("param")
   val issue3530      = (live / "issues" / "3530").queryOptional[String]("q")

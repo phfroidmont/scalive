@@ -35,35 +35,35 @@ object EventlessApiSpec extends ZIOSpecDefault:
 
       assertTrue(errors.isEmpty)
     },
-    test("eventless LiveViews can be routed from request and context factories") {
+    test("eventless LiveViews can be routed from service and context factories") {
       val errors = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*
-        import zio.http.Request
+
+        trait Service
 
         object View extends LiveView.Eventless[String]:
           def mount(ctx: MountContext) = ZIO.succeed("mounted")
           override def view(model: Signal[String]) = div(model)
 
-        val requestRoute = live((_: Request) => View)
-        val contextRoute = live.from((_: Unit, _: Request, _: String) => View)
+        val serviceRoute = live.from(ZIO.service[Service].as(View))
+        val contextRoute = live.context((_: String) => View)
       """)
 
       assertTrue(errors.isEmpty)
     },
-    test("routed eventless LiveViews can be routed from request and context factories") {
+    test("routed eventless LiveViews can be routed from service and context factories") {
       val errors = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*
-        import zio.http.Request
+
+        trait Service
 
         object View
             extends LiveView.Routed.Eventless[String, Int]:
           def mount(params: Int, ctx: MountContext) = ZIO.succeed(s"mounted:$params")
           override def view(model: Signal[String]) = div(model)
 
-        val requestRoute = live.query[Int]("id")((_: Request) => View)
-        val contextRoute = live
-          .query[Int]("id")
-          .from((_: Unit, _: Request, _: String) => View)
+        val serviceRoute = live.query[Int]("id").from(ZIO.service[Service].as(View))
+        val contextRoute = live.query[Int]("id").context((_: String) => View)
       """)
 
       assertTrue(errors.isEmpty)
@@ -83,8 +83,8 @@ object EventlessApiSpec extends ZIOSpecDefault:
 
         val plain: LiveView[Nothing, String] = Plain
         val routed: LiveView.Routed[Nothing, String, Int] = Routed
-        val plainRoute = live(plain)
-        val routedRoute = live.query[Int]("id")(routed)
+        val plainRoute = live -> plain
+        val routedRoute = live.query[Int]("id") -> routed
       """)
 
       assertTrue(errors.isEmpty)
@@ -159,27 +159,27 @@ object EventlessApiSpec extends ZIOSpecDefault:
 
       assertTrue(errors.nonEmpty)
     },
-    test("ordinary and routed construction paths remain distinct") {
-      val routedAsOrdinaryErrors = scala.compiletime.testing.typeCheckErrors("""
+    test("routed LiveViews need the route's parameters; ordinary LiveViews fit any route") {
+      val routedMismatchErrors = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*
 
         object View extends LiveView.Routed.Eventless[Unit, Int]:
           def mount(params: Int, ctx: MountContext) = ZIO.succeed(())
           def view(model: Signal[Unit]) = div()
 
-        val route = live(View)
+        val application = Live.router(live -> View)
       """)
-      val ordinaryAsRoutedErrors = scala.compiletime.testing.typeCheckErrors("""
+      val ordinaryOnQueryErrors = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*
 
         object View extends LiveView.Eventless[Unit]:
           def mount(ctx: MountContext) = ZIO.succeed(())
           def view(model: Signal[Unit]) = div()
 
-        val route = live.query[Int]("id")(View)
+        val application = Live.router(live.query[Int]("id") -> View)
       """)
 
-      assertTrue(routedAsOrdinaryErrors.nonEmpty, ordinaryAsRoutedErrors.nonEmpty)
+      assertTrue(routedMismatchErrors.nonEmpty, ordinaryOnQueryErrors.isEmpty)
     }
   )
 end EventlessApiSpec

@@ -28,8 +28,9 @@ Add a route to `Routes.scala`:
 @:sourceRegion(documentation/fixtures/learn/src/quickstart/Routes.scala, learn-thermostat-route)
 
 In `Main.scala`, register the route with
-@:apiSymbol(def:scalive.LiveRouteBuilder.from)`from`@:@ instead of `->`. It
-receives the service and builds the LiveView:
+@:apiSymbol(def:scalive.LiveRouteSetup.from)`from`@:@ instead of `->`. It
+takes an effect that reads the service from the environment and builds the
+LiveView:
 
 @:sourceRegion(documentation/fixtures/learn/src/quickstart/Main.scala, learn-thermostat-registration)
 

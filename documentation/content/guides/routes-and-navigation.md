@@ -15,8 +15,7 @@ router and layout wiring assumed here.
 
 ## Name route declarations {#name-route-declarations}
 
-A route declaration is both an inbound decoder and, when every transformation is
-reversible, an outbound location builder. Keep important declarations as named
+A route declaration both decodes URLs and builds them. Keep declarations as named
 values so mounting, links, and navigation effects cannot drift onto different
 paths or query names:
 
@@ -26,25 +25,31 @@ Path codecs decode path segments. `query`, `queryOptional`, and schema-derived
 query codecs decode query values. A routed view receives the final value through
 @:apiSymbol(trait:scalive.LiveView.Routed)`LiveView.Routed`@:@ rather than reading raw request strings.
 
-Extending a route prefix with `/` preserves its installed modifiers, including
-layouts, the root layout, connected-turn guards, and connected-resource
-initializers. You do not have to finish the path before installing them. Prefix
-layouts retain their installation-time path parameters: the path codec's combiner
-projects those parameters from the extended destination rather than exposing the
-larger parameter tuple to the earlier layout.
+A route value only describes a URL. Layouts, mount aspects, connected-turn
+guards, and connected resources belong to the registration, so add them where
+the router or a session receives the route, in any order, before `->`, `from`, or
+`context`:
+
+@:sourceRegion(documentation/fixtures/guides/src/layouts/Application.scala, layouts-route-layout)
+
+The result registers the route but builds no links and takes no more path
+segments. To share setup between several routes, put them in a
+[named live session](live-sessions-and-mount-aspects.md#group-routes-in-a-named-session).
+
+A routed LiveView must take the route's parameters: `Routes.search` mounts a
+`LiveView.Routed` of `Option[String]`. An ordinary `LiveView` fits any route.
+The compiler reports a view whose parameters do not match the route.
 
 ## Map parameters into domain types {#map-parameters-into-domain-types}
 
-Use @:apiSymbol(def:scalive.LiveEncodableRouteParamsBuilder.mapParams)`mapParams`@:@ when the codec-facing shape is not the shape the
+Use @:apiSymbol(def:scalive.LiveRoute.mapParams)`mapParams`@:@ when the codec-facing shape is not the shape the
 application should use. Supply both directions:
 
 @:sourceRegion(documentation/fixtures/guides/src/routing/Search.scala, routing-map-params)
 
-The reverse function preserves outbound location construction. If a
-transformation is genuinely irreversible, use `mapParamsDecodeOnly`; the
-resulting builder remains mountable but cannot call `location`. That compile-time
-restriction prevents a route from claiming it can safely reconstruct information
-that it discarded.
+The reverse function builds links and patches from the domain type, so every
+route can encode the parameters it decodes. When decoding normalizes a value,
+such as trimming a search term, encode the normalized value.
 
 ## Mount and react to parameters {#mount-and-react-to-parameters}
 
@@ -73,19 +78,18 @@ location before issuing a patch.
 ## Give a LiveView its services {#give-a-liveview-its-services}
 
 `->` pairs a route with a LiveView that needs nothing from the application. When
-the LiveView needs a service, register the route with
-@:apiSymbol(def:scalive.LiveRouteBuilder.from)`from`@:@ and build the LiveView
-from the service:
+the LiveView needs services, register the route with
+@:apiSymbol(def:scalive.LiveRouteSetup.from)`from`@:@ and an effect that reads
+them from the environment and builds the LiveView:
 
 @:sourceRegion(documentation/fixtures/learn/src/quickstart/Main.scala, learn-thermostat-registration)
 
-The route adds the service type to the application's ZIO environment, so the
-server must provide a layer for it. Scalive calls the function for the
-disconnected render and for each connected mount. For a route with parameters,
-the three-argument form `from((params, request, service) => ...)` also receives
-the decoded path value and the request. Routes behind a mount aspect receive its
-typed context through `context` instead, which can also take one service, as in
-the [authentication guide](authentication.md#authenticate-both-mount-phases).
+The route adds the services the effect needs to the application's ZIO
+environment, so the server must provide a layer for each. Scalive runs the effect
+for the disconnected render and for each connected mount. Routes inside a named
+live session read its context through `context`, or through
+`from((user: CurrentUser) => ...)` when they also need services, as in the
+[authentication guide](authentication.md#authenticate-both-mount-phases).
 
 [Loading data and live updates](../learn/loading-data-and-live-updates.md#give-the-page-its-service)
 walks through a complete example, and the
@@ -121,7 +125,7 @@ They are additive, do not change context or the page model, and fail through
 
 ## Build locations from route declarations {#build-locations-from-route-declarations}
 
-Call @:apiSymbol(def:scalive.LiveEncodableRouteParamsBuilder.location)`location(params)`@:@ to create a
+Call @:apiSymbol(def:scalive.LiveRoute.location)`location(params)`@:@ to create a
 @:apiSymbol(class:scalive.LiveLocation)`LiveLocation`@:@:
 
 @:sourceRegion(documentation/fixtures/guides/src/routing/Search.scala, routing-location)
@@ -156,6 +160,14 @@ the current view:
 
 - @:apiSymbol(def:scalive.Navigation.pushPatch)`pushPatch`@:@ adds a browser-history entry;
 - @:apiSymbol(def:scalive.Navigation.replacePatch)`replacePatch`@:@ replaces the current entry.
+
+A routed LiveView patches by its own parameters, which its route encodes:
+
+@:sourceRegion(documentation/fixtures/guides/src/routing/Search.scala, routing-patch-params)
+
+A patch must stay on the current route. When the router would mount another
+LiveView for the patched URL, the patch stops the LiveView, as in Phoenix;
+navigate there instead.
 
 Navigation changes the routed LiveView:
 

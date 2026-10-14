@@ -28,7 +28,7 @@ The complete path has four steps:
 
 1. Define a service trait.
 2. Accept that service in the LiveView constructor.
-3. Build the route with `from`, which takes the service from the application
+3. Build the route with `from`, which reads the service from the application
    environment.
 4. Provide the service's layer where the server starts.
 
@@ -70,25 +70,31 @@ handles both. `loaded` and `failure` are `Signal[Option[...]]` values, and
 
 ## Register the route {#register-the-route}
 
-Build the route with @:apiSymbol(def:scalive.LiveRouteBuilder.from)`from`@:@:
+Build the route with @:apiSymbol(def:scalive.LiveRouteSetup.from)`from`@:@:
 
 @:sourceRegion(documentation/fixtures/guides/src/reports/Main.scala, services-route)
 
-`from` receives the service from the application environment and returns the
-LiveView. The route's type, `LiveRoute[Reports, Unit]`, records that it needs
-`Reports`. An application built from it is a `LiveApplication[Reports]`, and the
-server does not compile until something provides `Reports`.
+`from` takes an effect that reads the service from the application environment
+and builds the LiveView. The registration's type,
+`LiveRegistration[Reports]`, records that it needs `Reports`. An application
+built from it is a `LiveApplication[Reports]`, and the server does not compile
+until something provides `Reports`.
 
-Two variants cover other needs:
+When the LiveView needs several services, read them all in the effect. ZIO infers
+the combined requirement, here `LiveRegistration[Reports & Mailer]`:
 
-- `from((path, request, reports) => ...)` also receives the decoded path values
-  and the request.
-- `context((ctx, reports) => ...)` also receives the context produced by a live
-  session's mount aspect, such as the signed-in user. See
-  [Authentication and sessions](authentication.md#provide-one-shared-authentication-service).
+```scala fragment
+Routes.exports.from(
+  for
+    reports <- ZIO.service[Reports]
+    mailer  <- ZIO.service[Mailer]
+  yield ExportsLiveView(reports, mailer)
+)
+```
 
-`from` takes one service type. When a LiveView needs several services, group
-them in one service that a layer builds from the others, and pass that service.
+Inside a named live session, `from((user: CurrentUser) => ...)` also receives the
+context produced by the session's mount aspects, such as the signed-in user. See
+[Authentication and sessions](authentication.md#provide-one-shared-authentication-service).
 
 ## Provide services at startup {#provide-services-at-startup}
 
@@ -118,7 +124,7 @@ diagnose it.
 ## Understand service and LiveView lifetimes {#understand-service-and-liveview-lifetimes}
 
 The layer given to `provide` is built once and shared by every route that needs
-the service. Scalive calls the route's `from` function for the disconnected
+the service. Scalive runs the route's `from` effect for the disconnected
 render and again for each connected mount. Every LiveView lifecycle therefore
 gets its own LiveView instance, model, and lifecycle resources, while all of
 them share the same service.

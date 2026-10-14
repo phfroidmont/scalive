@@ -152,7 +152,7 @@ object ReportsExample:
 
   val route =
     (live / "examples" / "service-injection" / "lab")
-      .from((reports: Reports) => ReportsExample(reports))
+      .from(ZIO.serviceWith[Reports](ReportsExample(_)))
 
   enum Model:
     case Loaded(reports: Vector[Report], selected: Report)

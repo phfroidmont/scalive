@@ -173,8 +173,8 @@ start.
 
 To run one policy check before all connected application work, rather than at
 one hook stage, declare
-@:apiSymbol(def:scalive.LiveRouteMountAspectBuilder.guardConnectedTurns)`guardConnectedTurns`@:@
-on a route builder, after the mount aspects that produce its context. Succeed to
+@:apiSymbol(def:scalive.LiveRouteSetup.WithContext.guardConnectedTurns)`guardConnectedTurns`@:@
+on a route registration, after the mount aspects that produce its context. Succeed to
 continue; fail through the typed control channel to stop the turn:
 
 @:sourceRegion(documentation/fixtures/guides/src/hooks/AccountRoutes.scala, hooks-route-guard)
@@ -183,7 +183,7 @@ continue; fail through the typed control channel to stop the turn:
 `isActive` reads the current account state on every turn.
 
 A named session declares
-@:apiSymbol(def:scalive.LiveSessionBuilder.Admitted.guardConnectedTurns)`guardConnectedTurns`@:@
+@:apiSymbol(def:scalive.LiveSessionBuilder.guardConnectedTurns)`guardConnectedTurns`@:@
 after admission. The authentication lab revalidates the signed-in user this way:
 
 @:sourceRegion(documentation/site/src/scalive/docs/auth/AuthLab.scala, authentication-protected-session)

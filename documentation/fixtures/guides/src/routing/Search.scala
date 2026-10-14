@@ -35,6 +35,34 @@ object SearchLiveView:
   private def search(params: Option[String]): Model =
     Model(params.map(_.trim).getOrElse(""))
 
+// docs:start routing-patch-params
+final class SearchBoxLiveView
+    extends LiveView.Routed[SearchBoxLiveView.Msg, Option[String], Option[String]]:
+  import SearchBoxLiveView.*
+
+  def mount(params: Option[String], ctx: MountContext) = ZIO.succeed(params)
+
+  override def handleParams(
+    model: Option[String],
+    params: Option[String],
+    url: URL,
+    ctx: ParamsContext
+  ) = ZIO.succeed(params)
+
+  def handleMessage(model: Option[String], ctx: MessageContext) =
+    case Msg.Search(query) => ctx.nav.pushPatch(Some(query)).as(model)
+  // docs:end routing-patch-params
+
+  def view(model: Signal[Option[String]]): HtmlElement[Msg] =
+    mainTag(
+      button(on.click(Msg.Search("LiveView")), "Search LiveView"),
+      p("Results for ", model.map(_.getOrElse("")))
+    )
+
+object SearchBoxLiveView:
+  enum Msg:
+    case Search(query: String)
+
 object TypedRoutes:
   // docs:start routing-map-params
   final case class SearchTerm private (value: String)

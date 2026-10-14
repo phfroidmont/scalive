@@ -13,7 +13,7 @@ object Application:
         Routes.home     -> HomeLiveView(),
         Routes.projects -> ProjectsLiveView(),
         // docs:start layouts-route-layout
-        Routes.project.withLayout(ProjectLayout()).params -> ProjectLiveView()
+        Routes.project.withLayout(ProjectLayout()) -> ProjectLiveView()
         // docs:end layouts-route-layout
       )
   // docs:end layouts-application

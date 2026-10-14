@@ -39,8 +39,8 @@ object Main extends ZIOAppDefault:
                         Routes.signup -> SignupLiveView(),
                         // docs:end learn-signup-registration
                         // docs:start learn-thermostat-registration
-                        Routes.thermostat.from((thermostat: Thermostat) =>
-                          ThermostatLiveView(thermostat)
+                        Routes.thermostat.from(
+                          ZIO.serviceWith[Thermostat](ThermostatLiveView(_))
                         ),
                         // docs:end learn-thermostat-registration
                         // docs:start learn-search-registration

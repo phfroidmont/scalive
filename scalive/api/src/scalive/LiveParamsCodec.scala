@@ -5,17 +5,18 @@ import zio.http.*
 import zio.http.codec.{Combiner, HttpCodec, QueryCodec}
 import zio.schema.Schema
 
-/** Decodes a route's path values and complete URL into parameters for a routed LiveView.
+/** Bidirectionally maps route path/query values and typed routed parameters.
   *
-  * A decoder is intentionally one-way. Routes built with it can consume URLs, but cannot construct
-  * a [[LiveLocation]] from `Params`; use [[LiveParamsCodec]] when both operations are required.
+  * Decoding supplies `Params` to [[LiveView.Routed LiveView.Routed]]. Encoding produces the path
+  * and query values used to construct a checked [[LiveLocation]], so codecs should obey a
+  * round-trip law for every parameter value accepted by the application.
   *
   * @tparam PathParams
-  *   the values decoded by the route's path codec
+  *   the values decoded and encoded by the route's path codec
   * @tparam Params
-  *   the parameters supplied to [[LiveView.Routed LiveView.Routed]]
+  *   the application-facing routed parameter type
   */
-trait LiveParamsDecoder[PathParams, Params]:
+trait LiveParamsCodec[PathParams, Params]:
   /** Decodes parameters for the current URL.
     *
     * @param pathParams
@@ -30,39 +31,6 @@ trait LiveParamsDecoder[PathParams, Params]:
     url: URL
   ): IO[LiveParamsCodec.DecodeError, Params]
 
-  /** Maps successfully decoded parameters without defining an inverse mapping.
-    *
-    * The result remains decode-only even when this decoder was originally a [[LiveParamsCodec]].
-    * This is useful for validation or normalization that cannot be reversed, and deliberately
-    * removes typed location construction from the resulting route builder.
-    *
-    * @param decodeParams
-    *   transforms the decoded value; exceptions thrown by this function are defects, not
-    *   [[LiveParamsCodec.DecodeError]] values
-    * @return
-    *   a decoder for the transformed parameter type
-    */
-  def mapDecodeOnly[Params2](
-    decodeParams: Params => Params2
-  ): LiveParamsDecoder[PathParams, Params2] =
-    val self = this
-    new LiveParamsDecoder[PathParams, Params2]:
-      def decode(pathParams: PathParams, url: URL) =
-        self.decode(pathParams, url).map(decodeParams)
-end LiveParamsDecoder
-
-/** Bidirectionally maps route path/query values and typed routed parameters.
-  *
-  * Decoding supplies `Params` to [[LiveView.Routed LiveView.Routed]]. Encoding produces the path
-  * and query values used to construct a checked [[LiveLocation]], so codecs should obey a
-  * round-trip law for every parameter value accepted by the application.
-  *
-  * @tparam PathParams
-  *   the values decoded and encoded by the route's path codec
-  * @tparam Params
-  *   the application-facing routed parameter type
-  */
-trait LiveParamsCodec[PathParams, Params] extends LiveParamsDecoder[PathParams, Params]:
   /** Encodes typed parameters into the route's path and query portions.
     *
     * @param params
@@ -94,26 +62,6 @@ trait LiveParamsCodec[PathParams, Params] extends LiveParamsDecoder[PathParams, 
         self.decode(pathParams, url).map(decodeParams)
       def encode(params: Params2) = self.encode(encodeParams(params))
 end LiveParamsCodec
-
-/** Factories for decode-only routed parameters. */
-object LiveParamsDecoder:
-  /** Creates a decoder from an application function.
-    *
-    * Returning a string is shorthand for `LiveParamsCodec.DecodeError(message)`. The function is
-    * expected to be total: an exception thrown while invoking it is not converted into a decode
-    * error.
-    *
-    * @param decodeFn
-    *   decodes the path values and complete URL
-    * @return
-    *   a decoder that normalizes string failures
-    */
-  def custom[PathParams, Params](
-    decodeFn: (PathParams, URL) => Either[LiveParamsCodec.DecodeError | String, Params]
-  ): LiveParamsDecoder[PathParams, Params] =
-    new LiveParamsDecoder[PathParams, Params]:
-      def decode(pathParams: PathParams, url: URL) =
-        ZIO.fromEither(decodeFn(pathParams, url).left.map(LiveParamsCodec.normalizeDecodeError))
 
 /** Standard codecs, encoded values, and errors for typed Live route parameters. */
 object LiveParamsCodec:

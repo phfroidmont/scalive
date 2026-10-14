@@ -59,7 +59,7 @@ object DisconnectedRenderSpec extends ZIOSpecDefault:
             )
           )
 
-      val application = scalive.Live.router(scalive.live.queryOptional[String]("notice")(view))
+      val application = scalive.Live.router(scalive.live.queryOptional[String]("notice") -> view)
       val routes      = ZioHttp.routes(application, config)
 
       for
@@ -97,7 +97,7 @@ object DisconnectedRenderSpec extends ZIOSpecDefault:
             form(action := "/second")
           )
 
-      val routes  = ZioHttp.routes(scalive.Live.router(scalive.live(view)), config)
+      val routes  = ZioHttp.routes(scalive.Live.router(scalive.live -> view), config)
       val all     = FormQuery()
       val missing = FormQuery(action = Some("/missing"))
 
@@ -335,7 +335,7 @@ object DisconnectedRenderSpec extends ZIOSpecDefault:
             model.stream((domId, item) => li(idAttr := domId, item.map(_.id.toString)))
           )
 
-      val routes = ZioHttp.routes(scalive.Live.router(scalive.live(view)), config)
+      val routes = ZioHttp.routes(scalive.Live.router(scalive.live -> view), config)
 
       for
         page     <- DisconnectedRender.run(routes, Request.get(URL.root))

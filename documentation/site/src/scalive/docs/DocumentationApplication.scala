@@ -136,10 +136,9 @@ final private[docs] class DocumentationApplication private (
     val router = Live.router
       .withRootLayout(DocumentationRootLayout(this, assets, config.publicOrigin))
       .withLayout(DocumentationLayout(this, assets, config.publicOrigin))
+    type Environment = Reports & AuthService & LiveConnections[PublicSessionId]
     val supplementalRoutes = Vector[
-      LiveRouteFragment[Reports & AuthService & LiveConnections[PublicSessionId]] {
-        type Input = Any
-      }
+      LiveRegistration[Environment] { type Input = Any } | LiveSession[Environment]
     ](
       examplesRoute,
       searchRoute,

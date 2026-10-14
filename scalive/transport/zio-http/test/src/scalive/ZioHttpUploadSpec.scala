@@ -83,11 +83,11 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
     scalive.Live
       .session("authenticated")
       .withAdmission(authentication)(_.sessionId)(
-        scalive.live.context((user: TestCurrentUser, state: TestAuthState) =>
-          new AdmissionView(user, state)
+        scalive.live.from((user: TestCurrentUser) =>
+          ZIO.serviceWith[TestAuthState](new AdmissionView(user, _))
         ),
-        (scalive.live / "next").context((user: TestCurrentUser, state: TestAuthState) =>
-          new AdmissionView(user, state)
+        (scalive.live / "next").from((user: TestCurrentUser) =>
+          ZIO.serviceWith[TestAuthState](new AdmissionView(user, _))
         )
       )
   )
@@ -105,7 +105,7 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
     scalive.Live
       .session("failing-authenticated")
       .withAdmission(authentication)(_.sessionId)
-      .withConnectedResources(initialize)(scalive.live(FailingAdmissionView))
+      .withConnectedResources(initialize)(scalive.live -> FailingAdmissionView)
   )
 
   private final case class WriterState(name: String, bytes: Chunk[Byte])
@@ -256,7 +256,7 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
                  yield hostedUpload -> externalUpload
                def view(model: Signal[(LiveUpload[Chunk[Byte]], LiveUpload[String])]) =
                  mainTag(componentInstance.render(()))
-      application = scalive.Live.router(scalive.live(view))
+      application = scalive.Live.router(scalive.live -> view)
     yield Fixture(
       application,
       state,
@@ -505,7 +505,7 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
         def mount(ctx: MountContext) = ZIO.unit
         def view(model: Signal[Unit]) = div("observed")
 
-      val application = scalive.Live.router(scalive.live(View))
+      val application = scalive.Live.router(scalive.live -> View)
       for
         events <- Ref.make(Vector.empty[LifecycleEvent])
         observer = LifecycleObserver.fromFunction(event => events.update(_ :+ event))
@@ -570,7 +570,7 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
 
         def view(model: Signal[Unit]): HtmlElement[Nothing] = div("redirecting")
 
-      val application = scalive.Live.router(scalive.live(RedirectingView))
+      val application = scalive.Live.router(scalive.live -> RedirectingView)
 
       withServer(application) { port =>
         for
@@ -618,7 +618,7 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
       val application = scalive.Live.router(
         scalive.live.withConnectedResources((_, _) =>
           ZIO.succeed(initializers.incrementAndGet()).unit
-        ) {
+        ) -> {
           factories.incrementAndGet()
           View
         }
@@ -971,7 +971,7 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
                           .withConnectedResources((_, resources) =>
                             resources.acquireRelease(ZIO.unit)(_ => released.update(_ + 1)) *>
                               entered.succeed(()).unit *> ZIO.never
-                          )(scalive.live(view))
+                          )(scalive.live -> view)
                       )
         result <- withServer(application) { port =>
                     for
@@ -1043,7 +1043,7 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
               .withAdmission(phaseContext)(identity)
               .withConnectedResources(initialize)
               .withRootLayout(rootLayout)(
-                scalive.live.withMountAspect(routeAspect).withConnectedResources(initialize)(View)
+                scalive.live.withMountAspect(routeAspect).withConnectedResources(initialize) -> View
               )
           )
 
@@ -1652,7 +1652,7 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
         def handleMessage(model: Boolean, ctx: MessageContext): Nothing => Task[Boolean] = identity
         def view(model: Signal[Boolean]) = mainTag(model.when(div(instance.render(()))))
 
-      withServer(scalive.Live.router(scalive.live(view))) { port =>
+      withServer(scalive.Live.router(scalive.live -> view)) { port =>
         for
           page   <- bootstrap(port)
           socket <- connect(port, page)

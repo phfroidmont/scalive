@@ -53,22 +53,22 @@ object E2EApp extends ZIOAppDefault:
       live / "colocated"                                  -> ColocatedLiveView(),
       (live / "upload").query[UploadLiveView.QueryParams] -> UploadLiveView(),
       E2ERoutes.form                                      -> FormLiveView(),
-      (live / "form" / "nested").paramsDecodeOnly(FormQueryParams.decoder) ->
+      (live / "form" / "nested").params(FormQueryParams.codec) ->
         NestedFormLiveView(),
-      live / "form" / "stream" -> FormStreamLiveView(),
-      (live / "form" / "dynamic-inputs").paramsDecodeOnly(FormQueryParams.decoder) ->
+      live / "form" / "stream"                                         -> FormStreamLiveView(),
+      (live / "form" / "dynamic-inputs").params(FormQueryParams.codec) ->
         FormDynamicInputsLiveView(),
-      live / "form" / "feedback"       -> FormFeedbackLiveView(),
-      live / "form" / "blur-feedback"  -> BlurFeedbackLiveView(),
-      live / "form" / "typed-feedback" -> TypedFormFeedbackLiveView(),
-      live / "form-unsaved"            -> FormUnsavedLiveView(),
-      live / "form-unsaved" / "target" -> FormUnsavedTargetLiveView(),
-      E2ERoutes.portal                 -> PortalLiveView(),
-      (live / "errors").paramsDecodeOnly(ErrorLiveView.QueryParams.decoder) -> ErrorLiveView(),
-      live / "issues" / "2965"                                              -> Issue2965LiveView(),
-      live / "issues" / "2787"                                              -> Issue2787LiveView(),
-      live / "issues" / "2835"                                              -> Issue2835LiveView(),
-      live / "issues" / "3040"                                              -> Issue3040LiveView(),
+      live / "form" / "feedback"                                -> FormFeedbackLiveView(),
+      live / "form" / "blur-feedback"                           -> BlurFeedbackLiveView(),
+      live / "form" / "typed-feedback"                          -> TypedFormFeedbackLiveView(),
+      live / "form-unsaved"                                     -> FormUnsavedLiveView(),
+      live / "form-unsaved" / "target"                          -> FormUnsavedTargetLiveView(),
+      E2ERoutes.portal                                          -> PortalLiveView(),
+      (live / "errors").params(ErrorLiveView.QueryParams.codec) -> ErrorLiveView(),
+      live / "issues" / "2965"                                  -> Issue2965LiveView(),
+      live / "issues" / "2787"                                  -> Issue2787LiveView(),
+      live / "issues" / "2835"                                  -> Issue2835LiveView(),
+      live / "issues" / "3040"                                  -> Issue3040LiveView(),
       Live
         .session("issue-3047").withLayout(Issue3047LiveView.Layout)(
           E2ERoutes.issue3047A -> Issue3047LiveView(pageName = "A"),
@@ -106,19 +106,19 @@ object E2EApp extends ZIOAppDefault:
       E2ERoutes.issue3686A              -> Issue3686LiveView("A"),
       E2ERoutes.issue3686B              -> Issue3686LiveView("B"),
       E2ERoutes.issue3686C              -> Issue3686LiveView("C"),
-      E2ERoutes.issue3709.params
-        .mapParamsDecodeOnly(_ => Option.empty[String]) ->
+      E2ERoutes.issue3709.mapParams(_ => Option.empty[String])(_ => ()) ->
         Issue3709LiveView(),
-      E2ERoutes.issue3709Id.params
-        .mapParamsDecodeOnly(id => Option(id.toString)) -> Issue3709LiveView(),
-      live / "issues" / "3719"                          -> Issue3719LiveView(),
-      live / "issues" / "3814"                          -> Issue3814LiveView(),
-      live / "issues" / "3819"                          -> Issue3819LiveView(),
-      live / "issues" / "3919"                          -> Issue3919LiveView(),
-      live / "issues" / "3931"                          -> Issue3931LiveView(),
-      live / "issues" / "3941"                          -> Issue3941LiveView(),
-      live / "issues" / "3953"                          -> Issue3953LiveView(),
-      live / "issues" / "3979"                          -> Issue3979LiveView(),
+      E2ERoutes.issue3709Id.mapParams(id => Option(id.toString))(
+        _.flatMap(_.toIntOption).getOrElse(0)
+      )                        -> Issue3709LiveView(),
+      live / "issues" / "3719" -> Issue3719LiveView(),
+      live / "issues" / "3814" -> Issue3814LiveView(),
+      live / "issues" / "3819" -> Issue3819LiveView(),
+      live / "issues" / "3919" -> Issue3919LiveView(),
+      live / "issues" / "3931" -> Issue3931LiveView(),
+      live / "issues" / "3941" -> Issue3941LiveView(),
+      live / "issues" / "3953" -> Issue3953LiveView(),
+      live / "issues" / "3979" -> Issue3979LiveView(),
       (live / "issues" / "4027")
         .queryOptional[String]("case")
         .mapParams(caseName => Issue4027LiveView.QueryParams(caseName.getOrElse("first")))(params =>

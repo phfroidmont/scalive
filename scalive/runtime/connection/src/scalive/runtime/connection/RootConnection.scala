@@ -1380,6 +1380,14 @@ private[scalive] object RootConnection:
                     ),
                   handleParams = (state, destination) =>
                     for
+                      _ <- ZIO
+                             .fail(
+                               IllegalArgumentException(
+                                 s"cannot patch to ${destination.encode}: it does not point to " +
+                                   "this LiveView's route; navigate there instead"
+                               )
+                             )
+                             .unless(lifecycle.acceptsPatch(destination))
                       journal <- rootJournal(rootOwner, state, TurnDraft(state))
                       context = RootParamsContext[Msg, Model](
                                   metadata,

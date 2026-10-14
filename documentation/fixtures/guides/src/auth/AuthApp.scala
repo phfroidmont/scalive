@@ -11,10 +11,10 @@ object AuthApp:
     Live
       .session("authenticated")
       .withAdmission(AuthMountAspect.authenticated)(_.publicSessionId)(
-        Pages.profile.context((auth: ConnectedAuth, accounts: Accounts) =>
-          ProfileLiveView(auth.currentUser, accounts)
+        Pages.profile.from((auth: ConnectedAuth) =>
+          ZIO.serviceWith[Accounts](ProfileLiveView(auth.currentUser, _))
         ),
-        Pages.status(StatusLiveView())
+        Pages.status -> StatusLiveView()
       )
   // docs:end auth-protected-routes
 

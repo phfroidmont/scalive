@@ -66,7 +66,10 @@ class PortalLiveView
           "Open second modal"
         ),
         button(on.click(Msg.Tick), "Tick"),
-        button(on.click(JS.pushNavigate(E2ERoutes.formLocation.location)), "Live navigate"),
+        button(
+          on.click(JS.pushNavigate(E2ERoutes.form.location(FormQueryParams()))),
+          "Live navigate"
+        ),
         liveView("nested", NestedLive()),
         tooltip("tooltip-example-portal", "Hover me", portal = true, count),
         tooltip("tooltip-example-no-portal", "Hover me (no portal)", portal = false, count),

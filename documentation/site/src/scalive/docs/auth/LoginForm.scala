@@ -25,4 +25,4 @@ object LoginForm:
       _.length <= PasswordMaxLength
     )
 
-  val Definition = Root.product[LoginCredentials]((Email, Password))
+  val Definition = Root.product[LoginCredentials]((email = Email, password = Password))

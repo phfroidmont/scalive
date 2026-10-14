@@ -8,15 +8,15 @@ object FormFeedbackSpec extends ZIOSpecDefault:
   private final case class Profile(name: String)
   private val Root       = FormRoot("profile")
   private val Name       = Root.text("name").required(FieldIssue("Name is required"))
-  private val Definition = Root.product[Profile](Name)
+  private val Definition = Root.product[Profile]((name = Name))
 
   private final case class Item(name: String)
   private final case class Basket(items: Vector[Item])
   private val BasketRoot = FormRoot("basket")
   private val Items      = BasketRoot.rows("items")
   private val ItemName   = Items.text("name").required(FieldIssue("Item name is required"))
-  private val ItemRows   = Items.product[Item](ItemName)
-  private val BasketDefinition = BasketRoot.product[Basket](ItemRows)
+  private val ItemRows   = Items.product[Item]((name = ItemName))
+  private val BasketDefinition = BasketRoot.product[Basket]((items = ItemRows))
   private val RowA = FormRowKey.from[Items.type]("row_a").toOption.get
   private val RowB = FormRowKey.from[Items.type]("row_b").toOption.get
 
@@ -87,7 +87,7 @@ object FormFeedbackSpec extends ZIOSpecDefault:
       val root       = FormRoot("account")
       val name       = root.text("name")
       val email      = root.text("email")
-      val definition = root.product[Account]((name, email))
+      val definition = root.product[Account]((name = name, email = email))
       val initial = definition
         .initial(name.initial("Ada"), email.initial("ada@example.com"))
         .withFeedback(FormFeedback.AfterBlur)
@@ -201,8 +201,8 @@ object FormFeedbackSpec extends ZIOSpecDefault:
       val OtherRoot       = FormRoot("basket")
       val OtherItems      = OtherRoot.rows("items")
       val OtherItemName   = OtherItems.text("name")
-      val OtherItemRows   = OtherItems.product[Item](OtherItemName)
-      val OtherDefinition = OtherRoot.product[Basket](OtherItemRows)
+      val OtherItemRows   = OtherItems.product[Item]((name = OtherItemName))
+      val OtherDefinition = OtherRoot.product[Basket]((items = OtherItemRows))
       val otherKey        = FormRowKey.from[OtherItems.type]("row_a").toOption.get
       val foreign = OtherDefinition
         .initial(OtherItemRows.initial(OtherItemRows.row(otherKey)(OtherItemName.initial("other"))))
@@ -261,7 +261,7 @@ object FormFeedbackSpec extends ZIOSpecDefault:
     test("rejects foreign schemas and preserves structural errors on feedback-only transitions") {
       val OtherRoot       = FormRoot("profile")
       val OtherName       = OtherRoot.text("name")
-      val OtherDefinition = OtherRoot.product[Profile](OtherName)
+      val OtherDefinition = OtherRoot.product[Profile]((name = OtherName))
       val current         = Definition.initial(Name.initial("valid"))
       val foreignEvent = OtherDefinition.event(
         FormData(Vector(OtherName.name -> "other")),

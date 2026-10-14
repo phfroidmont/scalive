@@ -410,6 +410,18 @@
       ]
     },
     {
+      "id" : "class:scalive.FormProduct",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.FormProduct",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.FormProduct:1cb99bc402547e53",
+          "signature" : "class FormProduct[Owner, Domain]"
+        }
+      ]
+    },
+    {
       "id" : "class:scalive.FormRoot",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.FormRoot",
@@ -430,6 +442,18 @@
         {
           "id" : "class:scalive.FormRowInitial:c686f512601d4e69",
           "signature" : "class FormRowInitial[Group]"
+        }
+      ]
+    },
+    {
+      "id" : "class:scalive.FormRowProduct",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.FormRowProduct",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.FormRowProduct:85ed46008a465e2e",
+          "signature" : "class FormRowProduct[Owner, Group, Row]"
         }
       ]
     },
@@ -4646,6 +4670,18 @@
       ]
     },
     {
+      "id" : "def:scalive.FormProduct.apply",
+      "ownerId" : "class:scalive.FormProduct",
+      "qualifiedName" : "scalive.FormProduct.apply",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FormProduct.apply:7fa2f66068f813ec",
+          "signature" : "def apply[Parts <: NamedTuple.AnyNamedTuple, Labels <: Tuple, Types <: Tuple](parts: Parts)(using mirror: ((deriving.Mirror.ProductOf[Domain] { type MirroredElemLabels = Labels }) { type MirroredElemTypes = Types })): FormDefinition[Owner, Domain]"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.FormRoot.apply",
       "ownerId" : "object:scalive.FormRoot",
       "qualifiedName" : "scalive.FormRoot.apply",
@@ -4688,12 +4724,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.FormRoot.product:862b7e382f439460",
-          "signature" : "def product[Domain](part: FormPart[type, ?])(using mirror: deriving.Mirror.ProductOf[Domain]): FormDefinition[type, Domain]"
-        },
-        {
-          "id" : "def:scalive.FormRoot.product:f35a69560235bd71",
-          "signature" : "def product[Domain](parts: Tuple)(using mirror: deriving.Mirror.ProductOf[Domain]): FormDefinition[type, Domain]"
+          "id" : "def:scalive.FormRoot.product:939083a8e29dbce9",
+          "signature" : "def product[Domain]: FormProduct[type, Domain]"
         }
       ]
     },
@@ -4766,6 +4798,18 @@
         {
           "id" : "def:scalive.FormRowKey.random:a6a05b15f214352d",
           "signature" : "def random[Group]: zio.package.UIO[FormRowKey[Group]]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.FormRowProduct.apply",
+      "ownerId" : "class:scalive.FormRowProduct",
+      "qualifiedName" : "scalive.FormRowProduct.apply",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FormRowProduct.apply:1143fadbf78920aa",
+          "signature" : "def apply[Parts <: NamedTuple.AnyNamedTuple, Labels <: Tuple, Types <: Tuple](parts: Parts)(using mirror: ((deriving.Mirror.ProductOf[Row] { type MirroredElemLabels = Labels }) { type MirroredElemTypes = Types })): RepeatedRows[Owner, Group, Row]"
         }
       ]
     },
@@ -8712,12 +8756,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.RepeatedGroup.product:1e283f1879095bd0",
-          "signature" : "def product[Row](parts: Tuple)(using mirror: deriving.Mirror.ProductOf[Row]): RepeatedRows[Owner, type, Row]"
-        },
-        {
-          "id" : "def:scalive.RepeatedGroup.product:359b795ff8cf8747",
-          "signature" : "def product[Row](part: FormField[type, ?, ?])(using mirror: deriving.Mirror.ProductOf[Row]): RepeatedRows[Owner, type, Row]"
+          "id" : "def:scalive.RepeatedGroup.product:76e4e9650e8bb02c",
+          "signature" : "def product[Row]: FormRowProduct[Owner, type, Row]"
         }
       ]
     },
@@ -13798,6 +13838,30 @@
       ]
     },
     {
+      "id" : "given:scalive.FormProductNames.matching",
+      "ownerId" : "object:scalive.FormProductNames",
+      "qualifiedName" : "scalive.FormProductNames.matching",
+      "kind" : "given",
+      "signatures" : [
+        {
+          "id" : "given:scalive.FormProductNames.matching:0b6ba753723c3563",
+          "signature" : "given matching[Domain, Labels]: FormProductNames[Domain, Labels, Labels]"
+        }
+      ]
+    },
+    {
+      "id" : "given:scalive.FormProductValues.matching",
+      "ownerId" : "object:scalive.FormProductValues",
+      "qualifiedName" : "scalive.FormProductValues.matching",
+      "kind" : "given",
+      "signatures" : [
+        {
+          "id" : "given:scalive.FormProductValues.matching:75fac8887501892c",
+          "signature" : "given matching[Domain, Types]: FormProductValues[Domain, Types, Types]"
+        }
+      ]
+    },
+    {
       "id" : "given:scalive.JSCommands.JSCommand.given_JsonEncoder_JSCommand",
       "ownerId" : "object:scalive.JSCommands.JSCommand",
       "qualifiedName" : "scalive.JSCommands.JSCommand.given_JsonEncoder_JSCommand",
@@ -17590,6 +17654,30 @@
       ]
     },
     {
+      "id" : "object:scalive.FormProductNames",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.FormProductNames",
+      "kind" : "object",
+      "signatures" : [
+        {
+          "id" : "object:scalive.FormProductNames:ca9b5974b6e9ef0e",
+          "signature" : "object FormProductNames"
+        }
+      ]
+    },
+    {
+      "id" : "object:scalive.FormProductValues",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.FormProductValues",
+      "kind" : "object",
+      "signatures" : [
+        {
+          "id" : "object:scalive.FormProductValues:e8acaee0b5f621c6",
+          "signature" : "object FormProductValues"
+        }
+      ]
+    },
+    {
       "id" : "object:scalive.FormRevision",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.FormRevision",
@@ -18977,6 +19065,30 @@
         {
           "id" : "trait:scalive.FormPathSegment:3ff3c6b7b148aa7a",
           "signature" : "trait FormPathSegment"
+        }
+      ]
+    },
+    {
+      "id" : "trait:scalive.FormProductNames",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.FormProductNames",
+      "kind" : "trait",
+      "signatures" : [
+        {
+          "id" : "trait:scalive.FormProductNames:00cec9068e2183d3",
+          "signature" : "trait FormProductNames[Domain, Names, Labels]"
+        }
+      ]
+    },
+    {
+      "id" : "trait:scalive.FormProductValues",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.FormProductValues",
+      "kind" : "trait",
+      "signatures" : [
+        {
+          "id" : "trait:scalive.FormProductValues:4239fec5d2b4a0f3",
+          "signature" : "trait FormProductValues[Domain, Values, Types]"
         }
       ]
     },

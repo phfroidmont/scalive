@@ -26,7 +26,7 @@ reordered.
 ## How it works {#how-it-works}
 
 - `Root.rows("contacts")` declares the repeated group, and
-  `Group.product[Contact]((Name, Email))` declares one row.
+  `Group.product[Contact]((name = Name, email = Email))` declares one row.
 - `Contacts.key(number)` builds each row key. The application chooses keys, so
   a row keeps its identity, and its errors, wherever it moves.
 - `form.added`, `form.removed`, and `form.movedBefore` change the rows of the

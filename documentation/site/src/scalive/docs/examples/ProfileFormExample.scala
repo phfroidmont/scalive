@@ -137,7 +137,7 @@ object ProfileFormExample:
         _.length <= BiographyMaxLength
       )
 
-    val Definition = Root.product[Profile]((Name, Email, Biography))
+    val Definition = Root.product[Profile]((name = Name, email = Email, biography = Biography))
 
     // docs:start profile-form-submitter
     enum Intent(val wireValue: String):

@@ -10,7 +10,7 @@ final case class Note(value: String)
 object NoteForm:
   val Root       = FormRoot("note")
   val NoteText   = Root.text("value")
-  val Definition = Root.product[Note](NoteText)
+  val Definition = Root.product[Note]((value = NoteText))
 // docs:end guards-note-form
 
 trait Notes:

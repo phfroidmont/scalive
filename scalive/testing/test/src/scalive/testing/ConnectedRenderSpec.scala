@@ -24,7 +24,7 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
     final case class Profile(name: String)
     val Root       = FormRoot("typed_profile")
     val Name       = Root.text("name")
-    val Definition = Root.product[Profile](Name)
+    val Definition = Root.product[Profile]((name = Name))
 
     enum Intent(val wireValue: String):
       case Preview extends Intent("preview")

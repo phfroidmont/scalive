@@ -1,5 +1,7 @@
 package scalive
 
+import scala.NamedTuple.AnyNamedTuple
+import scala.annotation.implicitNotFound
 import scala.compiletime.summonInline
 import scala.deriving.Mirror
 
@@ -10,6 +12,32 @@ trait FormPart[Owner, Value]
 type FormPartValues[Owner, Parts <: Tuple] <: Tuple = Parts match
   case EmptyTuple                          => EmptyTuple
   case FormPart[Owner, value] *: remaining => value *: FormPartValues[Owner, remaining]
+
+/** Evidence that the names of a form product's parts are the fields of `Domain`, in order. */
+@implicitNotFound(
+  "The part names ${Names} do not match the fields of ${Domain}, ${Labels}. " +
+    "Name each part after the field it fills, in the order of the fields."
+)
+sealed trait FormProductNames[Domain, Names, Labels]
+
+/** The only [[FormProductNames]] evidence: the names equal the field labels. */
+object FormProductNames:
+  /** Proves that the part names are exactly the field labels. */
+  given matching[Domain, Labels]: FormProductNames[Domain, Labels, Labels] =
+    new FormProductNames[Domain, Labels, Labels] {}
+
+/** Evidence that the values of a form product's parts are the field types of `Domain`. */
+@implicitNotFound(
+  "The part values ${Values} do not match the field types of ${Domain}, ${Types}. " +
+    "Each part must belong to this form and produce its field's type."
+)
+sealed trait FormProductValues[Domain, Values, Types]
+
+/** The only [[FormProductValues]] evidence: the values equal the field types. */
+object FormProductValues:
+  /** Proves that the part values are exactly the field types. */
+  given matching[Domain, Types]: FormProductValues[Domain, Types, Types] =
+    new FormProductValues[Domain, Types, Types] {}
 
 private[scalive] enum FormFieldScope:
   case Static(root: FormRoot, absolutePath: FormPath)
@@ -174,35 +202,12 @@ final class FormRoot private (val path: FormPath):
 
   /** Completes the form's definition, decoding its fields into the case class `Domain`.
     *
-    * Pass the fields in the order of `Domain`'s fields, as in
-    * `Root.product[Profile]((Name, Email))`. The compiler checks that their value types match.
+    * Name each part after the field it fills, in the order of `Domain`'s fields, as in
+    * `Root.product[Profile]((name = Name, email = Email))`; a one-field class takes a one-element
+    * named tuple, as in `Root.product[Note]((text = Text))`. The compiler checks the names and the
+    * value types.
     */
-  inline def product[Domain](
-    parts: Tuple
-  )(using
-    mirror: Mirror.ProductOf[Domain]
-  ): FormDefinition[self.type, Domain] =
-    val _ = summonInline[FormPartValues[self.type, parts.type] =:= mirror.MirroredElemTypes]
-    buildProduct(parts, mirror)
-
-  /** Completes the form's definition, decoding its fields into the case class `Domain`.
-    *
-    * This form takes the single field of a one-field case class, as in `Root.product[Note](Text)`.
-    */
-  inline def product[Domain](
-    part: FormPart[self.type, ?]
-  )(using
-    mirror: Mirror.ProductOf[Domain]
-  ): FormDefinition[self.type, Domain] =
-    val _ =
-      summonInline[FormPartValues[self.type, Tuple1[part.type]] =:= mirror.MirroredElemTypes]
-    buildProduct(Tuple1(part), mirror)
-
-  private[scalive] def buildProduct[Domain](
-    parts: Tuple,
-    mirror: Mirror.ProductOf[Domain]
-  ): FormDefinition[self.type, Domain] =
-    FormDefinition.create(this, FormRoot.parts(parts), mirror)
+  def product[Domain]: FormProduct[self.type, Domain] = FormProduct(this)
 
   private[scalive] def fullPath(relative: String): FormPath =
     val parsed = FormRoot.relativePath(relative)
@@ -238,12 +243,31 @@ object FormRoot:
     )
     path
 
-  private def parts(tuple: Tuple): Vector[FormPart[?, ?]] =
-    tuple.productIterator.map {
+/** The named parts of a form definition, as started by [[FormRoot.product]]. */
+final class FormProduct[Owner, Domain] private[scalive] (root: FormRoot):
+  /** Completes the definition with `parts`, named after the fields of `Domain` in order. */
+  inline def apply[Parts <: AnyNamedTuple, Labels <: Tuple, Types <: Tuple](
+    parts: Parts
+  )(using
+    mirror: Mirror.ProductOf[Domain] {
+      type MirroredElemLabels = Labels; type MirroredElemTypes = Types
+    }
+  ): FormDefinition[Owner, Domain] =
+    val _ = summonInline[FormProductNames[Domain, NamedTuple.Names[Parts], Labels]]
+    val _ = summonInline[
+      FormProductValues[Domain, FormPartValues[Owner, NamedTuple.DropNames[Parts]], Types]
+    ]
+    build(parts.asInstanceOf[Tuple], mirror)
+
+  private[scalive] def build(
+    parts: Tuple,
+    mirror: Mirror.ProductOf[Domain]
+  ): FormDefinition[Owner, Domain] =
+    val formParts = parts.productIterator.map {
       case part: FormPart[?, ?] => part
       case _ => throw new IllegalArgumentException("form products may contain only form parts")
     }.toVector
-end FormRoot
+    FormDefinition.create(root, formParts, mirror)
 
 /** A row-field namespace tied to one exact repeated group value.
   *
@@ -296,39 +320,38 @@ final class RepeatedGroup[Owner] private[scalive] (
 
   /** Completes the row schema, which contributes a `Vector[Row]` to the root product.
     *
-    * Pass the row fields in the order of `Row`'s fields; the compiler checks their value types.
+    * Name each row field after the field of `Row` it fills, in order, as in
+    * `Phones.product[Phone]((label = Label, number = Number))`. The compiler checks the names and
+    * the value types.
     */
-  inline def product[Row](
-    parts: Tuple
-  )(using
-    mirror: Mirror.ProductOf[Row]
-  ): RepeatedRows[Owner, self.type, Row] =
-    val _ = summonInline[FormPartValues[self.type, parts.type] =:= mirror.MirroredElemTypes]
-    buildProduct(parts, mirror)
+  def product[Row]: FormRowProduct[Owner, self.type, Row] = FormRowProduct(this)
+end RepeatedGroup
 
-  /** Completes the row schema, which contributes a `Vector[Row]` to the root product.
-    *
-    * This form takes the single field of a one-field row, as in `group.product[Tag](name)`.
-    */
-  inline def product[Row](
-    part: FormField[self.type, ?, ?]
+/** The named fields of a repeated row, as started by [[RepeatedGroup.product]]. */
+final class FormRowProduct[Owner, Group, Row] private[scalive] (group: RepeatedGroup[Owner]):
+  /** Completes the row schema with `parts`, named after the fields of `Row` in order. */
+  inline def apply[Parts <: AnyNamedTuple, Labels <: Tuple, Types <: Tuple](
+    parts: Parts
   )(using
-    mirror: Mirror.ProductOf[Row]
-  ): RepeatedRows[Owner, self.type, Row] =
-    val _ =
-      summonInline[FormPartValues[self.type, Tuple1[part.type]] =:= mirror.MirroredElemTypes]
-    buildProduct(Tuple1(part), mirror)
+    mirror: Mirror.ProductOf[Row] {
+      type MirroredElemLabels = Labels; type MirroredElemTypes = Types
+    }
+  ): RepeatedRows[Owner, Group, Row] =
+    val _ = summonInline[FormProductNames[Row, NamedTuple.Names[Parts], Labels]]
+    val _ = summonInline[
+      FormProductValues[Row, FormPartValues[Group, NamedTuple.DropNames[Parts]], Types]
+    ]
+    build(parts.asInstanceOf[Tuple], mirror)
 
-  private[scalive] def buildProduct[Row](
+  private[scalive] def build(
     parts: Tuple,
     mirror: Mirror.ProductOf[Row]
-  ): RepeatedRows[Owner, self.type, Row] =
+  ): RepeatedRows[Owner, Group, Row] =
     val fields = parts.productIterator.map {
       case field: FormField[?, ?, ?] => field
       case _ => throw new IllegalArgumentException("row products may contain only scalar fields")
     }.toVector
-    new RepeatedRows(this, fields, mirror)
-end RepeatedGroup
+    new RepeatedRows(group, fields, mirror)
 
 /** A completed repeated-row schema and root-level product part.
   *

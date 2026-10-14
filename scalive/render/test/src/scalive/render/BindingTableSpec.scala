@@ -16,7 +16,7 @@ object BindingTableSpec extends ZIOSpecDefault:
   private final case class TypedData(name: String)
   private val TypedRoot       = FormRoot("typed")
   private val TypedName       = TypedRoot.text("name")
-  private val TypedDefinition = TypedRoot.product[TypedData](TypedName)
+  private val TypedDefinition = TypedRoot.product[TypedData]((name = TypedName))
   private enum TypedIntent(val wireValue: String):
     case Preview extends TypedIntent("preview")
     case Save    extends TypedIntent("save")
@@ -32,8 +32,8 @@ object BindingTableSpec extends ZIOSpecDefault:
   private val NestedRoot       = FormRoot("nested")
   private val NestedItems      = NestedRoot.rows("items")
   private val NestedName       = NestedItems.text("name")
-  private val NestedItemRows   = NestedItems.product[NestedItem](NestedName)
-  private val NestedDefinition = NestedRoot.product[NestedBasket](NestedItemRows)
+  private val NestedItemRows   = NestedItems.product[NestedItem]((name = NestedName))
+  private val NestedDefinition = NestedRoot.product[NestedBasket]((items = NestedItemRows))
   private val NestedAdapter    = PhoenixNestedParamsAdapter(NestedDefinition, NestedItemRows)
   private val NestedSubmitter =
     NestedDefinition.submitter(TypedIntent.values)(_.wireValue)

@@ -19,5 +19,5 @@ object Signup:
     .required(FieldIssue("Enter your email address."))
     .validate(FieldIssue("Enter an email address such as ada@example.com."))(_.contains("@"))
 
-  val Definition = Root.product[Signup]((Name, Email))
+  val Definition = Root.product[Signup]((name = Name, email = Email))
 // docs:end learn-signup-definition

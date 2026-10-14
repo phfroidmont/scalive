@@ -25,7 +25,7 @@ object Profile:
       EmailPattern.matches
     )
 
-  val Definition = Root.product[Profile]((Name, Email))
+  val Definition = Root.product[Profile]((name = Name, email = Email))
 // docs:end forms-definition
 
 trait Profiles:

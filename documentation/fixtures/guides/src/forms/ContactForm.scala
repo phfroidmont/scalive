@@ -17,8 +17,8 @@ object Contact:
     .text("number")
     .map(_.trim)
     .required(FieldIssue("validation.phone.required", Some("required")))
-  val PhoneRows  = Phones.product[Phone]((PhoneLabel, PhoneNumber))
-  val Definition = Root.product[Contact]((Name, PhoneRows))
+  val PhoneRows  = Phones.product[Phone]((label = PhoneLabel, number = PhoneNumber))
+  val Definition = Root.product[Contact]((name = Name, phones = PhoneRows))
 // docs:end forms-rows-definition
 
 final class ContactLiveView extends LiveView[ContactLiveView.Msg, ContactLiveView.Model]:

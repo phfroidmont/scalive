@@ -150,11 +150,12 @@ Try change, invalid submit, valid submit, and reset behavior in the
 
 Fields combined by `product` accumulate independent decoding errors in field
 order. An invalid name and email therefore produce both errors rather than
-stopping after the first field. The tuple arity and element types must exactly
-match the case class constructor, so missing fields and differently typed
-positions are rejected at compile time. When adjacent case-class fields have
-the same type, their order remains your responsibility. A form with one field
-passes that field without a tuple, as in `Root.product[Note](Text)`.
+stopping after the first field. `product` takes a named tuple that names each
+part after the case class field it fills, in order, as in
+`Root.product[Profile]((name = Name, email = Email))`. The compiler checks the
+names and the value types, so a missing, misnamed, or reordered field is
+rejected even when two fields have the same type. A form with one field passes a
+one-element named tuple, as in `Root.product[Note]((text = Text))`.
 
 Use `text` for a scalar that treats absence as its default and rejects
 duplicates, `optionalText` for `Option[String]`, and `texts` for repeated

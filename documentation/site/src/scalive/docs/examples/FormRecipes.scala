@@ -11,7 +11,7 @@ object FormRecipes:
     val Root         = FormRoot("registration")
     val Email        = Root.text("email").map(_.trim)
     val Confirmation = Root.text("confirmation").map(_.trim)
-    val Fields       = Root.product[Registration]((Email, Confirmation))
+    val Fields       = Root.product[Registration]((email = Email, confirmation = Confirmation))
     val Definition   = Fields.emap { registration =>
       Either.cond(
         registration.email == registration.confirmation,
@@ -47,7 +47,7 @@ object FormRecipes:
 
     val Root       = FormRoot("order")
     val Quantity   = Root.field("quantity", PositiveInteger)
-    val Definition = Root.product[Order](Quantity)
+    val Definition = Root.product[Order]((quantity = Quantity))
 
     def quantityControl(form: Definition.Form): HtmlElement[Nothing] =
       val quantity = form.field(Quantity)
@@ -71,7 +71,7 @@ object FormRecipes:
 
     val Root       = FormRoot("notifications")
     val Enabled    = Root.field("enabled", FieldInput.checkbox())
-    val Definition = Root.product[Preferences](Enabled)
+    val Definition = Root.product[Preferences]((enabled = Enabled))
     val initial    = Definition.initial(Enabled.initial(true))
 
     enum Msg:
@@ -95,7 +95,7 @@ object FormRecipes:
 
     val Root       = FormRoot("subscriptions")
     val Topics     = Root.texts("topics")
-    val Definition = Root.product[Preferences](Topics)
+    val Definition = Root.product[Preferences]((topics = Topics))
 
     enum Msg:
       case Updated(update: Definition.Update)
@@ -145,8 +145,8 @@ object FormRecipes:
     val Phones     = Root.rows("phones")
     val Label      = Phones.text("label")
     val Number     = Phones.text("number")
-    val PhoneRows  = Phones.product[Phone]((Label, Number))
-    val Definition = Root.product[Contact](PhoneRows)
+    val PhoneRows  = Phones.product[Phone]((label = Label, number = Number))
+    val Definition = Root.product[Contact]((phones = PhoneRows))
     val Adapter    = PhoenixNestedParamsAdapter(Definition, PhoneRows)
 
     enum Msg:

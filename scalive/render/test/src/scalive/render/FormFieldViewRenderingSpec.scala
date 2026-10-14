@@ -13,7 +13,8 @@ object FormFieldViewRenderingSpec extends ZIOSpecDefault:
       Option.when(value.length < 2)(FieldIssue("validation.too_short", Some("too_short")))
     ).flatten
   }
-  private val Definition = Profile.product[Tuple1[String]](Tuple1(Name))
+  final private case class Person(name: String)
+  private val Definition = Profile.product[Person]((name = Name))
 
   private val messages = Map(
     "validation.required"  -> "Name is required.",

@@ -15,12 +15,16 @@ object FormDefinitionApiSpec extends ZIOSpecDefault:
     else Left(FieldIssues.one(FieldIssue("Email is invalid", Some("invalid_email"))))
   }
   private val Tags              = ProfileRoot.texts("tags")
-  private val ProfileDefinition = ProfileRoot.product[Profile]((Name, EmailField, Tags))
+  private val ProfileDefinition =
+    ProfileRoot.product[Profile]((name = Name, email = EmailField, tags = Tags))
   private enum ProfileIntent(val wireValue: String):
     case Preview extends ProfileIntent("preview")
     case Save    extends ProfileIntent("save")
   private val ProfileSubmitter =
     ProfileDefinition.submitter(ProfileIntent.values)(_.wireValue)
+
+  final private case class Settings(enabled: Boolean)
+  final private case class SettingsRows(options: Vector[Settings])
 
   final private case class Qualification(title: String, year: String)
   final private case class Application(name: String, qualifications: Vector[Qualification])
@@ -29,9 +33,9 @@ object FormDefinitionApiSpec extends ZIOSpecDefault:
   private val Qualifications  = ApplicationRoot.rows("qualifications")
   private val Title = Qualifications.text("title").required(FieldIssue("Title is required"))
   private val Year  = Qualifications.text("year")
-  private val QualificationRows     = Qualifications.product[Qualification]((Title, Year))
+  private val QualificationRows     = Qualifications.product[Qualification]((title = Title, year = Year))
   private val ApplicationDefinition =
-    ApplicationRoot.product[Application]((ApplicantName, QualificationRows))
+    ApplicationRoot.product[Application]((name = ApplicantName, qualifications = QualificationRows))
   private val RowA = FormRowKey.from[Qualifications.type]("row_a").toOption.get
   private val RowB = FormRowKey.from[Qualifications.type]("row_b").toOption.get
 
@@ -91,24 +95,24 @@ object FormDefinitionApiSpec extends ZIOSpecDefault:
     test("initializes and updates typed checkbox fields with canonical absent false values") {
       val root       = FormRoot("settings")
       val enabled    = root.field("enabled", FieldInput.checkbox())
-      val definition = root.product[Tuple1[Boolean]](Tuple1(enabled))
+      val definition = root.product[Settings]((enabled = enabled))
       val initial    = definition.initial(enabled.initial(false))
       val checked    = initial.updated(enabled, true)
       val unchecked  = checked.updated(enabled, false)
       val absent     = definition.event(FormData.empty, FormEventKind.Submitted).form
 
       assertTrue(
-        initial.valueOption.contains(Tuple1(false)),
+        initial.valueOption.contains(Settings(false)),
         initial.field(enabled).input == Right(false),
         initial.field(enabled).rawValues.isEmpty,
-        checked.valueOption.contains(Tuple1(true)),
+        checked.valueOption.contains(Settings(true)),
         checked.field(enabled).input == Right(true),
         checked.field(enabled).rawValues == Vector("true"),
         checked.values == definition.initial(enabled.initial(true)).values,
-        unchecked.valueOption.contains(Tuple1(false)),
+        unchecked.valueOption.contains(Settings(false)),
         unchecked.field(enabled).rawValues.isEmpty,
         unchecked.values == initial.values,
-        absent.valueOption.contains(Tuple1(false)),
+        absent.valueOption.contains(Settings(false)),
         absent.field(enabled).rawValues.isEmpty,
         absent.values == initial.values
       )
@@ -116,7 +120,7 @@ object FormDefinitionApiSpec extends ZIOSpecDefault:
     test("retains malformed submitted checkbox values and visible structural errors") {
       val root       = FormRoot("settings")
       val enabled    = root.field("enabled", FieldInput.checkbox())
-      val definition = root.product[Tuple1[Boolean]](Tuple1(enabled))
+      val definition = root.product[Settings]((enabled = enabled))
       val cases      = Vector(
         Vector("false") -> FieldIssue("has an invalid checkbox value", Some("invalid_checkbox")),
         Vector("true", "false") -> FieldIssue(
@@ -142,8 +146,8 @@ object FormDefinitionApiSpec extends ZIOSpecDefault:
       val root       = FormRoot("settings")
       val group      = root.rows("options")
       val enabled    = group.field("enabled", FieldInput.checkbox())
-      val rows       = group.product[Tuple1[Boolean]](Tuple1(enabled))
-      val definition = root.product[Tuple1[Vector[Tuple1[Boolean]]]](Tuple1(rows))
+      val rows       = group.product[Settings]((enabled = enabled))
+      val definition = root.product[SettingsRows]((options = rows))
       val key        = FormRowKey.from[group.type]("row_a").toOption.get
       val initial    = definition.initial(rows.initial(rows.row(key)(enabled.initial(false))))
       val event      = definition.event(
@@ -157,14 +161,14 @@ object FormDefinitionApiSpec extends ZIOSpecDefault:
       assertTrue(
         event.errors.all.isEmpty,
         event.form.rows(rows).map(_.key) == Vector(key),
-        row.result.contains(Tuple1(false)),
+        row.result.contains(Settings(false)),
         row.field(enabled).input == Right(false),
         row.field(enabled).rawValues.isEmpty,
         event.form.values == initial.values,
-        checked.rows(rows).head.result.contains(Tuple1(true)),
+        checked.rows(rows).head.result.contains(Settings(true)),
         checked.rows(rows).head.field(enabled).rawValues == Vector("true"),
         unchecked.rows(rows).map(_.key) == Vector(key),
-        unchecked.rows(rows).head.result.contains(Tuple1(false)),
+        unchecked.rows(rows).head.result.contains(Settings(false)),
         unchecked.rows(rows).head.field(enabled).rawValues.isEmpty,
         unchecked.values == initial.values
       )
@@ -255,8 +259,8 @@ object FormDefinitionApiSpec extends ZIOSpecDefault:
         val root = FormRoot("application")
         val group = root.rows("rows")
         val name = group.text("name")
-        val rowSchema = group.product[Row](name)
-        val definition = root.product[Application](rowSchema)
+        val rowSchema = group.product[Row]((name = name))
+        val definition = root.product[Application]((rows = rowSchema))
 
         def render(form: Signal[definition.Form]): HtmlElement[Nothing] =
           div(
@@ -321,8 +325,10 @@ object FormDefinitionApiSpec extends ZIOSpecDefault:
         val root = FormRoot("choices")
         val group = root.rows("rows")
         val values = group.texts("values")
-        val rows = group.product[Tuple1[Vector[String]]](Tuple1(values))
-        val definition = root.product[Tuple1[Vector[Tuple1[Vector[String]]]]](Tuple1(rows))
+        final case class Choice(values: Vector[String])
+        final case class Choices(rows: Vector[Choice])
+        val rows = group.product[Choice]((values = values))
+        val definition = root.product[Choices]((rows = rows))
 
         def repeated(source: Signal[definition.Form]): HtmlElement[Msg] =
           val binding = source.bind[Msg](DomRef("choices"), _ => Msg.Updated, _ => Msg.Submitted)
@@ -392,7 +398,8 @@ object FormDefinitionApiSpec extends ZIOSpecDefault:
           if raw.nonEmpty then Right(Refined(raw))
           else Left(FieldIssues.one(FieldIssue("Required")))
         }
-        val definition = root.product[Tuple1[Refined]](Tuple1(field))
+        final case class Contact(value: Refined)
+        val definition = root.product[Contact]((value = field))
 
         def refined(form: Signal[definition.Form]): Vector[HtmlElement[Msg]] =
           val binding = form.bind[Msg](
@@ -470,11 +477,13 @@ object FormDefinitionApiSpec extends ZIOSpecDefault:
         val root  = FormRoot("duplicate")
         val first = root.text("name")
         val again = root.text("name")
-        root.product[Tuple2[String, String]]((first, again))
+        final case class Names(first: String, again: String)
+        root.product[Names]((first = first, again = again))
       }
       val reserved = scala.util.Try {
         val root = FormRoot("reserved")
-        root.product[Tuple1[String]](Tuple1(root.text("_scalive_private")))
+        final case class Reserved(value: String)
+        root.product[Reserved]((value = root.text("_scalive_private")))
       }
 
       assertTrue(
@@ -539,7 +548,8 @@ object FormDefinitionApiSpec extends ZIOSpecDefault:
       val root       = FormRoot("product")
       val declared   = root.text("declared")
       val undeclared = root.text("undeclared")
-      val base       = root.product[Tuple1[String]](Tuple1(declared))
+      final case class Declared(declared: String)
+      val base       = root.product[Declared]((declared = declared))
       val refined    = base.emap { _ =>
         Left(FormErrors.one(undeclared.address, FieldIssue("wrong address")))
       }
@@ -623,35 +633,58 @@ object FormDefinitionApiSpec extends ZIOSpecDefault:
         noActions.isFailure
       )
     },
-    test("checks arbitrary products and ownership at compile time") {
+    test("checks product names, values, and ownership at compile time") {
       val sixFieldsCompile = scala.compiletime.testing.typeChecks("""
         import scalive.*
         final case class Six(a: String, b: String, c: String, d: String, e: String, f: String)
         val root = FormRoot("six")
-        root.product[Six]((root.text("a"), root.text("b"), root.text("c"), root.text("d"), root.text("e"), root.text("f")))
+        root.product[Six]((
+          a = root.text("a"), b = root.text("b"), c = root.text("c"),
+          d = root.text("d"), e = root.text("e"), f = root.text("f")
+        ))
       """)
-      val wrongOrder = scala.compiletime.testing.typeCheckErrors("""
+      val swappedSameTypes = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        final case class Person(first: String, last: String)
+        val root = FormRoot("person")
+        val first = root.text("first")
+        val last = root.text("last")
+        root.product[Person]((last = last, first = first))
+      """)
+      val wrongName = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        final case class Person(first: String, last: String)
+        val root = FormRoot("person")
+        root.product[Person]((first = root.text("first"), surname = root.text("last")))
+      """)
+      val wrongType = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*
         final case class Wrong(name: String, count: Int)
         val root = FormRoot("wrong")
         val name = root.text("name")
         val count = root.text("count").map(_.toInt)
-        root.product[Wrong]((count, name))
+        root.product[Wrong]((name = count, count = name))
+      """)
+      val positional = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        final case class Person(first: String, last: String)
+        val root = FormRoot("person")
+        root.product[Person]((root.text("first"), root.text("last")))
       """)
       val wrongOwner = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*
         final case class Pair(left: String, right: String)
         val left = FormRoot("left")
         val right = FormRoot("right")
-        left.product[Pair]((left.text("value"), right.text("value")))
+        left.product[Pair]((left = left.text("value"), right = right.text("value")))
       """)
       val differentDefinitionValues = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*
         final case class Value(name: String)
         val root = FormRoot("value")
         val name = root.text("name")
-        val first = root.product[Value](name)
-        val second = root.product[Value](name)
+        val first = root.product[Value]((name = name))
+        val second = root.product[Value]((name = name))
         first.fromValues(second.initial(name.initial("Ada")).values)
       """)
       val differentDefinitionSubmitter = scala.compiletime.testing.typeCheckErrors("""
@@ -661,8 +694,8 @@ object FormDefinitionApiSpec extends ZIOSpecDefault:
           case Save extends Intent("save")
         val root = FormRoot("value")
         val name = root.text("name")
-        val first = root.product[Value](name)
-        val second = root.product[Value](name)
+        val first = root.product[Value]((name = name))
+        val second = root.product[Value]((name = name))
         val submitter = first.submitter(Intent.values)(_.wireValue)
         second.onSubmit(submitter)((_, _) => ())
       """)
@@ -677,12 +710,14 @@ object FormDefinitionApiSpec extends ZIOSpecDefault:
         )
         val root = FormRoot("large")
         root.product[Large]((
-          root.text("f01"), root.text("f02"), root.text("f03"), root.text("f04"),
-          root.text("f05"), root.text("f06"), root.text("f07"), root.text("f08"),
-          root.text("f09"), root.text("f10"), root.text("f11"), root.text("f12"),
-          root.text("f13"), root.text("f14"), root.text("f15"), root.text("f16"),
-          root.text("f17"), root.text("f18"), root.text("f19"), root.text("f20"),
-          root.text("f21"), root.text("f22"), root.text("f23")
+          f01 = root.text("f01"), f02 = root.text("f02"), f03 = root.text("f03"),
+          f04 = root.text("f04"), f05 = root.text("f05"), f06 = root.text("f06"),
+          f07 = root.text("f07"), f08 = root.text("f08"), f09 = root.text("f09"),
+          f10 = root.text("f10"), f11 = root.text("f11"), f12 = root.text("f12"),
+          f13 = root.text("f13"), f14 = root.text("f14"), f15 = root.text("f15"),
+          f16 = root.text("f16"), f17 = root.text("f17"), f18 = root.text("f18"),
+          f19 = root.text("f19"), f20 = root.text("f20"), f21 = root.text("f21"),
+          f22 = root.text("f22"), f23 = root.text("f23")
         ))
       """)
 
@@ -692,41 +727,55 @@ object FormDefinitionApiSpec extends ZIOSpecDefault:
         final case class Tag(name: String)
         final case class Tags(values: Vector[Tag])
         val noteRoot = FormRoot("note")
-        val note = noteRoot.product[Note](noteRoot.text("text"))
+        val note = noteRoot.product[Note]((text = noteRoot.text("text")))
         val tagsRoot = FormRoot("tags")
         val group = tagsRoot.rows("values")
-        val rows = group.product[Tag](group.text("name"))
-        val tags = tagsRoot.product[Tags](rows)
+        val rows = group.product[Tag]((name = group.text("name")))
+        val tags = tagsRoot.product[Tags]((values = rows))
       """)
       val singleFieldWrongType = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*
         final case class Count(value: Int)
         val root = FormRoot("count")
-        root.product[Count](root.text("value"))
+        root.product[Count]((value = root.text("value")))
       """)
       val singleFieldWrongArity = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*
         final case class Pair(left: String, right: String)
         val root = FormRoot("pair")
-        root.product[Pair](root.text("left"))
+        root.product[Pair]((left = root.text("left")))
       """)
       val singleFieldWrongOwner = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*
         final case class Note(text: String)
         val left = FormRoot("left")
         val right = FormRoot("right")
-        left.product[Note](right.text("text"))
+        left.product[Note]((text = right.text("text")))
       """)
+      val rowWrongName = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        final case class Phone(label: String, number: String)
+        val root = FormRoot("contact")
+        val phones = root.rows("phones")
+        phones.product[Phone]((number = phones.text("number"), label = phones.text("label")))
+      """)
+
+      def mentions(errors: List[scala.compiletime.testing.Error], text: String) =
+        errors.exists(_.message.contains(text))
 
       assertTrue(
         sixFieldsCompile,
         twentyThreeFieldsCompile,
         singleFieldCompile,
-        wrongOrder.nonEmpty,
+        mentions(swappedSameTypes, "do not match the fields of Person"),
+        mentions(wrongName, "do not match the fields of Person"),
+        mentions(wrongType, "do not match the field types of Wrong"),
+        positional.nonEmpty,
         wrongOwner.nonEmpty,
         singleFieldWrongType.nonEmpty,
         singleFieldWrongArity.nonEmpty,
         singleFieldWrongOwner.nonEmpty,
+        mentions(rowWrongName, "do not match the fields of Phone"),
         differentDefinitionValues.nonEmpty,
         differentDefinitionSubmitter.nonEmpty
       )

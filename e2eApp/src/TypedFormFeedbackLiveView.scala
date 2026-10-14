@@ -275,10 +275,21 @@ object TypedFormFeedbackLiveView:
   val Notes     = Root.text("notes").required(FieldIssue("Notes are required"))
   val RowGroup  = Root.rows("rows")
   val RowName   = RowGroup.text("name").required(FieldIssue("Row name is required"))
-  val RowSchema = RowGroup.product[Row](RowName)
+  val RowSchema = RowGroup.product[Row]((name = RowName))
   val Definition =
     Root.product[Data](
-      (Name, Email, Phone, Date, Choice, Checkbox, Topics, Select, Notes, RowSchema)
+      (
+        name = Name,
+        email = Email,
+        phone = Phone,
+        date = Date,
+        choice = Choice,
+        checkbox = Checkbox,
+        topics = Topics,
+        select = Select,
+        notes = Notes,
+        rows = RowSchema
+      )
     )
 
   val RowA = FormRowKey.from[RowGroup.type]("row-a").toOption.get
@@ -338,9 +349,10 @@ object TypedFormFeedbackLiveView:
 
   object FeedbackComponent
       extends LiveComponent[Unit, FeedbackComponent.Msg, FeedbackComponent.Model]:
-    val Root       = FormRoot("component")
-    val Name       = Root.text("name").required(FieldIssue("Component name is required"))
-    val Definition = Root.product[Tuple1[String]](Tuple1(Name))
+    val Root = FormRoot("component")
+    val Name = Root.text("name").required(FieldIssue("Component name is required"))
+    final case class Data(name: String)
+    val Definition = Root.product[Data]((name = Name))
 
     enum Msg:
       case Updated(update: Definition.Update)

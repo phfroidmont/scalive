@@ -41,7 +41,7 @@ object HtmlModifierSpec extends ZIOSpecDefault:
     },
     test("form submitter attributes render a named submit button") {
       val root       = FormRoot("profile")
-      val definition = root.product[Profile](root.text("name"))
+      val definition = root.product[Profile]((name = root.text("name")))
       val submitter  = definition.submitter(Intent.values)(_ => "save")
       val button     = submitter.button(Intent.Save)("Save")
 

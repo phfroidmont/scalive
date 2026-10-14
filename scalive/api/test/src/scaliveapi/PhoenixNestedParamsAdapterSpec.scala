@@ -10,8 +10,8 @@ object PhoenixNestedParamsAdapterSpec extends ZIOSpecDefault:
   private val Root       = FormRoot("basket")
   private val Items      = Root.rows("items")
   private val Name       = Items.text("name").required(FieldIssue("Name is required"))
-  private val ItemRows   = Items.product[Item](Name)
-  private val Definition = Root.product[Basket](ItemRows)
+  private val ItemRows   = Items.product[Item]((name = Name))
+  private val Definition = Root.product[Basket]((items = ItemRows))
   private val Adapter    = PhoenixNestedParamsAdapter(Definition, ItemRows)
 
   def spec = suite("PhoenixNestedParamsAdapterSpec")(
@@ -168,8 +168,8 @@ object PhoenixNestedParamsAdapterSpec extends ZIOSpecDefault:
         val Root       = FormRoot("basket")
         val Items      = Root.rows("items")
         val Name       = Items.text("name")
-        val ItemRows   = Items.product[Item](Name)
-        val Definition = Root.product[Basket](ItemRows)
+        val ItemRows   = Items.product[Item]((name = Name))
+        val Definition = Root.product[Basket]((items = ItemRows))
         val Other      = Definition.withLimits(FormLimits())
         val Adapter    = PhoenixNestedParamsAdapter(Definition, ItemRows)
 

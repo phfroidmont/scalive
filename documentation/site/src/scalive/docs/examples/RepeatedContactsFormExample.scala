@@ -185,8 +185,8 @@ object RepeatedContactsFormExample:
       .map(_.trim)
       .required(FieldIssue("contact.email.required"))
       .validate(FieldIssue("contact.email.invalid"))(_.contains('@'))
-    val Rows       = Group.product[Contact]((Name, Email))
-    val Definition = Root.product[ContactBook](Rows)
+    val Rows       = Group.product[Contact]((name = Name, email = Email))
+    val Definition = Root.product[ContactBook]((contacts = Rows))
 
     // docs:start repeated-contacts-keys
     def key(number: Long): Group.Key =

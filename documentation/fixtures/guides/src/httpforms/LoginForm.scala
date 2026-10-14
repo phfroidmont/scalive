@@ -12,7 +12,7 @@ object LoginForm:
   val Email    = Root.text("email").required(FieldIssue("Enter your email address."))
   val Password = Root.text("password").required(FieldIssue("Enter your password."))
 
-  val Definition = Root.product[Credentials]((Email, Password))
+  val Definition = Root.product[Credentials]((email = Email, password = Password))
 // docs:end http-forms-definition
 
 // docs:start http-forms-routes

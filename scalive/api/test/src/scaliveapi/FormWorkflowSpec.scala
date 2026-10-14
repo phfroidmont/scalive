@@ -6,15 +6,16 @@ import scalive.*
 
 object FormWorkflowSpec extends ZIOSpecDefault:
   final private case class Draft(name: String)
+  final private case class Settings(enabled: Boolean)
   private val Root       = FormRoot("draft")
   private val Name       = Root.text("name").required(FieldIssue("Name is required"))
-  private val Definition = Root.product[Draft](Name)
+  private val Definition = Root.product[Draft]((name = Name))
 
   def spec = suite("FormWorkflowSpec")(
     test("keeps absent false checkboxes clean and tracks checked then unchecked revisions") {
       val root       = FormRoot("settings")
       val enabled    = root.field("enabled", FieldInput.checkbox())
-      val definition = root.product[Tuple1[Boolean]](Tuple1(enabled))
+      val definition = root.product[Settings]((enabled = enabled))
       val initial    = definition.initial(enabled.initial(false))
       val workflow   = definition.workflow[Unit](initial)
       val absent     = definition.event(FormData.empty, FormEventKind.Submitted).form
@@ -28,15 +29,15 @@ object FormWorkflowSpec extends ZIOSpecDefault:
       assertTrue(
         !workflow.isDirty,
         workflow.revision == FormRevision.initial,
-        interacted.current.valueOption.contains(Tuple1(false)),
+        interacted.current.valueOption.contains(Settings(false)),
         interacted.current.values == initial.values,
         interacted.current.interaction.visibility == ErrorVisibility.All,
         !interacted.isDirty,
         interacted.revision == FormRevision.initial,
-        checked.current.valueOption.contains(Tuple1(true)),
+        checked.current.valueOption.contains(Settings(true)),
         checked.isDirty,
         checked.revision.value == 1L,
-        unchecked.current.valueOption.contains(Tuple1(false)),
+        unchecked.current.valueOption.contains(Settings(false)),
         unchecked.current.values == initial.values,
         !unchecked.isDirty,
         unchecked.revision.value == 2L
@@ -370,8 +371,8 @@ object FormWorkflowSpec extends ZIOSpecDefault:
         final case class Draft(name: String)
         val root = FormRoot("draft")
         val name = root.text("name")
-        val first = root.product[Draft](name)
-        val second = root.product[Draft](name)
+        val first = root.product[Draft]((name = name))
+        val second = root.product[Draft]((name = name))
         val workflow = first.workflow[String](first.initial(name.initial("Ada")))
         val snapshot = second.initial(name.initial("Grace")).validSnapshot.get
         workflow.beginSave match

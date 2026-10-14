@@ -135,7 +135,7 @@ object HttpFormDecoderSpec extends ZIOSpecDefault:
       final case class Profile(name: String)
       val root       = FormRoot("profile")
       val name       = root.text("name").required(FieldIssue("Name is required"))
-      val definition = root.product[Profile](name)
+      val definition = root.product[Profile]((name = name))
       val decoder    = HttpFormDecoder.urlEncoded(definition, 1024, csrf)
 
       for

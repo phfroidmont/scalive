@@ -125,7 +125,7 @@ object FormWorkflowExample:
     val Root  = FormRoot("workflow-draft")
     val Title = Root.text("title").map(_.trim).required(FieldIssue("title.required"))
 
-    val Definition = Root.product[Draft](Title)
+    val Definition = Root.product[Draft]((title = Title))
 
   enum Notice(val label: String):
     case Ready        extends Notice("Edit the form, then begin a save.")

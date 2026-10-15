@@ -20,12 +20,15 @@ object PrometheusMetricsSpec extends ZIOSpecDefault:
 
   private val application = Live.router(AppRoutes.home -> CounterLiveView())
 
-  private val routes =
-    ZioHttp.routes(application, config, LifecycleMetrics.observer) ++ MetricsRoutes.routes
+  private val allRoutes =
+    ZioHttp
+      .routes(application, config, LifecycleMetrics.observer)
+      .map(_ ++ MetricsRoutes.routes)
 
   private def scrape =
     ZIO.scoped {
       for
+        routes   <- allRoutes
         response <- routes.runZIO(Request.get(URL.decode("/metrics").toOption.get))
         body     <- response.body.asString
       yield body
@@ -34,6 +37,7 @@ object PrometheusMetricsSpec extends ZIOSpecDefault:
   def spec = suite("Prometheus metrics")(
     test("exports the disconnected render of a Live route") {
       for
+        routes <- allRoutes
         _      <- DisconnectedRender.run(routes, Request.get(URL.root))
         report <- scrape
                     .delay(200.millis)

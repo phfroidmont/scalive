@@ -31,7 +31,8 @@ the [quick start's `Main`](../learn/quick-start.md#start-the-server) does:
 ```scala fragment
 clientAssets <- LiveViewClientAssets.load()
 // ...
-routes = ZioHttp.routes(application, config) ++ clientAssets.routes ++ assets.routes
+liveRoutes <- ZioHttp.routes(application, config)
+routes = liveRoutes ++ clientAssets.routes ++ assets.routes
 ```
 
 Then render the client scripts in the root layout's `<head>`, before the
@@ -148,7 +149,7 @@ access is required. Originals serve current bytes with a current `ETag` and
 
 Add @:apiSymbol(val:scalive.StaticAssets.routes)`StaticAssets.routes`@:@ to the
 server routes, as the quick start's `Main` does with
-`ZioHttp.routes(application, config) ++ clientAssets.routes ++ assets.routes`. The routes serve `GET` and
+`liveRoutes ++ clientAssets.routes ++ assets.routes`. The routes serve `GET` and
 `HEAD` below the configured mount path, and query strings do not affect lookup.
 
 In a classpath or directory tree, `path` resolves a tree-relative name below the

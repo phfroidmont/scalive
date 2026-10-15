@@ -17,7 +17,6 @@ object LoginFlowSpec extends ZIOSpecDefault:
     allowedWebSocketOrigins = Set(WebSocketOrigin.http("localhost"))
   ).fold(throw _, identity)
 
-  private val routes = LoginApp.routes(config)
 
   private val sessions: ULayer[Sessions] = ZLayer.succeed(
     new Sessions:
@@ -33,8 +32,9 @@ object LoginFlowSpec extends ZIOSpecDefault:
       // docs:start testing-submit-form
       val signIn =
         for
-          page <- DisconnectedRender.run(routes, login)
-          form <- ZIO
+          routes <- LoginApp.routes(config)
+          page   <- DisconnectedRender.run(routes, login)
+          form   <- ZIO
                     .fromEither(page.form(FormQuery(method = Some(Method.POST))))
                     .mapError(error => AssertionError(error.toString))
           csrf <- ZIO

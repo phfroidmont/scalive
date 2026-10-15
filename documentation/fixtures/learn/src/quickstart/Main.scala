@@ -31,7 +31,8 @@ object Main extends ZIOAppDefault:
                         Routes.search -> SearchLiveView()
                         // docs:end learn-search-registration
                       )
-      routes = ZioHttp.routes(application, config) ++ clientAssets.routes ++ assets.routes
+      liveRoutes <- ZioHttp.routes(application, config)
+      routes = liveRoutes ++ clientAssets.routes ++ assets.routes
       // docs:start learn-thermostat-provide
       _ <- Server.serve(routes).provide(Server.defaultWithPort(port), Thermostat.simulated)
     // docs:end learn-thermostat-provide

@@ -845,7 +845,8 @@ object LiveSessionBuilder:
 
 /** All routes and layouts of a Scalive application, built by `Live.router(...)`.
   *
-  * Serve it with `ZioHttp.routes(application, config)`, which validates the routes when called.
+  * Serve it with `ZioHttp.routes(application, config)`, whose effect fails when the routes are
+  * invalid.
   *
   * @tparam R
   *   the services the routes need from the server's environment

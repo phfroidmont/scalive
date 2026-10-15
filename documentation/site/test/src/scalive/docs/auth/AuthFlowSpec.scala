@@ -76,9 +76,9 @@ object AuthFlowSpec extends ZIOSpecDefault:
   private def httpRoutes(auth: AuthService): Routes[Any, Nothing] =
     AuthHttpRoutes(security).routes.provideEnvironment(authEnvironment(auth))
 
-  private def liveRoutes(auth: AuthService): Routes[Any, Nothing] =
+  private def liveRoutes(auth: AuthService): UIO[Routes[Any, Nothing]] =
     val application = scalive.Live.router(AuthLab.loginRoute, AuthLab.protectedSession)
-    ZioHttp.routes(application, config).provideEnvironment(authEnvironment(auth))
+    ZioHttp.routes(application, config).orDie.map(_.provideEnvironment(authEnvironment(auth)))
 
   private def loginRequest(csrf: PreparedCsrf, password: String): Request =
     postForm(
@@ -89,7 +89,7 @@ object AuthFlowSpec extends ZIOSpecDefault:
     ).addCookie(requestCookie(csrf.cookie))
 
   private def render(auth: AuthService, request: Request) =
-    DisconnectedRender.run(liveRoutes(auth), request)
+    liveRoutes(auth).flatMap(DisconnectedRender.run(_, request))
 
   def spec = suite("AuthFlowSpec")(
     test("keeps standalone lab routes out of the public content index") {
@@ -136,19 +136,18 @@ object AuthFlowSpec extends ZIOSpecDefault:
         origin <- ZIO
                     .fromEither(PublicOrigin.from("https://docs.example.test"))
                     .orDieWith(error => new IllegalArgumentException(error))
-        rendered <- DisconnectedRender.run(
-                      application
-                        .routes(
-                          assets,
-                          security,
-                          DocumentationConfig(
-                            8080,
-                            origin,
-                            "documentation-auth-flow-secret-0000000000000000"
-                          )
-                        ).provideEnvironment(documentationEnvironment),
-                      Request.get(url("/guides/authentication"))
+        routes <- application
+                    .routes(
+                      assets,
+                      security,
+                      DocumentationConfig(
+                        8080,
+                        origin,
+                        "documentation-auth-flow-secret-0000000000000000"
+                      )
                     )
+                    .map(_.provideEnvironment(documentationEnvironment))
+        rendered <- DisconnectedRender.run(routes, Request.get(url("/guides/authentication")))
       yield assertTrue(
         rendered.html.contains("data-lab-cta=\"authentication\""),
         rendered.html.contains(s"href=\"${AuthLabRoutes.LoginPath}\""),
@@ -184,7 +183,7 @@ object AuthFlowSpec extends ZIOSpecDefault:
             .fromOption(
               responseCookie(loginResponse.response, AuthHttpRoutes.SessionCookieName)
             ).orDieWith(_ => new AssertionError("missing session cookie"))
-        profilePage <- loginResponse.followSeeOther(liveRoutes(auth))
+        profilePage <- liveRoutes(auth).flatMap(loginResponse.followSeeOther(_))
         resetForm   <- ZIO
                        .fromEither(
                          profilePage.form(FormQuery(Some(resetAction.href), Some(Method.POST)))

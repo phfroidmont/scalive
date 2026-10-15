@@ -91,7 +91,7 @@ object ConnectedRender:
     connectParams: Map[String, Json] = Map.empty
   ): ZIO[R, Throwable, ConnectedClient[R]] =
     for
-      routes    <- ZIO.attempt(ZioHttp.routes(application, config))
+      routes    <- ZioHttp.routes(application, config)
       page      <- DisconnectedRender.run(routes, request)
       bootstrap <- bootstrap(page, request.url)
       active    <- Ref.make(Option.empty[ConnectedSession])

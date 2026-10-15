@@ -9264,12 +9264,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.ZioHttp.routes:171d31422bca6b4d",
-          "signature" : "def routes[R](application: LiveApplication[R], config: ZioHttpConfig): zio.http.Routes[R, Nothing]"
-        },
-        {
-          "id" : "def:scalive.ZioHttp.routes:194a84756d2e018e",
-          "signature" : "def routes[R](application: LiveApplication[R], config: ZioHttpConfig, observer: LifecycleObserver): zio.http.Routes[R, Nothing]"
+          "id" : "def:scalive.ZioHttp.routes:d17b9b55f40cbee4",
+          "signature" : "def routes[R](application: LiveApplication[R], config: ZioHttpConfig, observer: LifecycleObserver = ...): zio.package.IO[ZioHttp.AssemblyException, zio.http.Routes[R, Nothing]]"
         }
       ]
     },

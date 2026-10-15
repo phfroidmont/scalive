@@ -17,8 +17,11 @@ object LayoutContextExampleSpec extends ZIOSpecDefault:
     allowedWebSocketOrigins = Set(WebSocketOrigin.https("scalive.test"))
   ).toOption.get
 
-  private def run(routes: Routes[Any, Nothing], request: Request): UIO[Response] =
-    ZIO.scoped(routes.runZIO(request))
+  private def run(
+    routes: IO[ZioHttp.AssemblyException, Routes[Any, Nothing]],
+    request: Request
+  ): UIO[Response] =
+    routes.orDie.flatMap(routes => ZIO.scoped(routes.runZIO(request)))
 
   def spec = suite("Layout context example")(
     test("shared document layouts select typed session and mounted route contexts") {
@@ -50,7 +53,7 @@ object LayoutContextExampleSpec extends ZIOSpecDefault:
                              config,
                              attribute(variantBody, "data-phx-session").get
                            )
-          publicCompiled = ZioHttp.validate(application).find(_.matches(publicUrl)).get
+          publicCompiled = ZioHttp.validate(application).fold(throw _, identity).find(_.matches(publicUrl)).get
           publicLifecycle <- publicCompiled.prepareConnected(
                                publicUrl,
                                Request.get(publicUrl),

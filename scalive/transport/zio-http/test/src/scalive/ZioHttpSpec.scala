@@ -24,8 +24,11 @@ object ZioHttpSpec extends ZIOSpecDefault:
     allowedWebSocketOrigins = Set(WebSocketOrigin.https("scalive.test"))
   ).toOption.get
 
-  private def run(routes: Routes[Any, Nothing], request: Request): UIO[Response] =
-    ZIO.scoped(routes.runZIO(request))
+  private def run(
+    routes: IO[ZioHttp.AssemblyException, Routes[Any, Nothing]],
+    request: Request
+  ): UIO[Response] =
+    routes.orDie.flatMap(routes => ZIO.scoped(routes.runZIO(request)))
 
   def spec = suite("ZioHttp root transport")(
     test("rejects websocket upgrades with missing or opaque origins") {
@@ -778,7 +781,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
         factories.incrementAndGet()
         View
       })
-      val directRoutes = ZioHttp.validate(application)
+      val directRoutes = ZioHttp.validate(application).fold(throw _, identity)
 
       for
         csrf   <- ZioHttpSecurity.issueCsrf(config)
@@ -867,7 +870,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
         def view(model: Signal[Unit]) = div()
 
       val application  = scalive.Live.router((scalive.live / "page") -> View)
-      val directRoutes = ZioHttp.validate(application)
+      val directRoutes = ZioHttp.validate(application).fold(throw _, identity)
       val pageUrl       = URL.decode("/page?tab=one#discarded").toOption.get
 
       for
@@ -938,7 +941,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
         (scalive.live / "guard").withMountAspect(routeAspect) -> View,
         scalive.Live.session("other")(scalive.live / "c" -> View)
       )
-      val catalog = ZioHttp.validate(application)
+      val catalog = ZioHttp.validate(application).fold(throw _, identity)
       val source  = catalog.find(_.matches(URL.decode("/a").toOption.get)).get
 
       for
@@ -1212,7 +1215,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
         ) = ZIO.succeed { events += s"recover:${error.message}"; "recovered" }
         def view(model: Signal[String]) = div(model)
       val application = scalive.Live.router(scalive.live.params(decoder) -> View)
-      val route = ZioHttp.validate(application).head.asInstanceOf[
+      val route = ZioHttp.validate(application).fold(throw _, identity).head.asInstanceOf[
         ZioHttp.CompiledRoute[Any] { type Msg = Nothing; type Model = String }
       ]
 
@@ -1247,7 +1250,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
 
       for
         response <- run(
-                      ZioHttp.routes(application, config).provideEnvironment(ZEnvironment(Greeting("hello"))),
+                      ZioHttp.routes(application, config).map(_.provideEnvironment(ZEnvironment(Greeting("hello")))),
                       Request.get(URL.root)
                     )
         body <- response.body.asString.orDie
@@ -1271,13 +1274,13 @@ object ZioHttpSpec extends ZIOSpecDefault:
           )
       )
       val environment = ZEnvironment(Greeting("hello"))
-      val route       = ZioHttp.validate(application).head.asInstanceOf[
+      val route       = ZioHttp.validate(application).fold(throw _, identity).head.asInstanceOf[
         ZioHttp.CompiledRoute[Greeting] { type Msg = Nothing; type Model = String }
       ]
 
       for
         response <- run(
-                      ZioHttp.routes(application, config).provideEnvironment(environment),
+                      ZioHttp.routes(application, config).map(_.provideEnvironment(environment)),
                       Request.get(URL.root)
                     )
         body   <- response.body.asString.orDie
@@ -1305,11 +1308,12 @@ object ZioHttpSpec extends ZIOSpecDefault:
         scalive.Live.session("same")(scalive.live / "other" -> View)
       )
 
-      assertTrue(
-        scala.util.Try(ZioHttp.routes(duplicateRoutes, config)).failed.toOption
-          .exists(_.isInstanceOf[ZioHttp.AssemblyException]),
-        scala.util.Try(ZioHttp.routes(duplicateSessions, config)).failed.toOption
-          .exists(_.isInstanceOf[ZioHttp.AssemblyException])
+      for
+        routeError   <- ZioHttp.routes(duplicateRoutes, config).flip
+        sessionError <- ZioHttp.routes(duplicateSessions, config).flip
+      yield assertTrue(
+        routeError.getMessage.startsWith("duplicate rendered route path"),
+        sessionError.getMessage == "duplicate live session: same"
       )
     },
     test("session claims and fresh route aspects preserve mount order") {
@@ -1340,7 +1344,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
       val application = scalive.Live.router(
         scalive.Live.session("main").withMountAspect(sessionAspect)(route)
       )
-      val catalog = ZioHttp.validate(application)
+      val catalog = ZioHttp.validate(application).fold(throw _, identity)
 
       for
         response <- run(ZioHttp.routes(application, config), Request.get(URL.root))
@@ -1759,11 +1763,12 @@ object ZioHttpSpec extends ZIOSpecDefault:
                               )(route)
                           )
             afterDeclaration = constructions.get()
-            compiled         = ZioHttp.validate(application).head
+            compiled         = ZioHttp.validate(application).fold(throw _, identity).head
             response <-
               run(
                 ZioHttp
-                  .routes(application, config).provideEnvironment(ZEnvironment(Greeting("http"))),
+                  .routes(application, config)
+                  .map(_.provideEnvironment(ZEnvironment(Greeting("http")))),
                 Request.get(URL.root)
               )
             body   <- response.body.asString.orDie
@@ -2229,9 +2234,10 @@ object ZioHttpSpec extends ZIOSpecDefault:
     runTest: Int => ZIO[Client & Scope, Throwable, A]
   ): Task[A] =
     for
+      routes  <- ZioHttp.routes(application, config, observer)
       started <- Promise.make[Nothing, Int]
       _       <- Server
-             .install(ZioHttp.routes(application, config, observer))
+             .install(routes)
              .tap(started.succeed)
              .zipRight(ZIO.never)
              .provideLayer(Server.defaultWith(_.onAnyOpenPort))

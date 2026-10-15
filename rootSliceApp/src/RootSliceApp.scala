@@ -218,10 +218,9 @@ object RootSliceApp extends ZIOAppDefault:
     for
       navigationGuardAssets <- NavigationGuardAssets.load()
       liveViewClientAssets  <- LiveViewClientAssets.load()
-      routes = ZioHttp.routes(
-                 application(navigationGuardAssets, liveViewClientAssets),
-                 config
-               ) ++ supportRoutes ++ navigationGuardAssets.routes ++ liveViewClientAssets.routes
+      liveRoutes <- ZioHttp.routes(application(navigationGuardAssets, liveViewClientAssets), config)
+      routes =
+        liveRoutes ++ supportRoutes ++ navigationGuardAssets.routes ++ liveViewClientAssets.routes
       _ <- Server.serve(routes).provide(Server.defaultWithPort(serverPort))
     yield ()
 end RootSliceApp

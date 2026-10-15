@@ -176,7 +176,8 @@ reads the response body, and parses the HTML. Create
 
 This test builds the same router as the quick start's `Main`, without the root
 layout, and turns it into ZIO HTTP routes with a fixed test
-@:apiSymbol(class:scalive.ZioHttpConfig)`ZioHttpConfig`@:@. Use one fixed, valid
+@:apiSymbol(class:scalive.ZioHttpConfig)`ZioHttpConfig`@:@. `ZioHttp.routes` is an
+effect because it validates the routes, so the test obtains them in its `for`. Use one fixed, valid
 config when assertions depend on signed cookies or tokens; do not compare output
 produced with independently constructed configurations. Even disconnected tests
 must supply a non-empty origin allowlist because it is part of valid transport
@@ -196,8 +197,8 @@ the login page from
 
 @:sourceRegion(documentation/fixtures/guides/test/src/httpforms/LoginFlowSpec.scala, testing-submit-form)
 
-Here `routes` combines the Live routes and the HTTP handlers, built from one
-fixed test config, and `login` is a GET request for `/login`. The handler needs
+Here `LoginApp.routes` combines the Live routes and the HTTP handlers, built from
+one fixed test config, and `login` is a GET request for `/login`. The handler needs
 a `Sessions` service, so the effect is provided with a test layer. Cookies
 returned by one response are carried into the next request, and redirects stay
 explicit: `followSeeOther` follows a local `303 See Other`. The

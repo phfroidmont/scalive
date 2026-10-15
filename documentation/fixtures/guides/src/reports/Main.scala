@@ -24,7 +24,8 @@ object Main extends ZIOAppDefault:
                       .withRootLayout(RootLayout(clientAssets, assets))(
                         Routes.reports
                       )
-      routes = ZioHttp.routes(application, config) ++ clientAssets.routes ++ assets.routes
+      liveRoutes <- ZioHttp.routes(application, config)
+      routes = liveRoutes ++ clientAssets.routes ++ assets.routes
       _ <- Server.serve(routes).provide(Server.defaultWithPort(port), Reports.inMemory)
     yield ()
 // docs:end services-main

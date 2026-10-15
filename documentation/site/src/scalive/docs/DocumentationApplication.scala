@@ -1,5 +1,6 @@
 package scalive.docs
 
+import zio.IO
 import zio.http.Routes
 import zio.http.codec.PathCodec
 
@@ -93,7 +94,10 @@ final private[docs] class DocumentationApplication private (
     assets: StaticAssets,
     security: LiveSecurity,
     config: DocumentationConfig
-  ): Routes[Reports & AuthService & LiveConnections[PublicSessionId], Nothing] =
+  ): IO[
+    ZioHttp.AssemblyException,
+    Routes[Reports & AuthService & LiveConnections[PublicSessionId], Nothing]
+  ] =
     routes(assets, security, config, None)
 
   def routes(
@@ -101,7 +105,10 @@ final private[docs] class DocumentationApplication private (
     security: LiveSecurity,
     config: DocumentationConfig,
     traceStore: DocumentationTraceStore
-  ): Routes[Reports & AuthService & LiveConnections[PublicSessionId], Nothing] =
+  ): IO[
+    ZioHttp.AssemblyException,
+    Routes[Reports & AuthService & LiveConnections[PublicSessionId], Nothing]
+  ] =
     routes(assets, security, config, Some(traceStore))
 
   private def routes(
@@ -109,7 +116,10 @@ final private[docs] class DocumentationApplication private (
     security: LiveSecurity,
     config: DocumentationConfig,
     traceStore: Option[DocumentationTraceStore]
-  ): Routes[Reports & AuthService & LiveConnections[PublicSessionId], Nothing] =
+  ): IO[
+    ZioHttp.AssemblyException,
+    Routes[Reports & AuthService & LiveConnections[PublicSessionId], Nothing]
+  ] =
     val renderer  = DocumentationRenderer(this, Some(assets), traceStore)
     val homeEntry = pages.find(_.page.route == "/").getOrElse {
       throw new IllegalStateException("Missing validated homepage route '/'.")
@@ -150,9 +160,11 @@ final private[docs] class DocumentationApplication private (
     val liveRoutes  = traceStore.fold(ZioHttp.routes(application, security.config))(store =>
       ZioHttp.routes(application, security.config, DocumentationRuntimeObserverFactory(store))
     )
-    liveRoutes ++
-      AuthHttpRoutes(security).routes ++
-      DocumentationMetadataRoutes.routes(this, assets, config.publicOrigin)
+    liveRoutes.map(
+      _ ++
+        AuthHttpRoutes(security).routes ++
+        DocumentationMetadataRoutes.routes(this, assets, config.publicOrigin)
+    )
   end routes
 end DocumentationApplication
 

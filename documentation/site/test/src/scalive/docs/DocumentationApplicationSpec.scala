@@ -86,8 +86,9 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         assets      <- StaticAssets.load(
                     StaticAssetConfig.classpath("public", assetNames)
                   )
-        routes =
-          application.routes(assets, security, config).provideEnvironment(documentationEnvironment)
+        routes <- application
+                    .routes(assets, security, config)
+                    .map(_.provideEnvironment(documentationEnvironment))
         _ <- ZIO.foreachDiscard(application.pages) { entry =>
                for
                  rendered <- DisconnectedRender.run(routes, Request.get(url(entry.page.route)))
@@ -174,8 +175,9 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
       for
         application <- loadApplication
         assets      <- StaticAssets.load(StaticAssetConfig.classpath("public", assetNames))
-        routes =
-          application.routes(assets, security, config).provideEnvironment(documentationEnvironment)
+        routes <- application
+                    .routes(assets, security, config)
+                    .map(_.provideEnvironment(documentationEnvironment))
         home  <- DisconnectedRender.run(routes, Request.get(URL.root))
         learn <- DisconnectedRender.run(routes, Request.get(url("/learn")))
         homeDocument  = Jsoup.parse(home.html)
@@ -209,8 +211,9 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         assets      <- StaticAssets.load(
                     StaticAssetConfig.classpath("public", assetNames)
                   )
-        routes =
-          application.routes(assets, security, config).provideEnvironment(documentationEnvironment)
+        routes <- application
+                    .routes(assets, security, config)
+                    .map(_.provideEnvironment(documentationEnvironment))
         rendered <- DisconnectedRender.run(routes, Request.get(url("/learn")))
         document = Jsoup.parse(rendered.html)
         lifecycleRendered <- DisconnectedRender.run(
@@ -257,8 +260,9 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
       for
         application <- loadApplication
         assets      <- StaticAssets.load(StaticAssetConfig.classpath("public", assetNames))
-        routes =
-          application.routes(assets, security, config).provideEnvironment(documentationEnvironment)
+        routes <- application
+                    .routes(assets, security, config)
+                    .map(_.provideEnvironment(documentationEnvironment))
         rendered <- DisconnectedRender.run(
                       routes,
                       Request.get(url("/project/runtime-architecture"))
@@ -311,8 +315,9 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
       for
         application <- loadApplication
         assets      <- StaticAssets.load(StaticAssetConfig.classpath("public", assetNames))
-        routes =
-          application.routes(assets, security, config).provideEnvironment(documentationEnvironment)
+        routes <- application
+                    .routes(assets, security, config)
+                    .map(_.provideEnvironment(documentationEnvironment))
         learn   <- DisconnectedRender.run(routes, Request.get(url("/learn/models-and-messages")))
         guides  <- DisconnectedRender.run(routes, Request.get(url("/guides/testing")))
         project <- DisconnectedRender.run(routes, Request.get(url("/project")))
@@ -419,8 +424,9 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         assets      <- StaticAssets.load(
                     StaticAssetConfig.classpath("public", assetNames)
                   )
-        routes =
-          application.routes(assets, security, config).provideEnvironment(documentationEnvironment)
+        routes <- application
+                    .routes(assets, security, config)
+                    .map(_.provideEnvironment(documentationEnvironment))
         rendered <- DisconnectedRender.run(
                       routes,
                       Request.get(url("/api/scalive/live-view"))
@@ -489,8 +495,9 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
       for
         application <- loadApplication
         assets      <- StaticAssets.load(StaticAssetConfig.classpath("public", assetNames))
-        routes =
-          application.routes(assets, security, config).provideEnvironment(documentationEnvironment)
+        routes <- application
+                    .routes(assets, security, config)
+                    .map(_.provideEnvironment(documentationEnvironment))
         rendered <- DisconnectedRender.run(routes, Request.get(url("/learn/models-and-messages")))
         document  = Jsoup.parse(rendered.html)
         reference = document.selectFirst("[data-api-reference='trait:scalive.LiveView']")
@@ -516,8 +523,9 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
       for
         application <- loadApplication
         assets      <- StaticAssets.load(StaticAssetConfig.classpath("public", assetNames))
-        routes =
-          application.routes(assets, security, config).provideEnvironment(documentationEnvironment)
+        routes <- application
+                    .routes(assets, security, config)
+                    .map(_.provideEnvironment(documentationEnvironment))
         rendered <- DisconnectedRender.run(routes, Request.get(url("/examples")))
         filtered <- DisconnectedRender.run(
                       routes,
@@ -610,8 +618,9 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
       for
         application <- loadApplication
         assets      <- StaticAssets.load(StaticAssetConfig.classpath("public", assetNames))
-        routes =
-          application.routes(assets, security, config).provideEnvironment(documentationEnvironment)
+        routes <- application
+                    .routes(assets, security, config)
+                    .map(_.provideEnvironment(documentationEnvironment))
         counter <- DisconnectedRender.run(routes, Request.get(url("/examples/counter")))
         counterDocument = Jsoup.parse(counter.html)
         counterExample  = counterDocument.selectFirst("#example-counter")
@@ -633,10 +642,9 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         assets      <- StaticAssets.load(
                     StaticAssetConfig.classpath("public", assetNames)
                   )
-        routes = application
-                   .routes(assets, security, config).provideEnvironment(
-                     documentationEnvironment
-                   ) ++ assets.routes
+        routes <- application
+                    .routes(assets, security, config)
+                    .map(_.provideEnvironment(documentationEnvironment) ++ assets.routes)
         home       <- DisconnectedRender.run(routes, Request.get(URL.root))
         missing    <- ZIO.scoped(routes.runZIO(Request.get(url("/not-a-documentation-page"))))
         extra      <- ZIO.scoped(routes.runZIO(Request.get(url("/learn/extra"))))
@@ -685,8 +693,9 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
       for
         application <- loadApplication
         assets      <- StaticAssets.load(StaticAssetConfig.classpath("public", assetNames))
-        routes =
-          application.routes(assets, security, config).provideEnvironment(documentationEnvironment)
+        routes <- application
+                    .routes(assets, security, config)
+                    .map(_.provideEnvironment(documentationEnvironment))
         empty   <- DisconnectedRender.run(routes, Request.get(url("/search")))
         symbol  <- DisconnectedRender.run(routes, Request.get(url("/search?q=scalive.LiveView")))
         alias   <- DisconnectedRender.run(routes, Request.get(url("/search?q=live%20view")))
@@ -716,8 +725,9 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
       for
         application <- loadApplication
         assets      <- StaticAssets.load(StaticAssetConfig.classpath("public", assetNames))
-        routes =
-          application.routes(assets, security, config).provideEnvironment(documentationEnvironment)
+        routes <- application
+                    .routes(assets, security, config)
+                    .map(_.provideEnvironment(documentationEnvironment))
         sitemapResponse <- ZIO.scoped(routes.runZIO(Request.get(url("/sitemap.xml"))))
         robotsResponse  <- ZIO.scoped(routes.runZIO(Request.get(url("/robots.txt"))))
         sitemap         <- sitemapResponse.body.asString
@@ -739,8 +749,9 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
       for
         application <- loadApplication
         assets      <- StaticAssets.load(StaticAssetConfig.classpath("public", assetNames))
-        routes =
-          application.routes(assets, security, config).provideEnvironment(documentationEnvironment)
+        routes <- application
+                    .routes(assets, security, config)
+                    .map(_.provideEnvironment(documentationEnvironment))
         indexResponse <- ZIO.scoped(routes.runZIO(Request.get(url("/llms.txt"))))
         headResponse  <- ZIO.scoped(routes.runZIO(Request.head(url("/llms.txt"))))
         index         <- indexResponse.body.asString
@@ -782,8 +793,9 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
       for
         application <- loadApplication
         assets      <- StaticAssets.load(StaticAssetConfig.classpath("public", assetNames))
-        routes =
-          application.routes(assets, security, config).provideEnvironment(documentationEnvironment)
+        routes <- application
+                    .routes(assets, security, config)
+                    .map(_.provideEnvironment(documentationEnvironment))
         markdown <- ZIO.foreach(application.bundle.pages) { page =>
                       val path = markdownPath(page.route)
                       for

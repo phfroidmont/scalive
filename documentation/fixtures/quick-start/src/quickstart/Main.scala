@@ -18,7 +18,8 @@ object Main extends ZIOAppDefault:
                       .withRootLayout(RootLayout(clientAssets, assets))(
                         Routes.home -> CounterLiveView()
                       )
-      routes = ZioHttp.routes(application, config) ++ clientAssets.routes ++ assets.routes
+      liveRoutes <- ZioHttp.routes(application, config)
+      routes = liveRoutes ++ clientAssets.routes ++ assets.routes
       _ <- Server.serve(routes).provide(Server.defaultWithPort(port))
     yield ()
 // docs:end quick-start-main

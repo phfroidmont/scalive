@@ -44,8 +44,10 @@ All four values are required:
 | `allowedWebSocketOrigins` | Non-empty set of exact browser origins admitted for WebSocket upgrades. Construction rejects a set with no usable origin. | List every browser-facing page origin that may connect. See [Admit WebSocket origins](#admit-websocket-origins). |
 
 Construct the value once and reuse it. `ZioHttp.routes` also validates the
-assembled Live route catalog, rejecting duplicate live-session names and duplicate
-rendered paths before the server starts.
+assembled Live route catalog: its effect fails with
+@:apiSymbol(class:scalive.ZioHttp.AssemblyException)`ZioHttp.AssemblyException`@:@ for
+duplicate live-session names or duplicate rendered paths, before the server
+starts.
 
 ## Admit WebSocket origins {#admit-websocket-origins}
 

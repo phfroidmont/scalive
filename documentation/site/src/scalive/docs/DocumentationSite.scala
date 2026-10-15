@@ -58,10 +58,8 @@ object DocumentationSite extends ZIOAppDefault:
                            )
       security = LiveSecurity(transportConfig)
       revision = bundle.apiReference.metadata.revision
-      routes   =
-        application.routes(assets, security, config, traceStore) ++ healthRoutes(
-          revision
-        ) ++ assets.routes
+      siteRoutes <- application.routes(assets, security, config, traceStore)
+      routes = siteRoutes ++ healthRoutes(revision) ++ assets.routes
       _ <- Server
              .serve(routes)
              .provide(

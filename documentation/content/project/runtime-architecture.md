@@ -83,8 +83,8 @@ session inputs, but they do not share a model, render program, or resource scope
 
 `Live.router(...)` produces a `LiveApplication`: a declarative set of typed
 routes, live sessions, layouts, mount aspects, and a socket path.
-`ZioHttp.routes(application, config)` validates that catalog and exposes ordinary
-GET routes alongside the WebSocket endpoint.
+`ZioHttp.routes(application, config)` validates that catalog in an effect that
+returns ordinary GET routes alongside the WebSocket endpoint.
 
 For a GET, the selected route decodes typed path and query parameters, applies
 session and route mount aspects, and creates a request-owned lifecycle with

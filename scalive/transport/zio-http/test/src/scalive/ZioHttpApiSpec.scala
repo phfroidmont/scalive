@@ -22,7 +22,8 @@ object ZioHttpApiSpec extends ZIOSpecDefault:
           secureCookie = true,
           allowedWebSocketOrigins = Set(WebSocketOrigin.https("example.com"))
         ).toOption.get
-        val routes: Routes[Any, Nothing] = ZioHttp.routes(application, config)
+        val routes: IO[ZioHttp.AssemblyException, Routes[Any, Nothing]] =
+          ZioHttp.routes(application, config)
       """)
 
       assertTrue(errors.isEmpty)
@@ -46,7 +47,8 @@ object ZioHttpApiSpec extends ZIOSpecDefault:
           allowedWebSocketOrigins = Set(WebSocketOrigin.https("example.com"))
         ).toOption.get
         val observer = LifecycleObserver.fromFunction(_ => ZIO.unit)
-        val routes: Routes[Any, Nothing] = ZioHttp.routes(application, config, observer)
+        val routes: IO[ZioHttp.AssemblyException, Routes[Any, Nothing]] =
+          ZioHttp.routes(application, config, observer)
       """)
 
       assertTrue(errors.isEmpty)

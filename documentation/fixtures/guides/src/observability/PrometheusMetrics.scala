@@ -30,8 +30,10 @@ object PrometheusMetrics:
 
   def serve(application: LiveApplication[Any], config: ZioHttpConfig) =
     // docs:start observability-prometheus-serve
-    val routes =
-      ZioHttp.routes(application, config, LifecycleMetrics.observer) ++ MetricsRoutes.routes
-
-    Server.serve(routes).provide(Server.defaultWithPort(8080), PrometheusMetrics.layers)
+    for
+      liveRoutes <- ZioHttp.routes(application, config, LifecycleMetrics.observer)
+      _          <- Server
+             .serve(liveRoutes ++ MetricsRoutes.routes)
+             .provide(Server.defaultWithPort(8080), PrometheusMetrics.layers)
+    yield ()
     // docs:end observability-prometheus-serve

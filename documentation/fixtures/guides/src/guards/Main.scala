@@ -21,8 +21,9 @@ object Main extends ZIOAppDefault:
       application = Live.router.withRootLayout(rootLayout)(
                       (live / "notes") -> NoteLiveView(notes)
                     )
+      liveRoutes <- ZioHttp.routes(application, config)
       routes =
-        ZioHttp.routes(application, config) ++
+        liveRoutes ++
           clientAssets.routes ++
           appAssets.routes ++
           guardAssets.routes

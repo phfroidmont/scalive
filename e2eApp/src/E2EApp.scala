@@ -241,9 +241,9 @@ object E2EApp extends ZIOAppDefault:
           )
       rootLayout  = new E2ERootLayout(assets, navigationGuardAssets)
       application = liveRoutes(rootLayout, assets)
-      routes      =
-        ZioHttp.routes(application, config) ++ healthRoutes(assets) ++ assets.routes ++
-          navigationGuardAssets.routes
+      liveViewRoutes <- ZioHttp.routes(application, config)
+      routes =
+        liveViewRoutes ++ healthRoutes(assets) ++ assets.routes ++ navigationGuardAssets.routes
       _ <- Server.serve(routes).provide(Server.defaultWithPort(serverPort))
     yield ()
 end E2EApp

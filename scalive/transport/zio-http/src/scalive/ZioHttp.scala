@@ -20,8 +20,8 @@ import scalive.upload.*
 
 /** ZIO HTTP assembly for root LiveView routes. */
 object ZioHttp:
-  /** Thrown by [[routes]] when an application cannot be served, for example because two named live
-    * sessions share a name.
+  /** Why [[routes]] cannot serve an application, for example because two named live sessions share
+    * a name.
     */
   final class AssemblyException(message: String) extends IllegalArgumentException(message)
   final private case class ConnectedMountRejected(failure: LiveSessionMountFailure)
@@ -123,30 +123,23 @@ object ZioHttp:
   /** Builds the ZIO HTTP routes that serve `application`: one GET route per page and the LiveView
     * WebSocket.
     *
-    * Ordinary HTTP handlers that need the same CSRF, flash, or cookie policy build a
-    * [[LiveSecurity]] from the same `config`. Throws [[AssemblyException]] when the application is
-    * invalid, for example when two named live sessions share a name.
-    */
-  def routes[R](application: LiveApplication[R], config: ZioHttpConfig): Routes[R, Nothing] =
-    routes(application, config, LifecycleObserver.none)
-
-  /** Builds the ZIO HTTP routes that serve `application`: one GET route per page and the LiveView
-    * WebSocket.
-    *
-    * This form also reports structured lifecycle events to `observer`.
+    * It fails with [[AssemblyException]] when the application is invalid, for example when two
+    * named live sessions share a name. `observer` receives structured lifecycle events. Ordinary
+    * HTTP handlers that need the same CSRF, flash, or cookie policy build a [[LiveSecurity]] from
+    * the same `config`.
     */
   def routes[R](
     application: LiveApplication[R],
     config: ZioHttpConfig,
-    observer: LifecycleObserver
-  ): Routes[R, Nothing] =
+    observer: LifecycleObserver = LifecycleObserver.none
+  ): IO[AssemblyException, Routes[R, Nothing]] =
     routes(application, config, observer, RuntimeObserverFactory.logging)
 
   private[scalive] def routes[R](
     application: LiveApplication[R],
     config: ZioHttpConfig,
     observerFactory: RuntimeObserverFactory
-  ): Routes[R, Nothing] =
+  ): IO[AssemblyException, Routes[R, Nothing]] =
     routes(application, config, LifecycleObserver.none, observerFactory)
 
   private def routes[R](
@@ -154,29 +147,27 @@ object ZioHttp:
     config: ZioHttpConfig,
     lifecycleObserver: LifecycleObserver,
     observerFactory: RuntimeObserverFactory
-  ): Routes[R, Nothing] =
-    val catalog     = validate(application)
-    val getRoutes   = catalog.map(_.getRoute(config, lifecycleObserver))
-    val socketRoute = websocketRoute(
-      application.socketPath,
-      catalog,
-      config,
-      lifecycleObserver,
-      observerFactory
-    )
-    Routes.fromIterable(getRoutes :+ socketRoute)
+  ): IO[AssemblyException, Routes[R, Nothing]] =
+    ZIO.fromEither(validate(application)).map { catalog =>
+      val getRoutes   = catalog.map(_.getRoute(config, lifecycleObserver))
+      val socketRoute = websocketRoute(
+        application.socketPath,
+        catalog,
+        config,
+        lifecycleObserver,
+        observerFactory
+      )
+      Routes.fromIterable(getRoutes :+ socketRoute)
+    }
 
-  private[scalive] def validate[R](application: LiveApplication[R]): Vector[CompiledRoute[R]] =
+  private[scalive] def validate[R](
+    application: LiveApplication[R]
+  ): Either[AssemblyException, Vector[CompiledRoute[R]]] =
     val sessionNames = application.routes.collect { case session: LiveSession[?] => session.name }
     val duplicateSessions = sessionNames.groupBy(identity).collect {
       case (name, values) if values.size > 1 =>
         name
     }
-    if duplicateSessions.nonEmpty then
-      throw AssemblyException(
-        s"duplicate live session: ${duplicateSessions.toVector.sorted.mkString(", ")}"
-      )
-
     val declarations = application.routes.flatMap {
       case route: LiveRegistration[?] => Vector(None -> route)
       case session: LiveSession[?]    => session.routes.map(Some(session.name) -> _)
@@ -198,11 +189,19 @@ object ZioHttp:
     val duplicatePaths = catalog.groupBy(_.pathDescription).collect {
       case (description, values) if values.size > 1 => description
     }
-    if duplicatePaths.nonEmpty then
-      throw AssemblyException(
-        s"duplicate rendered route path: ${duplicatePaths.toVector.sorted.mkString(", ")}"
+    if duplicateSessions.nonEmpty then
+      Left(
+        AssemblyException(
+          s"duplicate live session: ${duplicateSessions.toVector.sorted.mkString(", ")}"
+        )
       )
-    catalog
+    else if duplicatePaths.nonEmpty then
+      Left(
+        AssemblyException(
+          s"duplicate rendered route path: ${duplicatePaths.toVector.sorted.mkString(", ")}"
+        )
+      )
+    else Right(catalog)
   end validate
 
   final private[scalive] case class SessionMountClaims(values: Vector[String])
@@ -1711,7 +1710,7 @@ object ZioHttp:
     csrfToken: Option[String]
   ): ZIO[R & Scope, Throwable, InProcessTransport] =
     for
-      routes   <- ZIO.attempt(validate(application))
+      routes   <- ZIO.fromEither(validate(application))
       incoming <- Queue.bounded[InProcessInput](PhysicalWriterSize)
       outgoing <- Queue.bounded[PhoenixEnvelope](PhysicalWriterSize)
       closed   <- Promise.make[Nothing, Unit]

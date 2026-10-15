@@ -19,13 +19,13 @@ object CounterPageSpec extends ZIOSpecDefault:
   ).fold(throw _, identity)
 
   private val application = Live.router(Routes.home -> CounterLiveView())
-  private val routes      = ZioHttp.routes(application, config)
 
   def spec = suite("Counter page")(
     test("renders the initial count before the browser connects") {
       for
-        page  <- DisconnectedRender.run(routes, Request.get(URL.root))
-        count <- ZIO.fromEither(RenderedHtml.parse(page.html).selectOne("output"))
+        routes <- ZioHttp.routes(application, config)
+        page   <- DisconnectedRender.run(routes, Request.get(URL.root))
+        count  <- ZIO.fromEither(RenderedHtml.parse(page.html).selectOne("output"))
                    .mapError(error => AssertionError(error.toString))
       yield assertTrue(page.response.status == Status.Ok, count.text == "0")
     }

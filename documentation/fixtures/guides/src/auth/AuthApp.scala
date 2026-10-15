@@ -23,16 +23,18 @@ object AuthApp:
     authHttpRoutes: Routes[AuthService & LiveConnections[PublicSessionId], Nothing]
   ): Task[Unit] =
     val application = Live.router(protectedRoutes)
-    val routes      = ZioHttp.routes(application, config) ++ authHttpRoutes
     // docs:start auth-provide-local
-    Server
-      .serve(routes)
-      .provide(
-        Server.default,
-        AuthService.live,
-        Accounts.live,
-        LiveConnections.local[PublicSessionId]
-      )
+    for
+      liveRoutes <- ZioHttp.routes(application, config)
+      _          <- Server
+             .serve(liveRoutes ++ authHttpRoutes)
+             .provide(
+               Server.default,
+               AuthService.live,
+               Accounts.live,
+               LiveConnections.local[PublicSessionId]
+             )
+    yield ()
     // docs:end auth-provide-local
 
   // docs:start auth-provide-distributed

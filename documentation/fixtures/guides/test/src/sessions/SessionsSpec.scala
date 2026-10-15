@@ -68,13 +68,15 @@ object SessionsSpec extends ZIOSpecDefault:
       }
     },
     test("the session aspect rejects a visitor without a session") {
-      val routes = ZioHttp.routes(Application.application, config)
-      for page <- DisconnectedRender.run(routes, request("/account", signedIn = false))
+      for
+        routes <- ZioHttp.routes(Application.application, config)
+        page   <- DisconnectedRender.run(routes, request("/account", signedIn = false))
       yield assertTrue(page.response.status == Status.Unauthorized)
     },
     test("the route aspect hides an unknown workspace") {
-      val routes = ZioHttp.routes(Application.application, config)
-      for page <- DisconnectedRender.run(routes, request("/workspaces/secret"))
+      for
+        routes <- ZioHttp.routes(Application.application, config)
+        page   <- DisconnectedRender.run(routes, request("/workspaces/secret"))
       yield assertTrue(page.response.status == Status.NotFound)
     }
   ).provide(services)

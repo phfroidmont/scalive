@@ -110,11 +110,9 @@ object ReportsExampleSpec extends ZIOSpecDefault:
         reports(Vector(Report(42L, "Fixture report", "Provided by the route environment.")))
       )
       for
+        routes   <- ZioHttp.routes(scalive.Live.router(ReportsExample.route), transportConfig)
         rendered <- DisconnectedRender
-                      .run(
-                        ZioHttp.routes(scalive.Live.router(ReportsExample.route), transportConfig),
-                        Request.get(URL.root / "examples" / "service-injection" / "lab")
-                      )
+                      .run(routes, Request.get(URL.root / "examples" / "service-injection" / "lab"))
                       .provideLayer(provided)
         document = Jsoup.parse(rendered.html)
       yield assertTrue(

@@ -243,8 +243,8 @@ requirement. For one backend instance, provide each layer once at
 
 @:sourceRegion(documentation/fixtures/guides/src/auth/AuthApp.scala, auth-provide-local)
 
-Here `routes` combines `ZioHttp.routes(application, config)` with the login and
-logout routes, as the lab does with `AuthHttpRoutes(security).routes`.
+It combines the Live routes with the login and logout routes, as the lab does
+with `AuthHttpRoutes(security).routes`.
 
 `Accounts.live` provides the service that the
 [profile route's factory](#authenticate-both-mount-phases) reads with

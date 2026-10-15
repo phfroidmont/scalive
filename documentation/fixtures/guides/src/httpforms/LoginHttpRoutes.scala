@@ -68,11 +68,11 @@ end LoginHttpRoutes
 
 object LoginApp:
   // docs:start http-forms-assembly
-  def routes(config: ZioHttpConfig): Routes[Sessions, Nothing] =
+  def routes(config: ZioHttpConfig): IO[ZioHttp.AssemblyException, Routes[Sessions, Nothing]] =
     val security    = LiveSecurity(config)
     val application = Live.router(
       Pages.login     -> LoginLiveView(),
       Pages.dashboard -> DashboardLiveView()
     )
-    ZioHttp.routes(application, config) ++ LoginHttpRoutes(security).routes
+    ZioHttp.routes(application, config).map(_ ++ LoginHttpRoutes(security).routes)
   // docs:end http-forms-assembly

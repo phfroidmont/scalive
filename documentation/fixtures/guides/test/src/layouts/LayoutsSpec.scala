@@ -21,7 +21,7 @@ object LayoutsSpec extends ZIOSpecDefault:
     for
       clientAssets <- LiveViewClientAssets.load()
       assets       <- StaticAssets.load(StaticAssetConfig.classpath("public", Seq("app.js")))
-      routes        = ZioHttp.routes(Application(clientAssets, assets), config)
+      routes       <- ZioHttp.routes(Application(clientAssets, assets), config)
       page         <- DisconnectedRender.run(routes, Request.get(URL.decode(path).toOption.get))
     yield RenderedHtml.parse(page.html)
 

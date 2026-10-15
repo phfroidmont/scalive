@@ -60,10 +60,9 @@ object DisconnectedRenderSpec extends ZIOSpecDefault:
           )
 
       val application = scalive.Live.router(scalive.live.queryOptional[String]("notice") -> view)
-      val routes      = ZioHttp.routes(application, config)
-
       for
-        page <- DisconnectedRender.run(routes, Request.get(url("/?notice=ready")))
+        routes <- ZioHttp.routes(application, config)
+        page   <- DisconnectedRender.run(routes, Request.get(url("/?notice=ready")))
         renderedForm <- ZIO
                           .fromEither(
                             page.form(
@@ -97,11 +96,12 @@ object DisconnectedRenderSpec extends ZIOSpecDefault:
             form(action := "/second")
           )
 
-      val routes  = ZioHttp.routes(scalive.Live.router(scalive.live -> view), config)
       val all     = FormQuery()
       val missing = FormQuery(action = Some("/missing"))
 
-      for page <- DisconnectedRender.run(routes, Request.get(URL.root))
+      for
+        routes <- ZioHttp.routes(scalive.Live.router(scalive.live -> view), config)
+        page   <- DisconnectedRender.run(routes, Request.get(URL.root))
       yield assertTrue(
         page.forms.map(_.method) == Vector(Method.GET, Method.GET),
         page.form(all) == Left(FormQueryError.MultipleMatches(all, 2)),
@@ -335,9 +335,8 @@ object DisconnectedRenderSpec extends ZIOSpecDefault:
             items.stream((domId, item) => li(idAttr := domId, item.map(_.id.toString)))
           )
 
-      val routes = ZioHttp.routes(scalive.Live.router(scalive.live -> view), config)
-
       for
+        routes   <- ZioHttp.routes(scalive.Live.router(scalive.live -> view), config)
         page     <- DisconnectedRender.run(routes, Request.get(URL.root))
         document = Jsoup.parse(page.html)
       yield assertTrue(

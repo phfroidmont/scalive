@@ -309,9 +309,10 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
     observer: LifecycleObserver = LifecycleObserver.none
   )(run: Int => ZIO[Client & Scope, Throwable, A]): ZIO[R, Throwable, A] =
     for
+      routes  <- ZioHttp.routes(application, transportConfig, observer)
       started <- Promise.make[Nothing, Int]
       _ <- (Server
-             .install(ZioHttp.routes(application, transportConfig, observer))
+             .install(routes)
              .tap(started.succeed)
              .zipRight(ZIO.never)
               .provideSomeLayer[R](Server.defaultWith(_.onAnyOpenPort)))

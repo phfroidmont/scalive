@@ -346,16 +346,17 @@ object RootConnectionSpec extends ZIOSpecDefault:
         yield assertTrue(seen == Vector("static", "a", "b"), model == 111)
       }
     },
-    test("named browser hooks consume malformed payloads and bypass binding lookup") {
+    test("declared browser events reach event hooks and handleMessage; malformed ones are consumed") {
       ZIO.scoped {
         val named = BrowserToServerEvent[Int]("counter")
         for
-          calls <- Ref.make(0)
+          hooked <- Ref.make(Vector.empty[Int])
           outputs <- Queue.unbounded[ConnectionOutput]
           view = new LiveView[Int, Int]:
-                   override val hooks = LiveHooks.empty[Int, Int].onBrowserEvent(named) {
-                     (model, amount, _) => calls.update(_ + 1).as(model + amount)
+                   override val hooks = LiveHooks.empty[Int, Int].onEvent { (model, amount, _) =>
+                     hooked.update(_ :+ amount).as(LiveHookResult.cont(model))
                    }
+                   override val browserEvents = BrowserEvents.on(named)(identity)
                    def mount(ctx: MountContext): Task[Int] = ZIO.succeed(5)
                    def handleMessage(model: Int, ctx: MessageContext): Int => Task[Int] =
                      amount => ZIO.succeed(model + amount)
@@ -371,8 +372,8 @@ object RootConnectionSpec extends ZIOSpecDefault:
           _ <- connection.submitNamedEvent(bad, unknown, BindingPayload.Params(Map.empty), "counter", "nope")
           _ <- outputs.take
           afterBad <- connection.inspectModel
-          count <- calls.get
-        yield assertTrue(afterGood == 7, afterBad == 7, count == 1)
+          messages <- hooked.get
+        yield assertTrue(afterGood == 7, afterBad == 7, messages == Vector(2))
       }
     },
     test("raw event hooks can halt with a correlated browser reply") {

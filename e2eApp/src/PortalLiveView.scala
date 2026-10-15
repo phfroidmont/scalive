@@ -335,10 +335,7 @@ object PortalLiveView:
     def handleMessage(props: Unit, model: Model, ctx: MessageContext) =
       (_: Msg.type) => prependItem(model, ctx.streams)
 
-    override def hooks: ComponentLiveHooks[Unit, Msg.type, Model] =
-      ComponentLiveHooks.empty.onBrowserEvent(BrowserToServerEvent[Json]("prepend")) {
-        (_, model, _, ctx) => prependItem(model, ctx.streams)
-      }
+    override def browserEvents = BrowserEvents.on(BrowserToServerEvent[Json]("prepend"))(_ => Msg)
 
     override def view(
       props: Signal[Unit],

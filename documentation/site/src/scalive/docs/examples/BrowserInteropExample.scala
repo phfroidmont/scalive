@@ -28,12 +28,9 @@ final class BrowserInteropExample(instanceId: String)
       .hide(to = detailRef.selector)
       .show(to = placeholderRef.selector)
 
-  // docs:start browser-integration-root-hook
-  override def hooks: LiveHooks[Msg, Model] =
-    LiveHooks.onBrowserEvent(CopyResultEvent) { (model, result, _) =>
-      ZIO.succeed(applyCopyResult(model, result))
-    }
-  // docs:end browser-integration-root-hook
+  // docs:start browser-integration-root-events
+  override def browserEvents = BrowserEvents.on(CopyResultEvent)(Msg.CopyFinished(_))
+  // docs:end browser-integration-root-events
 
   def mount(ctx: MountContext): Task[Model] = ZIO.succeed(Model())
 
@@ -46,6 +43,9 @@ final class BrowserInteropExample(instanceId: String)
         .push(CopyRequestEvent, CopyRequest(requestId, SampleText))
         .as(model.copy(requestNumber = requestNumber, operation = CopyOperation.Pending(requestId)))
     // docs:end browser-integration-push
+    // docs:start browser-integration-result
+    case Msg.CopyFinished(result) => ZIO.succeed(applyCopyResult(model, result))
+    // docs:end browser-integration-result
     case Msg.Reset => ZIO.succeed(Model())
 
   def view(model: Signal[Model]): HtmlElement[Msg] =
@@ -117,6 +117,7 @@ object BrowserInteropExample:
 
   enum Msg:
     case CopySample
+    case CopyFinished(result: CopyResult)
     case Reset
 
   enum CopyOperation(val label: String, val traceLabel: String):

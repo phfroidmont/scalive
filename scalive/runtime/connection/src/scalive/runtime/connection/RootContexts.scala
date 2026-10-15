@@ -11,7 +11,6 @@ import zio.UIO
 import zio.ZIO
 import zio.http.URL
 import zio.json.EncoderOps
-import zio.json.JsonDecoder
 import zio.json.JsonEncoder
 import zio.json.ast.Json
 import zio.stream.ZStream
@@ -556,15 +555,6 @@ final private class DeferredRootHooks[Msg, Model] extends LifecycleHooks[Msg, Mo
     ): Task[Unit]                      = Deferred.fail("attach raw event hook")
     def detach(id: String): Task[Unit] = Deferred.fail("detach raw event hook")
 
-  val browserEvent: BrowserEventHooks[Msg, Model] = new BrowserEventHooks[Msg, Model]:
-    def attach[A: JsonDecoder](
-      id: String,
-      event: BrowserToServerEvent[A]
-    )(
-      hook: (Model, A, MessageContext[Msg, Model]) => Task[Model]
-    ): Task[Unit]                      = Deferred.fail("attach browser event hook")
-    def detach(id: String): Task[Unit] = Deferred.fail("detach browser event hook")
-
   val event: EventHooks[Msg, Model] = new EventHooks[Msg, Model]:
     def attach(
       id: String
@@ -628,25 +618,6 @@ final private class JournaledRootHooks[Msg, Model](journal: RootTurnJournal)
     )
     def detach(id: String) = journal.updateHooks[Msg, Model](registry =>
       registry.copy(dynamicRaw = RootHookRegistry.detach(registry.dynamicRaw, id))
-    )
-
-  val browserEvent: BrowserEventHooks[Msg, Model] = new BrowserEventHooks[Msg, Model]:
-    def attach[A: JsonDecoder](
-      id: String,
-      event: BrowserToServerEvent[A]
-    )(
-      hook: (Model, A, MessageContext[Msg, Model]) => Task[Model]
-    ) = journal.updateHooks[Msg, Model](registry =>
-      registry.copy(
-        dynamicBrowser = RootHookRegistry.replace(
-          registry.dynamicBrowser,
-          id,
-          RootHookRegistry.browserHook(event, summon[JsonDecoder[A]], hook)
-        )
-      )
-    )
-    def detach(id: String) = journal.updateHooks[Msg, Model](registry =>
-      registry.copy(dynamicBrowser = RootHookRegistry.detach(registry.dynamicBrowser, id))
     )
 
   val event: EventHooks[Msg, Model] = new EventHooks[Msg, Model]:

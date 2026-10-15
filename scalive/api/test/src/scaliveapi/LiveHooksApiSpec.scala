@@ -36,10 +36,6 @@ object LiveHooksApiSpec extends ZIOSpecDefault:
           LiveHooks.onAsync((model, _, _) => ZIO.succeed(LiveHookResult.cont(model)))
         val raw: LiveHooks[View.Msg, Int] =
           LiveHooks.onRawEvent((model, _, _) => ZIO.succeed(LiveEventHookResult.cont(model)))
-        val browser: LiveHooks[View.Msg, Int] =
-          LiveHooks.onBrowserEvent(BrowserToServerEvent[String]("rename"))((model, _, _) =>
-            ZIO.succeed(model)
-          )
       """)
 
       assertTrue(errors.isEmpty)
@@ -70,10 +66,6 @@ object LiveHooksApiSpec extends ZIOSpecDefault:
         val raw: ComponentLiveHooks[String, Counter.Msg, Int] =
           ComponentLiveHooks.onRawEvent((_, model, _, _) =>
             ZIO.succeed(LiveEventHookResult.cont(model))
-          )
-        val browser: ComponentLiveHooks[String, Counter.Msg, Int] =
-          ComponentLiveHooks.onBrowserEvent(BrowserToServerEvent[String]("rename"))(
-            (_, model, _, _) => ZIO.succeed(model)
           )
       """)
 

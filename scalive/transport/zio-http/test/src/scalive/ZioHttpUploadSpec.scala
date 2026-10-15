@@ -222,10 +222,12 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
                                 model: Signal[LiveUpload[String]],
                               ) = div(idAttr := "component-upload")
       componentInstance = component(componentDefinition, "component-upload")
-      view = new LiveView.Eventless[(LiveUpload[Chunk[Byte]], LiveUpload[String])]:
-               override val hooks = LiveHooks
-                 .empty[Nothing, (LiveUpload[Chunk[Byte]], LiveUpload[String])]
-                  .onBrowserEvent(uploadEvent) { (model, event, ctx) =>
+      view = new LiveView[Json, (LiveUpload[Chunk[Byte]], LiveUpload[String])]:
+               override val browserEvents = BrowserEvents.on(uploadEvent)(identity)
+               def handleMessage(
+                 model: (LiveUpload[Chunk[Byte]], LiveUpload[String]),
+                 ctx: MessageContext
+               ): Json => Task[(LiveUpload[Chunk[Byte]], LiveUpload[String])] = event =>
                     for
                       currentHosted   <- ctx.uploads.get(hosted)
                       currentExternal <- ctx.uploads.get(external)
@@ -247,7 +249,6 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
                              currentExternal.toVector.flatMap(_.entries.map(_.progress))
                            )
                     yield model
-                  }
                def mount(ctx: MountContext) =
                  for
                    hostedUpload   <- allowed(ctx.uploads, hosted)
@@ -1648,11 +1649,11 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
         def view(props: Signal[Unit], model: Signal[Unit]) =
           div(idAttr := "destroyed-component")
       val instance = component(definition, "destroyed-component")
-      val view = new LiveView[Nothing, Boolean]:
-        override val hooks = LiveHooks.empty[Nothing, Boolean]
-          .onBrowserEvent(hideEvent)((_, _, _) => ZIO.succeed(false))
+      val view = new LiveView[Boolean, Boolean]:
+        override val browserEvents = BrowserEvents.on(hideEvent)(_ => false)
         def mount(ctx: MountContext) = ZIO.succeed(true)
-        def handleMessage(model: Boolean, ctx: MessageContext): Nothing => Task[Boolean] = identity
+        def handleMessage(model: Boolean, ctx: MessageContext): Boolean => Task[Boolean] =
+          show => ZIO.succeed(show)
         def view(model: Signal[Boolean]) = mainTag(model.when(div(instance.render(()))))
 
       withServer(scalive.Live.router(scalive.live -> view)) { port =>

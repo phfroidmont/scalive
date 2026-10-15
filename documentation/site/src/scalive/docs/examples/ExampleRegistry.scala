@@ -278,6 +278,20 @@ private[docs] object ExampleRegistry:
                 "Request a browser clipboard write",
                 "BrowserInteropExample.Msg.CopySample"
               )
+            case BrowserInteropExample.Msg.CopyFinished(result) =>
+              projected(
+                "BrowserInteropExample.Msg.CopyFinished",
+                "Apply the browser's copy result",
+                constructor(
+                  "Msg.CopyFinished",
+                  constructor(
+                    "CopyResult",
+                    field("requestId", string(result.requestId)),
+                    field("ok", boolean(result.ok))
+                  )
+                ),
+                Vector("requestId" -> result.requestId, "ok" -> result.ok.toString)
+              )
             case BrowserInteropExample.Msg.Reset =>
               traced(
                 "BrowserInteropExample.Msg",

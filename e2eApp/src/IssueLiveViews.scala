@@ -396,16 +396,14 @@ class Issue3530LiveView extends LiveView.Routed[Unit, Issue3530LiveView.Model, O
       .reset(ItemsStream, itemIds.map(Item(_)))
       .as(model)
 
-  override def hooks: LiveHooks[Unit, Model] =
-    LiveHooks.empty.onBrowserEvent(BrowserToServerEvent[Json]("inc")) { (model, _, ctx) =>
+  override def browserEvents = BrowserEvents.on(BrowserToServerEvent[Json]("inc"))(_ => ())
+
+  def handleMessage(model: Model, ctx: MessageContext) =
+    (_: Unit) =>
       val nextCount = model.count + 1
       ctx.streams
         .insert(ItemsStream, Item(nextCount))
         .as(model.copy(count = nextCount))
-    }
-
-  def handleMessage(model: Model, ctx: MessageContext) =
-    (_: Unit) => ZIO.succeed(model)
 
   override def view(model: Signal[Model]) =
     div(
@@ -567,12 +565,11 @@ class Issue3819LiveView extends LiveView[Issue3819LiveView.Msg, Boolean]:
     ZIO.succeed(false)
 
   def handleMessage(model: Boolean, ctx: MessageContext) =
-    case Msg.Noop(_) => ZIO.succeed(model)
+    case Msg.Noop(_)     => ZIO.succeed(model)
+    case Msg.Reconnected => ZIO.succeed(true)
 
-  override def hooks: LiveHooks[Msg, Boolean] =
-    LiveHooks.empty.onBrowserEvent(BrowserToServerEvent[Json]("reconnected"))((_, _, _) =>
-      ZIO.succeed(true)
-    )
+  override def browserEvents =
+    BrowserEvents.on(BrowserToServerEvent[Json]("reconnected"))(_ => Msg.Reconnected)
 
   override def view(reconnected: Signal[Boolean]) =
     div(
@@ -588,6 +585,7 @@ class Issue3819LiveView extends LiveView[Issue3819LiveView.Msg, Boolean]:
 object Issue3819LiveView:
   enum Msg:
     case Noop(data: FormData)
+    case Reconnected
 
 class Issue3107LiveView extends LiveView[Issue3107LiveView.Msg.type, Boolean]:
   def mount(ctx: MountContext) =
@@ -911,25 +909,23 @@ class Issue3026LiveView extends LiveView[Issue3026LiveView.Msg, Issue3026LiveVie
         startLoad(capabilities.async).as(Model(status = Status.Loading))
       case Connection.Disconnected => ZIO.succeed(Model(status = Status.Connecting))
 
-  override def hooks: LiveHooks[Msg, Model] =
-    LiveHooks
-      .empty[Msg, Model]
-      .onBrowserEvent(BrowserToServerEvent[Json]("validate")) { (model, value, _) =>
-        val data = value.asString
-          .flatMap(raw => FormData.fromUrlEncoded(raw).toOption)
-          .getOrElse(FormData.empty)
-        ZIO.succeed(
-          model.copy(
-            name = data.getOrElse("name", model.name),
-            email = data.getOrElse("email", model.email)
-          )
-        )
-      }
-      .onBrowserEvent(BrowserToServerEvent[Json]("submit")) { (model, _, ctx) =>
-        startLoad(ctx.async).as(model.copy(status = Status.Loading))
-      }
+  override def browserEvents =
+    BrowserEvents
+      .on(BrowserToServerEvent[Json]("validate"))(Msg.Validate(_))
+      .on(BrowserToServerEvent[Json]("submit"))(_ => Msg.Submit)
 
   def handleMessage(model: Model, ctx: MessageContext) =
+    case Msg.Validate(value) =>
+      val data = value.asString
+        .flatMap(raw => FormData.fromUrlEncoded(raw).toOption)
+        .getOrElse(FormData.empty)
+      ZIO.succeed(
+        model.copy(
+          name = data.getOrElse("name", model.name),
+          email = data.getOrElse("email", model.email)
+        )
+      )
+    case Msg.Submit             => startLoad(ctx.async).as(model.copy(status = Status.Loading))
     case Msg.ChangeStatus(data) =>
       ZIO.succeed(
         model.copy(status = Status.valueOf(data.getOrElse("status", "loaded").capitalize))
@@ -979,6 +975,8 @@ object Issue3026LiveView:
   enum Msg:
     case ChangeStatus(data: FormData)
     case Loaded(result: LiveAsyncResult[LoadResult])
+    case Validate(value: Json)
+    case Submit
 
   private def startLoad(async: Async[Msg]) =
     async.start(Load)(ZIO.sleep(200.millis).as(LoadResult("John", "")))(Msg.Loaded(_))
@@ -1325,17 +1323,17 @@ class Issue3651LiveView extends LiveView[Issue3651LiveView.Msg, Issue3651LiveVie
           capabilities.client.push(MyEvent, Map.empty[String, String]).as(init)
       case Connection.Disconnected => ZIO.succeed(init)
 
-  override def hooks: LiveHooks[Msg, Model] =
-    LiveHooks
-      .empty[Msg, Model]
-      .onBrowserEvent(BrowserToServerEvent[Json]("lol"))((model, _, _) => ZIO.succeed(model))
-      .onBrowserEvent(BrowserToServerEvent[Json]("reload")) { (model, _, ctx) =>
-        val next = model.copy(counter = model.counter + 1)
-        ctx.client.push(MyEvent, Map.empty[String, String]).as(next)
-      }
+  override def browserEvents =
+    BrowserEvents
+      .on(BrowserToServerEvent[Json]("lol"))(_ => Msg.Lol)
+      .on(BrowserToServerEvent[Json]("reload"))(_ => Msg.Reload)
 
   def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.ChangeId => ZIO.succeed(model.copy(id = 2))
+    case Msg.Lol      => ZIO.succeed(model)
+    case Msg.Reload   =>
+      val next = model.copy(counter = model.counter + 1)
+      ctx.client.push(MyEvent, Map.empty[String, String]).as(next)
 
   override def view(model: Signal[Model]) =
     div(
@@ -1376,6 +1374,8 @@ object Issue3651LiveView:
   private val MyEvent  = ServerToBrowserEvent[Map[String, String]]("myevent")
   enum Msg:
     case ChangeId
+    case Lol
+    case Reload
 
   final case class Model(id: Int = 1, counter: Int = 0)
 
@@ -1684,13 +1684,14 @@ class Issue3941LiveView extends LiveView[Issue3941LiveView.Msg, Issue3941LiveVie
   def mount(ctx: MountContext) =
     ZIO.succeed(Model())
 
-  override def hooks: LiveHooks[Msg, Model] =
-    LiveHooks.empty.onBrowserEvent(BrowserToServerEvent[Json]("page_position_update")) {
-      (model, _, _) => ZIO.succeed(model)
-    }
+  override def browserEvents =
+    BrowserEvents.on(BrowserToServerEvent[Json]("page_position_update"))(_ =>
+      Msg.PagePositionUpdate
+    )
 
   def handleMessage(model: Model, ctx: MessageContext) =
-    case Msg.Toggle(id) =>
+    case Msg.PagePositionUpdate => ZIO.succeed(model)
+    case Msg.Toggle(id)         =>
       val selectedItems =
         if model.selectedItems.contains(id) then model.selectedItems - id
         else model.selectedItems + id
@@ -1730,6 +1731,7 @@ object Issue3941LiveView:
 
   enum Msg:
     case Toggle(id: String)
+    case PagePositionUpdate
 
   object ItemComponent extends LiveComponent.Eventless[String, Unit]:
     def mount(props: String, ctx: MountContext) =
@@ -2092,10 +2094,8 @@ object Issue4066LiveView:
     case Toggle
 
   object DelayedInputComponent extends LiveComponent[Int, Unit, Unit]:
-    override def hooks: ComponentLiveHooks[Int, Unit, Unit] =
-      ComponentLiveHooks.empty.onBrowserEvent(BrowserToServerEvent[Json]("do-something")) {
-        (_, model, _, _) => ZIO.succeed(model)
-      }
+    override def browserEvents =
+      BrowserEvents.on(BrowserToServerEvent[Json]("do-something"))(_ => ())
 
     def mount(props: Int, ctx: MountContext) =
       ZIO.succeed(())
@@ -2182,14 +2182,12 @@ class Issue4088LiveView extends LiveView[Issue4088LiveView.Msg, String]:
   def mount(ctx: MountContext) =
     ZIO.succeed("value")
 
-  override def hooks: LiveHooks[Msg, String] =
-    LiveHooks.empty.onBrowserEvent(BrowserToServerEvent[Json]("my_update")) { (_, _, _) =>
-      val value = System.nanoTime.toString
-      ZIO.succeed(value)
-    }
+  override def browserEvents =
+    BrowserEvents.on(BrowserToServerEvent[Json]("my_update"))(_ => Msg.MyUpdate)
 
   def handleMessage(model: String, ctx: MessageContext) =
-    (_: Msg) => ZIO.succeed(model)
+    case Msg.MyUpdate => ZIO.succeed(System.nanoTime.toString)
+    case Msg.Noop     => ZIO.succeed(model)
 
   override def view(value: Signal[String]) =
     div(dom.hook("Issue4088Hook", DomRef("foo")), value)
@@ -2197,6 +2195,7 @@ class Issue4088LiveView extends LiveView[Issue4088LiveView.Msg, String]:
 object Issue4088LiveView:
   enum Msg:
     case Noop
+    case MyUpdate
 
 class Issue4094LiveView extends LiveView.Routed[Unit, Unit, Option[String]]:
   def mount(_params: Option[String], ctx: MountContext) =

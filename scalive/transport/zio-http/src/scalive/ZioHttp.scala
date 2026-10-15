@@ -715,6 +715,7 @@ object ZioHttp:
       RootLifecycle(
         initialUrl = url,
         hooks = view.hooks,
+        browserEvents = view.browserEvents,
         pageTitle = view.pageTitle,
         mount = ctx => view.mount(initialParams, ctx),
         handleMessage = (model, ctx, message) =>

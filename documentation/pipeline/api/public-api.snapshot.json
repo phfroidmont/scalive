@@ -26,6 +26,18 @@
       ]
     },
     {
+      "id" : "class:scalive.BrowserEvents",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.BrowserEvents",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.BrowserEvents:de6d89ce6ff12214",
+          "signature" : "class BrowserEvents[+Msg]"
+        }
+      ]
+    },
+    {
       "id" : "class:scalive.CompletedUpload",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.CompletedUpload",
@@ -1778,26 +1790,18 @@
       ]
     },
     {
-      "id" : "def:scalive.BrowserEventHooks.attach",
-      "ownerId" : "trait:scalive.BrowserEventHooks",
-      "qualifiedName" : "scalive.BrowserEventHooks.attach",
+      "id" : "def:scalive.BrowserEvents.on",
+      "ownerId" : "class:scalive.BrowserEvents",
+      "qualifiedName" : "scalive.BrowserEvents.on",
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.BrowserEventHooks.attach:29b02f68cc104aa1",
-          "signature" : "def attach[A](id: String, event: BrowserToServerEvent[A])(hook: (Model, A, MessageContext[Msg, Model]) => zio.package.Task[Model])(using evidence$1: zio.json.JsonDecoder[A]): zio.package.Task[Unit]"
-        }
-      ]
-    },
-    {
-      "id" : "def:scalive.BrowserEventHooks.detach",
-      "ownerId" : "trait:scalive.BrowserEventHooks",
-      "qualifiedName" : "scalive.BrowserEventHooks.detach",
-      "kind" : "def",
-      "signatures" : [
+          "id" : "def:scalive.BrowserEvents.on:89f51c73f77b5c6e",
+          "signature" : "def on[A, Msg](event: BrowserToServerEvent[A])(message: A => Msg)(using evidence$1: zio.json.JsonDecoder[A]): BrowserEvents[Msg]"
+        },
         {
-          "id" : "def:scalive.BrowserEventHooks.detach:be8f5271f5d3233d",
-          "signature" : "def detach(id: String): zio.package.Task[Unit]"
+          "id" : "def:scalive.BrowserEvents.on:b1a1b6110f8087f0",
+          "signature" : "def on[A, M >: Msg](event: BrowserToServerEvent[A])(message: A => M)(using evidence$1: zio.json.JsonDecoder[A]): BrowserEvents[M]"
         }
       ]
     },
@@ -1898,30 +1902,6 @@
       ]
     },
     {
-      "id" : "def:scalive.ComponentBrowserEventHooks.attach",
-      "ownerId" : "trait:scalive.ComponentBrowserEventHooks",
-      "qualifiedName" : "scalive.ComponentBrowserEventHooks.attach",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.ComponentBrowserEventHooks.attach:1794fb201473064b",
-          "signature" : "def attach[A](id: String, event: BrowserToServerEvent[A])(hook: (Props, Model, A, ComponentMessageContext[Props, Msg, Model]) => zio.package.Task[Model])(using evidence$1: zio.json.JsonDecoder[A]): zio.package.Task[Unit]"
-        }
-      ]
-    },
-    {
-      "id" : "def:scalive.ComponentBrowserEventHooks.detach",
-      "ownerId" : "trait:scalive.ComponentBrowserEventHooks",
-      "qualifiedName" : "scalive.ComponentBrowserEventHooks.detach",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.ComponentBrowserEventHooks.detach:be8f5271f5d3233d",
-          "signature" : "def detach(id: String): zio.package.Task[Unit]"
-        }
-      ]
-    },
-    {
       "id" : "def:scalive.ComponentConnected.async",
       "ownerId" : "trait:scalive.ComponentConnected",
       "qualifiedName" : "scalive.ComponentConnected.async",
@@ -2006,18 +1986,6 @@
       ]
     },
     {
-      "id" : "def:scalive.ComponentLifecycleHooks.browserEvent",
-      "ownerId" : "trait:scalive.ComponentLifecycleHooks",
-      "qualifiedName" : "scalive.ComponentLifecycleHooks.browserEvent",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.ComponentLifecycleHooks.browserEvent:e28e31068af890c1",
-          "signature" : "def browserEvent: ComponentBrowserEventHooks[Props, Msg, Model]"
-        }
-      ]
-    },
-    {
       "id" : "def:scalive.ComponentLifecycleHooks.event",
       "ownerId" : "trait:scalive.ComponentLifecycleHooks",
       "qualifiedName" : "scalive.ComponentLifecycleHooks.event",
@@ -2082,22 +2050,6 @@
         {
           "id" : "def:scalive.ComponentLiveHooks.onAsync:ac782255ee377e68",
           "signature" : "def onAsync[Props, Msg, Model](hook: (Props, Model, LiveAsyncEvent[Msg], ComponentMessageContext[Props, Msg, Model]) => zio.package.Task[LiveHookResult[Model]]): ComponentLiveHooks[Props, Msg, Model]"
-        }
-      ]
-    },
-    {
-      "id" : "def:scalive.ComponentLiveHooks.onBrowserEvent",
-      "ownerId" : "trait:scalive.ComponentLiveHooks",
-      "qualifiedName" : "scalive.ComponentLiveHooks.onBrowserEvent",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.ComponentLiveHooks.onBrowserEvent:2ab9ae77877532c0",
-          "signature" : "def onBrowserEvent[Props, Msg, Model, A](event: BrowserToServerEvent[A])(handler: (Props, Model, A, ComponentMessageContext[Props, Msg, Model]) => zio.package.Task[Model])(using evidence$1: zio.json.JsonDecoder[A]): ComponentLiveHooks[Props, Msg, Model]"
-        },
-        {
-          "id" : "def:scalive.ComponentLiveHooks.onBrowserEvent:ca3fec02320b5179",
-          "signature" : "def onBrowserEvent[A](event: BrowserToServerEvent[A])(handler: (Props, Model, A, ComponentMessageContext[Props, Msg, Model]) => zio.package.Task[Model])(using evidence$1: zio.json.JsonDecoder[A]): ComponentLiveHooks[Props, Msg, Model]"
         }
       ]
     },
@@ -5674,18 +5626,6 @@
       ]
     },
     {
-      "id" : "def:scalive.LifecycleHooks.browserEvent",
-      "ownerId" : "trait:scalive.LifecycleHooks",
-      "qualifiedName" : "scalive.LifecycleHooks.browserEvent",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.LifecycleHooks.browserEvent:c561241568004261",
-          "signature" : "def browserEvent: BrowserEventHooks[Msg, Model]"
-        }
-      ]
-    },
-    {
       "id" : "def:scalive.LifecycleHooks.event",
       "ownerId" : "trait:scalive.LifecycleHooks",
       "qualifiedName" : "scalive.LifecycleHooks.event",
@@ -5838,6 +5778,18 @@
         {
           "id" : "def:scalive.LiveComponent.WithOutput.Eventless.handleMessage:fe4951db7ed2d606",
           "signature" : "def handleMessage(props: Props, model: Model, ctx: MessageContext): Nothing => zio.package.Task[Model]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LiveComponent.browserEvents",
+      "ownerId" : "trait:scalive.LiveComponent",
+      "qualifiedName" : "scalive.LiveComponent.browserEvents",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveComponent.browserEvents:7e37c2ec16948218",
+          "signature" : "def browserEvents: BrowserEvents[Msg]"
         }
       ]
     },
@@ -6198,22 +6150,6 @@
         {
           "id" : "def:scalive.LiveHooks.onAsync:8fa300fe58220804",
           "signature" : "def onAsync(hook: (Model, LiveAsyncEvent[Msg], MessageContext[Msg, Model]) => zio.package.Task[LiveHookResult[Model]]): LiveHooks[Msg, Model]"
-        }
-      ]
-    },
-    {
-      "id" : "def:scalive.LiveHooks.onBrowserEvent",
-      "ownerId" : "object:scalive.LiveHooks",
-      "qualifiedName" : "scalive.LiveHooks.onBrowserEvent",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.LiveHooks.onBrowserEvent:5413871ae87bbdf9",
-          "signature" : "def onBrowserEvent[Msg, Model, A](event: BrowserToServerEvent[A])(handler: (Model, A, MessageContext[Msg, Model]) => zio.package.Task[Model])(using evidence$1: zio.json.JsonDecoder[A]): LiveHooks[Msg, Model]"
-        },
-        {
-          "id" : "def:scalive.LiveHooks.onBrowserEvent:8f0704cb5ac848ba",
-          "signature" : "def onBrowserEvent[A](event: BrowserToServerEvent[A])(handler: (Model, A, MessageContext[Msg, Model]) => zio.package.Task[Model])(using evidence$1: zio.json.JsonDecoder[A]): LiveHooks[Msg, Model]"
         }
       ]
     },
@@ -7698,6 +7634,18 @@
       ]
     },
     {
+      "id" : "def:scalive.LiveView.Routed.browserEvents",
+      "ownerId" : "trait:scalive.LiveView.Routed",
+      "qualifiedName" : "scalive.LiveView.Routed.browserEvents",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveView.Routed.browserEvents:866e2188e08704ee",
+          "signature" : "def browserEvents: BrowserEvents[Msg]"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.LiveView.Routed.handleMessage",
       "ownerId" : "trait:scalive.LiveView.Routed",
       "qualifiedName" : "scalive.LiveView.Routed.handleMessage",
@@ -7778,6 +7726,18 @@
         {
           "id" : "def:scalive.LiveView.Routed.view:85d1d06b83a4de9c",
           "signature" : "def view(model: Signal[Model]): HtmlElement[Msg]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LiveView.browserEvents",
+      "ownerId" : "trait:scalive.LiveView",
+      "qualifiedName" : "scalive.LiveView.browserEvents",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveView.browserEvents:ef19813687030e02",
+          "signature" : "def browserEvents: BrowserEvents[Msg]"
         }
       ]
     },
@@ -17006,6 +16966,18 @@
       ]
     },
     {
+      "id" : "object:scalive.BrowserEvents",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.BrowserEvents",
+      "kind" : "object",
+      "signatures" : [
+        {
+          "id" : "object:scalive.BrowserEvents:244369b9a7c7d253",
+          "signature" : "object BrowserEvents"
+        }
+      ]
+    },
+    {
       "id" : "object:scalive.BrowserToServerEvent",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.BrowserToServerEvent",
@@ -18505,18 +18477,6 @@
       ]
     },
     {
-      "id" : "trait:scalive.BrowserEventHooks",
-      "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.BrowserEventHooks",
-      "kind" : "trait",
-      "signatures" : [
-        {
-          "id" : "trait:scalive.BrowserEventHooks:5dbbaa5da743ef86",
-          "signature" : "trait BrowserEventHooks[Msg, Model]"
-        }
-      ]
-    },
-    {
       "id" : "trait:scalive.Client",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.Client",
@@ -18561,18 +18521,6 @@
         {
           "id" : "trait:scalive.ComponentAsyncHooks:b7313857d66f17c1",
           "signature" : "trait ComponentAsyncHooks[Props, Msg, Model]"
-        }
-      ]
-    },
-    {
-      "id" : "trait:scalive.ComponentBrowserEventHooks",
-      "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.ComponentBrowserEventHooks",
-      "kind" : "trait",
-      "signatures" : [
-        {
-          "id" : "trait:scalive.ComponentBrowserEventHooks:bc5f795488d23f05",
-          "signature" : "trait ComponentBrowserEventHooks[Props, Msg, Model]"
         }
       ]
     },
@@ -19965,6 +19913,18 @@
         {
           "id" : "val:scalive.BoundFormField.path:353bc2964aeae20b",
           "signature" : "val path: FormPath"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.BrowserEvents.none",
+      "ownerId" : "object:scalive.BrowserEvents",
+      "qualifiedName" : "scalive.BrowserEvents.none",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.BrowserEvents.none:9d861abff544a53a",
+          "signature" : "val none: BrowserEvents[Nothing]"
         }
       ]
     },

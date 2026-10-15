@@ -32,6 +32,16 @@ trait LiveComponent[Props, Msg, Model]:
   /** Static lifecycle hooks shared by every instance of this component. Defaults to none. */
   def hooks: ComponentLiveHooks[Props, Msg, Model] = ComponentLiveHooks.empty
 
+  /** The events that browser JavaScript pushes to this instance, each with the message it becomes.
+    * Defaults to none.
+    *
+    * A hook's `this.pushEventTo(target, name, payload)`, with a `target` inside this instance,
+    * reaches [[handleMessage]] as the message declared for `name`, as in
+    * `BrowserEvents.on(CopyResultEvent)(Msg.Copied(_))`. Events pushed with `pushEvent` reach the
+    * LiveView instead.
+    */
+  def browserEvents: BrowserEvents[Msg] = BrowserEvents.none
+
   /** Builds the model of a new instance from its first props.
     *
     * It runs in both the disconnected render and the connected lifecycle; match `ctx.connection` to
@@ -88,7 +98,7 @@ object LiveComponent:
   object WithOutput:
     /** A component that reports outputs to its owner but renders no bindings that send it messages.
       *
-      * Its hooks can still emit outputs, for example from an `onBrowserEvent` handler.
+      * Its hooks, such as a raw event hook, can still emit outputs.
       */
     trait Eventless[Props, Model, Output]
         extends LiveComponent.WithOutput[Props, Nothing, Model, Output]:

@@ -1,7 +1,6 @@
 package scalive.runtime.connection
 
 import zio.*
-import zio.json.*
 import zio.json.ast.Json
 
 import scalive.*
@@ -169,29 +168,27 @@ final private[connection] class ConnectedComponentEnvironment[RootMsg, RootModel
       result <- raw match
                   case LiveEventHookResult.Halt(next, reply) => turn.result(next, reply)
                   case LiveEventHookResult.Continue(next)    =>
-                    val matching = command.event.fold(Vector.empty)(event =>
-                      hooks.browser.filter(_.name == event.bindingId)
+                    val declared = command.event.flatMap(event =>
+                      component.browserEvents.decode(event.bindingId, event.value)
                     )
-                    if matching.nonEmpty then
-                      runBrowserHooks(
-                        matching,
-                        props,
-                        next,
-                        command.event.get.value.toJson,
-                        context
-                      ).flatMap(turn.result(_))
-                    else
-                      for
-                        value   <- message
-                        hooked  <- runEventHooks(hooks.event, props, next, value, context)
-                        handled <- hooked match
-                                     case LiveHookResult.Halt(current)     => ZIO.succeed(current)
-                                     case LiveHookResult.Continue(current) =>
-                                       ZIO.suspend(
-                                         component.handleMessage(props, current, context)(value)
-                                       )
-                        result <- turn.result(handled)
-                      yield result
+                    declared match
+                      case Some(Left(error)) =>
+                        val name = command.event.fold("")(_.bindingId)
+                        ZIO.logWarning(s"component browser event '$name' was malformed: $error") *>
+                          turn.result(next)
+                      case _ =>
+                        val resolved = declared.flatMap(_.toOption).fold(message)(ZIO.succeed(_))
+                        for
+                          value   <- resolved
+                          hooked  <- runEventHooks(hooks.event, props, next, value, context)
+                          handled <- hooked match
+                                       case LiveHookResult.Halt(current)     => ZIO.succeed(current)
+                                       case LiveHookResult.Continue(current) =>
+                                         ZIO.suspend(
+                                           component.handleMessage(props, current, context)(value)
+                                         )
+                          result <- turn.result(handled)
+                        yield result
     yield result
 
   def afterRender[P, M, A](
@@ -268,25 +265,6 @@ final private[connection] class ConnectedComponentEnvironment[RootMsg, RootModel
           case LiveHookResult.Continue(model)  => hook.invoke(props, model, event, context)
         }
     }
-
-  private def runBrowserHooks[P, M, A](
-    hooks: Vector[ComponentHookRegistry.Browser[P, M, A]],
-    props: P,
-    committed: A,
-    raw: String,
-    context: ComponentMessageContext[P, M, A]
-  ): Task[A] =
-    hooks
-      .foldLeft[Task[Either[Unit, A]]](ZIO.succeed(Right(committed))) { (effect, hook) =>
-        effect.flatMap {
-          case malformed @ Left(_) => ZIO.succeed(malformed)
-          case Right(model)        =>
-            hook.invoke(props, model, raw, context) match
-              case Right(next) => next.map(Right(_))
-              case Left(_)     =>
-                ZIO.logWarning("component browser event payload was malformed").as(Left(()))
-        }
-      }.map(_.fold(_ => committed, identity))
 
   private def runRawHooks[P, M, A](
     hooks: Vector[ComponentHookRegistry.Raw[P, M, A]],
@@ -414,17 +392,14 @@ private object ComponentTurn:
 
 final private case class ComponentHookRegistry[P, M, A](
   staticRaw: Vector[ComponentHookRegistry.Raw[P, M, A]],
-  staticBrowser: Vector[ComponentHookRegistry.Browser[P, M, A]],
   staticEvent: Vector[ComponentHookRegistry.Event[P, M, A]],
   staticAsync: Vector[ComponentHookRegistry.Async[P, M, A]],
   staticAfterRender: Vector[ComponentHookRegistry.AfterRender[P, M, A]],
   dynamicRaw: Vector[(String, ComponentHookRegistry.Raw[P, M, A])] = Vector.empty,
-  dynamicBrowser: Vector[(String, ComponentHookRegistry.Browser[P, M, A])] = Vector.empty,
   dynamicEvent: Vector[(String, ComponentHookRegistry.Event[P, M, A])] = Vector.empty,
   dynamicAsync: Vector[(String, ComponentHookRegistry.Async[P, M, A])] = Vector.empty,
   dynamicAfterRender: Vector[(String, ComponentHookRegistry.AfterRender[P, M, A])] = Vector.empty):
   def raw         = staticRaw ++ dynamicRaw.map(_._2)
-  def browser     = staticBrowser ++ dynamicBrowser.map(_._2)
   def event       = staticEvent ++ dynamicEvent.map(_._2)
   def async       = staticAsync ++ dynamicAsync.map(_._2)
   def afterRender = staticAfterRender ++ dynamicAfterRender.map(_._2)
@@ -438,10 +413,6 @@ private object ComponentHookRegistry:
       context: ComponentMessageContext[P, M, A]
     ): Task[LiveEventHookResult[A]]
 
-  trait Browser[P, M, A]:
-    def name: String
-    def invoke(props: P, model: A, raw: String, context: ComponentMessageContext[P, M, A])
-      : Either[String, Task[A]]
   trait Event[P, M, A]:
     def invoke(props: P, model: A, message: M, context: ComponentMessageContext[P, M, A])
       : Task[LiveHookResult[A]]
@@ -455,15 +426,6 @@ private object ComponentHookRegistry:
   trait AfterRender[P, M, A]:
     def invoke(props: P, model: A, context: ComponentAfterRenderContext[P, M, A]): Task[Unit]
 
-  def browserHook[P, M, A, B](
-    event: BrowserToServerEvent[B],
-    decoder: JsonDecoder[B],
-    handler: (P, A, B, ComponentMessageContext[P, M, A]) => Task[A]
-  ): Browser[P, M, A] = new Browser[P, M, A]:
-    val name = event.value
-    def invoke(props: P, model: A, raw: String, context: ComponentMessageContext[P, M, A]) =
-      decoder.decodeJson(raw).map(value => handler(props, model, value, context))
-
   def fromStatic[P, M, A](hooks: ComponentLiveHooks[P, M, A]): ComponentHookRegistry[P, M, A] =
     hooks match
       case _: ComponentLiveHooks.Empty[P, M, A]       => empty
@@ -476,11 +438,6 @@ private object ComponentHookRegistry:
             event: LiveEvent,
             context: ComponentMessageContext[P, M, A]
           ) = hook.hook(props, model, event, context))
-      case hook: ComponentLiveHooks.BrowserEvent[P, M, A, ?] =>
-        val previous = fromStatic(hook.previous)
-        previous.copy(staticBrowser =
-          previous.staticBrowser :+ browserHook(hook.event, hook.decoder, hook.handler)
-        )
       case hook: ComponentLiveHooks.Event[P, M, A] =>
         val previous = fromStatic(hook.previous)
         previous.copy(staticEvent = previous.staticEvent :+ new Event[P, M, A]:
@@ -503,8 +460,6 @@ private object ComponentHookRegistry:
 
   def empty[P, M, A]: ComponentHookRegistry[P, M, A] =
     ComponentHookRegistry[P, M, A](
-      Vector.empty,
-      Vector.empty,
       Vector.empty,
       Vector.empty,
       Vector.empty,
@@ -551,24 +506,6 @@ final private class JournaledComponentHooks[P, M, A](turn: ComponentHookJournal)
       registry.copy(dynamicRaw = ComponentHookRegistry.detach(registry.dynamicRaw, id))
     )
 
-  val browserEvent = new ComponentBrowserEventHooks[P, M, A]:
-    def attach[B: JsonDecoder](
-      id: String,
-      event: BrowserToServerEvent[B]
-    )(
-      hook: (P, A, B, ComponentMessageContext[P, M, A]) => Task[A]
-    ) = turn.updateHooks[P, M, A](registry =>
-      registry.copy(dynamicBrowser =
-        ComponentHookRegistry.replace(
-          registry.dynamicBrowser,
-          id,
-          ComponentHookRegistry.browserHook(event, summon[JsonDecoder[B]], hook)
-        )
-      )
-    )
-    def detach(id: String) = turn.updateHooks[P, M, A](registry =>
-      registry.copy(dynamicBrowser = ComponentHookRegistry.detach(registry.dynamicBrowser, id))
-    )
   val event = new ComponentEventHooks[P, M, A]:
     def attach(
       id: String

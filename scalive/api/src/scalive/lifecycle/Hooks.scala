@@ -2,7 +2,6 @@ package scalive
 
 import zio.Task
 import zio.http.URL
-import zio.json.JsonDecoder
 import zio.json.ast.Json
 
 /** What a typed lifecycle hook decides: go on with a model, or stop processing.
@@ -73,18 +72,10 @@ object LiveEventHookResult:
 
 /** Immutable declarations installed when a root lifecycle starts. */
 sealed trait LiveHooks[Msg, Model]:
-  /** Adds a hook that runs on each client event before binding lookup. */
+  /** Adds a hook that runs on each client event before it becomes a message. */
   final def onRawEvent(
     hook: (Model, LiveEvent, MessageContext[Msg, Model]) => Task[LiveEventHookResult[Model]]
   ): LiveHooks[Msg, Model] = LiveHooks.RawEvent(this, hook)
-
-  /** Adds a handler for the browser event `event` pushed to the view. */
-  final def onBrowserEvent[A: JsonDecoder](
-    event: BrowserToServerEvent[A]
-  )(
-    handler: (Model, A, MessageContext[Msg, Model]) => Task[Model]
-  ): LiveHooks[Msg, Model] =
-    LiveHooks.BrowserEvent(this, event, handler, summon[JsonDecoder[A]])
 
   /** Adds a hook that runs when a binding sends the view a message, before `handleMessage`. */
   final def onEvent(
@@ -130,12 +121,6 @@ object LiveHooks:
     previous: LiveHooks[Msg, Model],
     hook: (Model, LiveEvent, MessageContext[Msg, Model]) => Task[LiveEventHookResult[Model]])
       extends LiveHooks[Msg, Model]
-  final private[scalive] case class BrowserEvent[Msg, Model, A](
-    previous: LiveHooks[Msg, Model],
-    event: BrowserToServerEvent[A],
-    handler: (Model, A, MessageContext[Msg, Model]) => Task[Model],
-    decoder: JsonDecoder[A])
-      extends LiveHooks[Msg, Model]
   final private[scalive] case class Event[Msg, Model](
     previous: LiveHooks[Msg, Model],
     hook: (Model, Msg, MessageContext[Msg, Model]) => Task[LiveHookResult[Model]])
@@ -162,23 +147,13 @@ object LiveHooks:
   /** Returns declarations with no hooks, to chain stage calls such as `onEvent` onto. */
   def empty[Msg, Model]: LiveHooks[Msg, Model] = Empty()
 
-  /** Adds a hook that runs on each client event before binding lookup.
+  /** Adds a hook that runs on each client event before it becomes a message.
     *
     * This form starts the declarations with this hook, like `empty.onRawEvent`.
     */
   def onRawEvent[Msg, Model](
     hook: (Model, LiveEvent, MessageContext[Msg, Model]) => Task[LiveEventHookResult[Model]]
   ): LiveHooks[Msg, Model] = empty.onRawEvent(hook)
-
-  /** Adds a handler for the browser event `event` pushed to the view.
-    *
-    * This form starts the declarations with this hook, like `empty.onBrowserEvent`.
-    */
-  def onBrowserEvent[Msg, Model, A: JsonDecoder](
-    event: BrowserToServerEvent[A]
-  )(
-    handler: (Model, A, MessageContext[Msg, Model]) => Task[Model]
-  ): LiveHooks[Msg, Model] = empty.onBrowserEvent(event)(handler)
 
   /** Adds a hook that runs when a binding sends the view a message, before `handleMessage`.
     *
@@ -235,14 +210,6 @@ sealed trait ComponentLiveHooks[Props, Msg, Model]:
     ]
   ): ComponentLiveHooks[Props, Msg, Model] = ComponentLiveHooks.RawEvent(this, hook)
 
-  /** Adds a handler for the browser event `event` pushed to the component. */
-  final def onBrowserEvent[A: JsonDecoder](
-    event: BrowserToServerEvent[A]
-  )(
-    handler: (Props, Model, A, ComponentMessageContext[Props, Msg, Model]) => Task[Model]
-  ): ComponentLiveHooks[Props, Msg, Model] =
-    ComponentLiveHooks.BrowserEvent(this, event, handler, summon[JsonDecoder[A]])
-
   /** Adds a hook that runs for each message sent to the component, before `handleMessage`. */
   final def onEvent(
     hook: (Props, Model, Msg, ComponentMessageContext[Props, Msg, Model]) => Task[
@@ -263,7 +230,6 @@ sealed trait ComponentLiveHooks[Props, Msg, Model]:
   final def afterRender(
     hook: (Props, Model, ComponentAfterRenderContext[Props, Msg, Model]) => Task[Unit]
   ): ComponentLiveHooks[Props, Msg, Model] = ComponentLiveHooks.AfterRender(this, hook)
-end ComponentLiveHooks
 
 /** Constructors for [[ComponentLiveHooks]] declarations. */
 object ComponentLiveHooks:
@@ -274,12 +240,6 @@ object ComponentLiveHooks:
     hook: (Props, Model, LiveEvent, ComponentMessageContext[Props, Msg, Model]) => Task[
       LiveEventHookResult[Model]
     ])
-      extends ComponentLiveHooks[Props, Msg, Model]
-  final private[scalive] case class BrowserEvent[Props, Msg, Model, A](
-    previous: ComponentLiveHooks[Props, Msg, Model],
-    event: BrowserToServerEvent[A],
-    handler: (Props, Model, A, ComponentMessageContext[Props, Msg, Model]) => Task[Model],
-    decoder: JsonDecoder[A])
       extends ComponentLiveHooks[Props, Msg, Model]
   final private[scalive] case class Event[Props, Msg, Model](
     previous: ComponentLiveHooks[Props, Msg, Model],
@@ -310,16 +270,6 @@ object ComponentLiveHooks:
       LiveEventHookResult[Model]
     ]
   ): ComponentLiveHooks[Props, Msg, Model] = empty.onRawEvent(hook)
-
-  /** Adds a handler for the browser event `event` pushed to the component.
-    *
-    * This form starts the declarations with this hook, like `empty.onBrowserEvent`.
-    */
-  def onBrowserEvent[Props, Msg, Model, A: JsonDecoder](
-    event: BrowserToServerEvent[A]
-  )(
-    handler: (Props, Model, A, ComponentMessageContext[Props, Msg, Model]) => Task[Model]
-  ): ComponentLiveHooks[Props, Msg, Model] = empty.onBrowserEvent(event)(handler)
 
   /** Adds a hook that runs for each message sent to the component, before `handleMessage`.
     *
@@ -360,11 +310,10 @@ end ComponentLiveHooks
   * [dynamic hooks](https://scalive.dev/guides/lifecycle-hooks#dynamic-hooks).
   */
 trait LifecycleHooks[Msg, Model]:
-  /** Attaches and detaches raw event hooks, which see each client event before binding lookup. */
+  /** Attaches and detaches raw event hooks, which see each client event before it becomes a
+    * message.
+    */
   def rawEvent: RawEventHooks[Msg, Model]
-
-  /** Attaches and detaches handlers for named events pushed from browser JavaScript. */
-  def browserEvent: BrowserEventHooks[Msg, Model]
 
   /** Attaches and detaches hooks that run when a binding sends the view a message. */
   def event: EventHooks[Msg, Model]
@@ -383,7 +332,7 @@ trait LifecycleHooks[Msg, Model]:
 
 /** The dynamic raw event hooks of one LiveView lifecycle. */
 trait RawEventHooks[Msg, Model]:
-  /** Attaches `hook` under `id`, to run on each client event before binding lookup.
+  /** Attaches `hook` under `id`, to run on each client event before it becomes a message.
     *
     * The hook receives the event envelope as a [[LiveEvent]], including events targeted at a
     * component. A halt stops all processing of the event, by the view and by its components.
@@ -393,25 +342,6 @@ trait RawEventHooks[Msg, Model]:
     id: String
   )(
     hook: (Model, LiveEvent, MessageContext[Msg, Model]) => Task[LiveEventHookResult[Model]]
-  ): Task[Unit]
-
-  /** Detaches the dynamic hook attached under `id`, if any. Static hooks cannot be detached. */
-  def detach(id: String): Task[Unit]
-
-/** The dynamic named browser event handlers of one LiveView lifecycle. */
-trait BrowserEventHooks[Msg, Model]:
-  /** Attaches `hook` under `id`, to handle the browser event `event` pushed to the view.
-    *
-    * The hook runs after the raw event hooks continue and receives the payload decoded as `A`. It
-    * consumes the event, so bindings and `handleMessage` never see it. A payload that does not
-    * decode is logged and consumed without changing the model. Events targeted at a component are
-    * ignored. Attaching an `id` that is already attached replaces that handler in place.
-    */
-  def attach[A: JsonDecoder](
-    id: String,
-    event: BrowserToServerEvent[A]
-  )(
-    hook: (Model, A, MessageContext[Msg, Model]) => Task[Model]
   ): Task[Unit]
 
   /** Detaches the dynamic hook attached under `id`, if any. Static hooks cannot be detached. */
@@ -516,9 +446,6 @@ trait ComponentLifecycleHooks[Props, Msg, Model]:
   /** Attaches and detaches raw event hooks, which see each event routed to this instance. */
   def rawEvent: ComponentRawEventHooks[Props, Msg, Model]
 
-  /** Attaches and detaches handlers for named events pushed to this instance from JavaScript. */
-  def browserEvent: ComponentBrowserEventHooks[Props, Msg, Model]
-
   /** Attaches and detaches hooks that run for each message sent to this instance. */
   def event: ComponentEventHooks[Props, Msg, Model]
 
@@ -532,9 +459,9 @@ trait ComponentLifecycleHooks[Props, Msg, Model]:
 trait ComponentRawEventHooks[Props, Msg, Model]:
   /** Attaches `hook` under `id`, to run on each client event routed to this instance.
     *
-    * The hook runs after the LiveView's raw event hooks continue, and before named browser event
-    * handlers and event hooks. A halt stops the instance's processing of the event. Attaching an
-    * `id` that is already attached replaces that hook in place.
+    * The hook runs after the LiveView's raw event hooks continue, and before the event becomes a
+    * message. A halt stops the instance's processing of the event. Attaching an `id` that is
+    * already attached replaces that hook in place.
     */
   def attach(
     id: String
@@ -542,25 +469,6 @@ trait ComponentRawEventHooks[Props, Msg, Model]:
     hook: (Props, Model, LiveEvent, ComponentMessageContext[Props, Msg, Model]) => Task[
       LiveEventHookResult[Model]
     ]
-  ): Task[Unit]
-
-  /** Detaches the dynamic hook attached under `id`, if any. Static hooks cannot be detached. */
-  def detach(id: String): Task[Unit]
-
-/** The dynamic named browser event handlers of one LiveComponent instance. */
-trait ComponentBrowserEventHooks[Props, Msg, Model]:
-  /** Attaches `hook` under `id`, to handle the browser event `event` pushed to this instance.
-    *
-    * The hook runs after the raw event hooks continue and receives the payload decoded as `A`. It
-    * consumes the event, so event hooks and `handleMessage` never see it. A payload that does not
-    * decode is logged and consumed without changing the model. Attaching an `id` that is already
-    * attached replaces that handler in place.
-    */
-  def attach[A: JsonDecoder](
-    id: String,
-    event: BrowserToServerEvent[A]
-  )(
-    hook: (Props, Model, A, ComponentMessageContext[Props, Msg, Model]) => Task[Model]
   ): Task[Unit]
 
   /** Detaches the dynamic hook attached under `id`, if any. Static hooks cannot be detached. */

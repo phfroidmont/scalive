@@ -147,22 +147,56 @@ object RuntimeIdentifierTypesSpec extends ZIOSpecDefault:
 
       assertTrue(payloadErrors.nonEmpty, directionErrors.nonEmpty, removedMethodErrors.nonEmpty)
     },
-    test("browser event handlers require inbound events and payload decoders") {
+    test("browser event declarations require inbound events, payload decoders, and messages") {
+      val accepted = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        import zio.*
+        import zio.json.*
+        case class Payload(value: Int) derives JsonDecoder
+        enum Msg:
+          case Changed(payload: Payload)
+          case Reset
+        val changed = BrowserToServerEvent[Payload]("counter:changed")
+        val reset   = BrowserToServerEvent[ast.Json]("counter:reset")
+        object View extends LiveView[Msg, Int]:
+          override def browserEvents = BrowserEvents.on(changed)(Msg.Changed(_)).on(reset)(_ => Msg.Reset)
+          def mount(ctx: MountContext) = ZIO.succeed(0)
+          def handleMessage(model: Int, ctx: MessageContext) = _ => ZIO.succeed(model)
+          def view(model: Signal[Int]) = div()
+        object Counter extends LiveComponent[Unit, Msg, Int]:
+          override def browserEvents = BrowserEvents.on(changed)(Msg.Changed(_))
+          def mount(props: Unit, ctx: MountContext) = ZIO.succeed(0)
+          def handleMessage(props: Unit, model: Int, ctx: MessageContext) = _ => ZIO.succeed(model)
+          def view(props: Signal[Unit], model: Signal[Int]) = div()
+      """)
       val directionErrors = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*
         import zio.json.*
         case class Payload(value: Int) derives JsonEncoder, JsonDecoder
-        val event = ServerToBrowserEvent[Payload]("counter:changed")
-        val hooks = LiveHooks.empty[Unit, Unit].onBrowserEvent(event)((model, _, _) => zio.ZIO.succeed(model))
+        val event  = ServerToBrowserEvent[Payload]("counter:changed")
+        val events = BrowserEvents.on(event)(_.value)
       """)
       val decoderErrors = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*
         case class Payload(value: Int)
-        val event = BrowserToServerEvent[Payload]("counter:changed")
-        val hooks = LiveHooks.empty[Unit, Unit].onBrowserEvent(event)((model, _, _) => zio.ZIO.succeed(model))
+        val event  = BrowserToServerEvent[Payload]("counter:changed")
+        val events = BrowserEvents.on(event)(_.value)
+      """)
+      val eventlessErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        object View extends LiveView.Eventless[Unit]:
+          override def browserEvents =
+            BrowserEvents.on(BrowserToServerEvent[zio.json.ast.Json]("ping"))(_ => ())
+          def mount(ctx: MountContext) = zio.ZIO.unit
+          def view(model: Signal[Unit]) = div()
       """)
 
-      assertTrue(directionErrors.nonEmpty, decoderErrors.nonEmpty)
+      assertTrue(
+        accepted.isEmpty,
+        directionErrors.nonEmpty,
+        decoderErrors.nonEmpty,
+        eventlessErrors.nonEmpty
+      )
     },
     test("raw hooks remain typed attributes and semantic hooks require a DOM reference") {
       val rawHookErrors = scala.compiletime.testing.typeCheckErrors("""

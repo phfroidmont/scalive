@@ -1558,18 +1558,14 @@ private[scalive] object RootConnection:
               case Some(key) => context.flash.clear(FlashKind(key))
               case None      => context.flash.clearAll
             clear.as(LiveEventHookResult.halt(state.model))
-        else
-          runRawHooks(state.hooks.raw, state.model, event, context).flatMap {
-            case halt: LiveEventHookResult.Halt[Model] => ZIO.succeed(halt)
-            case LiveEventHookResult.Continue(model)   =>
-              val matching =
-                if target.isEmpty then state.hooks.browser.filter(_.name == event.bindingId)
-                else Vector.empty
-              if matching.isEmpty then ZIO.succeed(LiveEventHookResult.cont(model))
-              else
-                runBrowserHooks(matching, model, event.value.toJson, context)
-                  .map(LiveEventHookResult.halt(_))
-          }
+        else runRawHooks(state.hooks.raw, state.model, event, context)
+      declared = result match
+                   case LiveEventHookResult.Continue(_) if target.isEmpty =>
+                     lifecycle.browserEvents.decode(event.bindingId, event.value)
+                   case _ => None
+      _ <- ZIO.foreachDiscard(declared.flatMap(_.left.toOption)) { error =>
+             ZIO.logWarning(s"browser event '${event.bindingId}' was malformed: $error")
+           }
       draft <- rootDraft(
                  state,
                  lifecycle,
@@ -1583,9 +1579,11 @@ private[scalive] object RootConnection:
                    case LiveEventHookResult.Halt(_, reply) => reply
                    case _                                  => None
                )
-    yield result match
-      case _: LiveEventHookResult.Halt[Model] => ClientEventInterception.Halt(draft)
-      case _                                  => ClientEventInterception.Continue(draft)
+    yield (result, declared) match
+      case (_: LiveEventHookResult.Halt[Model], _) => ClientEventInterception.Halt(draft)
+      case (_, Some(Right(message))) => ClientEventInterception.Dispatch(draft, message)
+      case (_, Some(Left(_)))        => ClientEventInterception.Halt(draft)
+      case (_, None)                 => ClientEventInterception.Continue(draft)
 
   private def runEventTurn[Msg, Model](
     initial: TurnDraft[Msg, RootState[Msg, Model]],
@@ -1754,25 +1752,6 @@ private[scalive] object RootConnection:
                    ZIO.suspend(lifecycle.handleMessage(value, context, event.message))
       draft <- rootDraft(state, lifecycle, journal, model, state.url, ownsPageTitle = true)
     yield draft
-
-  private def runBrowserHooks[Msg, Model](
-    hooks: Vector[RootHookRegistry.Browser[Msg, Model]],
-    committedModel: Model,
-    raw: String,
-    context: MessageContext[Msg, Model]
-  ): Task[Model] =
-    hooks
-      .foldLeft[Task[Either[Unit, Model]]](ZIO.succeed(Right(committedModel))) { (effect, hook) =>
-        effect.flatMap {
-          case malformed @ Left(_) => ZIO.succeed(malformed)
-          case Right(model)        =>
-            hook.invoke(model, raw, context) match
-              case Right(next) => next.map(Right(_))
-              case Left(_)     =>
-                ZIO.logWarning("root browser event payload was malformed") *>
-                  ZIO.succeed(Left(()))
-        }
-      }.map(_.fold(_ => committedModel, identity))
 
   private def runRawHooks[Msg, Model](
     hooks: Vector[RootHookRegistry.Raw[Msg, Model]],

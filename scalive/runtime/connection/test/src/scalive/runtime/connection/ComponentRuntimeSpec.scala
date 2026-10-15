@@ -304,13 +304,13 @@ object ComponentRuntimeSpec extends ZIOSpecDefault:
         )
       }
     },
-    test("dynamic component hooks replace in place and raw hooks consume malformed payloads") {
+    test("dynamic component hooks replace in place; declared browser events reach event hooks") {
       ZIO.scoped {
         val rawEvent = BrowserToServerEvent[Int]("raw")
         val definition = new LiveComponent[Int, Int, Int]:
           override val hooks = ComponentLiveHooks.empty[Int, Int, Int]
             .onEvent((_, model, _, _) => ZIO.succeed(LiveHookResult.cont(model + 1)))
-            .onBrowserEvent(rawEvent)((_, model, value, _) => ZIO.succeed(model + value))
+          override val browserEvents = BrowserEvents.on(rawEvent)(identity)
           def mount(props: Int, ctx: MountContext) =
             ctx.hooks.event.attach("dynamic")((_, model, _, _) =>
               ZIO.succeed(LiveHookResult.cont(model + 10))) *>
@@ -354,9 +354,53 @@ object ComponentRuntimeSpec extends ZIOSpecDefault:
           afterMalformed <- connection.inspectComponentModel[Int](id)
         yield assertTrue(
           afterMessage.contains(22),
-          afterRaw.contains(27),
-          afterMalformed.contains(27)
+          afterRaw.contains(48),
+          afterMalformed.contains(48)
         )
+      }
+    },
+    test("a pushed event reaches the declarations of the component it targets, not the LiveView's") {
+      ZIO.scoped {
+        val shared = BrowserToServerEvent[Int]("shared")
+        val definition = new LiveComponent[Unit, Int, Int]:
+          override val browserEvents = BrowserEvents.on(shared)(identity)
+          def mount(props: Unit, ctx: MountContext) = ZIO.succeed(0)
+          def handleMessage(props: Unit, model: Int, ctx: MessageContext): Int => Task[Int] =
+            value => ZIO.succeed(model + value)
+          def view(props: Signal[Unit], model: Signal[Int]) = div()
+        val instance = component(definition, "shared")
+        val view = new LiveView[Int, Int]:
+          override val browserEvents = BrowserEvents.on(shared)(_ * 100)
+          def mount(ctx: MountContext) = ZIO.succeed(0)
+          def handleMessage(model: Int, ctx: MessageContext): Int => Task[Int] =
+            value => ZIO.succeed(model + value)
+          def view(model: Signal[Int]) = div(instance.render(()))
+        val ignored = scalive.render.BindingId.fromEncoded("ignored")
+        for
+          sink       <- Queue.unbounded[ConnectionOutput]
+          connection <- RootConnection.start(config, metadata, view, sink.offer(_).unit)
+          _          <- sink.take
+          id         <- connection.inspectComponentIds.map(_.head)
+          toComponent = CommandId.fresh().toOption.get
+          _ <- connection.submitComponentNamedEvent(
+                 toComponent,
+                 id,
+                 ignored,
+                 BindingPayload.Params(Map.empty),
+                 "shared",
+                 "3"
+               )
+          toRoot = CommandId.fresh().toOption.get
+          _ <- connection.submitNamedEvent(
+                 toRoot,
+                 ignored,
+                 BindingPayload.Params(Map.empty),
+                 "shared",
+                 "2"
+               )
+          componentModel <- connection.inspectComponentModel[Int](id)
+          rootModel      <- connection.inspectModel
+        yield assertTrue(componentModel.contains(3), rootModel == 200)
       }
     },
     test("component flash and client effects are threaded into the committed root turn") {

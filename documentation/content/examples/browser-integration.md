@@ -30,8 +30,8 @@ typed result back.
 - **Copy sample text** sends `Msg.CopySample`. The handler pushes a typed
   `ServerToBrowserEvent` with a request ID through `ctx.client.push`.
 - The `BrowserInterop` hook copies the text and pushes a typed
-  `BrowserToServerEvent` with the same request ID. The LiveView's
-  `onBrowserEvent` hook accepts only the result for the pending request.
+  `BrowserToServerEvent` with the same request ID. The LiveView receives it as
+  `Msg.CopyFinished` and accepts only the result for the pending request.
 - A denied clipboard is an ordinary failed result, not a crash.
 
 ## Related guides {#related-guides}

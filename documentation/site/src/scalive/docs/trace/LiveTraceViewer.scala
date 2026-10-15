@@ -17,14 +17,7 @@ final private[docs] class LiveTraceViewer(
 
   import LiveTraceViewer.*
 
-  override def hooks: LiveHooks[Msg, Model] =
-    LiveHooks.empty[Msg, Model].onBrowserEvent(BrowserRecordsEvent) { (model, batch, _) =>
-      model.session match
-        case Some(session) =>
-          store.appendBrowser(session, observedTopic, batch) *>
-            store.snapshot(session, observedTopic).map(snapshot => withSnapshot(model, snapshot))
-        case None => ZIO.succeed(model)
-    }
+  override def browserEvents = BrowserEvents.on(BrowserRecordsEvent)(Msg.BrowserRecords(_))
 
   def mount(ctx: MountContext): Task[Model] =
     ctx.connection match
@@ -53,6 +46,12 @@ final private[docs] class LiveTraceViewer(
         ZIO.succeed(Model(None, enabled = false, Vector.empty, None, followLatest = true))
 
   def handleMessage(model: Model, ctx: MessageContext) =
+    case Msg.BrowserRecords(batch) =>
+      model.session match
+        case Some(session) =>
+          store.appendBrowser(session, observedTopic, batch) *>
+            store.snapshot(session, observedTopic).map(snapshot => withSnapshot(model, snapshot))
+        case None => ZIO.succeed(model)
     case Msg.ToggleCapture =>
       model.session match
         case Some(session) if model.enabled =>
@@ -496,6 +495,7 @@ private[docs] object LiveTraceViewer:
   enum Msg:
     case ToggleCapture, Clear, Refresh, JumpToLatest
     case SelectInteraction(id: String)
+    case BrowserRecords(batch: BrowserTraceBatch)
 
   final case class Model(
     session: Option[String],

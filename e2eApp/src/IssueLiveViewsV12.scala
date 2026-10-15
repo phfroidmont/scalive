@@ -319,13 +319,13 @@ class Issue4209LiveView extends LiveView[Issue4209LiveView.Msg, Issue4209LiveVie
 
   def mount(ctx: MountContext) = ZIO.succeed(Model())
 
-  override def hooks =
-    LiveHooks.empty.onBrowserEvent(BrowserToServerEvent[Json]("hold-lock")) { (model, _, _) =>
-      ZIO.sleep(800.millis).as(model.copy(outsideCount = 1, childLabel = 1))
-    }
+  override def browserEvents =
+    BrowserEvents.on(BrowserToServerEvent[Json]("hold-lock"))(_ => Msg.HoldLock)
 
   def handleMessage(model: Model, ctx: MessageContext) =
-    case Msg.Noop => ZIO.succeed(model)
+    case Msg.Noop     => ZIO.succeed(model)
+    case Msg.HoldLock =>
+      ZIO.sleep(800.millis).as(model.copy(outsideCount = 1, childLabel = 1))
 
   override def view(model: Signal[Model]) =
     div(
@@ -346,6 +346,7 @@ object Issue4209LiveView:
   final case class Model(outsideCount: Int = 0, childLabel: Int = 0)
   enum Msg:
     case Noop
+    case HoldLock
 
 class Issue4212LiveView extends LiveView[Issue4212LiveView.Msg, Issue4212LiveView.Model]:
   import Issue4212LiveView.*

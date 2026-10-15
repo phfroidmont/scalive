@@ -17,6 +17,7 @@ object CopyButtonComponent
 
   enum Msg:
     case Copy
+    case Copied(result: CopyResult)
 
   final case class CopyRequest(requestId: String, text: String) derives JsonEncoder
   final case class CopyResult(requestId: String, ok: Boolean) derives JsonDecoder
@@ -24,12 +25,9 @@ object CopyButtonComponent
   private val CopyRequestEvent = ServerToBrowserEvent[CopyRequest]("browser-copy-request")
   private val CopyResultEvent  = BrowserToServerEvent[CopyResult]("browser-copy-result")
 
-  // docs:start browser-component-hook
-  override def hooks: ComponentLiveHooks[Props, Msg, Model] =
-    ComponentLiveHooks.onBrowserEvent(CopyResultEvent) { (props, model, result, _) =>
-      ZIO.succeed(applyCopyResult(props, model, result))
-    }
-  // docs:end browser-component-hook
+  // docs:start browser-component-events
+  override def browserEvents = BrowserEvents.on(CopyResultEvent)(Msg.Copied(_))
+  // docs:end browser-component-events
 
   def mount(props: Props, ctx: MountContext): Task[Model] =
     ZIO.succeed(Model(requestNumber = 0, pending = None, copied = None))
@@ -41,6 +39,7 @@ object CopyButtonComponent
       ctx.client
         .push(CopyRequestEvent, CopyRequest(requestId, props.text))
         .as(model.copy(requestNumber = requestNumber, pending = Some(requestId), copied = None))
+    case Msg.Copied(result) => ZIO.succeed(applyCopyResult(props, model, result))
 
   def view(props: Signal[Props], model: Signal[Model]) =
     button(

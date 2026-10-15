@@ -2,7 +2,6 @@ package scalive.runtime.connection
 
 import zio.*
 import zio.http.URL
-import zio.json.JsonDecoder
 
 import scalive.*
 import scalive.runtime.resources.UploadRegistry
@@ -10,21 +9,18 @@ import scalive.runtime.resources.UploadRegistry
 /** Immutable hook state owned by the session model. */
 final private[connection] case class RootHookRegistry[Msg, Model](
   staticRaw: Vector[RootHookRegistry.Raw[Msg, Model]],
-  staticBrowser: Vector[RootHookRegistry.Browser[Msg, Model]],
   staticEvent: Vector[RootHookRegistry.Event[Msg, Model]],
   staticParams: Vector[RootHookRegistry.Params[Msg, Model]],
   staticInfo: Vector[RootHookRegistry.Event[Msg, Model]],
   staticAsync: Vector[RootHookRegistry.Async[Msg, Model]],
   staticAfterRender: Vector[RootHookRegistry.AfterRender[Msg, Model]],
   dynamicRaw: Vector[(String, RootHookRegistry.Raw[Msg, Model])] = Vector.empty,
-  dynamicBrowser: Vector[(String, RootHookRegistry.Browser[Msg, Model])] = Vector.empty,
   dynamicEvent: Vector[(String, RootHookRegistry.Event[Msg, Model])] = Vector.empty,
   dynamicParams: Vector[(String, RootHookRegistry.Params[Msg, Model])] = Vector.empty,
   dynamicInfo: Vector[(String, RootHookRegistry.Event[Msg, Model])] = Vector.empty,
   dynamicAsync: Vector[(String, RootHookRegistry.Async[Msg, Model])] = Vector.empty,
   dynamicAfterRender: Vector[(String, RootHookRegistry.AfterRender[Msg, Model])] = Vector.empty):
   def raw         = staticRaw ++ dynamicRaw.map(_._2)
-  def browser     = staticBrowser ++ dynamicBrowser.map(_._2)
   def event       = staticEvent ++ dynamicEvent.map(_._2)
   def params      = staticParams ++ dynamicParams.map(_._2)
   def info        = staticInfo ++ dynamicInfo.map(_._2)
@@ -35,11 +31,6 @@ private[connection] object RootHookRegistry:
   trait Raw[Msg, Model]:
     def invoke(model: Model, event: LiveEvent, context: MessageContext[Msg, Model])
       : Task[LiveEventHookResult[Model]]
-
-  trait Browser[Msg, Model]:
-    def name: String
-    def invoke(model: Model, raw: String, context: MessageContext[Msg, Model])
-      : Either[String, Task[Model]]
 
   trait Event[Msg, Model]:
     def invoke(model: Model, message: Msg, context: MessageContext[Msg, Model])
@@ -56,15 +47,6 @@ private[connection] object RootHookRegistry:
   trait AfterRender[Msg, Model]:
     def invoke(model: Model, context: AfterRenderContext[Msg, Model]): Task[Unit]
 
-  def browserHook[Msg, Model, A](
-    event: BrowserToServerEvent[A],
-    decoder: JsonDecoder[A],
-    hook: (Model, A, MessageContext[Msg, Model]) => Task[Model]
-  ): Browser[Msg, Model] = new Browser[Msg, Model]:
-    val name                                                                   = event.value
-    def invoke(model: Model, raw: String, context: MessageContext[Msg, Model]) =
-      decoder.decodeJson(raw).map(value => hook(model, value, context))
-
   def fromStatic[Msg, Model](hooks: LiveHooks[Msg, Model]): RootHookRegistry[Msg, Model] =
     def collect(
       current: LiveHooks[Msg, Model],
@@ -76,15 +58,6 @@ private[connection] object RootHookRegistry:
         previous.copy(staticRaw = previous.staticRaw :+ new Raw[Msg, Model]:
           def invoke(model: Model, event: LiveEvent, context: MessageContext[Msg, Model]) =
             value.hook(model, event, context))
-      case value: LiveHooks.BrowserEvent[Msg, Model, ?] =>
-        val previous = collect(value.previous, registry)
-        previous.copy(staticBrowser =
-          previous.staticBrowser :+ browserHook(
-            value.event,
-            value.decoder,
-            value.handler
-          )
-        )
       case value: LiveHooks.Event[Msg, Model] =>
         val previous = collect(value.previous, registry)
         previous.copy(staticEvent = previous.staticEvent :+ new Event[Msg, Model]:
@@ -124,9 +97,7 @@ private[connection] object RootHookRegistry:
         Vector.empty,
         Vector.empty,
         Vector.empty,
-        Vector.empty,
         dynamicRaw = Vector.empty[(String, Raw[Msg, Model])],
-        dynamicBrowser = Vector.empty[(String, Browser[Msg, Model])],
         dynamicEvent = Vector.empty[(String, Event[Msg, Model])],
         dynamicParams = Vector.empty[(String, Params[Msg, Model])],
         dynamicInfo = Vector.empty[(String, Event[Msg, Model])],

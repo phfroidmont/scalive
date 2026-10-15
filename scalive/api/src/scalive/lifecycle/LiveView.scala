@@ -37,6 +37,15 @@ trait LiveView[Msg, Model]:
     */
   def hooks: LiveHooks[Msg, Model] = LiveHooks.empty
 
+  /** The events that browser JavaScript pushes to this view, each with the message it becomes.
+    * Defaults to none.
+    *
+    * A hook's `this.pushEvent(name, payload)` reaches [[handleMessage]] as the message declared for
+    * `name`, as in `BrowserEvents.on(CopyResultEvent)(Msg.CopyFinished(_))`. See [browser
+    * integration](https://scalive.dev/guides/browser-integration).
+    */
+  def browserEvents: BrowserEvents[Msg] = BrowserEvents.none
+
   /** Returns the document title for `model`, or `None` to use the root layout's default.
     *
     * The root layout renders it with `liveTitle` in the first response, and Scalive sends later
@@ -115,6 +124,11 @@ object LiveView:
 
     /** Static lifecycle hooks shared by every instance of this view. Defaults to none. */
     def hooks: LiveHooks[Msg, Model] = LiveHooks.empty
+
+    /** The events that browser JavaScript pushes to this view, each with the message it becomes,
+      * like [[LiveView.browserEvents]]. Defaults to none.
+      */
+    def browserEvents: BrowserEvents[Msg] = BrowserEvents.none
 
     /** Returns the document title for `model`, or `None` to use the root layout's default. */
     def pageTitle(model: Model): Option[String] = None

@@ -75,31 +75,33 @@ Declare the reverse direction:
 
 @:sourceRegion(documentation/site/src/scalive/docs/examples/BrowserInteropExample.scala, browser-integration-browser-event)
 
-Then install its handler once on the LiveView:
+Then declare which message it becomes in the LiveView's
+@:apiSymbol(def:scalive.LiveView.browserEvents)`browserEvents`@:@:
 
-@:sourceRegion(documentation/site/src/scalive/docs/examples/BrowserInteropExample.scala, browser-integration-root-hook)
+@:sourceRegion(documentation/site/src/scalive/docs/examples/BrowserInteropExample.scala, browser-integration-root-events)
 
-@:apiSymbol(def:scalive.LiveHooks.onBrowserEvent)`onBrowserEvent`@:@ decodes a matching root event before invoking the handler. A
-malformed matching payload is rejected without changing the model.
+Scalive decodes the payload of each matching event and sends the message to
+`handleMessage`, after any event hooks, like a binding's message:
 
-A successful decode proves only the payload's shape. Any browser can send any
+@:sourceRegion(documentation/site/src/scalive/docs/examples/BrowserInteropExample.scala, browser-integration-result)
+
+A malformed payload is logged and consumed without changing the model. A
+successful decode proves only the payload's shape. Any browser can send any
 event, so the server must still validate the decoded values and authorize the
-action in the handler, for example by checking that `requestId` names an
+action in `handleMessage`, for example by checking that `requestId` names an
 operation this LiveView started. Checks in JavaScript, such as the length limits
 in the hook below, only improve usability and handle browser failures; they
 protect nothing.
 
-For an event targeted at a stateful component, declare the same boundary on the
-component instead. The static handler also receives current props:
+A stateful component declares the events it receives the same way, with its own
+messages:
 
-@:sourceRegion(documentation/fixtures/guides/src/browser/CopyButtonComponent.scala, browser-component-hook)
+@:sourceRegion(documentation/fixtures/guides/src/browser/CopyButtonComponent.scala, browser-component-events)
 
-Dynamic component hooks use
-`ctx.hooks.browserEvent.attach(id, CopyResultEvent) { (props, model, result, ctx) => ... }`
-and the corresponding `detach(id)`. Root dynamic handlers use the same pattern
-without `props`. Use `this.pushEvent` for a root event and `this.pushEventTo`
-when the component should own the event; targeting determines which
-handler runs, while `BrowserToServerEvent` determines how its payload is decoded.
+Use `this.pushEvent` for an event the LiveView receives and `this.pushEventTo`
+with an element inside the component for an event the component receives;
+targeting decides whose declarations apply, while `BrowserToServerEvent`
+determines how its payload is decoded.
 
 ## Implement the browser hook {#implement-the-browser-hook}
 
@@ -162,8 +164,8 @@ export function createBrowserInteropHook(clipboard = globalThis.navigator?.clipb
 ```
 
 `handleEvent` receives events pushed by `ctx.client.push`. `pushEvent` sends the
-result back as a root browser event, where `onBrowserEvent` decodes it and the
-handler checks it. The explicit failure result lets Scala clear or report the pending
+result back to the LiveView, which decodes it into `Msg.CopyFinished` and checks
+it in `handleMessage`. The explicit failure result lets Scala clear or report the pending
 operation instead of waiting forever.
 
 ## Register the hook with LiveSocket {#register-the-hook-with-live-socket}

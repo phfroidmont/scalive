@@ -30,6 +30,7 @@ import scalive.LifecycleTurnKind
 import scalive.LiveAsyncEvent
 import scalive.LiveAsyncResult
 import scalive.LiveConnectedTurnFailure
+import scalive.LiveEvent
 import scalive.SubscriptionDelivery
 import scalive.render.*
 import scalive.runtime.contracts.*
@@ -518,6 +519,17 @@ final private[scalive] class SessionKernel[Msg, Model] private (
           response.fail(SessionRejection.InvalidEpoch(state.epoch, command.expectedEpoch)).unit *>
             loop(state, work)
         else
+          def executeRootEvent(
+            draft: TurnDraft[Msg, Model],
+            message: Msg,
+            event: Option[LiveEvent]
+          ): UIO[Unit] =
+            val handled = (logic.handleEvent, event) match
+              case (Some(handler), Some(value)) => handler(draft, message, value)
+              case _                            => logic.handle(draft.model, message)
+            observer.message(commandCorrelation(state.epoch, commandId), message) *>
+              executeTurn(state, work, handled, Some(tracked))
+
           def execute: UIO[Unit] = command match
             case client: SessionCommand.ClientEvent =>
               val intercepted = client.event match
@@ -528,15 +540,13 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                 controlled(phase(SessionStage.Handler)(intercepted)).exit.flatMap {
                   case Exit.Success(ClientEventInterception.Halt(draft)) =>
                     executeTurn(state, work, ZIO.succeed(draft), Some(tracked))
+                  case Exit.Success(ClientEventInterception.Dispatch(draft, message)) =>
+                    executeRootEvent(draft, message, client.event)
                   case Exit.Success(ClientEventInterception.Continue(draft)) =>
                     resolveClient(state, client) match
                       case Left(rejection) => response.fail(rejection).unit *> loop(state, work)
                       case Right(ResolvedClient.Root(message)) =>
-                        val handled = (logic.handleEvent, client.event) match
-                          case (Some(handler), Some(event)) => handler(draft, message, event)
-                          case _                            => logic.handle(draft.model, message)
-                        observer.message(commandCorrelation(state.epoch, commandId), message) *>
-                          executeTurn(state, work, handled, Some(tracked))
+                        executeRootEvent(draft, message, client.event)
                       case Right(ResolvedClient.Component(component, message)) =>
                         executeComponentTurn(
                           state,
@@ -693,6 +703,8 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                 controlled(phase(SessionStage.Handler)(intercepted)).exit.flatMap {
                   case Exit.Success(ClientEventInterception.Halt(draft)) =>
                     executeTurn(state, work, ZIO.succeed(draft), Some(tracked))
+                  case Exit.Success(ClientEventInterception.Dispatch(draft, message)) =>
+                    executeRootEvent(draft, message, client.event)
                   case Exit.Success(ClientEventInterception.Continue(draft)) =>
                     resolveComponentClient(state, client) match
                       case Left(rejection) => response.fail(rejection).unit *> loop(state, work)

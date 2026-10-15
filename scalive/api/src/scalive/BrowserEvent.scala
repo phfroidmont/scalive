@@ -1,5 +1,6 @@
 package scalive
 
+import zio.json.JsonDecoder
 import zio.json.ast.Json
 
 /** The complete client event envelope visible to raw lifecycle hooks.
@@ -53,11 +54,8 @@ object ServerToBrowserEvent:
 
 /** A named event pushed from browser JavaScript to the server with a typed JSON payload.
   *
-  * Register this event with a LiveView or LiveComponent `onBrowserEvent` hook. Registration
-  * requires a `zio.json.JsonDecoder[A]`; matching payloads are decoded before the handler runs. A
-  * malformed matching payload is logged and consumed without changing the model. Root handlers
-  * ignore events targeted at a component. The type is invariant in `A`, so an event cannot be
-  * widened to a different payload contract.
+  * Declare it in a LiveView's or LiveComponent's [[BrowserEvents]] with the message it becomes. The
+  * type is invariant in `A`, so an event cannot be widened to a different payload contract.
   *
   * @tparam A
   *   the payload expected from the browser
@@ -74,3 +72,50 @@ object BrowserToServerEvent:
 
   /** Returns the exact browser event name stored in `event`. */
   extension [A](event: BrowserToServerEvent[A]) def value: String = event
+
+/** The events that browser JavaScript pushes to a LiveView or LiveComponent, each with the message
+  * it becomes.
+  *
+  * A hook's `this.pushEvent(name, payload)` reaches the LiveView, and `this.pushEventTo(target,
+  * name, payload)` reaches the component that renders `target`. The payload is decoded as the
+  * event's type, and the message then goes through event hooks and `handleMessage`, like a
+  * binding's message. A payload that does not decode is logged and consumed without changing the
+  * model. Build it with `on`, as in
+  * `BrowserEvents.on(CopyResultEvent)(Msg.CopyFinished(_)).on(ScrollEvent)(Msg.Scrolled(_))`.
+  *
+  * @tparam Msg
+  *   the messages the events become
+  */
+final class BrowserEvents[+Msg] private (private val entries: Vector[BrowserEvents.Entry[Msg]]):
+  /** Receives `event` as the message that `message` builds from its decoded payload.
+    *
+    * This form adds it to the events already declared. It throws `IllegalArgumentException` when an
+    * event with the same name is already declared.
+    */
+  def on[A: JsonDecoder, M >: Msg](event: BrowserToServerEvent[A])(message: A => M)
+    : BrowserEvents[M] =
+    require(
+      !entries.exists(_.name == event.value),
+      s"browser event '${event.value}' is declared twice"
+    )
+    val decoder = summon[JsonDecoder[A]]
+    BrowserEvents(entries :+ BrowserEvents.Entry(event.value, decoder.fromJsonAST(_).map(message)))
+
+  /** Decodes the payload of the event named `name`, or returns `None` when it is not declared. */
+  private[scalive] def decode(name: String, payload: Json): Option[Either[String, Msg]] =
+    entries.find(_.name == name).map(_.decode(payload))
+
+/** Constructors for [[BrowserEvents]]. */
+object BrowserEvents:
+  /** Receives no browser events. */
+  val none: BrowserEvents[Nothing] = BrowserEvents(Vector.empty)
+
+  /** Receives `event` as the message that `message` builds from its decoded payload.
+    *
+    * This form starts the declarations with it, like `none.on`.
+    */
+  def on[A: JsonDecoder, Msg](event: BrowserToServerEvent[A])(message: A => Msg)
+    : BrowserEvents[Msg] =
+    none.on(event)(message)
+
+  final private case class Entry[+Msg](name: String, decode: Json => Either[String, Msg])

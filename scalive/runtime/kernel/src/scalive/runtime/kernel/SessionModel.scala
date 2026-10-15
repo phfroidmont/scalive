@@ -250,6 +250,8 @@ final private[scalive] case class TurnDraft[+Msg, Model](
 private[scalive] enum ClientEventInterception[+Msg, Model]:
   case Continue(draft: TurnDraft[Msg, Model])
   case Halt(draft: TurnDraft[Msg, Model])
+  // The event is a declared browser event of the root, already decoded into `message`.
+  case Dispatch(draft: TurnDraft[Msg, Model], message: Msg)
 
 /** Typed lifecycle operations interpreted by the protocol-neutral session owner.
   *

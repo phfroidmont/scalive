@@ -497,30 +497,29 @@ object ZioHttpSpec extends ZIOSpecDefault:
         for
           calls <- Ref.make(Vector.empty[String])
           definition = new LiveComponent[String, String, String]:
-                         override val hooks = ComponentLiveHooks.empty[String, String, String]
-                           .onBrowserEvent(componentEvent) { (props, model, value, _) =>
-                             calls.update(_ :+ props).as(s"$model:$value")
-                           }
+                         override val browserEvents =
+                           BrowserEvents.on(componentEvent)(value => s"pushed:$value")
                          def mount(props: String, ctx: MountContext) = ZIO.succeed(props)
                          def handleMessage(
                            props: String,
                            model: String,
                            ctx: MessageContext
-                         ): String => Task[String] = _ => ZIO.succeed(model)
+                         ): String => Task[String] =
+                           case s"pushed:$value" => calls.update(_ :+ props).as(s"$model:$value")
+                           case _                 => ZIO.succeed(model)
                          def view(
                            props: Signal[String],
                            model: Signal[String],
                          ) = button(on.click("clicked"), model)
           first  = component(definition, "cid-first")
           second = component(definition, "cid-second")
-          view = new LiveView[Nothing, Boolean]:
-                   override val hooks = LiveHooks.empty[Nothing, Boolean]
-                     .onBrowserEvent(removeEvent)((_, show, _) => ZIO.succeed(show))
+          view = new LiveView[Boolean, Boolean]:
+                   override val browserEvents = BrowserEvents.on(removeEvent)(identity)
                    def mount(ctx: MountContext) = ZIO.succeed(true)
                    def handleMessage(
                      model: Boolean,
                      ctx: MessageContext
-                   ): Nothing => Task[Boolean] = identity
+                   ): Boolean => Task[Boolean] = show => ZIO.succeed(show)
                    def view(model: Signal[Boolean]) =
                      div(first.render("first"), model.when(span(second.render("second"))))
           connectionConfig = ConnectionConfig.make(8, 8, 8, 8, 8).toOption.get
@@ -1943,13 +1942,11 @@ object ZioHttpSpec extends ZIOSpecDefault:
         )
         .context { (session, route) =>
           events += s"factory:$session:$route"
-          new LiveView[Nothing, Unit]:
-            override val hooks = LiveHooks.empty[Nothing, Unit]
-              .onBrowserEvent(event)((model, _, _) =>
-                ZIO.succeed(events += "handler").as(model)
-              )
+          new LiveView[Unit, Unit]:
+            override val browserEvents = BrowserEvents.on(event)(_ => ())
             def mount(ctx: MountContext) = ZIO.succeed(events += "mount").unit
-            def handleMessage(model: Unit, ctx: MessageContext): Nothing => Task[Unit] = identity
+            def handleMessage(model: Unit, ctx: MessageContext): Unit => Task[Unit] =
+              _ => ZIO.succeed(events += "handler").as(model)
             def view(model: Signal[Unit]) = div("guarded")
         }
       val application = scalive.Live.router(
@@ -1995,13 +1992,11 @@ object ZioHttpSpec extends ZIOSpecDefault:
     test("reload guard returns a full redirect to the current URL without running the event") {
       val event        = BrowserToServerEvent[Json]("reload-event")
       val handlerCalls = AtomicInteger()
-      val view = new LiveView[Nothing, Int]:
-        override val hooks = LiveHooks.empty[Nothing, Int]
-          .onBrowserEvent(event)((model, _, _) =>
-            ZIO.succeed(handlerCalls.incrementAndGet()).as(model + 1)
-          )
+      val view = new LiveView[Unit, Int]:
+        override val browserEvents = BrowserEvents.on(event)(_ => ())
         def mount(ctx: MountContext) = ZIO.succeed(0)
-        def handleMessage(model: Int, ctx: MessageContext): Nothing => Task[Int] = identity
+        def handleMessage(model: Int, ctx: MessageContext): Unit => Task[Int] =
+          _ => ZIO.succeed(handlerCalls.incrementAndGet()).as(model + 1)
         def view(model: Signal[Int]) = div(model.map(_.toString))
       val application = scalive.Live.router(
         (scalive.live / "reload")
@@ -2026,11 +2021,11 @@ object ZioHttpSpec extends ZIOSpecDefault:
     },
     test("each connected lifecycle on a connection gets its own lifecycle ID") {
       val crash = BrowserToServerEvent[Json]("crash")
-      def page(label: String) = new LiveView[Nothing, Unit]:
-        override val hooks = LiveHooks.empty[Nothing, Unit]
-          .onBrowserEvent(crash)((_, _, _) => ZIO.fail(Exception("crash")))
+      def page(label: String) = new LiveView[Unit, Unit]:
+        override val browserEvents = BrowserEvents.on(crash)(_ => ())
         def mount(ctx: MountContext) = ZIO.unit
-        def handleMessage(model: Unit, ctx: MessageContext): Nothing => Task[Unit] = identity
+        def handleMessage(model: Unit, ctx: MessageContext): Unit => Task[Unit] =
+          _ => ZIO.fail(Exception("crash"))
         def view(model: Signal[Unit]) = div(label)
       val broken = new LiveView.Eventless[Unit]:
         def mount(ctx: MountContext) = ZIO.fail(Exception("broken"))
@@ -2104,11 +2099,8 @@ object ZioHttpSpec extends ZIOSpecDefault:
       val resourceCleanup = AtomicInteger()
       val handlers = AtomicInteger()
       val task     = AsyncKey[Unit]("disconnect-cleanup")
-      val view = new LiveView[Unit, Int]:
-        override val hooks = LiveHooks.empty[Unit, Int]
-          .onBrowserEvent(event)((model, _, _) =>
-            ZIO.succeed(handlers.incrementAndGet()).as(model + 1)
-          )
+      val view = new LiveView[Boolean, Int]:
+        override val browserEvents = BrowserEvents.on(event)(_ => true)
         def mount(ctx: MountContext) = ctx.connection match
           case Connection.Disconnected => ZIO.succeed(0)
           case Connection.Connected(connected) =>
@@ -2117,9 +2109,11 @@ object ZioHttpSpec extends ZIOSpecDefault:
                 ZIO.succeed(resourceCleanup.incrementAndGet()).unit
               ) *>
               connected.async
-                .start(task)(ZIO.never.ensuring(ZIO.succeed(cleanup.incrementAndGet()).unit))(_ => ())
+                .start(task)(ZIO.never.ensuring(ZIO.succeed(cleanup.incrementAndGet()).unit))(_ => false)
                 .as(0)
-        def handleMessage(model: Int, ctx: MessageContext): Unit => Task[Int] = _ => ZIO.succeed(model)
+        def handleMessage(model: Int, ctx: MessageContext): Boolean => Task[Int] =
+          case true  => ZIO.succeed(handlers.incrementAndGet()).as(model + 1)
+          case false => ZIO.succeed(model)
         def view(model: Signal[Int]) = div(model.map(_.toString))
       val application = scalive.Live.router(
         scalive.live
@@ -2157,17 +2151,15 @@ object ZioHttpSpec extends ZIOSpecDefault:
         guardCalls  = AtomicInteger()
         disconnect  = AtomicInteger()
         task        = AsyncKey[Unit]("disconnect-after-event")
-        view = new LiveView[Unit, Unit]:
-                 override val hooks = LiveHooks.empty[Unit, Unit]
-                   .onBrowserEvent(event)((model, _, _) =>
-                     started.succeed(()).as(model)
-                   )
+        view = new LiveView[Boolean, Unit]:
+                 override val browserEvents = BrowserEvents.on(event)(_ => true)
                  def mount(ctx: MountContext) = ctx.connection match
                    case Connection.Disconnected => ZIO.unit
                    case Connection.Connected(connected) =>
-                     connected.async.start(task)(completion.await)(_ => ())
-                 def handleMessage(model: Unit, ctx: MessageContext): Unit => Task[Unit] = _ =>
-                   ZIO.succeed(model)
+                     connected.async.start(task)(completion.await)(_ => false)
+                 def handleMessage(model: Unit, ctx: MessageContext): Boolean => Task[Unit] =
+                   case true  => started.succeed(()).as(model)
+                   case false => ZIO.succeed(model)
                  def view(model: Signal[Unit]) = div("disconnect-after-event")
         application = scalive.Live.router(
                         scalive.live.guardConnectedTurns(_ =>

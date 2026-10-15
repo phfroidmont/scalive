@@ -27,8 +27,8 @@ Pick the tool that matches what you want to do:
 | Record route-wide operational events and metrics without changing the lifecycle | A `LifecycleObserver` | Route assembly with `ZioHttp.routes` |
 
 Keep normal domain transitions in `handleMessage`, route changes in
-`handleParams`, and one-off browser payloads in typed event bindings or
-`onBrowserEvent`. A hook should not become a second, hidden message handler.
+`handleParams`, and events pushed from JavaScript in `browserEvents`, which turns
+them into messages. A hook should not become a second, hidden message handler.
 
 An @:apiSymbol(trait:scalive.LifecycleObserver)`LifecycleObserver`@:@ receives
 structured classifications, cannot alter an operation, and is isolated from
@@ -86,16 +86,14 @@ declarations add an `on` prefix to the stage name, such as `onRawEvent` for
 
 | Owner | Stage | Runs before or after |
 | --- | --- | --- |
-| Root | `rawEvent` | Before binding lookup and component routing |
-| Root | `browserEvent` | After raw interception; consumes a matching named browser event |
-| Root | `event` | After a root binding resolves to `Msg`, before `handleMessage` |
+| Root | `rawEvent` | Before the event becomes a message, and before component routing |
+| Root | `event` | After a root binding or declared browser event becomes `Msg`, before `handleMessage` |
 | Root | `params` | After mount and each URL change, before routed `handleParams` |
 | Root | `info` | Before non-browser server-message handling, including subscriptions |
 | Root | `async` | Before handling a root-owned managed task completion |
 | Root | `afterRender` | After the complete root tree renders, before a connected diff is emitted |
 | Component | `rawEvent` | After component routing, before typed component event handling |
-| Component | `browserEvent` | After component raw interception; consumes a matching named browser event |
-| Component | `event` | After a component binding resolves to `Msg`, before `handleMessage` |
+| Component | `event` | After a component binding or declared browser event becomes `Msg`, before `handleMessage` |
 | Component | `async` | Before handling that instance's managed task completion |
 | Component | `afterRender` | After that component subtree renders |
 
@@ -121,10 +119,6 @@ Typed event hooks cannot reply to a JavaScript caller. Raw event hooks return
 `LiveEventHookResult` instead, whose `haltReply(model, json)` can return JSON in
 the browser event acknowledgement; see
 [Intercept raw events sparingly](#raw-event-interception).
-
-Named `browserEvent` handlers are a distinct stage: they return `Task[Model]`
-and consume a matching, successfully decoded browser event without a
-continue/halt result.
 
 A failed hook effect is different from `Halt`: failure aborts the active
 lifecycle, prevents later hooks and the normal callback, and does not provide a
@@ -245,16 +239,14 @@ and optional JSON `meta` expose the wire envelope. For an event pushed from
 JavaScript, `bindingId` is the event name.
 
 A root raw hook sees root- and component-targeted envelopes, so inspect
-`event.cid` when target ownership matters. If it continues, Scalive performs
-binding lookup and routes a component target; the component's raw hooks then run
+`event.cid` when target ownership matters. If it continues, Scalive turns the
+event into a message, from a declared browser event or by binding lookup, and
+routes a component target; the component's raw hooks then run
 before its typed event hooks. Halting at the root prevents all later root and
 component event processing.
 
-Prefer `onEvent` once a rendered binding has produced a typed `Msg`. Prefer the
-distinct `onBrowserEvent(BrowserToServerEvent[A])` stage for a single named
-JavaScript event because it matches the event name, decodes with
-`JsonDecoder[A]`, consumes matching payloads, and rejects malformed matching
-payloads. Both roots and components provide this stage.
+Prefer `onEvent` once the event has become a typed `Msg`, whether from a
+rendered binding or a named JavaScript event declared in `browserEvents`.
 
 ### Keep after-render hooks observational {#after-render-limits}
 

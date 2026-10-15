@@ -55,7 +55,7 @@ object DocumentationSite extends ZIOAppDefault:
                                secureCookie = config.secureCookie,
                                allowedWebSocketOrigins = Set(config.publicOrigin.webSocketOrigin)
                              )
-                           ).mapError(error => new IllegalArgumentException(error.toString))
+                           )
       security = LiveSecurity(transportConfig)
       revision = bundle.apiReference.metadata.revision
       routes   =

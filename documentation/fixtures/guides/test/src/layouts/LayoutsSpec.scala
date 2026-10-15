@@ -15,7 +15,7 @@ object LayoutsSpec extends ZIOSpecDefault:
     sessionMaxAge = Duration.ofMinutes(30),
     secureCookie = false,
     allowedWebSocketOrigins = Set(WebSocketOrigin.http("localhost"))
-  ).fold(error => throw IllegalArgumentException(error.toString), identity)
+  ).fold(throw _, identity)
 
   private def render(path: String) =
     for

@@ -23,9 +23,16 @@ loader fails when a setting is missing instead of falling back to a default:
 @:sourceRegion(documentation/fixtures/guides/src/configuration/Configuration.scala, configuration-load)
 
 `SCALIVE_TOKEN_SECRET` and `SCALIVE_ALLOWED_ORIGINS` are names this application
-chose. The quick start reads the same `SCALIVE_TOKEN_SECRET` but falls back to a
-fixed development secret so that it runs without setup; a deployed application
-must not keep that fallback.
+chose. A rejected setting is a
+@:apiSymbol(enum:scalive.ZioHttpConfig.Error)`ZioHttpConfig.Error`@:@, an exception
+with a readable message, so `ZIO.fromEither(ZioHttpConfig(...))` can fail a
+`Task` directly.
+
+For local development, the quick start uses
+@:apiSymbol(def:scalive.ZioHttpConfig.local)`ZioHttpConfig.local(port)`@:@ instead.
+It admits `http://localhost:port` and `http://127.0.0.1:port`, sends cookies
+without `Secure`, and signs with a random secret drawn at startup. Never deploy
+it.
 
 All four values are required:
 

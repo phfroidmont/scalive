@@ -135,6 +135,38 @@ object ZioHttpSecuritySpec extends ZIOSpecDefault:
         valid == config()
       )
     },
+    test("configuration errors fail a task with a readable message") {
+      val short = ZioHttpConfig(
+        "short",
+        Duration.ofMinutes(1),
+        secureCookie = true,
+        allowedWebSocketOrigins = allowedOrigins
+      )
+      for
+        configError <- ZIO.fromEither(short).flip
+        originError <- ZIO.attempt(WebSocketOrigin.http("example.com", 0)).flip
+      yield assertTrue(
+        configError.getMessage == "The signing secret must contain at least 32 UTF-8 bytes, got 5",
+        originError == WebSocketOrigin.Error.InvalidPort(0),
+        originError.getMessage == "WebSocket origin port must be between 1 and 65535, got 0"
+      )
+    },
+    test("a local config admits this machine's origins and draws a new secret each time") {
+      for
+        first   <- ZioHttpConfig.local(8080)
+        second  <- ZioHttpConfig.local(8080)
+        invalid <- ZioHttpConfig.local(0).flip
+      yield assertTrue(
+        first.allowedWebSocketOrigins == Set(
+          WebSocketOrigin.http("localhost", 8080),
+          WebSocketOrigin.http("127.0.0.1", 8080)
+        ),
+        !first.secureCookie,
+        first.signingSecretBytes.length == 32,
+        first != second,
+        invalid == WebSocketOrigin.Error.InvalidPort(0)
+      )
+    },
     test("rejects a tampered HMAC") {
       for
         token <- ZioHttpSecurity

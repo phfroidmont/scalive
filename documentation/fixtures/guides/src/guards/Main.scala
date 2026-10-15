@@ -1,7 +1,5 @@
 package guards
 
-import java.time.Duration
-
 import zio.*
 import zio.http.Server
 
@@ -32,16 +30,4 @@ object Main extends ZIOAppDefault:
     yield ()
   // docs:end guards-load
 
-  val run =
-    ZIO
-      .fromEither(
-        ZioHttpConfig(
-          signingSecret = "local-development-secret-change-me",
-          sessionMaxAge = Duration.ofDays(7),
-          secureCookie = false,
-          allowedWebSocketOrigins = Set(WebSocketOrigin.http("localhost", port))
-        )
-      )
-      .mapError(error => new IllegalArgumentException(error.toString))
-      .flatMap(serve)
-end Main
+  val run = ZioHttpConfig.local(port).flatMap(serve)

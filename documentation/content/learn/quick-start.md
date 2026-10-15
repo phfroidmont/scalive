@@ -134,18 +134,17 @@ both asset route sets, and listens on port `8080`. The root layout renders the
 asset URLs, which include a version, so the plain `/static/app.js` path returns
 `404`.
 
-The configuration signs session cookies and accepts live connections only from
-pages served at `http://localhost:8080` and `http://127.0.0.1:8080`. Scalive
-reads no environment variables itself: `Main` reads the signing secret from
-`SCALIVE_TOKEN_SECRET`, a name this project chose, and falls back to a fixed
-development secret when it is unset.
+@:apiSymbol(def:scalive.ZioHttpConfig.local)`ZioHttpConfig.local(port)`@:@ accepts live
+connections only from pages served at `http://localhost:8080` and
+`http://127.0.0.1:8080`. It signs session cookies with a random secret drawn at
+startup, so restarting the server makes open pages reload.
 
 @:callout(warning)
 
-These settings are for local development only. Before deploying, read the
-secret from your own configuration and fail when it is missing instead of
-falling back to a fixed value, set `secureCookie = true` behind HTTPS, and list
-every origin that browsers use to reach the application. See
+This configuration is for local development only. Before deploying, build it
+with `ZioHttpConfig(...)` from your own settings: a stable secret,
+`secureCookie = true` behind HTTPS, and every origin that browsers use to reach
+the application. See
 [Configuration](../guides/configuration.md#current-configuration-contract)
 and [Deployment](../guides/deployment.md#put-an-http-edge-in-front).
 

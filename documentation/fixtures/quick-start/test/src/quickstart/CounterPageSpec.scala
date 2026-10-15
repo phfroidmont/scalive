@@ -16,7 +16,7 @@ object CounterPageSpec extends ZIOSpecDefault:
     sessionMaxAge = Duration.ofMinutes(30),
     secureCookie = false,
     allowedWebSocketOrigins = Set(WebSocketOrigin.http("localhost"))
-  ).fold(error => throw IllegalArgumentException(error.toString), identity)
+  ).fold(throw _, identity)
 
   private val application = Live.router(Routes.home -> CounterLiveView())
   private val routes      = ZioHttp.routes(application, config)

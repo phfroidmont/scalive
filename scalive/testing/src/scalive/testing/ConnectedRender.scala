@@ -27,7 +27,7 @@ object ConnectedRender:
     Duration.ofMinutes(30),
     secureCookie = false,
     allowedWebSocketOrigins = Set(WebSocketOrigin.https("scalive.test"))
-  ).fold(error => throw IllegalStateException(error.toString), identity)
+  ).fold(throw _, identity)
 
   /** Renders a page, then connects to it as a browser would, and returns the connected view.
     *

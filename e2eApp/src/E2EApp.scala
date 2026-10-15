@@ -238,7 +238,7 @@ object E2EApp extends ZIOAppDefault:
                 WebSocketOrigin.http("127.0.0.1", serverPort)
               )
             )
-          ).mapError(error => IllegalArgumentException(s"Invalid ZIO HTTP config: $error"))
+          )
       rootLayout  = new E2ERootLayout(assets, navigationGuardAssets)
       application = liveRoutes(rootLayout, assets)
       routes      =

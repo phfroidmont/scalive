@@ -40,10 +40,18 @@ final class WebSocketOrigin private (
 
 /** Constructors and strict parsing for [[WebSocketOrigin]]. */
 object WebSocketOrigin:
-  /** A typed failure to construct or parse an exact WebSocket origin. */
-  enum Error:
+  /** A typed failure to construct or parse an exact WebSocket origin.
+    *
+    * It is an exception with a readable message, so `ZIO.fromEither(WebSocketOrigin.parse(value))`
+    * is a `Task`.
+    *
+    * @param message
+    *   A human-readable description of the validation failure.
+    */
+  enum Error(val message: String) extends Exception(message):
     /** The value is not a serialized origin. */
     case Malformed
+        extends Error("Expected an HTTP or HTTPS origin without a path, query, or fragment")
 
     /** Only browser HTTP and HTTPS origins are supported.
       *
@@ -51,9 +59,10 @@ object WebSocketOrigin:
       *   The rejected scheme, as written in the parsed value.
       */
     case UnsupportedScheme(scheme: String)
+        extends Error(s"WebSocket origins must use HTTP or HTTPS, got $scheme")
 
     /** The host is absent or invalid. */
-    case InvalidHost
+    case InvalidHost extends Error("WebSocket origins require a valid ASCII host")
 
     /** The port is outside the usable TCP port range.
       *
@@ -61,36 +70,23 @@ object WebSocketOrigin:
       *   The rejected port.
       */
     case InvalidPort(port: Int)
-
-    /** A human-readable description of the validation failure. */
-    def message: String = this match
-      case Malformed => "Expected an HTTP or HTTPS origin without a path, query, or fragment"
-      case UnsupportedScheme(scheme) => s"WebSocket origins must use HTTP or HTTPS, got $scheme"
-      case InvalidHost               => "WebSocket origins require a valid ASCII host"
-      case InvalidPort(port) => s"WebSocket origin port must be between 1 and 65535, got $port"
-
-  /** Exception thrown by the ergonomic HTTP and HTTPS constructors.
-    *
-    * @param error
-    *   The validation failure.
-    */
-  final class ValidationException(val error: Error) extends IllegalArgumentException(error.message)
+        extends Error(s"WebSocket origin port must be between 1 and 65535, got $port")
 
   /** Creates an HTTP origin from trusted program input.
     *
-    * @throws ValidationException
+    * @throws Error
     *   when the host or port is invalid
     */
   def http(host: String, port: Int = 80): WebSocketOrigin =
-    httpEither(host, port).fold(error => throw new ValidationException(error), identity)
+    httpEither(host, port).fold(error => throw error, identity)
 
   /** Creates an HTTPS origin from trusted program input.
     *
-    * @throws ValidationException
+    * @throws Error
     *   when the host or port is invalid
     */
   def https(host: String, port: Int = 443): WebSocketOrigin =
-    httpsEither(host, port).fold(error => throw new ValidationException(error), identity)
+    httpsEither(host, port).fold(error => throw error, identity)
 
   /** Creates an HTTP origin with dynamic host or port failures in the typed error channel. */
   def httpEither(host: String, port: Int = 80): Either[Error, WebSocketOrigin] =

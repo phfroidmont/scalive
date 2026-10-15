@@ -1,7 +1,7 @@
 package scalive
 
 import java.nio.charset.StandardCharsets
-import java.security.MessageDigest
+import java.security.{MessageDigest, SecureRandom}
 import java.time.{Duration, Instant}
 import java.util.Base64
 import java.util.concurrent.TimeUnit
@@ -62,20 +62,27 @@ final class ZioHttpConfig private (
 
 /** The validating constructor for [[ZioHttpConfig]] and its errors. */
 object ZioHttpConfig:
-  /** Why [[ZioHttpConfig.apply]] rejected the settings. */
-  enum Error:
+  /** Why [[ZioHttpConfig.apply]] rejected the settings.
+    *
+    * It is an exception with a readable message, so `ZIO.fromEither(ZioHttpConfig(...))` is a
+    * `Task`.
+    */
+  enum Error(message: String) extends Exception(message):
     /** The signing secret contains fewer than 32 UTF-8 bytes.
       *
       * @param actualUtf8Bytes
       *   The length of the rejected secret in UTF-8 bytes.
       */
     case SecretTooShort(actualUtf8Bytes: Int)
+        extends Error(
+          s"The signing secret must contain at least 32 UTF-8 bytes, got $actualUtf8Bytes"
+        )
 
     /** Session and CSRF values require a positive maximum age. */
-    case NonPositiveSessionMaxAge
+    case NonPositiveSessionMaxAge extends Error("The session maximum age must be positive")
 
     /** The WebSocket policy contains no usable allowed origin. */
-    case NoAllowedWebSocketOrigins
+    case NoAllowedWebSocketOrigins extends Error("At least one WebSocket origin must be allowed")
 
   /** Validates the settings and creates a [[ZioHttpConfig]].
     *
@@ -105,6 +112,29 @@ object ZioHttpConfig:
           allowedWebSocketOrigins
         )
       )
+
+  /** Creates a configuration for running the application on this machine during development.
+    *
+    * It admits pages served at `http://localhost:port` and `http://127.0.0.1:port`, sends cookies
+    * without `Secure`, and signs with a random secret drawn on each call, so restarting the server
+    * makes open pages reload. Never deploy it: build a deployment's configuration with [[apply]]
+    * from its own settings. Fails when `port` is not a TCP port.
+    */
+  def local(port: Int): IO[WebSocketOrigin.Error, ZioHttpConfig] =
+    for
+      localhost <- ZIO.fromEither(WebSocketOrigin.httpEither("localhost", port))
+      loopback  <- ZIO.fromEither(WebSocketOrigin.httpEither("127.0.0.1", port))
+      secret    <- ZIO.succeed {
+                  val bytes = Array.ofDim[Byte](32)
+                  SecureRandom().nextBytes(bytes)
+                  bytes
+                }
+    yield new ZioHttpConfig(
+      secret,
+      Duration.ofDays(7),
+      secureCookie = false,
+      Set(localhost, loopback)
+    )
 end ZioHttpConfig
 
 private[scalive] object ZioHttpSecurity:

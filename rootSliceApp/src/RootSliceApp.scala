@@ -26,7 +26,7 @@ object RootSliceApp extends ZIOAppDefault:
       WebSocketOrigin.http("localhost", serverPort),
       WebSocketOrigin.http("127.0.0.1", serverPort)
     )
-  ).fold(error => throw IllegalArgumentException(error.toString), identity)
+  ).fold(throw _, identity)
 
   private val navigationA           = live / "nav" / "a"
   private val navigationB           = live / "nav" / "b"

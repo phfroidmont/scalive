@@ -21,7 +21,7 @@ object TransportConfig:
                     sessionMaxAge = Duration.ofDays(7),
                     secureCookie = true,
                     allowedWebSocketOrigins = origins
-                  ).left.map(error => s"Invalid transport configuration: $error")
+                  ).left.map(error => s"Invalid transport configuration: ${error.getMessage}")
                 )
     yield config
 

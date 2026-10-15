@@ -47,6 +47,38 @@ states the evidence and remaining work for each tracked area.
 For a conceptual translation rather than a support matrix, read the
 [Phoenix LiveView concepts in Scalive](../guides/phoenix-live-view-orientation.md#start-with-the-programming-model).
 
+## Design principles {#design-principles}
+
+Breaking changes during the alpha period are meant to improve the API, not to
+give up these properties:
+
+- **Typed messages end to end.** A LiveView and each component have their own
+  `Msg` type. A component's owner receives its outputs through an explicit
+  mapping, and layouts are generic in `Msg`, so they cannot send messages.
+- **Connected-only capabilities stay connected.** Async work, subscriptions,
+  and browser commands need a live connection. During mount, they are
+  reachable only by matching `ctx.connection`, so the first HTTP render cannot
+  use them by accident.
+- **Typed destinations and keys.** Links and navigation take locations built
+  from route declarations, and every alternative that takes a raw string is
+  named `*Unsafe`. Keys such as `AsyncKey[A]`, `BrowserToServerEvent[A]`, and
+  `ServerToBrowserEvent[A]` carry the type of their payload, and flash kinds and
+  DOM references have their own types instead of plain strings.
+- **Context checked at compile time.** A route that reads context produced by a
+  live session compiles only inside a session that produces it.
+- **Explicit staging.** A view is built once from signals, which cannot be
+  sampled or mutated. Conditional and repeated content go through operators
+  such as `when`, `matchCases`, and `splitBy`, so Scalive knows every dynamic
+  part of the page. [Designing dynamic HTML](dynamic-html-identity.md#the-question)
+  explains the trade-offs.
+- **Forms that keep what the visitor typed.** A form definition owns its fields
+  and the types of its values, events, and updates. Invalid input stays as
+  typed, every error is reported rather than the first, and `FormWorkflow`
+  tracks saves with tokens so a late save result cannot overwrite newer edits.
+- **Secure defaults.** Configuration is validated at startup, secrets and form
+  values are redacted when printed, claims that reach the browser are signed,
+  and WebSocket connections are admitted only from configured origins.
+
 ## Non-goals {#non-goals}
 
 Scalive is not intended to:

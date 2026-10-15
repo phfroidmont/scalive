@@ -71,6 +71,10 @@ mill __.test
 mill documentation.check
 ```
 
+After a public API change, run `mill documentation.pipeline.updateApiSnapshot`
+to accept the new API. After a browser-visible change, run the browser suites
+with `./scripts/e2e-run-upstream.sh` and `./scripts/e2e-run-e2e-app.sh`.
+
 The Nix shell also provides the hash-pinned Phoenix client resources required by
 the Mill build. Run maintainer builds inside `nix develop`; published artifacts
 remain self-contained and impose no Nix requirement on application consumers.

@@ -385,7 +385,7 @@ object ManagedStreamsSpec extends ZIOSpecDefault:
       case value: EvaluatedNode.Element   => value.children.flatMap(visit)
       case value: EvaluatedNode.Component =>
         value.resolution.toVector.flatMap(result => visit(result.child.root))
-      case value: EvaluatedNode.Choice => value.child.toVector.flatMap(visit)
+      case value: EvaluatedNode.Choice => value.children.flatMap(visit)
       case value: EvaluatedNode.Flash  => value.child.toVector.flatMap(visit)
       case value: EvaluatedNode.Keyed  => value.rows.flatMap(row => visit(row.child))
       case _                           => Vector.empty

@@ -103,17 +103,19 @@ Then apply each completion with `updated`:
 
 Call `loading(reset = true)` when old data would be misleading. The default
 retains it. Render every state deliberately; a failed task is domain-visible
-state, not a reason for the LiveView process to crash. Match on the cases, or
-read one aspect with `valueOption`, `isLoading`, `isOk`, `isFailed`, or
-`failure`. `isFailed` covers both `Failed` and `Died`, since a view usually
-shows one alert for both, while `failure` returns only the typed error. `map`
-transforms the current and retained values and keeps the state.
+state, not a reason for the LiveView process to crash. Render each case with
+`matchCases`, which does not compile while a case is missing, or read one
+aspect with `valueOption`, `isLoading`, `isOk`, `isFailed`, or `failure`.
+`isFailed` covers both `Failed` and `Died`, since a view usually shows one alert
+for both, while `failure` returns only the typed error. `map` transforms the
+current and retained values and keeps the state.
 
 ## Keep expected failures typed {#keep-expected-failures-typed}
 
 Give the task an error type the view can render. The report example's failing
 task is an `IO[ReportError, Report]`, so its model holds an
-`AsyncValue[ReportError, Report]` and the view explains each error:
+`AsyncValue[ReportError, Report]`. The view renders each case from a signal of
+that case's value, and explains each error:
 
 @:sourceRegion(documentation/site/src/scalive/docs/examples/AsyncReportExample.scala, async-report-status)
 

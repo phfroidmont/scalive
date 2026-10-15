@@ -211,7 +211,7 @@ object RenderProgram:
   final private case class ChoiceTemplate[+Msg](
     id: TemplateId,
     signal: Signal[Any],
-    branches: Vector[(Any, NodeTemplate[Msg])])
+    branches: Vector[(Any, Vector[NodeTemplate[Msg]])])
       extends NodeTemplate[Msg]
 
   final private case class ComponentTemplate[+Msg](id: TemplateId, spec: ComponentSpec[Msg])
@@ -497,8 +497,8 @@ object RenderProgram:
                   .map(compiled => attributes.appendedAll(compiled) -> contents)
               case attribute: Mod.Attr[Msg] =>
                 compileAttribute(attribute).map(compiled => (attributes :+ compiled) -> contents)
-              case choice @ Mod.Content.SignalModChoice(_, _) =>
-                val branchMods = choice.branches.map(_._2)
+              case choice @ Mod.Content.SignalChoice(_, _) =>
+                val branchMods = choice.branches.flatMap(_._2)
                 val allAttrs = branchMods.nonEmpty && branchMods.forall(_.isInstanceOf[Mod.Attr[?]])
                 val allContent = branchMods.forall(_.isInstanceOf[Mod.Content[?]])
                 if allAttrs then
@@ -509,36 +509,50 @@ object RenderProgram:
                 else
                   Left(
                     RenderError.InvalidHtml(
-                      "chooseMod branches cannot mix attribute and content positions"
+                      "the branches of a choice cannot mix attributes and content"
                     )
                   )
               case content: Mod.Content[Msg] => Right(attributes -> (contents :+ content))
           }
         }
 
+    // A branch without an attribute renders the attribute absent, like an unmatched value.
     private def compileAttributeChoice[Msg](
-      choice: Mod.Content.SignalModChoice[?, Msg]
+      choice: Mod.Content.SignalChoice[?, Msg]
     ): Either[RenderError, AttributeCandidate[Msg]] =
-      val signal   = choice.value.asInstanceOf[Signal[Any]]
-      val branches = choice.branches.map { case (key, mod) =>
-        key.asInstanceOf[Any] -> mod.asInstanceOf[Mod.Attr[Msg]]
-      }
+      val signal = choice.value.asInstanceOf[Signal[Any]]
       for
-        _        <- scope.validate(signal)
-        _        <- validateDistinctKeys(branches.map(_._1))
+        _ <- scope.validate(signal)
+        _ <- validateDistinctKeys(choice.branches.map(_._1))
+        flattened = choice.branches.map { (key, branch) =>
+                      key -> branch.flatMap {
+                        case attribute: Mod.Attr[Msg] => attribute.flattened
+                        case other                    => Vector(other)
+                      }
+                    }
+        branches <- traverse(flattened.filter(_._2.nonEmpty)) {
+                      case (key, Vector(attribute: Mod.Attr[Msg] @unchecked)) =>
+                        Right(key.asInstanceOf[Any] -> attribute)
+                      case _ =>
+                        Left(
+                          RenderError.InvalidHtml(
+                            "an attribute branch of a choice must set exactly one attribute"
+                          )
+                        )
+                    }
         compiled <- traverse(branches) { case (key, attribute) =>
                       compileAttribute(attribute).map(key -> _)
                     }
         _    <- traverse(compiled.map(_._2))(candidate => validateAttributeName(candidate.name))
         name <- compiled.headOption
                   .map(_._2.name).toRight(
-                    RenderError.InvalidHtml("attribute chooseMod requires at least one branch")
+                    RenderError.InvalidHtml("an attribute choice requires at least one branch")
                   )
         _ <- Either.cond(
                compiled.forall(_._2.name.equalsIgnoreCase(name)),
                (),
                RenderError.InvalidHtml(
-                 "attribute chooseMod branches must use the same attribute name"
+                 "the branches of an attribute choice must use the same attribute name"
                )
              )
         candidate <-
@@ -563,7 +577,7 @@ object RenderProgram:
             else
               Left(
                 RenderError.InvalidHtml(
-                  "attribute chooseMod branches cannot mix composite and scalar attributes"
+                  "the branches of an attribute choice cannot mix composite and scalar attributes"
                 )
               )
           result
@@ -801,23 +815,15 @@ object RenderProgram:
           yield TextTemplate(id, TextTemplate.Value.Dynamic(slot, value, raw))
         case Mod.Content.Tag(element)                  => compileElement(element)
         case Mod.Content.SignalChoice(value, branches) =>
-          compileChoice(value, branches.map((key, element) => key -> Mod.Content.Tag(element)))
-        case Mod.Content.SignalModChoice(value, branches) =>
-          if branches.exists(_._2.isInstanceOf[Mod.Attr[?]]) then
+          if branches.exists(_._2.exists(_.isInstanceOf[Mod.Attr[?]])) then
             Left(
-              RenderError.InvalidHtml(
-                "chooseMod branches cannot mix attribute and content positions"
-              )
+              RenderError.InvalidHtml("a choice of attributes must be a modifier of an element")
             )
           else
             compileChoice(
               value,
-              branches.map((key, mod) => key -> mod.asInstanceOf[Mod.Content[Msg]])
+              branches.map((key, mods) => key -> mods.map(_.asInstanceOf[Mod.Content[Msg]]))
             )
-        case Mod.Content.SignalOption(value, project) =>
-          val present = value.map(_.isDefined)
-          val item    = value.map(_.get)
-          compileChoice(present, Vector(true -> Mod.Content.Tag(project(item))))
         case Mod.Content.Keyed(entries)                    => compileStaticKeyed(entries)
         case Mod.Content.SignalKeyed(values, key, project) =>
           for
@@ -863,7 +869,7 @@ object RenderProgram:
           val upload = state.map(_.upload(definition))
           body(upload.map(_.get)) match
             case content: Mod.Content[Msg] =>
-              compileChoice(upload.map(_.isDefined), Vector(true -> content))
+              compileChoice(upload.map(_.isDefined), Vector(true -> Vector(content)))
             case _ =>
               Left(
                 RenderError.InvalidHtml(
@@ -905,14 +911,14 @@ object RenderProgram:
 
     private def compileChoice[A, Msg](
       value: Signal[A],
-      branches: Vector[(A, Mod.Content[Msg])]
+      branches: Vector[(A, Vector[Mod.Content[Msg]])]
     ): Either[RenderError, NodeTemplate[Msg]] =
       for
         _        <- scope.validate(value)
         _        <- validateDistinctKeys(branches.map(_._1))
         id       <- allocator.template()
-        compiled <- traverse(branches) { case (key, content) =>
-                      compileContent(content).map(key.asInstanceOf[Any] -> _)
+        compiled <- traverse(branches) { case (key, contents) =>
+                      traverse(contents)(compileContent).map(key.asInstanceOf[Any] -> _)
                     }
       yield ChoiceTemplate(id, value.asInstanceOf[Signal[Any]], compiled)
 
@@ -1382,28 +1388,31 @@ object RenderProgram:
       case template: ChoiceTemplate[Msg] =>
         for
           selected <- transaction.sample(template.signal)
-          child    <- template.branches.find(_._1 == selected.value) match
-                     case Some((_, branch)) =>
-                       evaluateNode(
-                         branch,
-                         previous
-                           .collect { case choice: EvaluatedNode.Choice => choice }.flatMap(
-                             _.child
-                           ),
-                         revision,
-                         transaction,
-                         flash,
-                         bindings,
-                         commitActions,
-                         candidateRows,
-                         requirements
-                       ).map(Some(_))
-                     case None => Right(None)
+          previousChildren = previous
+                               .collect { case choice: EvaluatedNode.Choice => choice.children }
+                               .getOrElse(Vector.empty)
+          children <- template.branches.find(_._1 == selected.value) match
+                        case Some((_, branch)) =>
+                          traverse(branch.zipWithIndex) { (node, index) =>
+                            evaluateNode(
+                              node,
+                              previousChildren.lift(index),
+                              revision,
+                              transaction,
+                              flash,
+                              bindings,
+                              commitActions,
+                              candidateRows,
+                              requirements
+                            )
+                          }
+                        case None => Right(Vector.empty)
         yield previous match
           case Some(old: EvaluatedNode.Choice)
-              if old.id == template.id && old.child.map(_.revision) == child.map(_.revision) =>
-            old.copy(child = child)
-          case _ => EvaluatedNode.Choice(template.id, child, revision)
+              if old.id == template.id &&
+                old.children.map(_.revision) == children.map(_.revision) =>
+            old.copy(children = children)
+          case _ => EvaluatedNode.Choice(template.id, children, revision)
       case template: KeyedTemplate[Msg] =>
         evaluateKeyedRows(
           template.id,
@@ -2144,7 +2153,7 @@ object RenderProgram:
         case Some((_, projection)) => 1 + retainedFlashProjectionCount(projection)
         case None                  => 0
     case choice: ChoiceTemplate[?] =>
-      choice.branches.map((_, child) => retainedFlashProjectionCount(child)).sum
+      choice.branches.flatMap(_._2).map(retainedFlashProjectionCount).sum
     case keyed: KeyedTemplate[?] =>
       keyed.rows.map(row => retainedFlashProjectionCount(row.element)).sum
     case keyed: SignalKeyedTemplate[?, ?, ?] =>
@@ -2164,7 +2173,7 @@ object RenderProgram:
   private def retainedKeyedRowCount(template: NodeTemplate[?]): Int = template match
     case element: ElementTemplate[?] => element.children.map(retainedKeyedRowCount).sum
     case choice: ChoiceTemplate[?]   =>
-      choice.branches.map((_, child) => retainedKeyedRowCount(child)).sum
+      choice.branches.flatMap(_._2).map(retainedKeyedRowCount).sum
     case keyed: KeyedTemplate[?]                 => keyed.rows.size
     case keyed: SignalKeyedTemplate[?, ?, ?]     => keyed.state.snapshot.size
     case keyed: SignalKeyedByIndexTemplate[?, ?] => keyed.state.snapshot.size
@@ -2179,7 +2188,7 @@ object RenderProgram:
   private def closeRetainedRows(template: NodeTemplate[?]): Unit = template match
     case element: ElementTemplate[?] => element.children.foreach(closeRetainedRows)
     case choice: ChoiceTemplate[?]   =>
-      choice.branches.foreach((_, child) => closeRetainedRows(child))
+      choice.branches.flatMap(_._2).foreach(closeRetainedRows)
     case keyed: KeyedTemplate[?] => keyed.rows.foreach(row => closeRetainedRows(row.element))
     case keyed: SignalKeyedTemplate[?, ?, ?] =>
       keyed.state.snapshot.values.foreach(row => closeRetainedRows(row.element))

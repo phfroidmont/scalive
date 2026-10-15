@@ -67,11 +67,27 @@ condition is `true` and its second while it is `false`:
 
 @:sourceRegion(documentation/fixtures/learn/src/quickstart/CartLiveView.scala, learn-cart-choose)
 
-For more than two cases, `choose` also accepts value-to-element pairs, such as
-`status.choose(Status.Open -> openPanel, Status.Closed -> closedPanel)`; it
-renders nothing for a value without a pair. `chooseMod` makes the same choice
-for attributes and other modifiers. Each of these builds every branch once and
-switches between them, which is why the view needs no `if`.
+A branch is anything an element accepts, not just one element: text, a
+`Vector` of siblings, or an attribute, as in `selected.when(cls := "selected")`.
+
+**Render each case of an enum.** `matchCases` renders one branch per case of an
+enum or sealed type. Each branch receives a signal of its own case's value, and
+the compiler rejects a missing case:
+
+```scala fragment
+delivery.matchCases { is =>
+  (
+    is.Pending(_ => "Not shipped yet"),
+    is.Shipped(shipped => p("Tracking number ", shipped.map(_.tracking))),
+    is.Delivered(_ => strong("Delivered"))
+  )
+}
+```
+
+For an open set of values such as strings, `choose` also accepts value-to-branch
+pairs, such as `tab.choose("details" -> details, "history" -> history)`; it
+renders nothing for a value without a pair. Each of these builds every branch
+once and switches between them, which is why the view needs no `if`.
 
 ## Preserve collection identity {#preserve-collection-identity}
 

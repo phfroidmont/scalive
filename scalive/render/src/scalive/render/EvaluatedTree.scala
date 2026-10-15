@@ -54,10 +54,10 @@ object EvaluatedNode:
     revision: RenderRevision)
       extends EvaluatedNode
 
-  /** A transparent insertion point whose selected child may change. */
+  /** A transparent insertion point whose selected children may change. */
   final case class Choice private[render] (
     id: TemplateId,
-    child: Option[EvaluatedNode],
+    children: Vector[EvaluatedNode],
     revision: RenderRevision)
       extends EvaluatedNode
 
@@ -282,7 +282,7 @@ object EvaluatedTree:
   private[render] def unresolvedComponents(node: EvaluatedNode): Vector[TemplateId] = node match
     case element: EvaluatedNode.Element => element.children.flatMap(unresolvedComponents)
     case flash: EvaluatedNode.Flash     => flash.child.toVector.flatMap(unresolvedComponents)
-    case choice: EvaluatedNode.Choice   => choice.child.toVector.flatMap(unresolvedComponents)
+    case choice: EvaluatedNode.Choice   => choice.children.flatMap(unresolvedComponents)
     case keyed: EvaluatedNode.Keyed   => keyed.rows.flatMap(row => unresolvedComponents(row.child))
     case stream: EvaluatedNode.Stream => stream.rows.flatMap(row => unresolvedComponents(row.child))
     case component: EvaluatedNode.Component if component.resolution.isEmpty => Vector(component.id)
@@ -296,7 +296,7 @@ object EvaluatedTree:
   private[render] def unresolvedNested(node: EvaluatedNode): Vector[TemplateId] = node match
     case element: EvaluatedNode.Element => element.children.flatMap(unresolvedNested)
     case flash: EvaluatedNode.Flash     => flash.child.toVector.flatMap(unresolvedNested)
-    case choice: EvaluatedNode.Choice   => choice.child.toVector.flatMap(unresolvedNested)
+    case choice: EvaluatedNode.Choice   => choice.children.flatMap(unresolvedNested)
     case keyed: EvaluatedNode.Keyed     => keyed.rows.flatMap(row => unresolvedNested(row.child))
     case stream: EvaluatedNode.Stream   => stream.rows.flatMap(row => unresolvedNested(row.child))
     case component: EvaluatedNode.Component =>
@@ -473,10 +473,9 @@ object EvaluatedTree:
           )
         case None => Right(flash)
     case choice: EvaluatedNode.Choice =>
-      choice.child match
-        case Some(child) =>
-          resolveNestedNode(child, resolutions).map(value => choice.copy(child = Some(value)))
-        case None => Right(choice)
+      traverseNestedNodes(choice.children, resolutions).map(children =>
+        choice.copy(children = children)
+      )
     case keyed: EvaluatedNode.Keyed =>
       keyed.rows
         .foldLeft[Either[RenderError, Vector[EvaluatedNode.KeyedRow]]](Right(Vector.empty)) {
@@ -540,10 +539,7 @@ object EvaluatedTree:
             .map(value => flash.copy(child = Some(value.asInstanceOf[EvaluatedNode.Element])))
         case None => Right(flash)
     case choice: EvaluatedNode.Choice =>
-      choice.child match
-        case Some(child) =>
-          resolveNode(child, resolutions).map(value => choice.copy(child = Some(value)))
-        case None => Right(choice)
+      traverseNodes(choice.children, resolutions).map(children => choice.copy(children = children))
     case keyed: EvaluatedNode.Keyed =>
       keyed.rows
         .foldLeft[Either[RenderError, Vector[EvaluatedNode.KeyedRow]]](Right(Vector.empty)) {
@@ -595,7 +591,7 @@ object EvaluatedTree:
     def loop(node: EvaluatedNode): Either[RenderError, Unit] = node match
       case element: EvaluatedNode.Element     => loopAll(element.children)
       case flash: EvaluatedNode.Flash         => loopAll(flash.child.toVector)
-      case choice: EvaluatedNode.Choice       => loopAll(choice.child.toVector)
+      case choice: EvaluatedNode.Choice       => loopAll(choice.children)
       case keyed: EvaluatedNode.Keyed         => loopAll(keyed.rows.map(_.child))
       case stream: EvaluatedNode.Stream       => loopAll(stream.rows.map(_.child))
       case component: EvaluatedNode.Component =>

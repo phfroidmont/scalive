@@ -23,7 +23,7 @@ object UploadContextSpec extends ZIOSpecDefault:
     case value: EvaluatedNode.Element   => value.children.map(renderedText).mkString
     case value: EvaluatedNode.Component =>
       value.resolution.map(result => renderedText(result.child.root)).getOrElse("")
-    case value: EvaluatedNode.Choice => value.child.map(renderedText).getOrElse("")
+    case value: EvaluatedNode.Choice => value.children.map(renderedText).mkString
     case value: EvaluatedNode.Flash  => value.child.map(renderedText).getOrElse("")
     case value: EvaluatedNode.Keyed  => value.rows.map(row => renderedText(row.child)).mkString
     case value: EvaluatedNode.Stream => value.rows.map(row => renderedText(row.child)).mkString

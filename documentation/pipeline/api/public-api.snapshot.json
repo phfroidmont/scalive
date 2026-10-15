@@ -1202,6 +1202,42 @@
       ]
     },
     {
+      "id" : "class:scalive.Signal.Case",
+      "ownerId" : "object:scalive.Signal",
+      "qualifiedName" : "scalive.Signal.Case",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.Signal.Case:1992a9a03ebd18e4",
+          "signature" : "class Case[C]"
+        }
+      ]
+    },
+    {
+      "id" : "class:scalive.Signal.CaseBuilder",
+      "ownerId" : "object:scalive.Signal",
+      "qualifiedName" : "scalive.Signal.CaseBuilder",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.Signal.CaseBuilder:bfbcab3c50067011",
+          "signature" : "class CaseBuilder[Labels <: Tuple, Types <: Tuple] extends Selectable"
+        }
+      ]
+    },
+    {
+      "id" : "class:scalive.Signal.CaseHandler",
+      "ownerId" : "object:scalive.Signal",
+      "qualifiedName" : "scalive.Signal.CaseHandler",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.Signal.CaseHandler:4740d1c0319e145b",
+          "signature" : "class CaseHandler[C, +Msg]"
+        }
+      ]
+    },
+    {
       "id" : "class:scalive.StaticAssetCache",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.StaticAssetCache",
@@ -8566,6 +8602,30 @@
       ]
     },
     {
+      "id" : "def:scalive.Signal.Case.apply",
+      "ownerId" : "class:scalive.Signal.Case",
+      "qualifiedName" : "scalive.Signal.Case.apply",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.Signal.Case.apply:e884f7174d63ff77",
+          "signature" : "def apply[Msg](project: Signal[C] => Mod.Input[Msg]): Signal.CaseHandler[C, Msg]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.Signal.CaseBuilder.selectDynamic",
+      "ownerId" : "class:scalive.Signal.CaseBuilder",
+      "qualifiedName" : "scalive.Signal.CaseBuilder.selectDynamic",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.Signal.CaseBuilder.selectDynamic:7099dc83db5ab286",
+          "signature" : "def selectDynamic(name: String): Any"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.Signal.combine",
       "ownerId" : "object:scalive.Signal",
       "qualifiedName" : "scalive.Signal.combine",
@@ -12704,28 +12764,12 @@
       "kind" : "extension",
       "signatures" : [
         {
-          "id" : "extension:scalive.Signal.choose:0519f3fedaae177b",
-          "signature" : "extension def choose[A](value: Signal[A])[Msg](branches: (A, HtmlElement[Msg])*): Mod[Msg]"
+          "id" : "extension:scalive.Signal.choose:8394333d1b9b8651",
+          "signature" : "extension def choose[A](value: Signal[A])[Msg](branches: (A, Mod.Input[Msg])*): Mod[Msg]"
         },
         {
-          "id" : "extension:scalive.Signal.choose:661b01b8237ca357",
-          "signature" : "extension def choose(condition: Signal[Boolean])[Msg](whenTrue: => HtmlElement[Msg], whenFalse: => HtmlElement[Msg]): Mod[Msg]"
-        }
-      ]
-    },
-    {
-      "id" : "extension:scalive.Signal.chooseMod",
-      "ownerId" : "object:scalive.Signal",
-      "qualifiedName" : "scalive.Signal.chooseMod",
-      "kind" : "extension",
-      "signatures" : [
-        {
-          "id" : "extension:scalive.Signal.chooseMod:7ea83c4e210f25c2",
-          "signature" : "extension def chooseMod(condition: Signal[Boolean])[Msg](whenTrue: => Mod[Msg], whenFalse: => Mod[Msg]): Mod[Msg]"
-        },
-        {
-          "id" : "extension:scalive.Signal.chooseMod:9eb85c9fed672756",
-          "signature" : "extension def chooseMod[A](value: Signal[A])[Msg](branches: (A, Mod[Msg])*): Mod[Msg]"
+          "id" : "extension:scalive.Signal.choose:f23bd8126e370dae",
+          "signature" : "extension def choose(condition: Signal[Boolean])[Msg](whenTrue: Mod.Input[Msg], whenFalse: Mod.Input[Msg]): Mod[Msg]"
         }
       ]
     },
@@ -12754,14 +12798,26 @@
       ]
     },
     {
+      "id" : "extension:scalive.Signal.matchCases",
+      "ownerId" : "object:scalive.Signal",
+      "qualifiedName" : "scalive.Signal.matchCases",
+      "kind" : "extension",
+      "signatures" : [
+        {
+          "id" : "extension:scalive.Signal.matchCases:45f2e17e89a7d34d",
+          "signature" : "extension def matchCases[A](value: Signal[A])[Handlers <: Tuple](using mirror: deriving.Mirror.SumOf[A])(build: Signal.CaseBuilder[mirror.MirroredElemLabels, mirror.MirroredElemTypes] => Handlers): Mod[Signal.CaseMessages[Handlers]]"
+        }
+      ]
+    },
+    {
       "id" : "extension:scalive.Signal.option",
       "ownerId" : "object:scalive.Signal",
       "qualifiedName" : "scalive.Signal.option",
       "kind" : "extension",
       "signatures" : [
         {
-          "id" : "extension:scalive.Signal.option:0f25dfb6f1cca77f",
-          "signature" : "extension def option[A](value: Signal[Option[A]])[Msg](project: Signal[A] => HtmlElement[Msg]): Mod[Msg]"
+          "id" : "extension:scalive.Signal.option:226a07dd68c100a9",
+          "signature" : "extension def option[A](value: Signal[Option[A]])[Msg](project: Signal[A] => Mod.Input[Msg]): Mod[Msg]"
         }
       ]
     },
@@ -12772,8 +12828,8 @@
       "kind" : "extension",
       "signatures" : [
         {
-          "id" : "extension:scalive.Signal.when:cdbaba38720b7766",
-          "signature" : "extension def when(condition: Signal[Boolean])[Msg](content: => HtmlElement[Msg]): Mod[Msg]"
+          "id" : "extension:scalive.Signal.when:f54a9f7ace273380",
+          "signature" : "extension def when(condition: Signal[Boolean])[Msg](content: Mod.Input[Msg]*): Mod[Msg]"
         }
       ]
     },
@@ -19261,6 +19317,30 @@
         {
           "id" : "type-alias:scalive.RepeatedRows.Key:c062b6716da401ac",
           "signature" : "type Key = FormRowKey[Group]"
+        }
+      ]
+    },
+    {
+      "id" : "type-alias:scalive.Signal.CaseBuilder.Fields",
+      "ownerId" : "class:scalive.Signal.CaseBuilder",
+      "qualifiedName" : "scalive.Signal.CaseBuilder.Fields",
+      "kind" : "typeAlias",
+      "signatures" : [
+        {
+          "id" : "type-alias:scalive.Signal.CaseBuilder.Fields:f83f8178089df220",
+          "signature" : "type Fields = NamedTuple.NamedTuple[Labels, Tuple.Map[Types, ([C] =>> Signal.Case[C])]]"
+        }
+      ]
+    },
+    {
+      "id" : "type-alias:scalive.Signal.CaseMessages",
+      "ownerId" : "object:scalive.Signal",
+      "qualifiedName" : "scalive.Signal.CaseMessages",
+      "kind" : "typeAlias",
+      "signatures" : [
+        {
+          "id" : "type-alias:scalive.Signal.CaseMessages:b811d6e5c8477c5e",
+          "signature" : "type CaseMessages = ([Handlers <: Tuple] =>> (Handlers match { case EmptyTuple => Nothing; case *:[Signal.CaseHandler[_$6, msg], rest] => |[msg, Signal.CaseMessages[rest]] }))"
         }
       ]
     },

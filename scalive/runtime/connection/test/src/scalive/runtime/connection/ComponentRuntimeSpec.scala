@@ -25,7 +25,7 @@ object ComponentRuntimeSpec extends ZIOSpecDefault:
   private def componentToken(node: EvaluatedNode): Option[Object] = node match
     case value: EvaluatedNode.Component => value.resolution.map(_.instanceToken)
     case value: EvaluatedNode.Element   => value.children.iterator.flatMap(componentToken).nextOption()
-    case value: EvaluatedNode.Choice    => value.child.flatMap(componentToken)
+    case value: EvaluatedNode.Choice    => value.children.iterator.flatMap(componentToken).nextOption()
     case value: EvaluatedNode.Flash     => value.child.flatMap(componentToken)
     case value: EvaluatedNode.Keyed     =>
       value.rows.iterator.flatMap(row => componentToken(row.child)).nextOption()
@@ -36,7 +36,7 @@ object ComponentRuntimeSpec extends ZIOSpecDefault:
     case value: EvaluatedNode.Element => value.children.map(renderedText).mkString
     case value: EvaluatedNode.Component =>
       value.resolution.map(result => renderedText(result.child.root)).getOrElse("")
-    case value: EvaluatedNode.Choice => value.child.map(renderedText).getOrElse("")
+    case value: EvaluatedNode.Choice => value.children.map(renderedText).mkString
     case value: EvaluatedNode.Flash  => value.child.map(renderedText).getOrElse("")
     case value: EvaluatedNode.Keyed  => value.rows.map(row => renderedText(row.child)).mkString
     case _                           => ""

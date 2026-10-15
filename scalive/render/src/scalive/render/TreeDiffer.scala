@@ -73,11 +73,9 @@ object TreeDiffer:
             diffNode(oldChild, newChild)
           case _ => Vector(RenderChange.Replace(left.id, right))
       case (left: EvaluatedNode.Choice, right: EvaluatedNode.Choice) if left.id == right.id =>
-        (left.child, right.child) match
-          case (None, None)                                                   => Vector.empty
-          case (Some(oldChild), Some(newChild)) if oldChild.id == newChild.id =>
-            diffNode(oldChild, newChild)
-          case _ => Vector(RenderChange.Replace(left.id, right))
+        if left.children.map(_.id) == right.children.map(_.id) then
+          left.children.zip(right.children).flatMap(diffNode)
+        else Vector(RenderChange.Replace(left.id, right))
       case (left: EvaluatedNode.Keyed, right: EvaluatedNode.Keyed) if left.id == right.id =>
         val oldRows = left.rows.map(row => row.id -> row).toMap
         val rows    = right.rows.map { newRow =>

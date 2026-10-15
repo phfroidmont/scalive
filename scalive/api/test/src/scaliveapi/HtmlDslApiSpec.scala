@@ -97,6 +97,93 @@ object HtmlDslApiSpec extends ZIOSpecDefault:
         !bindings.hasNext
       )
     },
+    test("matchCases requires each case exactly once, in any order") {
+      val complete = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+
+        enum Status:
+          case Idle
+          case Running(progress: Int)
+          case Failed(reason: String)
+
+        enum Msg:
+          case Retry
+
+        def view(status: Signal[Status]): HtmlElement[Msg] =
+          div(
+            status.matchCases(is => (
+              is.Running(running => span(running.map(_.progress.toString))),
+              is.Idle(_ => "Idle"),
+              is.Failed(failed => button(on.click(Msg.Retry), failed.map(_.reason)))
+            ))
+          )
+      """)
+      val missing = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+
+        enum Status:
+          case Idle
+          case Running(progress: Int)
+
+        def view(status: Signal[Status]) =
+          div(status.matchCases(is => Tuple1(is.Idle(_ => "Idle"))))
+      """)
+      val twice = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+
+        enum Status:
+          case Idle
+          case Running(progress: Int)
+
+        def view(status: Signal[Status]) =
+          div(status.matchCases(is => (
+            is.Idle(_ => "Idle"),
+            is.Running(_ => "Running"),
+            is.Idle(_ => "Idle again")
+          )))
+      """)
+      val twiceLater = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+
+        enum Status:
+          case Idle
+          case Running(progress: Int)
+          case Failed(reason: String)
+
+        def view(status: Signal[Status]) =
+          div(status.matchCases(is => (
+            is.Failed(_ => "Failed"),
+            is.Running(_ => "Running"),
+            is.Idle(_ => "Idle"),
+            is.Running(_ => "Running again")
+          )))
+      """)
+      val misspelled = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+
+        enum Status:
+          case Idle
+          case Running(progress: Int)
+
+        def view(status: Signal[Status]) =
+          div(status.matchCases(is => (is.Idle(_ => "Idle"), is.Runing(_ => "Running"))))
+      """)
+      val notASum = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+
+        def view(count: Signal[Int]) =
+          div(count.matchCases(is => Tuple1(is.Zero(_ => "Zero"))))
+      """)
+
+      assertTrue(
+        complete.isEmpty,
+        missing.exists(_.message.contains("matchCases is missing case Running")),
+        twice.exists(_.message.contains("matchCases handles case Idle more than once")),
+        twiceLater.exists(_.message.contains("matchCases handles case Running more than once")),
+        misspelled.exists(_.message.contains("value Runing is not a member of")),
+        notASum.nonEmpty
+      )
+    },
     test("elements and collections of elements are children") {
       val first                       = li("first")
       val second                      = li("second")

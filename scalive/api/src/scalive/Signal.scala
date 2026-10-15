@@ -1,5 +1,8 @@
 package scalive
 
+import scala.compiletime.{constValue, constValueTuple, erasedValue, error}
+import scala.deriving.Mirror
+
 /** A value that changes over time, such as the model inside [[LiveView.view]].
   *
   * Scalive builds a view once per lifecycle and re-reads its signals whenever the model changes,
@@ -137,46 +140,146 @@ object Signal:
   end extension
 
   extension (condition: Signal[Boolean])
-    /** Renders `content` while the condition is `true` and nothing while it is `false`. */
-    def when[Msg](content: => HtmlElement[Msg]): Mod[Msg] =
-      Mod.Content.SignalChoice(condition, Vector(true -> content))
+    /** Renders `content` while the condition is `true` and nothing while it is `false`.
+      *
+      * `content` is anything an element accepts: text, elements, components, or attributes, as in
+      * `active.when(cls := "active")`. It is built once.
+      */
+    def when[Msg](content: Mod.Input[Msg]*): Mod[Msg] =
+      Mod.Content.SignalChoice(condition, Vector(true -> Mod.flatten(content)))
 
     /** Renders the branch that matches the current value, switching as the value changes.
       *
-      * This form renders `whenTrue` or `whenFalse`. Both branches are built once.
+      * This form renders `whenTrue` or `whenFalse`. Each branch is anything an element accepts,
+      * such as text, an element, a `Vector` of siblings, or an attribute, and is built once.
       */
-    def choose[Msg](whenTrue: => HtmlElement[Msg], whenFalse: => HtmlElement[Msg]): Mod[Msg] =
-      Mod.Content.SignalChoice(condition, Vector(true -> whenTrue, false -> whenFalse))
-
-    /** Applies the modifiers that match the current value, such as attributes.
-      *
-      * This form applies `whenTrue` or `whenFalse`.
-      */
-    def chooseMod[Msg](whenTrue: => Mod[Msg], whenFalse: => Mod[Msg]): Mod[Msg] =
-      Mod.Content.SignalModChoice(condition, Vector(true -> whenTrue, false -> whenFalse))
+    def choose[Msg](whenTrue: Mod.Input[Msg], whenFalse: Mod.Input[Msg]): Mod[Msg] =
+      Mod.Content.SignalChoice(
+        condition,
+        Vector(true -> Mod.flatten(Vector(whenTrue)), false -> Mod.flatten(Vector(whenFalse)))
+      )
 
   extension [A](value: Signal[Option[A]])
     /** Renders `project` while the value is defined and nothing while it is empty.
       *
-      * `project` receives a signal of the present value, so the rendered element keeps following
-      * it.
+      * `project` receives a signal of the present value, so what it renders keeps following it. It
+      * returns anything an element accepts and is called once.
       */
-    def option[Msg](project: Signal[A] => HtmlElement[Msg]): Mod[Msg] =
-      Mod.Content.SignalOption(value, project)
+    def option[Msg](project: Signal[A] => Mod.Input[Msg]): Mod[Msg] =
+      Mod.Content.SignalChoice(
+        value.map(_.isDefined),
+        Vector(true -> Mod.flatten(Vector(project(value.map(_.get)))))
+      )
 
   extension [A](value: Signal[A])
     /** Renders the branch that matches the current value, switching as the value changes.
       *
       * This form renders the branch whose key equals the value, or nothing when none matches, as in
-      * `tab.choose(Tab.Details -> details, Tab.History -> history)`.
+      * `tab.choose("details" -> details, "history" -> history)`. For an enum or sealed type, use
+      * [[matchCases]] so that the compiler checks every case.
       */
-    def choose[Msg](branches: (A, HtmlElement[Msg])*): Mod[Msg] =
-      Mod.Content.SignalChoice(value, branches.toVector)
+    def choose[Msg](branches: (A, Mod.Input[Msg])*): Mod[Msg] =
+      Mod.Content.SignalChoice(
+        value,
+        branches.toVector.map((key, branch) => key -> Mod.flatten(Vector(branch)))
+      )
 
-    /** Applies the modifiers that match the current value, such as attributes.
+    /** Renders one branch per case of an enum or sealed type, switching as the case changes.
       *
-      * This form applies the modifiers whose key equals the value, or none when none matches.
+      * `build` receives a builder with one member per case and returns a tuple with one handler per
+      * case, in any order:
+      *
+      * {{{
+      * report.matchCases { is =>
+      *   (
+      *     is.Empty(_ => "No report yet"),
+      *     is.Ok(ok => p(ok.map(_.value.title))),
+      *     is.Failed(failed => p(role := "alert", failed.map(_.error.message)))
+      *   )
+      * }
+      * }}}
+      *
+      * Each handler receives a signal of its own case's value and returns anything an element
+      * accepts. It is called once, and its signals are read only while that case is selected. A
+      * missing case, or a case handled twice, does not compile.
       */
-    def chooseMod[Msg](branches: (A, Mod[Msg])*): Mod[Msg] =
-      Mod.Content.SignalModChoice(value, branches.toVector)
+    inline def matchCases[Handlers <: Tuple](
+      using mirror: Mirror.SumOf[A]
+    )(
+      build: CaseBuilder[mirror.MirroredElemLabels, mirror.MirroredElemTypes] => Handlers
+    ): Mod[CaseMessages[Handlers]] =
+      MatchCases.requireEachCaseOnce[mirror.MirroredElemLabels, mirror.MirroredElemTypes, Handlers]
+      MatchCases.render[A, mirror.MirroredElemLabels, mirror.MirroredElemTypes, CaseMessages[
+        Handlers
+      ]](
+        value,
+        current => mirror.ordinal(current.asInstanceOf[mirror.MirroredMonoType]),
+        constValueTuple[mirror.MirroredElemLabels].toList.map(_.toString).toVector,
+        build
+      )
+  end extension
+
+  /** The case builder passed to [[matchCases]]. It has one member per case, named after the case,
+    * which wraps the function that renders that case.
+    */
+  final class CaseBuilder[Labels <: Tuple, Types <: Tuple] private[scalive] () extends Selectable:
+    /** One [[Case]] per case, named after it. */
+    type Fields = NamedTuple.NamedTuple[Labels, Tuple.Map[Types, Case]]
+
+    /** Returns the [[Case]] named `name`. The compiler calls it for `is.Name`. */
+    def selectDynamic(name: String): Any = new Case[Any](name)
+
+  /** One case of a [[matchCases]] builder. Apply it to the function that renders the case. */
+  final class Case[C] private[scalive] (label: String):
+    /** Renders this case with `project`, which receives a signal of the case's value. */
+    def apply[Msg](project: Signal[C] => Mod.Input[Msg]): CaseHandler[C, Msg] =
+      new CaseHandler(label, project)
+
+  /** The rendering of one case in [[matchCases]], made by applying a [[Case]]. */
+  final class CaseHandler[C, +Msg] private[scalive] (
+    private[scalive] val label: String,
+    private[scalive] val project: Signal[C] => Mod.Input[Msg])
+
+  /** The message type of a [[matchCases]] result: the union of its handlers' message types. */
+  type CaseMessages[Handlers <: Tuple] = Handlers match
+    case EmptyTuple                  => Nothing
+    case CaseHandler[?, msg] *: rest => msg | CaseMessages[rest]
+
+  private[scalive] object MatchCases:
+    inline def requireEachCaseOnce[Labels <: Tuple, Types <: Tuple, Handlers <: Tuple]: Unit =
+      inline erasedValue[(Labels, Types)] match
+        case _: (EmptyTuple, EmptyTuple)            => ()
+        case _: ((label *: labels), (tpe *: types)) =>
+          inline if !handles[tpe, Handlers] then
+            error("matchCases is missing case " + constValue[label])
+          else inline if handlesTwice[tpe, Handlers] then
+            error("matchCases handles case " + constValue[label] + " more than once")
+          else requireEachCaseOnce[labels, types, Handlers]
+
+    private inline def handles[C, Handlers <: Tuple]: Boolean =
+      inline erasedValue[Handlers] match
+        case _: EmptyTuple               => false
+        case _: (CaseHandler[C, ?] *: ?) => true
+        case _: (? *: rest)              => handles[C, rest]
+
+    private inline def handlesTwice[C, Handlers <: Tuple]: Boolean =
+      inline erasedValue[Handlers] match
+        case _: EmptyTuple                  => false
+        case _: (CaseHandler[C, ?] *: rest) => handles[C, rest]
+        case _: (? *: rest)                 => handlesTwice[C, rest]
+
+    def render[A, Labels <: Tuple, Types <: Tuple, Msg](
+      value: Signal[A],
+      ordinal: A => Int,
+      labels: Vector[String],
+      build: CaseBuilder[Labels, Types] => Tuple
+    ): Mod[Msg] =
+      val handlers = build(new CaseBuilder[Labels, Types]()).productIterator
+        .map(_.asInstanceOf[CaseHandler[?, Msg]]).toVector
+      val branches = handlers.map { handler =>
+        val project = handler.project.asInstanceOf[Signal[A] => Mod.Input[Msg]]
+        labels.indexOf(handler.label) -> Mod.flatten(Vector(project(value)))
+      }
+      Mod.Content.SignalChoice(value.map(ordinal), branches)
+  end MatchCases
 end Signal

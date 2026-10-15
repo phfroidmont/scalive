@@ -1202,7 +1202,7 @@ object ZioHttp:
         else Vector.empty
       own ++ element.children.flatMap(collectTrackedStatics)
     case flash: EvaluatedNode.Flash   => flash.child.toVector.flatMap(collectTrackedStatics)
-    case choice: EvaluatedNode.Choice => choice.child.toVector.flatMap(collectTrackedStatics)
+    case choice: EvaluatedNode.Choice => choice.children.flatMap(collectTrackedStatics)
     case keyed: EvaluatedNode.Keyed   =>
       keyed.rows.flatMap(row => collectTrackedStatics(row.child))
     case component: EvaluatedNode.Component =>

@@ -25,7 +25,7 @@ object RenderError:
   /** The tree does not describe valid HTML.
     *
     * Causes include child content in a void element, an invalid or duplicate attribute name, a
-    * `null` value, and `chooseMod` branches that mix attribute and content positions.
+    * `null` value, and choice branches that mix attributes and content.
     *
     * @param message
     *   A description of the problem.

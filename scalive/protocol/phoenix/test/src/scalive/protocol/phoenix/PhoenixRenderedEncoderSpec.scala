@@ -187,7 +187,7 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
             val current = model.map(_.valueOption)
             div(
               idAttr := "result",
-              current.map(_.isDefined).chooseMod(
+              current.map(_.isDefined).choose(
                 items(current.map(_.getOrElse(Vector.empty))),
                 ""
               )
@@ -199,8 +199,8 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
         div(
           Signal.when(caseName.map(_ == "second"))(div("separator")),
           caseName
-            .map(_ == "first").chooseMod(
-              current.map(_.isDefined).chooseMod(
+            .map(_ == "first").choose(
+              current.map(_.isDefined).choose(
                 component(directDefinition, "direct").render(current.map(_.getOrElse(Vector.empty))),
                 ""
               ),
@@ -213,7 +213,7 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
         val current = model.map(_.valueOption)
         div(
           idAttr := "result",
-          current.map(_.isDefined).chooseMod(
+          current.map(_.isDefined).choose(
             items(current.map(_.getOrElse(Vector.empty))),
             ""
           )
@@ -1347,6 +1347,45 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
         candidate <- program.evaluate(input)
         encoded   <- ZIO.fromEither(PhoenixRenderedEncoder.initial(candidate.tree))
       yield assertTrue(reconstruct(encoded._2) == HtmlRenderer.render(candidate.tree))
+    },
+    test("choice branches of text and several siblings update sparsely and switch whole") {
+      val compiled = RenderProgram.compile[(Boolean, String), Nothing] { model =>
+        div(
+          model
+            .map(_._1).choose(
+              Vector(strong("Open"), " by ", model.map(_._2)),
+              "Closed"
+            )
+        )
+      }
+
+      for
+        program  <- ZIO.fromEither(compiled)
+        first    <- program.evaluate((true, "Ada"))
+        initial  <- ZIO.fromEither(PhoenixRenderedEncoder.initial(first.tree))
+        renamed  <- program.evaluate((true, "Grace <3"), Some(first.commit))
+        updated  <- ZIO.fromEither(
+                     PhoenixRenderedEncoder.update(
+                       initial._1,
+                       TreeDiffer.diff(first.tree, renamed.tree)
+                     )
+                   )
+        renamedHtml <- ZIO.fromEither(PhoenixRenderedEncoder.html(updated._1))
+        closed      <- program.evaluate((false, "Grace <3"), Some(renamed.commit))
+        switched    <- ZIO.fromEither(
+                      PhoenixRenderedEncoder.update(
+                        updated._1,
+                        TreeDiffer.diff(renamed.tree, closed.tree)
+                      )
+                    )
+        closedHtml <- ZIO.fromEither(PhoenixRenderedEncoder.html(switched._1))
+      yield assertTrue(
+        reconstruct(initial._2) == "<div><strong>Open</strong> by Ada</div>",
+        !updated._2.toString.contains("\"s\""),
+        renamedHtml == "<div><strong>Open</strong> by Grace &lt;3</div>",
+        closedHtml == "<div>Closed</div>",
+        closedHtml == HtmlRenderer.render(closed.tree)
+      )
     },
     test("projects repeated dynamic composite modifiers through one sparse slot") {
       val compiled = RenderProgram.compile[String, Nothing] { model =>

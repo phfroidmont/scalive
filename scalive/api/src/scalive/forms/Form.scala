@@ -339,9 +339,9 @@ object Form:
     owned: Set[String]
   ): Vector[String] =
     def attributeNames(mod: Mod[?]): Vector[String] = mod match
-      case attr: Mod.Attr[?]                        => attr.flattened.flatMap(attributeName)
-      case Mod.Content.SignalModChoice(_, branches) =>
-        branches.flatMap { case (_, branch) => attributeNames(branch) }
+      case attr: Mod.Attr[?]                     => attr.flattened.flatMap(attributeName)
+      case Mod.Content.SignalChoice(_, branches) =>
+        branches.flatMap { case (_, branch) => branch.flatMap(attributeNames) }
       case _ => Vector.empty
     mods.flatMap(attributeNames).filter(name => owned.exists(_.equalsIgnoreCase(name)))
 

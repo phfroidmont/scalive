@@ -22,7 +22,7 @@ object HtmlRenderer:
         if text.raw then output.append(text.value)
         else output.append(Escaping.escape(text.value))
       case flash: EvaluatedNode.Flash   => flash.child.foreach(appendElement(_, output))
-      case choice: EvaluatedNode.Choice => choice.child.foreach(appendNode(_, output))
+      case choice: EvaluatedNode.Choice => choice.children.foreach(appendNode(_, output))
       case keyed: EvaluatedNode.Keyed => keyed.rows.foreach(row => appendElement(row.child, output))
       case stream: EvaluatedNode.Stream =>
         stream.rows.foreach(row => appendElement(row.child, output))

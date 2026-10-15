@@ -17,7 +17,7 @@ object DisconnectedComponentRendererSpec extends ZIOSpecDefault:
     case value: EvaluatedNode.Element => value.children.map(text).mkString
     case value: EvaluatedNode.Component =>
       value.resolution.map(result => text(result.child.root)).getOrElse("")
-    case value: EvaluatedNode.Choice => value.child.map(text).getOrElse("")
+    case value: EvaluatedNode.Choice => value.children.map(text).mkString
     case value: EvaluatedNode.Flash  => value.child.map(text).getOrElse("")
     case value: EvaluatedNode.Keyed  => value.rows.map(row => text(row.child)).mkString
     case value: EvaluatedNode.Stream => value.rows.map(row => text(row.child)).mkString
@@ -28,7 +28,7 @@ object DisconnectedComponentRendererSpec extends ZIOSpecDefault:
     case value: EvaluatedNode.Element => value.children.flatMap(resolvedNestedIds)
     case value: EvaluatedNode.Component =>
       value.resolution.toVector.flatMap(result => resolvedNestedIds(result.child.root))
-    case value: EvaluatedNode.Choice => value.child.toVector.flatMap(resolvedNestedIds)
+    case value: EvaluatedNode.Choice => value.children.flatMap(resolvedNestedIds)
     case value: EvaluatedNode.Flash  => value.child.toVector.flatMap(resolvedNestedIds)
     case value: EvaluatedNode.Keyed  => value.rows.flatMap(row => resolvedNestedIds(row.child))
     case value: EvaluatedNode.Stream => value.rows.flatMap(row => resolvedNestedIds(row.child))
@@ -113,7 +113,7 @@ object DisconnectedComponentRendererSpec extends ZIOSpecDefault:
             val current = model.map(_.valueOption)
             div(
               idAttr := "result",
-              current.map(_.isDefined).chooseMod(
+              current.map(_.isDefined).choose(
                 items(current.map(_.getOrElse(Vector.empty))),
                 ""
               )
@@ -128,8 +128,8 @@ object DisconnectedComponentRendererSpec extends ZIOSpecDefault:
           div(
             Signal.when(caseName.map(_ == "second"))(div("separator")),
             caseName
-              .map(_ == "first").chooseMod(
-                current.map(_.isDefined).chooseMod(
+              .map(_ == "first").choose(
+                current.map(_.isDefined).choose(
                   direct.render(current.map(_.getOrElse(Vector.empty))),
                   ""
                 ),

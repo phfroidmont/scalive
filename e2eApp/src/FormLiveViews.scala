@@ -127,7 +127,7 @@ class FormLiveView(initialQuery: FormQueryParams = FormQueryParams())
 
     div(
       Signal.when(portalMode)(h1("Form")),
-      portalMode.chooseMod(
+      portalMode.choose(
         portal(DomRef("form-portal"), target = DomSelector.css("body"))(
           renderFormContent(query, values)
         ),
@@ -145,7 +145,7 @@ class FormLiveView(initialQuery: FormQueryParams = FormQueryParams())
       FormComponent.Props(currentQuery, currentValues)
     }
 
-    liveComponentMode.chooseMod(
+    liveComponentMode.choose(
       component(FormComponent, "form-component").render(componentProps),
       FormLiveView.renderForm(query, values, Msg.Validate(EmptyFormEvent))
     )
@@ -231,7 +231,7 @@ object FormLiveView:
       form(
         idAttr.optional(idValue),
         phxSubmitAttr := "save",
-        changeMode.chooseMod(
+        changeMode.choose(
           1 -> on.change(JS.push(jsChangeMessage)),
           2 -> (phxChangeAttr := "validate")
         ),

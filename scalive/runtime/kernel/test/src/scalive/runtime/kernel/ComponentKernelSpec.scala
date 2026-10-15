@@ -91,7 +91,7 @@ object ComponentKernelSpec extends ZIOSpecDefault:
   private def textValues(node: EvaluatedNode): Vector[String] = node match
     case value: EvaluatedNode.Text    => Vector(value.value)
     case value: EvaluatedNode.Element => value.children.flatMap(textValues)
-    case value: EvaluatedNode.Choice  => value.child.toVector.flatMap(textValues)
+    case value: EvaluatedNode.Choice  => value.children.flatMap(textValues)
     case value: EvaluatedNode.Flash   => value.child.toVector.flatMap(textValues)
     case value: EvaluatedNode.Keyed   => value.rows.flatMap(row => textValues(row.child))
     case value: EvaluatedNode.Component =>

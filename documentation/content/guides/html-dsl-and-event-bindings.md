@@ -71,8 +71,8 @@ remaining tokens is omitted.
 
 Static values, signals, optional signals, and directly selected modifiers can be
 mixed. Use @:apiSymbol(def:scalive.CompositeHtmlAttr.optional)`cls.optional(...)`@:@
-for a `Signal[Option[String]]`; a `cls := ...` branch selected by
-@:apiSymbol(extension:scalive.Signal.chooseMod)`chooseMod`@:@ joins the same attribute.
+for a `Signal[Option[String]]`; a `cls := ...` branch selected by `when` or
+@:apiSymbol(extension:scalive.Signal.choose)`choose`@:@ joins the same attribute.
 Scalar attributes do not compose or use last-declaration-wins semantics. Declaring
 the same scalar attribute more than once is an error, as is mixing composite and
 scalar definitions for the same rendered name.
@@ -309,11 +309,17 @@ teaches with the cart:
 - @:apiSymbol(extension:scalive.Signal.option)`option`@:@ renders content while a
   `Signal[Option[A]]` holds a value.
 - @:apiSymbol(extension:scalive.Signal.choose)`choose`@:@ switches between two
-  branches, or between value-to-element pairs.
-  @:apiSymbol(extension:scalive.Signal.chooseMod)`chooseMod`@:@ makes the same
-  choice for attributes and other modifiers.
+  branches, or between value-to-branch pairs. It renders nothing for a value
+  without a pair.
+- @:apiSymbol(extension:scalive.Signal.matchCases)`matchCases`@:@ renders one branch
+  per case of an enum or sealed type, and the compiler checks that every case
+  has one.
 - @:apiSymbol(extension:scalive.splitBy)`splitBy`@:@ renders one keyed element per
   entry of a collection signal.
+
+A branch is anything an element accepts: text, an element, a component, a
+`Vector` of siblings, or an attribute such as `active.when(cls := "active")`.
+The branches of one choice are either all content or all the same attribute.
 
 The view is built before any model value exists, so an `if` cannot inspect a
 signal. Each operator builds its branches once and switches between them as the

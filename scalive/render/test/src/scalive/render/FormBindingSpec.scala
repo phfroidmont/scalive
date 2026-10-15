@@ -247,7 +247,7 @@ object FormBindingSpec extends ZIOSpecDefault:
         val control = binding.field(Name)
         binding.render(
           control.text(
-            control.hasVisibleErrors.chooseMod(
+            control.hasVisibleErrors.choose(
               on.blur(ProfileMsg.BlurValue("invalid")),
               on.blur(ProfileMsg.BlurValue("valid"))
             )
@@ -772,11 +772,11 @@ object FormBindingSpec extends ZIOSpecDefault:
           val modifier = shape match
             case "direct"      => attr
             case "group"       => grouped
-            case "conditional" => control.hasVisibleErrors.chooseMod(attr, attr)
+            case "conditional" => control.hasVisibleErrors.choose(attr, attr)
             case _             =>
-              control.hasVisibleErrors.chooseMod(
+              control.hasVisibleErrors.choose(
                 cls := "allowed",
-                control.hasVisibleErrors.chooseMod(cls := "allowed", grouped)
+                control.hasVisibleErrors.choose(cls := "allowed", grouped)
               )
           binding.render(control.item("choice").checkbox("token", modifier))
         }
@@ -799,9 +799,9 @@ object FormBindingSpec extends ZIOSpecDefault:
           val modifier = shape match
             case "direct"      => attr
             case "group"       => grouped
-            case "conditional" => flag.chooseMod(cls := "allowed", attr)
+            case "conditional" => flag.choose(cls := "allowed", attr)
             case _             =>
-              flag.chooseMod(cls := "allowed", flag.chooseMod(cls := "allowed", grouped))
+              flag.choose(cls := "allowed", flag.choose(cls := "allowed", grouped))
           Form.http(target)(modifier)
         }
         shape -> compiled.left.exists {
@@ -823,7 +823,7 @@ object FormBindingSpec extends ZIOSpecDefault:
               Option(title := "A choice"),
               required   := true,
               aria.label := "Choose token",
-              control.hasVisibleErrors.chooseMod(disabled := true, disabled := false),
+              control.hasVisibleErrors.choose(disabled := true, disabled := false),
               on.focus.withValue(ProfileMsg.BlurValue(_))
             )
         )
@@ -1354,7 +1354,7 @@ object FormBindingSpec extends ZIOSpecDefault:
   private def elements(node: EvaluatedNode): Vector[EvaluatedNode.Element] = node match
     case element: EvaluatedNode.Element => element +: element.children.flatMap(elements)
     case keyed: EvaluatedNode.Keyed     => keyed.rows.flatMap(row => elements(row.child))
-    case choice: EvaluatedNode.Choice   => choice.child.toVector.flatMap(elements)
+    case choice: EvaluatedNode.Choice   => choice.children.flatMap(elements)
     case flash: EvaluatedNode.Flash     => flash.child.toVector.flatMap(elements)
     case _                              => Vector.empty
 end FormBindingSpec

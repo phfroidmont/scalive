@@ -81,7 +81,7 @@ class UploadLiveView() extends LiveView.Routed[Msg, Model, QueryParams]:
       h1("Uploads"),
       link.pushNavigateUnsafe("/upload?replaced=1", "Replace view"),
       model
-        .map(_.mode).chooseMod(
+        .map(_.mode).choose(
           UploadMode.values.toSeq.map(mode =>
             mode -> uploadDefinition(mode).render(upload => uploadForm(model, upload))
           )*

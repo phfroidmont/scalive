@@ -376,7 +376,7 @@ private[docs] object TraceViewer:
       traceEventCopy(
         step,
         step
-          .map(_.kind).chooseMod(
+          .map(_.kind).choose(
             "operation" -> traceOperationContext(step),
             "message"   -> traceMessageContext(step),
             "boundary"  -> boundaryContext

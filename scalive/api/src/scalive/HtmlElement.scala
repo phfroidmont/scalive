@@ -102,10 +102,10 @@ class HtmlAttr[V](val name: String, val codec: Encoder[V, String]):
 
 /** A space-separated token attribute whose repeated modifiers contribute to one rendered value.
   *
-  * Static values, signals, optional signals, and attribute modifiers selected by `chooseMod` are
-  * split on HTML ASCII whitespace. Empty tokens are discarded, exact duplicate tokens retain their
-  * first position, and the attribute is omitted when no tokens remain. Ordinary [[HtmlAttr]]
-  * definitions remain scalar rather than composing.
+  * Static values, signals, optional signals, and attribute modifiers selected by `choose` are split
+  * on HTML ASCII whitespace. Empty tokens are discarded, exact duplicate tokens retain their first
+  * position, and the attribute is omitted when no tokens remain. Ordinary [[HtmlAttr]] definitions
+  * remain scalar rather than composing.
   */
 final class CompositeHtmlAttr(name: String) extends HtmlAttr[String](name, StringAsIsEncoder):
   /** Adds the whitespace-separated tokens of `value` to the attribute.
@@ -521,15 +521,13 @@ object Mod:
     private[scalive] case Text(text: String, raw: Boolean = false) extends Content[Nothing]
     private[scalive] case SignalText(value: Signal[String], raw: Boolean = false)
         extends Content[Nothing]
+
+    /** Renders the branch whose key equals the value, or nothing when none matches. Every branch
+      * holds either content or attributes; a choice of attributes sets the selected attribute.
+      */
     private[scalive] case SignalChoice[A, Msg](
       value: Signal[A],
-      branches: Vector[(A, HtmlElement[Msg])]) extends Content[Msg]
-    private[scalive] case SignalModChoice[A, Msg](
-      value: Signal[A],
-      branches: Vector[(A, Mod[Msg])]) extends Content[Msg]
-    private[scalive] case SignalOption[A, Msg](
-      value: Signal[Option[A]],
-      project: Signal[A] => HtmlElement[Msg]) extends Content[Msg]
+      branches: Vector[(A, Vector[Mod[Msg]])]) extends Content[Msg]
     private[scalive] case Keyed[Key, Msg](entries: Vector[Content.Keyed.Entry[Key, Msg]])
         extends Content[Msg]
     private[scalive] case SignalKeyed[A, Key, Msg](

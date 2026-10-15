@@ -69,7 +69,7 @@ object StaticHtml:
   private def containsFlash(node: EvaluatedNode): Boolean = node match
     case _: EvaluatedNode.Flash         => true
     case value: EvaluatedNode.Element   => value.children.exists(containsFlash)
-    case value: EvaluatedNode.Choice    => value.child.exists(containsFlash)
+    case value: EvaluatedNode.Choice    => value.children.exists(containsFlash)
     case value: EvaluatedNode.Keyed     => value.rows.exists(row => containsFlash(row.child))
     case value: EvaluatedNode.Stream    => value.rows.exists(row => containsFlash(row.child))
     case value: EvaluatedNode.Component =>

@@ -51,19 +51,40 @@ final class AsyncReportExample(instanceId: String)
           "Cancel report"
         )
       ),
-      report
-        .map(_ == AsyncValue.Empty).choose(
-          sectionTag(
-            dataAttr("report-state") := "",
-            aria.live                := "polite",
-            "Empty"
-          ),
-          reportPanel(
-            report.map(reportState),
-            report.map(_.valueOption),
-            report.map(reportStatus)
+      sectionTag(
+        dataAttr("report-state") := "",
+        aria.live                := "polite",
+        // docs:start async-report-status
+        report.matchCases { is =>
+          (
+            is.Empty(_ => "Empty"),
+            is.Loading(loading =>
+              reportPanel("Loading", "Generating report...", loading.map(_.previous))
+            ),
+            is.Ok(ok =>
+              reportPanel("Succeeded", "Report completed.", ok.map(ok => Some(ok.value)))
+            ),
+            is.Failed(failed =>
+              reportPanel(
+                "Failed",
+                failed.map(failed => explain(failed.error)),
+                failed.map(_.previous)
+              )
+            ),
+            is.Died(died =>
+              reportPanel("Failed", "Report generation stopped unexpectedly.", died.map(_.previous))
+            ),
+            is.Cancelled(cancelled =>
+              reportPanel(
+                "Cancelled",
+                cancelled.map(_.reason.getOrElse("Report generation was cancelled.")),
+                cancelled.map(_.previous)
+              )
+            )
           )
-        )
+        }
+        // docs:end async-report-status
+      )
     )
   end view
 
@@ -74,14 +95,15 @@ final class AsyncReportExample(instanceId: String)
       .as(model.copy(report = model.report.loading()))
   // docs:end async-report-start
 
+  private def explain(error: ReportError): String = error match
+    case ReportError.SourceRejected => "The deterministic data source rejected the report."
+
   private def reportPanel(
-    state: Signal[String],
-    report: Signal[Option[Report]],
-    status: Signal[String]
-  ): HtmlElement[Msg] =
-    sectionTag(
-      dataAttr("report-state") := "",
-      aria.live                := "polite",
+    state: String,
+    status: Mod[Nothing],
+    report: Signal[Option[Report]]
+  ): Vector[Mod[Msg]] =
+    Vector(
       h2(dataAttr("report-status") := "", state),
       p(status),
       report.option { value =>
@@ -92,26 +114,6 @@ final class AsyncReportExample(instanceId: String)
         )
       }
     )
-
-  private def reportState(value: AsyncValue[ReportError, Report]): String = value match
-    case AsyncValue.Empty           => "Empty"
-    case AsyncValue.Loading(_)      => "Loading"
-    case AsyncValue.Ok(_)           => "Succeeded"
-    case AsyncValue.Failed(_, _)    => "Failed"
-    case AsyncValue.Died(_, _)      => "Failed"
-    case AsyncValue.Cancelled(_, _) => "Cancelled"
-
-  // docs:start async-report-status
-  private def reportStatus(value: AsyncValue[ReportError, Report]): String = value match
-    case AsyncValue.Empty                                 => "Empty"
-    case AsyncValue.Loading(_)                            => "Generating report..."
-    case AsyncValue.Ok(_)                                 => "Report completed."
-    case AsyncValue.Failed(_, ReportError.SourceRejected) =>
-      "The deterministic data source rejected the report."
-    case AsyncValue.Died(_, _)           => "Report generation stopped unexpectedly."
-    case AsyncValue.Cancelled(_, reason) =>
-      reason.getOrElse("Report generation was cancelled.")
-  // docs:end async-report-status
 end AsyncReportExample
 
 object AsyncReportExample:

@@ -69,19 +69,19 @@ object RenderProgramSpec extends ZIOSpecDefault:
         keyedResult.isRight
       )
     },
-    test("evaluates choices, optional content, and structured chooseMod attributes") {
+    test("evaluates choices, optional content, and attribute choices") {
       val compiled = RenderProgram.compile[(Int, Option[String], Boolean), Nothing] { model =>
         val selected = model.map(_._1)
         val optional = model.map(_._2)
         val enabled  = model.map(_._3)
         div(
-          enabled.chooseMod(dataAttr("state") := "on", dataAttr("state") := "off"),
+          enabled.choose(dataAttr("state") := "on", dataAttr("state") := "off"),
           selected.choose(1 -> span("one"), 2 -> strong("two")),
           optional.option(value => em(value))
         )
       }
       val mixed = RenderProgram.compile[Boolean, Nothing] { selected =>
-        div(selected.chooseMod(cls := "selected", span("no")))
+        div(selected.choose(cls := "selected", span("no")))
       }
 
       for
@@ -94,6 +94,81 @@ object RenderProgramSpec extends ZIOSpecDefault:
         HtmlRenderer.render(second.tree) == "<div data-state=\"off\"><strong>two</strong></div>",
         HtmlRenderer.render(absent.tree) == "<div data-state=\"on\"></div>",
         mixed.left.exists(_.isInstanceOf[RenderError.InvalidHtml])
+      )
+    },
+    test("choice branches render text, several siblings, and attributes without a wrapper") {
+      val compiled = RenderProgram.compile[(Boolean, Option[Int]), Nothing] { model =>
+        val open  = model.map(_._1)
+        val count = model.map(_._2)
+        div(
+          open.when(cls := "open"),
+          open.choose("Open", Vector(span("Closed"), " since ", em("today"))),
+          open.when(strong("a"), strong("b")),
+          count.option(value => Vector(value.map(_.toString), " items"))
+        )
+      }
+
+      for
+        program <- ZIO.fromEither(compiled)
+        open    <- program.evaluate((true, Some(2)))
+        closed  <- program.evaluate((false, None), Some(open.commit))
+        changed <- program.evaluate((false, Some(3)), Some(closed.commit))
+        updated <- program.evaluate((false, Some(4)), Some(changed.commit))
+      yield assertTrue(
+        HtmlRenderer.render(open.tree) ==
+          "<div class=\"open\">Open<strong>a</strong><strong>b</strong>2 items</div>",
+        HtmlRenderer.render(closed.tree) ==
+          "<div><span>Closed</span> since <em>today</em></div>",
+        HtmlRenderer.render(changed.tree) ==
+          "<div><span>Closed</span> since <em>today</em>3 items</div>",
+        TreeDiffer.diff(changed.tree, updated.tree) match
+          case RenderDelta.Update(_, changes) =>
+            changes.size == 1 && changes.forall(_.isInstanceOf[RenderChange.Text])
+          case _ => false
+      )
+    },
+    test("matchCases renders each case from a signal of its own value") {
+      enum Status:
+        case Idle
+        case Running(progress: Int)
+        case Failed(reason: String)
+
+      val built    = scala.collection.mutable.ArrayBuffer.empty[String]
+      val compiled = RenderProgram.compile[Status, Nothing] { status =>
+        div(
+          status.matchCases(is => (
+            is.Failed { failed =>
+              built += "Failed"
+              strong(failed.map(_.reason))
+            },
+            is.Idle { _ =>
+              built += "Idle"
+              "Idle"
+            },
+            is.Running { running =>
+              built += "Running"
+              Vector("Running ", running.map(_.progress.toString), "%")
+            }
+          ))
+        )
+      }
+
+      for
+        program <- ZIO.fromEither(compiled)
+        idle    <- program.evaluate(Status.Idle)
+        running <- program.evaluate(Status.Running(10), Some(idle.commit))
+        moved   <- program.evaluate(Status.Running(60), Some(running.commit))
+        failed  <- program.evaluate(Status.Failed("disk full"), Some(moved.commit))
+      yield assertTrue(
+        built.toVector == Vector("Failed", "Idle", "Running"),
+        HtmlRenderer.render(idle.tree) == "<div>Idle</div>",
+        HtmlRenderer.render(running.tree) == "<div>Running 10%</div>",
+        HtmlRenderer.render(moved.tree) == "<div>Running 60%</div>",
+        HtmlRenderer.render(failed.tree) == "<div><strong>disk full</strong></div>",
+        TreeDiffer.diff(running.tree, moved.tree) match
+          case RenderDelta.Update(_, changes) =>
+            changes.size == 1 && changes.forall(_.isInstanceOf[RenderChange.Text])
+          case _ => false
       )
     },
     test("retains keyed rows and bindings across exact-key reorders") {
@@ -293,7 +368,7 @@ object RenderProgramSpec extends ZIOSpecDefault:
           cls := "base",
           cls := model.map(_.dynamic),
           cls.optional(model.map(_.optional)),
-          model.map(_.selected).chooseMod(cls := "selected", cls := "")
+          model.map(_.selected).choose(cls := "selected", cls := "")
         )
       }
 
@@ -332,7 +407,7 @@ object RenderProgramSpec extends ZIOSpecDefault:
     },
     test("rejects mixed composite choices and null composite values") {
       val mixedChoice = RenderProgram.compile[Boolean, Nothing] { selected =>
-        div(selected.chooseMod(cls := "selected", Mod.Attr.Static("class", "plain")))
+        div(selected.choose(cls := "selected", Mod.Attr.Static("class", "plain")))
       }
       val staticNull = RenderProgram.compile[Unit, Nothing] { _ =>
         div(cls := null.asInstanceOf[String])
@@ -359,7 +434,7 @@ object RenderProgramSpec extends ZIOSpecDefault:
     test("samples only the selected composite choice branch") {
       val compiled = RenderProgram.compile[Boolean, Nothing] { selected =>
         div(
-          selected.chooseMod(
+          selected.choose(
             cls := selected.map(_ => "selected"),
             cls := selected.map(_ => throw IllegalStateException("unselected branch sampled"))
           )

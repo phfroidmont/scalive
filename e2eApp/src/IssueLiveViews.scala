@@ -280,7 +280,7 @@ class Issue3040LiveView extends LiveView[Issue3040LiveView.Msg, Issue3040LiveVie
             dom.onMount(JS.focusFirst(to = DomSelector.css("#my-modal-container"))),
             form(
               on.submit(Msg.Submit),
-              submitted.chooseMod("Form was submitted!", input(nameAttr := "name"))
+              submitted.choose("Form was submitted!", input(nameAttr := "name"))
             )
           )
         )
@@ -827,7 +827,7 @@ class Issue3200LiveView
         "Settings tab"
       ),
       model
-        .map(_.tab == Tab.Settings).chooseMod(
+        .map(_.tab == Tab.Settings).choose(
           component(SettingsTab, "settings_tab").render(()),
           component(MessagesTab, "messages_tab").render(())
         )
@@ -952,7 +952,7 @@ class Issue3026LiveView extends LiveView[Issue3026LiveView.Msg, Issue3026LiveVie
         )
       ),
       status
-        .map(_ == Status.Loaded).chooseMod(
+        .map(_ == Status.Loaded).choose(
           component(Issue3026FormComponent, "my-form")
             .render(model.map(current => FormProps(current.name, current.email))),
           div(cls := "p-8 bg-gray-200 mb-4", status.map(_.value))
@@ -1786,7 +1786,7 @@ object Issue3941LiveView:
 
       div(
         idAttr := item.map(value => s"header-$value"),
-        loaded.chooseMod(
+        loaded.choose(
           div(
             idAttr := item,
             cls    := "border border-y-0 bg-green-500 text-white",
@@ -1816,7 +1816,7 @@ class Issue3953LiveView extends LiveView[Issue3953LiveView.Msg, Boolean]:
     div(
       component(Component, "comp").render(()),
       button(on.click(Msg.Toggle), "Show"),
-      model.chooseMod(liveView("nested_view", NestedViewLive()), "")
+      model.choose(liveView("nested_view", NestedViewLive()), "")
     )
 
 object Issue3953LiveView:
@@ -1957,9 +1957,9 @@ class Issue4027LiveView
         div(styleAttr := "margin: 10px; height: 1px; background-color: black;")
       ),
       caseName
-        .map(_ == "first").chooseMod(
+        .map(_ == "first").choose(
           currentItems
-            .map(_.isDefined).chooseMod(
+            .map(_.isDefined).choose(
               component(ReproLiveComponent, "repro")
                 .render(currentItems.map(_.getOrElse(Vector.empty))),
               ""
@@ -2048,7 +2048,7 @@ object Issue4027LiveView:
       data
         .map(_.valueOption)
         .map(_.isDefined)
-        .chooseMod(
+        .choose(
           keyedItems(data.map(current => current.valueOption.getOrElse(Vector.empty))),
           ""
         )
@@ -2081,7 +2081,7 @@ class Issue4066LiveView
       p(idAttr := "render-time", model.map(_.renderTime)),
       button(on.click(Msg.Toggle), "Toggle"),
       model
-        .map(_.renderInput).chooseMod(
+        .map(_.renderInput).choose(
           component(DelayedInputComponent, "foo").render(model.map(_.delay)),
           ""
         )

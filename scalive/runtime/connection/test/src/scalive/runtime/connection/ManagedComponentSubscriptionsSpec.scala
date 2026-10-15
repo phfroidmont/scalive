@@ -477,7 +477,7 @@ object ManagedComponentSubscriptionsSpec extends ZIOSpecDefault:
   private def tokenIn(node: EvaluatedNode): Option[Object] = node match
     case value: EvaluatedNode.Component => value.resolution.map(_.instanceToken)
     case value: EvaluatedNode.Element   => value.children.iterator.flatMap(tokenIn).nextOption()
-    case value: EvaluatedNode.Choice    => value.child.flatMap(tokenIn)
+    case value: EvaluatedNode.Choice    => value.children.iterator.flatMap(tokenIn).nextOption()
     case value: EvaluatedNode.Flash     => value.child.flatMap(tokenIn)
     case value: EvaluatedNode.Keyed     =>
       value.rows.iterator.flatMap(row => tokenIn(row.child)).nextOption()

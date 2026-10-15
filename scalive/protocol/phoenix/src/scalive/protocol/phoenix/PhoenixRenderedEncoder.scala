@@ -370,7 +370,7 @@ private[scalive] object PhoenixRenderedEncoder:
         ProjectedNode(flash.id, children.map(ProjectedPart.Node(_)))
       )
     case choice: EvaluatedNode.Choice =>
-      traverse(choice.child.toVector)(child => project(child, None, context)).map(children =>
+      traverse(choice.children)(child => project(child, None, context)).map(children =>
         ProjectedNode(choice.id, children.map(ProjectedPart.Node(_)))
       )
     case keyed: EvaluatedNode.Keyed =>

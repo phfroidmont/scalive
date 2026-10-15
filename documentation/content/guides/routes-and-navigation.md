@@ -10,8 +10,8 @@ group = "Routing and application structure"
 
 Start with a URL whose routed `LiveView` mounts and renders, and a named route
 declaration that decodes it. The
-[Quick start](../learn/quick-start.md#add-routes-and-layout) shows the minimal
-router and layout wiring assumed here.
+[Quick start](../learn/quick-start.md#add-a-route) shows the minimal
+router wiring assumed here.
 
 ## Name route declarations {#name-route-declarations}
 

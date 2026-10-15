@@ -7,19 +7,13 @@ import zio.http.Server
 import scalive.*
 
 object Main extends ZIOAppDefault:
-  private val port = 8080
+  private val port        = 8080
+  private val application = Live.router(Routes.home -> CounterLiveView())
 
   val run =
     for
-      clientAssets <- LiveViewClientAssets.load()
-      assets       <- StaticAssets.load(StaticAssetConfig.classpath("public", Seq("app.js")))
-      config       <- ZioHttpConfig.local(port)
-      application = Live.router
-                      .withRootLayout(RootLayout(clientAssets, assets))(
-                        Routes.home -> CounterLiveView()
-                      )
-      liveRoutes <- ZioHttp.routes(application, config)
-      routes = liveRoutes ++ clientAssets.routes ++ assets.routes
-      _ <- Server.serve(routes).provide(Server.defaultWithPort(port))
+      config <- ZioHttpConfig.local(port)
+      routes <- ZioHttp.routes(application, config)
+      _      <- Server.serve(routes).provide(Server.defaultWithPort(port))
     yield ()
 // docs:end quick-start-main

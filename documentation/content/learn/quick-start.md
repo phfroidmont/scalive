@@ -36,15 +36,11 @@ Create this project tree:
 scalive-quick-start/
 ├── build.mill
 └── app/
-    ├── resources/
-    │   └── public/
-    │       └── app.js
-    ├── src/
-    │   └── quickstart/
-    │       ├── CounterLiveView.scala
-    │       ├── Main.scala
-    │       ├── RootLayout.scala
-    │       └── Routes.scala
+    └── src/
+        └── quickstart/
+            ├── CounterLiveView.scala
+            ├── Main.scala
+            └── Routes.scala
 ```
 
 Create `build.mill` at the project root:
@@ -74,21 +70,8 @@ is the whole library, and it brings ZIO and ZIO HTTP with it. Tests add one more
 artifact, `dev.scalive::scalive-testing`, in
 [Testing your LiveView](testing-your-liveview.md).
 
-Mill automatically places files under `app/resources` on the application's
-classpath. Scalive packages the Phoenix and Phoenix LiveView browser clients,
-so this project needs no package manager or bundler.
-
-## Connect the browser {#connect-the-browser}
-
-Create `app/resources/public/app.js`:
-
-@:sourceRegion(documentation/fixtures/quick-start/resources/public/app.js, quick-start-browser)
-
-@:apiSymbol(val:scalive.Live.router)`Live.router`@:@ serves its WebSocket below `/live`
-by default. The server injects the CSRF meta element into the root layout's
-`<head>` and binds it to a cookie. The client returns the value as `_csrf_token`
-when it opens the WebSocket. Do not create or hard-code this token in JavaScript.
-The packaged client scripts expose the `Phoenix` and `LiveView` globals used here.
+Scalive packages the Phoenix and Phoenix LiveView browser clients and connects
+them for you, so this project needs no JavaScript, package manager, or bundler.
 
 ## Define the LiveView {#define-the-liveview}
 
@@ -100,26 +83,14 @@ The `Int` is all state needed to render this interface. `Msg` lists every input
 the view accepts. `mount` creates the state, `handleMessage` performs an
 effectful transition, and `view` projects the state into typed HTML.
 
-## Add routes and layout {#add-routes-and-layout}
+## Add a route {#add-a-route}
 
 Create `app/src/quickstart/Routes.scala`:
 
 @:sourceRegion(documentation/fixtures/quick-start/src/quickstart/Routes.scala, quick-start-routes)
 
-Create `app/src/quickstart/RootLayout.scala`:
-
-@:sourceRegion(documentation/fixtures/quick-start/src/quickstart/RootLayout.scala, quick-start-root-layout)
-
-The root layout renders the complete document around every page. `content` is
-the page, and `pageTitle` is its title. The `[Any, Any]` type parameters say
-that this layout reads no route parameters and no mount context, and `[Msg]`
-lets it wrap pages with any message type.
-
-Its `<head>` gives Scalive a place for the CSRF meta element and loads Phoenix
-first, Phoenix LiveView second, and the application bootstrap last. Keep this
-order because `app.js` uses both client globals. The
-[layouts guide](../guides/layouts.md#install-root-and-ordinary-layouts) covers
-shared navigation and per-route layouts.
+`live` is the site root, `/`. Routes live in one object so views and tests can
+link to them by name.
 
 ## Start the server {#start-the-server}
 
@@ -127,12 +98,16 @@ Create `app/src/quickstart/Main.scala`:
 
 @:sourceRegion(documentation/fixtures/quick-start/src/quickstart/Main.scala, quick-start-main)
 
-The server loads Scalive's packaged clients through
-@:apiSymbol(class:scalive.LiveViewClientAssets)`LiveViewClientAssets`@:@, loads
-`app.js` as an ordinary classpath asset, builds CSRF-protected Live routes, adds
-both asset route sets, and listens on port `8080`. The root layout renders the
-asset URLs, which include a version, so the plain `/static/app.js` path returns
-`404`.
+@:apiSymbol(val:scalive.Live.router)`Live.router`@:@ maps the route to the LiveView.
+@:apiSymbol(def:scalive.ZioHttp.routes)`ZioHttp.routes`@:@ turns it into CSRF-protected
+ZIO HTTP routes, and the server listens on port `8080`.
+
+Each page is a complete HTML document. Scalive adds the Phoenix and Phoenix
+LiveView clients and a script that connects them to the page's `<head>`, and
+serves those files itself. The connection uses the router's socket path, `/live`,
+and the CSRF token Scalive also adds to the page. To add stylesheets, a `lang`
+attribute, or shared navigation, install a
+[root layout](../guides/layouts.md#install-root-and-ordinary-layouts).
 
 @:apiSymbol(def:scalive.ZioHttpConfig.local)`ZioHttpConfig.local(port)`@:@ accepts live
 connections only from pages served at `http://localhost:8080` and
@@ -174,7 +149,7 @@ button and explains how the counter's state changes.
 
 - If Mill cannot resolve the Scalive dependency, confirm the snapshot version
   and repository above, then check [startup troubleshooting](../guides/troubleshooting.md#diagnose-startup-failures).
-- If `app.js` or either packaged client script fails to load, check
+- If one of the browser scripts below `/_scalive` fails to load, check
   [missing assets](../guides/troubleshooting.md#diagnose-missing-assets).
 - If port `8080` is already in use, stop the other process or change the single
   `port` value in `Main.scala`; the server binding and local WebSocket origins

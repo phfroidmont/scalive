@@ -25,14 +25,19 @@ Both are classes that extend a trait and implement one `view` method.
 
 ## Render the document {#install-root-and-ordinary-layouts}
 
-The quick start's root layout renders the document for every page:
+Without a root layout, the router uses
+@:apiSymbol(val:scalive.LiveRootLayout.default)`LiveRootLayout.default`@:@, a minimal
+document that declares UTF-8 and a device-width viewport and renders the page
+title. Install your own for stylesheets, a `lang` attribute, or chrome shared by
+every page. This one adds a language, a title suffix, and a stylesheet:
 
-@:sourceRegion(documentation/fixtures/quick-start/src/quickstart/RootLayout.scala, quick-start-root-layout)
+@:sourceRegion(documentation/fixtures/guides/src/layouts/RootLayout.scala, layouts-root-layout)
 
-The class takes the loaded assets in its constructor, so it can render their
-versioned URLs. Its two type parameters are the route parameter type and the
-mount context type the layout reads. A layout shared by every route reads
-neither, so both are `Any`.
+The class takes the loaded
+[static assets](static-assets-and-client-setup.md#render-tracked-tags) in its
+constructor, so it can render their versioned URLs. Its two type parameters are
+the route parameter type and the mount context type the layout reads. A layout
+shared by every route reads neither, so both are `Any`.
 
 `view` is generic in `Msg` because the same layout wraps pages with different
 message types. `content` is the page, and the layout places it in the body.
@@ -46,12 +51,11 @@ updates patch the page inside the document and never render the document again,
 so `ctx` holds plain values: the route parameters, the request, the URL, and
 the mount context.
 
-Install the root layout on the router with `withRootLayout`, as the quick
-start's `Main` does. Without one, the router uses
-@:apiSymbol(val:scalive.LiveRootLayout.default)`LiveRootLayout.default`@:@, a minimal
-document that declares UTF-8 and a device-width viewport and renders the page
-title. Install your own root layout for stylesheets, scripts, a `lang`
-attribute, or chrome shared by every page.
+Scalive adds its own elements to the root layout's `<head>`: the CSRF token and
+the browser scripts described in
+[Client setup](static-assets-and-client-setup.md#load-the-packaged-clients).
+Install the root layout on the router with `withRootLayout`, as the next
+section's application does.
 
 ## Wrap every page in shared navigation {#wrap-pages-in-shared-navigation}
 

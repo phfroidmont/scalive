@@ -231,10 +231,10 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
 
     /** Guards browser-initiated navigation while `dirty` is true.
       *
-      * Add the returned modifier to the element which owns the dirty state and install the
-      * `NavigationGuardAssets` script in the root layout. The browser runtime uses `message` for
-      * live links, live patch links, and LiveView history traversal. Browsers use their own generic
-      * message for cross-document history traversal, reload, and tab-close confirmation.
+      * Add the returned modifier to the element which owns the dirty state; pages served by
+      * `ZioHttp.routes` include the browser runtime. The runtime uses `message` for live links,
+      * live patch links, and LiveView history traversal. Browsers use their own generic message for
+      * cross-document history traversal, reload, and tab-close confirmation.
       *
       * The guard reflects the latest value rendered by the server. Server-issued navigation and
       * navigation encoded in a [[JSCommands.JSCommand]] bypass the configured confirmation, but a

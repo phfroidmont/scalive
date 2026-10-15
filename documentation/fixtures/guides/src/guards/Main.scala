@@ -11,24 +11,11 @@ object Main extends ZIOAppDefault:
   private val notes = new Notes:
     def save(note: Note): Task[Unit] = ZIO.unit
 
-  // docs:start guards-load
-  private def serve(config: ZioHttpConfig): Task[Unit] =
-    for
-      clientAssets <- LiveViewClientAssets.load()
-      appAssets    <- StaticAssets.load(StaticAssetConfig.classpath("public", Seq("app.js")))
-      guardAssets  <- NavigationGuardAssets.load()
-      rootLayout  = RootLayout(clientAssets, appAssets, guardAssets)
-      application = Live.router.withRootLayout(rootLayout)(
-                      (live / "notes") -> NoteLiveView(notes)
-                    )
-      liveRoutes <- ZioHttp.routes(application, config)
-      routes =
-        liveRoutes ++
-          clientAssets.routes ++
-          appAssets.routes ++
-          guardAssets.routes
-      _ <- Server.serve(routes).provide(Server.defaultWithPort(port))
-    yield ()
-  // docs:end guards-load
+  private val application = Live.router((live / "notes") -> NoteLiveView(notes))
 
-  val run = ZioHttpConfig.local(port).flatMap(serve)
+  val run =
+    for
+      config <- ZioHttpConfig.local(port)
+      routes <- ZioHttp.routes(application, config)
+      _      <- Server.serve(routes).provide(Server.defaultWithPort(port))
+    yield ()

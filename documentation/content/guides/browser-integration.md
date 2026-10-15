@@ -170,41 +170,25 @@ operation instead of waiting forever.
 
 ## Register the hook with LiveSocket {#register-the-hook-with-live-socket}
 
-This modular example uses the
-[custom bundle path](static-assets-and-client-setup.md#build-the-client-bundle),
-so its bundle imports both clients and the root layout omits the packaged client
-scripts. Import the factory in `assets/js/app.js`, register the same name
-rendered by `dom.hook`, and pass the registry in the final `LiveSocket` options
-object:
+Register the hook under the same name rendered by `dom.hook`. With the packaged
+clients, set it in `window.liveSocketOptions` from a script the root layout
+renders, here an ES module that imports the factory:
 
 ```js
-import { Socket } from "phoenix"
-import { LiveSocket } from "phoenix_live_view"
-
 import { createBrowserInteropHook } from "./browser-interop.js"
 
-const Hooks = {
-  BrowserInterop: createBrowserInteropHook(),
+window.liveSocketOptions = {
+  hooks: { BrowserInterop: createBrowserInteropHook() },
 }
-
-const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribute("content")
-const params = csrfToken ? { _csrf_token: csrfToken } : {}
-
-const liveSocket = new LiveSocket("/live", Socket, {
-  params,
-  hooks: Hooks,
-})
-liveSocket.connect()
-
-window.liveSocket = liveSocket
 ```
 
-Do not create a second `LiveSocket` just for hooks; add them to the application's
-existing options object. The canonical bootstrap and CSRF explanation is in
+Render it with `assets.trackedScript("app.js", typ := "module")`. Module scripts
+run in document order with the other deferred scripts, so the options are set
+before Scalive connects the `LiveSocket`; see
 [Client setup and static assets](static-assets-and-client-setup.md#connect-live-socket).
-An application using the supplied global clients can instead define the hook in
-its plain `app.js` and pass the registry when constructing `LiveView.LiveSocket`
-with `Phoenix.Socket`, without adding npm dependencies.
+With a [custom bundle](static-assets-and-client-setup.md#build-the-client-bundle),
+pass the same `hooks` object in the options of the bundle's own `LiveSocket`.
+Do not create a second `LiveSocket` just for hooks.
 
 ## Give every hook stable identity {#give-every-hook-stable-identity}
 

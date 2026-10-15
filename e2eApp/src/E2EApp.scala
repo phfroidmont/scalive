@@ -222,8 +222,7 @@ object E2EApp extends ZIOAppDefault:
       assets <- StaticAssets.load(
                   StaticAssetConfig.classpath("public", Seq("app.css", "app.js", "daisy.css"))
                 )
-      navigationGuardAssets <- NavigationGuardAssets.load()
-      config                <-
+      config <-
         ZIO
           .fromEither(
             ZioHttpConfig(
@@ -239,11 +238,10 @@ object E2EApp extends ZIOAppDefault:
               )
             )
           )
-      rootLayout  = new E2ERootLayout(assets, navigationGuardAssets)
+      rootLayout  = new E2ERootLayout(assets)
       application = liveRoutes(rootLayout, assets)
-      liveViewRoutes <- ZioHttp.routes(application, config)
-      routes =
-        liveViewRoutes ++ healthRoutes(assets) ++ assets.routes ++ navigationGuardAssets.routes
+      liveViewRoutes <- ZioHttp.routes(application, config, client = LiveClient.Custom)
+      routes = liveViewRoutes ++ healthRoutes(assets) ++ assets.routes
       _ <- Server.serve(routes).provide(Server.defaultWithPort(serverPort))
     yield ()
 end E2EApp

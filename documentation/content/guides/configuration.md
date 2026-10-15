@@ -108,25 +108,22 @@ The remaining framework choices are made while assembling the application:
 
 | Concern | API and default | Requirement |
 | --- | --- | --- |
-| WebSocket path | `Live.router.withSocketPath`; default `/live` | Configure the Phoenix client with the same mount. The WebSocket upgrade is the mount's `/websocket` child, `/live/websocket` by default. |
-| Root and Live layouts | `Live.router.withRootLayout` and `.withLayout`; identity root and no ordinary layouts by default | Supply a complete `<html>`, `<head>`, and `<body>` root with the application assets. Scalive inserts its CSRF metadata into the `<head>`. |
-| Packaged Phoenix clients | `LiveViewClientAssets.load`; default mount `/_scalive/live-view` | Unless a custom bundle imports both npm clients, load once at startup, add `clientAssets.routes`, and render `phoenixScript` before `liveViewScript` and the application bootstrap. Pass another mount to `load` when the default conflicts with application routing. |
+| WebSocket path | `Live.router.withSocketPath`; default `/live` | The packaged client connects to it; a custom bundle must use the same mount. The WebSocket upgrade is the mount's `/websocket` child, `/live/websocket` by default. |
+| Root and Live layouts | `Live.router.withRootLayout` and `.withLayout`; `LiveRootLayout.default` and no ordinary layouts by default | A custom root renders a complete `<html>`, `<head>`, and `<body>` with the application assets. Scalive inserts its CSRF metadata and browser scripts into the `<head>`. |
+| Phoenix clients | The `client` argument of `ZioHttp.routes`; default `LiveClient.Packaged`, served below `/_scalive` | Pass `LiveClient.Custom` when the application bundle imports both npm clients and connects its own `LiveSocket`. |
 | Static assets | `StaticAssetConfig.classpath`, `.directory`, `.deploymentClasspath`, or `.deploymentDirectory`; default mount `/static` | Load assets before startup, add `assets.routes`, and render versioned or final URLs from the same loaded value. |
 
 Use `classpath` or `directory` when Scalive should version one complete relative
 output tree. Use `deploymentClasspath` or `deploymentDirectory` when an external
 build owns exact final filenames and cache policy through a deployment manifest.
 
-The Scala and JavaScript socket paths must agree:
+This router serves its WebSocket below `/socket`:
 
 @:sourceRegion(documentation/fixtures/guides/src/configuration/Configuration.scala, configuration-socket-path)
 
-```js
-const liveSocket = new LiveView.LiveSocket("/socket", Phoenix.Socket, { params })
-```
-
-The Phoenix client then opens the WebSocket at `/socket/websocket`, and a
-reverse proxy must forward the upgrade on that path.
+The packaged client then opens the WebSocket at `/socket/websocket`, and a
+reverse proxy must forward the upgrade on that path. A custom bundle passes the
+same `/socket` to its `LiveSocket`.
 
 Use [Client setup and static assets](static-assets-and-client-setup.md) for asset
 sources, versioned paths, deployment manifests, cache policy, and complete

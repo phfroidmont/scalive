@@ -157,8 +157,16 @@ final private[docs] class DocumentationApplication private (
       AuthLab.protectedSession
     ) ++ fragments
     val application = router((homeRoute +: supplementalRoutes)*)
-    val liveRoutes  = traceStore.fold(ZioHttp.routes(application, security.config))(store =>
-      ZioHttp.routes(application, security.config, DocumentationRuntimeObserverFactory(store))
+    // The site's own bundle includes and connects the Phoenix clients.
+    val liveRoutes = traceStore.fold(
+      ZioHttp.routes(application, security.config, client = LiveClient.Custom)
+    )(store =>
+      ZioHttp.routes(
+        application,
+        security.config,
+        DocumentationRuntimeObserverFactory(store),
+        LiveClient.Custom
+      )
     )
     liveRoutes.map(
       _ ++

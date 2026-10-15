@@ -664,6 +664,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
             .asScala.toVector.map(element =>
               Option(element.attr("src")).filter(_.nonEmpty).getOrElse(element.attr("href"))
             )
+            .filterNot(_.startsWith("/_scalive/"))
         versionedPaths = assetPaths :+ searchAsset
         versions = versionedPaths.map(
                      _.stripPrefix("/static/").takeWhile(_ != '/')

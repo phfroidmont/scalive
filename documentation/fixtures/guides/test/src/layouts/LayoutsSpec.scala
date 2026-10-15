@@ -19,17 +19,16 @@ object LayoutsSpec extends ZIOSpecDefault:
 
   private def render(path: String) =
     for
-      clientAssets <- LiveViewClientAssets.load()
-      assets       <- StaticAssets.load(StaticAssetConfig.classpath("public", Seq("app.js")))
-      routes       <- ZioHttp.routes(Application(clientAssets, assets), config)
-      page         <- DisconnectedRender.run(routes, Request.get(URL.decode(path).toOption.get))
+      assets <- StaticAssets.load(StaticAssetConfig.classpath("public", Seq("app.css")))
+      routes <- ZioHttp.routes(Application(assets), config)
+      page   <- DisconnectedRender.run(routes, Request.get(URL.decode(path).toOption.get))
     yield RenderedHtml.parse(page.html)
 
   def spec = suite("Layouts")(
     test("nests the route layout inside the application layout and the root layout") {
       for html <- render("/projects/scalive")
       yield assertTrue(
-        html.selectOne("html > head > title").map(_.text) == Right("Scalive quick start"),
+        html.selectOne("html > head > title").map(_.text) == Right("Projects · Scalive"),
         html.selectOne("header nav a[aria-current=page]").map(_.text) == Right("Projects"),
         html.selectOne("main section h1").map(_.text) == Right("Project scalive"),
         html.text.contains("Open issues for scalive.")

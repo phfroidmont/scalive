@@ -10,8 +10,8 @@ group = "Operations"
 
 You need a runnable Scalive application with validated production
 [configuration](configuration.md#current-configuration-contract) and its
-browser resources. The quick start uses Scalive's packaged clients plus a plain
-classpath script; applications with a custom browser build must build its
+browser resources. The quick start uses only the browser clients packaged
+with Scalive; applications with a custom browser build must build its
 [bundle](static-assets-and-client-setup.md#build-the-client-bundle).
 The commands use the `app` module from the [quick start](../learn/quick-start.md)
 as an example; substitute your application's module name.
@@ -65,7 +65,7 @@ java -jar out/app/assembly.dest/out.jar
 ```
 
 The assembly includes the application's JVM dependencies, Scalive's packaged
-Phoenix clients, and `app/resources/public/app.js`. Mill and the source tree are
+Phoenix clients, and every file under `app/resources`. Mill and the source tree are
 build-time requirements, not runtime requirements; custom browser tooling is
 also build-time only when used. If the application uses a different Mill module
 name, substitute that name in the task and output path.
@@ -93,15 +93,14 @@ browser uses HTTPS. Scalive does not infer HTTPS from `Forwarded`,
 The edge must route all of the following to the application:
 
 - ordinary page and form requests;
-- static requests below every configured asset mount; and
+- static requests below `/_scalive` and every configured asset mount; and
 - WebSocket upgrade requests below the configured socket path.
 
-With the default router and
-`new LiveView.LiveSocket("/live", Phoenix.Socket, ...)`, the upgrade endpoint is
-`/live/websocket`. The packaged client scripts themselves are served below
-`/_scalive/live-view`; that static mount is separate from the socket path. If
-the router [uses another socket path](configuration.md#configure-routes-and-assets),
-forward that path's `/websocket` child instead.
+With the default router, the upgrade endpoint is `/live/websocket`. Scalive's
+own browser scripts are served below `/_scalive`; that static mount is separate
+from the socket path. If the router
+[uses another socket path](configuration.md#configure-routes-and-assets), forward
+that path's `/websocket` child instead.
 
 Preserve the upgrade request's query string, cookie header, and the browser's
 single `Origin` header: CSRF validation, the LiveView join, and

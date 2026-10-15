@@ -123,33 +123,44 @@ object ZioHttp:
   /** Builds the ZIO HTTP routes that serve `application`: one GET route per page and the LiveView
     * WebSocket.
     *
-    * It fails with [[AssemblyException]] when the application is invalid, for example when two
-    * named live sessions share a name. `observer` receives structured lifecycle events. Ordinary
-    * HTTP handlers that need the same CSRF, flash, or cookie policy build a [[LiveSecurity]] from
-    * the same `config`.
+    * The routes also serve Scalive's own browser files below `/_scalive`, and Scalive adds them to
+    * every page's `<head>`. With the default `client`, they include the Phoenix clients and a
+    * script that connects them; see [[LiveClient]]. It fails with [[AssemblyException]] when the
+    * application is invalid, for example when two named live sessions share a name. `observer`
+    * receives structured lifecycle events. Ordinary HTTP handlers that need the same CSRF, flash,
+    * or cookie policy build a [[LiveSecurity]] from the same `config`.
     */
   def routes[R](
     application: LiveApplication[R],
     config: ZioHttpConfig,
-    observer: LifecycleObserver = LifecycleObserver.none
+    observer: LifecycleObserver = LifecycleObserver.none,
+    client: LiveClient = LiveClient.Packaged
   ): IO[AssemblyException, Routes[R, Nothing]] =
-    routes(application, config, observer, RuntimeObserverFactory.logging)
+    routes(application, config, observer, RuntimeObserverFactory.logging, client)
 
   private[scalive] def routes[R](
     application: LiveApplication[R],
     config: ZioHttpConfig,
-    observerFactory: RuntimeObserverFactory
+    observerFactory: RuntimeObserverFactory,
+    client: LiveClient
   ): IO[AssemblyException, Routes[R, Nothing]] =
-    routes(application, config, LifecycleObserver.none, observerFactory)
+    routes(application, config, LifecycleObserver.none, observerFactory, client)
 
   private def routes[R](
     application: LiveApplication[R],
     config: ZioHttpConfig,
     lifecycleObserver: LifecycleObserver,
-    observerFactory: RuntimeObserverFactory
+    observerFactory: RuntimeObserverFactory,
+    client: LiveClient
   ): IO[AssemblyException, Routes[R, Nothing]] =
-    ZIO.fromEither(validate(application)).map { catalog =>
-      val getRoutes   = catalog.map(_.getRoute(config, lifecycleObserver))
+    for
+      catalog    <- ZIO.fromEither(validate(application))
+      socketPath <- ZIO
+                      .fromEither(application.socketPath.format(()))
+                      .mapError(error => AssemblyException(s"invalid socket path: $error"))
+      browser <- BrowserFiles.load(client, socketPath.encode)
+    yield
+      val getRoutes   = catalog.map(_.getRoute(config, lifecycleObserver, browser))
       val socketRoute = websocketRoute(
         application.socketPath,
         catalog,
@@ -157,8 +168,7 @@ object ZioHttp:
         lifecycleObserver,
         observerFactory
       )
-      Routes.fromIterable(getRoutes :+ socketRoute)
-    }
+      Routes.fromIterable(getRoutes :+ socketRoute) ++ browser.routes
 
   private[scalive] def validate[R](
     application: LiveApplication[R]
@@ -261,10 +271,11 @@ object ZioHttp:
 
     final def getRoute(
       config: ZioHttpConfig,
-      observer: LifecycleObserver
+      observer: LifecycleObserver,
+      browser: BrowserFiles
     ): Route[R, Nothing] =
       RoutePattern(Method.GET, pathCodec) -> handler { (path: PathParams, request: Request) =>
-        disconnected(path, request, config, observer).catchAllCause { _ =>
+        disconnected(path, request, config, observer, browser).catchAllCause { _ =>
           ZIO.logError("Disconnected LiveView GET failed") *>
             ZIO.succeed(Response.internalServerError)
         }
@@ -338,7 +349,8 @@ object ZioHttp:
       path: PathParams,
       request: Request,
       config: ZioHttpConfig,
-      observer: LifecycleObserver
+      observer: LifecycleObserver,
+      browser: BrowserFiles
     ): ZIO[R, Nothing, Response] =
       disconnectedLifecycle(path, request).foldZIO(
         ZIO.succeed(_),
@@ -351,7 +363,8 @@ object ZioHttp:
             erasedContext,
             mountClaims,
             selectedRootLayout,
-            observer
+            observer,
+            browser
           ).catchAllCause { cause =>
             ZIO.logErrorCause("Disconnected LiveView GET failed", cause) *>
               ZIO.succeed(
@@ -368,7 +381,8 @@ object ZioHttp:
       erasedContext: Any,
       mountClaims: SessionMountClaims,
       selectedRootLayout: LiveRootLayout[PathParams, Any],
-      observer: LifecycleObserver
+      observer: LifecycleObserver,
+      browser: BrowserFiles
     ): Task[Response] =
       for
         initialFlash <-
@@ -434,7 +448,8 @@ object ZioHttp:
                                                          selectedRootLayout,
                                                          turn,
                                                          model,
-                                                         observer
+                                                         observer,
+                                                         browser
                                                        )
                                      yield response
                    yield response).exit
@@ -467,7 +482,8 @@ object ZioHttp:
       selectedRootLayout: LiveRootLayout[PathParams, Any],
       turn: DisconnectedRootTurn[Msg, Model],
       model: Model,
-      observer: LifecycleObserver
+      observer: LifecycleObserver,
+      browser: BrowserFiles
     ): Task[Response] =
       for
         rootId <- randomRootId
@@ -498,7 +514,9 @@ object ZioHttp:
                      val content = rootContainer(lifecycle.view(input), rootAttrs)
                      val rooted  =
                        selectedRootLayout.view(content, lifecycle.pageTitle(model), rootContext)
-                     injectCsrf(rooted, issuedCsrf.token)
+                     val csrfMeta =
+                       metaTag(nameAttr := "csrf-token", contentAttr := issuedCsrf.token)
+                     injectHead(rooted, browser.leading, csrfMeta +: browser.trailing)
         rendered <- renderElement(
                       rootView,
                       model -> request.url,
@@ -1194,23 +1212,39 @@ object ZioHttp:
         .flatMap(_.child.toVector).flatMap(tree => collectTrackedStatics(tree.root))
     case _: EvaluatedNode.Text | _: EvaluatedNode.Stream => Vector.empty
 
-  private def injectCsrf[Msg](root: HtmlElement[Msg], token: String): HtmlElement[Msg] =
-    val csrfMeta = metaTag(nameAttr := "csrf-token", contentAttr := token)
+  // Puts `leading` before the root layout's first head script, so it loads before the layout's
+  // scripts, and `trailing` at the end of the head, so it runs after them.
+  private def injectHead[Msg](
+    root: HtmlElement[Msg],
+    leading: Vector[HtmlElement[Nothing]],
+    trailing: Vector[HtmlElement[Nothing]]
+  ): HtmlElement[Msg] =
+    val leadingMods                                           = leading.map(Mod.Content.Tag(_))
+    val trailingMods                                          = trailing.map(Mod.Content.Tag(_))
+    def withScripts(head: HtmlElement[Msg]): HtmlElement[Msg] =
+      val firstScript = head.mods.indexWhere {
+        case Mod.Content.Tag(element) => element.tag.name == "script"
+        case _                        => false
+      }
+      val (beforeScripts, fromScripts) =
+        head.mods.splitAt(if firstScript < 0 then head.mods.size else firstScript)
+      HtmlElement(head.tag, beforeScripts ++ leadingMods ++ fromScripts ++ trailingMods)
     if root.tag.name == "html" then
       val hasHead = root.contentMods.exists {
         case Mod.Content.Tag(element) => element.tag.name == "head"
         case _                        => false
       }
       val mods = root.mods.map {
-        case Mod.Content.Tag(head) if head.tag.name == "head" =>
-          Mod.Content.Tag(head.appended(csrfMeta))
-        case other => other
+        case Mod.Content.Tag(head) if head.tag.name == "head" => Mod.Content.Tag(withScripts(head))
+        case other                                            => other
       }
       HtmlElement(
         root.tag,
-        if hasHead then mods else mods.prepended(Mod.Content.Tag(headTag(csrfMeta)))
+        if hasHead then mods
+        else mods.prepended(Mod.Content.Tag(headTag((leadingMods ++ trailingMods)*)))
       )
-    else root.prepended(Mod.Content.Tag(csrfMeta))
+    else root.prepended((leadingMods ++ trailingMods)*)
+  end injectHead
 
   private def rootContainer[Msg](
     element: HtmlElement[Msg],

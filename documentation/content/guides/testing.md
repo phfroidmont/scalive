@@ -174,14 +174,14 @@ reads the response body, and parses the HTML. Create
 
 @:sourceRegion(documentation/fixtures/quick-start/test/src/quickstart/CounterPageSpec.scala, quick-start-disconnected-test)
 
-This test builds the same router as the quick start's `Main`, without the root
-layout, and turns it into ZIO HTTP routes with a fixed test
+This test builds the same router as the quick start's `Main` and turns it into
+ZIO HTTP routes with a fixed test
 @:apiSymbol(class:scalive.ZioHttpConfig)`ZioHttpConfig`@:@. `ZioHttp.routes` is an
-effect because it validates the routes, so the test obtains them in its `for`. Use one fixed, valid
-config when assertions depend on signed cookies or tokens; do not compare output
-produced with independently constructed configurations. Even disconnected tests
-must supply a non-empty origin allowlist because it is part of valid transport
-configuration.
+effect because it validates the routes, so the test obtains them in its `for`.
+Use one fixed, valid config when assertions depend on signed cookies or tokens;
+do not compare output produced with independently constructed configurations.
+Even disconnected tests must supply a non-empty origin allowlist because it is
+part of valid transport configuration.
 
 `zio.http.*` would import ZIO HTTP's `Routes`, which hides the quick start's
 `Routes` object. Import only the ZIO HTTP names the test uses.

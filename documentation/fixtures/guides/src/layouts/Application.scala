@@ -1,14 +1,12 @@
 package layouts
 
-import quickstart.RootLayout
-
 import scalive.*
 
 object Application:
   // docs:start layouts-application
-  def apply(clientAssets: LiveViewClientAssets, assets: StaticAssets): LiveApplication[Any] =
+  def apply(assets: StaticAssets): LiveApplication[Any] =
     Live.router
-      .withRootLayout(RootLayout(clientAssets, assets))
+      .withRootLayout(RootLayout(assets))
       .withLayout(AppLayout())(
         Routes.home     -> HomeLiveView(),
         Routes.projects -> ProjectsLiveView(),

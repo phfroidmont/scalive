@@ -50,14 +50,12 @@ object RootSliceApp extends ZIOAppDefault:
         Right(LiveParamsCodec.Encoded((), query))
     )
   )
-  private val issue3686A = live / "issues" / "3686" / "a"
-  private val issue3686B = live / "issues" / "3686" / "b"
-  private val issue3686C = live / "issues" / "3686" / "c"
+  private val issue3686A    = live / "issues" / "3686" / "a"
+  private val issue3686B    = live / "issues" / "3686" / "b"
+  private val issue3686C    = live / "issues" / "3686" / "c"
+  private val socketOptions = live / "socket-options"
 
-  final private class RootLayout(
-    bodyId: String,
-    navigationGuardAssets: NavigationGuardAssets,
-    liveViewClientAssets: LiveViewClientAssets)
+  final private class RootLayout(bodyId: String, assets: StaticAssets)
       extends LiveRootLayout[Any, Any]:
     override def key(ctx: LiveRootLayoutContext[Any, Any]): String = bodyId
 
@@ -67,29 +65,22 @@ object RootSliceApp extends ZIOAppDefault:
       ctx: LiveRootLayoutContext[Any, Any]
     ): HtmlElement[Msg] =
       htmlRootTag(
-        headTag(
-          navigationGuardAssets.script,
-          liveViewClientAssets.phoenixScript,
-          liveViewClientAssets.liveViewScript,
-          scriptTag(src := "/app.js", defer := true)
-        ),
+        headTag(assets.trackedScript("app.js", defer := true)),
         bodyTag(idAttr := bodyId, content)
       )
 
-  private def application(
-    navigationGuardAssets: NavigationGuardAssets,
-    liveViewClientAssets: LiveViewClientAssets
-  ) =
-    val firstRoot            = RootLayout("root-one", navigationGuardAssets, liveViewClientAssets)
-    val secondRoot           = RootLayout("root-two", navigationGuardAssets, liveViewClientAssets)
+  private def application(assets: StaticAssets) =
+    val firstRoot            = RootLayout("root-one", assets)
+    val secondRoot           = RootLayout("root-two", assets)
     val authorizeNavigationB = LiveRouteMountAspect.fromRequest[Any, Unit, String](request =>
       ZIO.succeed(request.url.path.encode)
     )
 
     Live.router.withRootLayout(firstRoot)(
-      live        -> RootSliceLiveView(mountSequence),
-      uploadRoute -> HostedUploadLiveView(),
-      nestedRoute -> NestedParentLiveView(),
+      live          -> RootSliceLiveView(mountSequence),
+      socketOptions -> SocketOptionsLiveView,
+      uploadRoute   -> HostedUploadLiveView(),
+      nestedRoute   -> NestedParentLiveView(),
       Live.session("nested-sticky")(
         nestedStickyA -> StickyNestedParentLiveView("a", nestedStickyB.location),
         nestedStickyB -> StickyNestedParentLiveView("b", nestedStickyA.location)
@@ -195,32 +186,14 @@ object RootSliceApp extends ZIOAppDefault:
 
   private val supportRoutes = Routes(
     Method.GET / "health"      -> handler(Response.text("OK")),
-    Method.GET / "favicon.ico" -> handler(Response(status = Status.NoContent)),
-    Method.GET / "app.js"      -> handler {
-      ZIO
-        .attemptBlocking {
-          val stream = Option(getClass.getClassLoader.getResourceAsStream("public/app.js"))
-            .getOrElse(throw IllegalStateException("Missing bundled public/app.js"))
-          try stream.readAllBytes()
-          finally stream.close()
-        }.fold(
-          _ => Response.internalServerError,
-          bytes =>
-            Response(
-              headers = Headers(Header.ContentType(MediaType.application.javascript)),
-              body = Body.fromArray(bytes)
-            )
-        )
-    }
+    Method.GET / "favicon.ico" -> handler(Response(status = Status.NoContent))
   )
 
   override val run =
     for
-      navigationGuardAssets <- NavigationGuardAssets.load()
-      liveViewClientAssets  <- LiveViewClientAssets.load()
-      liveRoutes <- ZioHttp.routes(application(navigationGuardAssets, liveViewClientAssets), config)
-      routes =
-        liveRoutes ++ supportRoutes ++ navigationGuardAssets.routes ++ liveViewClientAssets.routes
+      assets     <- StaticAssets.load(StaticAssetConfig.classpath("public", Seq("app.js")))
+      liveRoutes <- ZioHttp.routes(application(assets), config)
+      routes = liveRoutes ++ supportRoutes ++ assets.routes
       _ <- Server.serve(routes).provide(Server.defaultWithPort(serverPort))
     yield ()
 end RootSliceApp
@@ -451,6 +424,22 @@ object NavigationGuardLiveView:
     case Change(note: String)
 
   final case class Model(note: String, step: Option[String], connected: Boolean)
+
+object SocketOptionsLiveView extends LiveView.Eventless[Option[String]]:
+  def mount(ctx: MountContext) =
+    val locale = ctx.connection match
+      case Connection.Connected(capabilities) =>
+        capabilities.connectParams.get("locale").collect { case zio.json.ast.Json.Str(value) =>
+          value
+        }
+      case Connection.Disconnected => None
+    ZIO.succeed(locale)
+
+  def view(model: Signal[Option[String]]) =
+    div(
+      span(idAttr := "socket-locale", model.map(_.getOrElse("none"))),
+      div(dom.hook("OptionsHook", DomRef("options-hook")), "not hooked")
+    )
 
 object NavigationGuardTargetLiveView extends LiveView.Eventless[Unit]:
   def mount(ctx: MountContext) = ZIO.succeed(())

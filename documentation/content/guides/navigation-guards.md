@@ -9,41 +9,18 @@ group = "Browser integration"
 ## Before you start {#prerequisites}
 
 Start with a form or editor whose model can say whether leaving would discard
-work. Scalive supplies its pinned Phoenix LiveView `v1.2.10` client. The
-application must also use the complete root-layout and asset-route wiring from
-the [quick start](../learn/quick-start.md#add-routes-and-layout); review
-[Client setup and static assets](static-assets-and-client-setup.md#build-the-client-bundle)
-when the application owns a custom browser bundle or asset tree.
+work, served by `ZioHttp.routes` as in the
+[quick start](../learn/quick-start.md#start-the-server).
 
-The navigation guard is an optional framework asset loaded separately from the
-application bundle. Do not add its JavaScript to the application's asset tree or
-deployment manifest; the dedicated loader serves it independently.
+## The guard runtime {#load-the-runtime}
 
-## Load the guard runtime {#load-the-runtime}
-
-Load @:apiSymbol(object:scalive.NavigationGuardAssets)`NavigationGuardAssets`@:@ at startup, pass it to the root
-layout, and add its routes alongside the application assets:
-
-@:sourceRegion(documentation/fixtures/guides/src/guards/Main.scala, guards-load)
-
-The guard runtime defaults to its own `/_scalive/assets` mount. Pass another
-`zio.http.Path` to @:apiSymbol(def:scalive.NavigationGuardAssets.load)`NavigationGuardAssets.load`@:@ when that path conflicts with
-application routing. The loaded value validates the packaged JavaScript at
-startup and serves it below an immutable asset-set version.
-
-## Install the tracked script {#install-the-script}
-
-Render
-@:apiSymbol(def:scalive.NavigationGuardAssets.script)`NavigationGuardAssets.script`@:@
-before the packaged clients and application bootstrap. Every script shown below
-is deferred, so document order installs the guard listener before `LiveSocket`
-connects:
-
-@:sourceRegion(documentation/fixtures/guides/src/guards/RootLayout.scala, guards-root-layout)
-
-The packaged client scripts may be omitted when `app.js` is a custom bundle
-which already includes Phoenix and Phoenix LiveView. In either setup, keep the
-guard before the script that constructs `LiveSocket`.
+The guard needs a small browser runtime. `ZioHttp.routes` serves it below
+`/_scalive/assets` and adds it to every page's `<head>`, before the Phoenix
+clients and the root layout's own scripts, so it is installed before
+`LiveSocket` connects. Applications with a
+[custom client bundle](static-assets-and-client-setup.md#build-the-client-bundle)
+get it too. Do not add its JavaScript to the application's asset tree or
+deployment manifest.
 
 The runtime script is marked `phx-track-static`. A runtime URL change therefore
 participates in the same static-change metadata as the application bundle. The

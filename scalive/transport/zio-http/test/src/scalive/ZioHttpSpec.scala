@@ -44,7 +44,8 @@ object ZioHttpSpec extends ZIOSpecDefault:
       val routes = ZioHttp.routes(
         scalive.Live.router(scalive.live -> View),
         config,
-        observerFactory
+        observerFactory,
+        LiveClient.Packaged
       )
       val upgrade = Request.get(URL.decode("/live/websocket").toOption.get)
 
@@ -419,7 +420,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
         body.contains("id=\"new-flash\""),
         body.contains("component-final"),
         claims.initialFlash == Map(newKind.value -> "component-final"),
-        claims.trackedStatics == Vector("/assets/final-flash.js")
+        claims.trackedStatics.filterNot(_.startsWith("/_scalive/")) == Vector("/assets/final-flash.js")
       )
     },
     test("signed bootstrap captures and compares tracked static assets") {
@@ -445,17 +446,20 @@ object ZioHttpSpec extends ZIOSpecDefault:
                           config,
                           attribute(body, "data-phx-static").get
                         )
-        matching = ZioHttp.clientTrackedStatics(
+        scaliveStatics = claims.trackedStatics.filter(_.startsWith("/_scalive/"))
+        matching       = ZioHttp.clientTrackedStatics(
                      Map(
                        "_track_static" -> Json.Arr(
-                         Json.Str("https://example.test/assets/app-123.js"),
-                         Json.Str("/assets/app-123.css?cache=1")
+                         (scaliveStatics.map(Json.Str(_)) ++ Vector(
+                           Json.Str("https://example.test/assets/app-123.js"),
+                           Json.Str("/assets/app-123.css?cache=1")
+                         ))*
                        )
                      )
                    )
       yield assertTrue(
         claims == staticClaims,
-        claims.trackedStatics == Vector(
+        claims.trackedStatics.filterNot(_.startsWith("/_scalive/")) == Vector(
           "/assets/app-123.js?vsn=d",
           "/assets/app-123.css"
         ),
@@ -512,7 +516,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
         body.contains("<section data-phx-component=\"1\">"),
         body.contains("phx-target=\"1\""),
         body.contains("component model"),
-        claims.trackedStatics == Vector("/assets/component.js")
+        claims.trackedStatics.filterNot(_.startsWith("/_scalive/")) == Vector("/assets/component.js")
       )
     },
     test("connected CID ingress releases the projection gate before exact component inspection") {

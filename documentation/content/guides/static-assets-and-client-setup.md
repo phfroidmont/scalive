@@ -1,6 +1,6 @@
 {%
 title = "Client setup and static assets"
-description = "Load the packaged Phoenix LiveView client, connect LiveSocket, serve versioned application assets, and use deployment manifests."
+description = "Understand how Scalive loads and connects the Phoenix LiveView client, pass LiveSocket options, serve versioned application assets, and use deployment manifests."
 order = 2
 section = guides
 group = "Setup and foundations"
@@ -8,72 +8,61 @@ group = "Setup and foundations"
 
 ## Before you start {#prerequisites}
 
-Start with a Scalive application whose routed page renders a complete root
-layout, such as the one in the [quick start](../learn/quick-start.md). The quick
-start already loads the Phoenix and LiveView browser clients packaged in the
-Scalive artifact, connects `LiveSocket` from `app.js`, and serves `app.js` with
-`StaticAssets`. It needs no separate JavaScript build.
+Start with a Scalive application such as the one in the
+[quick start](../learn/quick-start.md). Its pages load the Phoenix and Phoenix
+LiveView browser clients packaged in the Scalive artifact and connect them, with
+no JavaScript or build of its own.
 
-This guide explains the contracts behind those steps. It then covers what the
-quick start leaves out: larger asset trees, assets outside the classpath,
-tracked tags, a custom client bundle, connect metadata, and deployment
-manifests. If the application imports browser packages, use the
-[custom client bundle](#build-the-client-bundle) instead of the packaged
-clients.
+This guide explains that contract and how to pass options such as hooks to the
+connection. It then covers what the quick start leaves out: application assets,
+assets outside the classpath, tracked tags, a custom client bundle, connect
+metadata, and deployment manifests. If the application imports browser
+packages, use the [custom client bundle](#build-the-client-bundle) instead of
+the packaged clients.
 
 ## Load the packaged clients {#load-the-packaged-clients}
 
-Use the packaged clients when the application has no JavaScript build of its
-own. Load @:apiSymbol(class:scalive.LiveViewClientAssets)`LiveViewClientAssets`@:@
-at startup and add its routes next to the Live and application-asset routes, as
-the [quick start's `Main`](../learn/quick-start.md#start-the-server) does:
+`ZioHttp.routes` serves Scalive's own browser files below `/_scalive` and adds
+them to every page's `<head>`, as it adds the CSRF `<meta>` element. With the
+default @:apiSymbol(enum:scalive.LiveClient)`LiveClient.Packaged`@:@, it adds:
 
-```scala fragment
-clientAssets <- LiveViewClientAssets.load()
-// ...
-liveRoutes <- ZioHttp.routes(application, config)
-routes = liveRoutes ++ clientAssets.routes ++ assets.routes
-```
+- the [navigation-guard](navigation-guards.md#prerequisites) runtime and the
+  upstream Phoenix `1.8.9` and Phoenix LiveView `1.2.10` browser-global builds,
+  just before the root layout's first `<script>`, or at the end of `<head>`
+  when it has none;
+- the CSRF `<meta>` element and a script that connects the clients, at the end
+  of `<head>`.
 
-Then render the client scripts in the root layout's `<head>`, before the
-application bootstrap:
-
-@:sourceRegion(documentation/fixtures/quick-start/src/quickstart/RootLayout.scala, quick-start-root-layout)
-
-@:apiSymbol(def:scalive.LiveViewClientAssets.phoenixScript)`phoenixScript`@:@ and
-@:apiSymbol(def:scalive.LiveViewClientAssets.liveViewScript)`liveViewScript`@:@
-are deferred, tracked, same-origin scripts. Deferred classic scripts execute in
-document order, so `app.js` can use the `Phoenix` and `LiveView` globals.
-
-The fixed graph contains upstream Phoenix `1.8.9` and Phoenix LiveView `1.2.10`
-browser-global builds. It is served below `/_scalive/live-view` by default. Pass
-another `zio.http.Path` to
-@:apiSymbol(def:scalive.LiveViewClientAssets.load)`LiveViewClientAssets.load`@:@
-when that mount conflicts with application routing. Do not share a mount between
-independently loaded asset graphs because each graph owns its complete route
-prefix.
-
-Do not render these scripts when the application bundle already contains the
-npm clients. The [custom client bundle](#build-the-client-bundle) section
-explains why.
+Every script is deferred, tracked, and same-origin. Deferred classic scripts run
+in document order, so the root layout's own scripts run after the clients,
+and can use the `Phoenix` and `LiveView` globals, but before the connection.
+Because the scripts are tracked, upgrading Scalive changes their URLs and
+reports [`staticChanged`](#read-connect-metadata) to connected views.
 
 ## Connect LiveSocket {#connect-live-socket}
 
-The application bootstrap creates `LiveSocket` and connects it. The quick
-start's `app.js` is a complete bootstrap for the packaged clients:
+The connect script creates a `LiveSocket` with the router's socket path, `/live`
+unless the router sets another, and the CSRF token from the page. It then
+connects and exposes it as `window.liveSocket` for browser-console debugging.
+Do not create or hard-code a CSRF token in JavaScript.
 
-@:sourceRegion(documentation/fixtures/quick-start/resources/public/app.js, quick-start-browser)
+To pass `LiveSocket` options such as `hooks`, `uploaders`, or connection tuning,
+set `window.liveSocketOptions` in a script the root layout renders:
 
-@:apiSymbol(val:scalive.Live.router)`Live.router`@:@ uses `/live` as its current
-default socket path. Scalive injects the `csrf-token` meta element into the root
-layout's `<head>` and associates it with the CSRF cookie. Return that value as
-`_csrf_token`; do not create or hard-code a token in JavaScript.
+```js
+window.liveSocketOptions = {
+  hooks: { BrowserInterop: createBrowserInteropHook() },
+}
+```
 
-Pass options such as `hooks`, `uploaders`, or connection tuning in the final
-`LiveSocket` options object before calling `connect()`. To send your own values
-to mount, add them to `params` as shown in
-[Read connect metadata](#read-connect-metadata). Exposing `liveSocket` on
-`window` is optional and useful only for browser-console debugging.
+Set it when the script runs, not later in a callback: the connect script reads
+it once. Scalive adds `_csrf_token` to the `params` option, whether it is an
+object or a function. To send your own values to mount, add them to `params` as
+shown in [Read connect metadata](#read-connect-metadata).
+
+If `window.liveSocket` already exists when the connect script runs, it logs a
+warning and does not connect. An application that connects its own
+`LiveSocket` passes [`LiveClient.Custom`](#build-the-client-bundle) instead.
 
 The browser sets the WebSocket `Origin` header itself, so do not add it to
 `params`. List the page's origin in the server's
@@ -82,8 +71,9 @@ The browser sets the WebSocket `Origin` header itself, so do not add it to
 ## Load a classpath tree {#load-classpath-assets}
 
 Load application assets from the classpath when the build packages them with
-the application. The quick start loads a single `app.js` this way. For a larger
-output, list every file below the classpath prefix:
+the application. The [layouts guide's](layouts.md#install-root-and-ordinary-layouts)
+root layout loads a single stylesheet this way. For a larger output, list every
+file below the classpath prefix:
 
 ```scala fragment
 assets <- StaticAssets.load(
@@ -148,9 +138,15 @@ access is required. Originals serve current bytes with a current `ETag` and
 ## Add routes and resolve paths {#add-static-routes-and-resolve-paths}
 
 Add @:apiSymbol(val:scalive.StaticAssets.routes)`StaticAssets.routes`@:@ to the
-server routes, as the quick start's `Main` does with
-`liveRoutes ++ clientAssets.routes ++ assets.routes`. The routes serve `GET` and
-`HEAD` below the configured mount path, and query strings do not affect lookup.
+server routes next to the Live routes:
+
+```scala fragment
+liveRoutes <- ZioHttp.routes(application, config)
+routes = liveRoutes ++ assets.routes
+```
+
+The routes serve `GET` and `HEAD` below the configured mount path, and query
+strings do not affect lookup.
 
 In a classpath or directory tree, `path` resolves a tree-relative name below the
 asset-set version namespace. With a
@@ -171,8 +167,7 @@ path or manifest-defined final path, not an optional revalidating original.
 ## Render tracked tags {#render-tracked-tags}
 
 Render the application's top-level script and stylesheet in the root layout's
-`<head>`. The quick start's root layout renders `app.js` this way; a stylesheet
-uses the matching helper:
+`<head>`:
 
 ```scala fragment
 headTag(
@@ -219,8 +214,7 @@ the same supported Phoenix packages and bundle an application entry point:
 }
 ```
 
-The entry point imports and configures the clients explicitly instead of using
-the `Phoenix` and `LiveView` globals:
+The entry point imports, configures, and connects the clients itself:
 
 ```js
 import { Socket } from "phoenix"
@@ -268,10 +262,18 @@ Load the result as a [classpath tree](#load-classpath-assets) that lists every
 output file. When the build also writes a deployment manifest, load that
 instead; see [Choose an asset model](#choose-an-asset-model).
 
-When this bundle imports `phoenix` and `phoenix_live_view`, load and route only
-the application assets. Do not also load, route, or render
-`LiveViewClientAssets`, which would download and evaluate a second copy of both
-clients.
+Tell Scalive that the bundle includes the clients, so that pages do not also
+load and connect the packaged copies:
+
+```scala fragment
+liveRoutes <- ZioHttp.routes(application, config, client = LiveClient.Custom)
+routes = liveRoutes ++ assets.routes
+```
+
+With `LiveClient.Custom`, Scalive still serves the navigation-guard runtime and
+adds it before the root layout's first script, but adds no Phoenix client and
+no connect script. The bundle reads the CSRF token from the `csrf-token` meta
+element and connects to the router's socket path, `/live` by default.
 
 This portable task requires Node.js and npm at build time but not at runtime.
 Keeping the whole output tree preserves chunks, workers, CSS, fonts, source
@@ -280,14 +282,16 @@ application does not use Mill, while preserving the same complete resource tree.
 
 ## Read connect metadata {#read-connect-metadata}
 
-Add small browser-derived values to the `params` object when mount needs them:
+Add small browser-derived values to the `params` option when mount needs them:
 
 ```js
-const params = {
-  ...(csrfToken ? { _csrf_token: csrfToken } : {}),
-  locale: document.documentElement.lang
+window.liveSocketOptions = {
+  params: { locale: document.documentElement.lang },
 }
 ```
+
+A [custom bundle](#build-the-client-bundle) adds the same key next to
+`_csrf_token` in the `params` it passes to `LiveSocket`.
 
 Read them in mount. Match the connection phase, then decode and validate the
 expected shape:

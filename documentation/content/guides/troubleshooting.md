@@ -36,16 +36,15 @@ belongs.
 
 Check the startup path in order:
 
-- Build any custom browser bundle before starting the JVM.
-- Load
-  @:apiSymbol(def:scalive.LiveViewClientAssets.load)`LiveViewClientAssets.load`@:@
-  unless the application bundle includes both clients.
+- Build any custom browser bundle before starting the JVM, and pass
+  `LiveClient.Custom` to `ZioHttp.routes` when it includes both clients.
 - Load every declared asset with @:apiSymbol(def:scalive.StaticAssets.load)`StaticAssets.load`@:@.
 - Validate one @:apiSymbol(class:scalive.ZioHttpConfig)`ZioHttpConfig`@:@ and pass
   it to @:apiSymbol(def:scalive.ZioHttp.routes)`ZioHttp.routes`@:@.
-- Attach a complete root layout containing `<html>`, `<head>`, and `<body>`.
-- Combine the Live routes with the packaged-client routes when used and with
-  @:apiSymbol(val:scalive.StaticAssets.routes)`assets.routes`@:@.
+- Make a custom root layout render `<html>`, `<head>`, and `<body>`.
+- Combine the Live routes with
+  @:apiSymbol(val:scalive.StaticAssets.routes)`assets.routes`@:@ when the application
+  serves its own assets.
 - Provide all ZIO environment requirements before calling `Server.serve`.
 
 @:apiSymbol(def:scalive.StaticAssets.load)`StaticAssets.load`@:@ fails startup when a configured classpath or directory asset
@@ -59,12 +58,13 @@ Diagnostic deltas are usually a signing secret shorter than 32 UTF-8 bytes, a
 non-positive session age, an empty WebSocket origin allowlist,
 `secureCookie = true` on local HTTP, or different secrets across replicas.
 Surface validation as startup failure; never hide it with a random process-local
-fallback.
+fallback. `ZioHttpConfig.local` draws a random secret on purpose, for local
+development only.
 
 ## Diagnose missing assets {#diagnose-missing-assets}
 
-If the HTML renders but remains disconnected, first verify that the packaged
-client scripts or custom client bundle loaded successfully. Compare the response
+If the HTML renders but remains disconnected, first verify that the scripts
+Scalive adds below `/_scalive`, or the custom client bundle, loaded successfully. Compare the response
 with the canonical
 [asset serving](static-assets-and-client-setup.md#serve-versioned-paths) and
 [tracked tag](static-assets-and-client-setup.md#render-tracked-tags) setup, then
@@ -82,8 +82,8 @@ only the HTML.
 
 Common asset failures are a missing Mill `resources` dependency on the bundle,
 an incomplete output tree or ordinary classpath asset list, a classpath prefix
-that does not match the packaged resource, or forgetting either
-`clientAssets.routes` or @:apiSymbol(val:scalive.StaticAssets.routes)`assets.routes`@:@.
+that does not match the packaged resource, or forgetting
+@:apiSymbol(val:scalive.StaticAssets.routes)`assets.routes`@:@.
 For deployment manifests, first verify the configured manifest filename and
 location, schema version, and `immutable` or `revalidate` cache values. Then
 check that every output appears as a `file` value, every final file exists, and
@@ -98,11 +98,11 @@ known shape.
 
 ## Diagnose WebSocket connections {#diagnose-websocket-connections}
 
-The default packaged-client configuration is
-`new LiveView.LiveSocket("/live", Phoenix.Socket, ...)`, and the Phoenix client
+The packaged client connects to the router's socket path, `/live` by default, and
 opens the WebSocket at `/live/websocket`. If the router uses another socket
-path, [configure both sides](configuration.md#configure-routes-and-assets) and
-check that a reverse proxy forwards the upgrade on that path. Check the actual
+path, check that a custom bundle
+[uses the same one](configuration.md#configure-routes-and-assets) and that a
+reverse proxy forwards the upgrade on that path. Check the actual
 request URL, upgrade response, proxy timeouts, and browser console before
 debugging event handlers.
 

@@ -11,11 +11,11 @@ The application built in Learn now has five pages, one service, and tests. Read
 it from the process toward the browser:
 
 1. Mill compiles Scala and includes ordinary classpath resources.
-2. `Main` loads the transport configuration, the LiveView clients, static
-   assets, and application services.
+2. `Main` builds the transport configuration and application services.
 3. `Main` pairs typed routes with LiveViews and starts ZIO HTTP.
 4. A route selects a LiveView, and its layouts wrap the rendered page.
-5. The browser loads `app.js`, connects, forwards events, and applies updates.
+5. The browser loads the client scripts Scalive adds to the page, connects,
+   forwards events, and applies updates.
 
 ## Understand both mounts {#understand-both-mounts}
 
@@ -37,12 +37,12 @@ and are paired with @:apiSymbol(trait:scalive.LiveView)`LiveViews`@:@ by
 @:apiSymbol(val:scalive.Live.router)`Live.router`@:@. Named route values also
 give navigation code one typed source of URLs.
 
-`RootLayout.scala` is the document boundary. A
+The root layout is the document boundary. A
 @:apiSymbol(trait:scalive.LiveRootLayout)`LiveRootLayout`@:@ renders the outer
-`<html>`, `<head>`, and `<body>`. It owns global scripts, stylesheets, metadata,
-and the fallback title. When served through `ZioHttp.routes` with validated
-configuration, Scalive injects the browser-bound CSRF meta token into its
-`<head>`.
+`<html>`, `<head>`, and `<body>`. The Learn application uses the router's minimal
+default; a root layout of your own owns global stylesheets, metadata, and the
+fallback title. Scalive adds the browser-bound CSRF meta token and its browser
+scripts to the `<head>`.
 
 Each LiveView, such as `CounterLiveView.scala`, is an interactive-page
 boundary. @:apiSymbol(def:scalive.LiveView.mount)`mount`@:@ creates
@@ -55,17 +55,15 @@ asset files.
 Services, such as `Thermostat.scala`, are the data boundary. They are built
 once by a layer in `Main` and passed to the LiveViews that need them.
 
-`resources/public/app.js` is the browser boundary. It creates `LiveSocket`,
-passes the server-issued CSRF token, and connects to the socket path. Add hooks
-here only for behavior that requires browser APIs. Application state and
-ordinary event handling stay in Scala.
+The browser boundary is the `LiveSocket`. `ZioHttp.routes` serves the Phoenix
+clients packaged with Scalive and connects them with the server-issued CSRF token
+and the socket path. Add hooks only for behavior that requires browser APIs.
+Application state and ordinary event handling stay in Scala.
 
-@:apiSymbol(class:scalive.LiveViewClientAssets)`LiveViewClientAssets`@:@ serves
-the Phoenix clients packaged with Scalive, and
-@:apiSymbol(class:scalive.StaticAssets)`StaticAssets`@:@ serves the files under
-`resources/public` at versioned URLs. The
-[client setup guide](../guides/static-assets-and-client-setup.md) covers custom
-browser builds.
+@:apiSymbol(class:scalive.StaticAssets)`StaticAssets`@:@ serves an application's
+own files, such as a stylesheet, at versioned URLs. The
+[client setup guide](../guides/static-assets-and-client-setup.md) covers hooks,
+assets, and custom browser builds.
 
 ## Keep dependencies pointing inward {#keep-dependencies-pointing-inward}
 
@@ -74,7 +72,6 @@ LiveViews. A growing application normally follows this direction:
 
 ```text
 Main
-├── LiveViewClientAssets
 ├── StaticAssets
 ├── ZioHttpConfig
 ├── application services

@@ -336,3 +336,13 @@ test("hosted upload rejects an unacceptable file without consuming it", async ({
   await expect(page.locator(".uploaded-file")).toHaveCount(0)
   expect(errors).toEqual([])
 })
+
+test("the packaged client connects with the page's LiveSocket options", async ({ page }) => {
+  const errors = monitorPageErrors(page)
+
+  await page.goto("/socket-options")
+
+  await expect(page.locator("#socket-locale")).toHaveText("fr", { timeout: 15_000 })
+  await expect(page.locator("#options-hook")).toHaveText("hooked")
+  expect(errors).toEqual([])
+})

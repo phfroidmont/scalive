@@ -205,7 +205,9 @@ If preparation fails or rejects after reserving a resource but before returning
 `discard` yet.
 
 The `uploader` string must match a Phoenix external uploader installed when the
-browser creates `LiveSocket`. For a signed PUT workflow:
+browser creates `LiveSocket`, through
+[`window.liveSocketOptions`](static-assets-and-client-setup.md#connect-live-socket)
+or a custom bundle's own options. For a signed PUT workflow:
 
 ```javascript
 const uploaders = {
@@ -229,7 +231,7 @@ const uploaders = {
   },
 }
 
-const liveSocket = new LiveView.LiveSocket("/live", Phoenix.Socket, { params, uploaders })
+window.liveSocketOptions = { uploaders }
 ```
 
 The Phoenix client treats progress `100` as a finished upload. The `progress`

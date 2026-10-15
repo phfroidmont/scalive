@@ -43,7 +43,6 @@ object `package` extends Module:
       os.sub / "scalive" / "api" / "src",
       os.sub / "scalive" / "testing" / "src",
       os.sub / "documentation" / "fixtures" / "quick-start" / "src",
-      os.sub / "documentation" / "fixtures" / "quick-start" / "resources",
       os.sub / "documentation" / "fixtures" / "quick-start" / "test" / "src",
       os.sub / "documentation" / "fixtures" / "learn" / "src",
       os.sub / "documentation" / "fixtures" / "learn" / "test" / "src",

@@ -47,7 +47,11 @@ so `ctx` holds plain values: the route parameters, the request, the URL, and
 the mount context.
 
 Install the root layout on the router with `withRootLayout`, as the quick
-start's `Main` does.
+start's `Main` does. Without one, the router uses
+@:apiSymbol(val:scalive.LiveRootLayout.default)`LiveRootLayout.default`@:@, a minimal
+document that declares UTF-8 and a device-width viewport and renders the page
+title. Install your own root layout for stylesheets, scripts, a `lang`
+attribute, or chrome shared by every page.
 
 ## Wrap every page in shared navigation {#wrap-pages-in-shared-navigation}
 
@@ -160,8 +164,8 @@ Appending another mount aspect afterward does not make the layout read the
 final accumulated context. Only the layout's context value is adapted;
 parameters, request, URL, content, and page title are unchanged. Selectors must
 be pure and deterministic: a root layout applies its selector separately for
-`key` and `view`. The identity root, the default when no root layout is
-installed, stays unchanged and does not evaluate the selector.
+`key` and `view`. The default root, used when no root layout is installed, stays
+unchanged and does not evaluate the selector.
 
 This compiled example shares one document across public and account contexts,
 keeps a layout through a later aspect, and overrides the root for one route.

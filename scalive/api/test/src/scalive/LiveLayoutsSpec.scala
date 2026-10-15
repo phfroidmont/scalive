@@ -107,7 +107,7 @@ object LiveLayoutsSpec extends ZIOSpecDefault:
         FirstRoot().key(context) != SecondRoot().key(context),
         FirstRoot().forContext[Selected](_.language).key(context.copy(context = Selected("en"))) ==
           FirstRoot().key(context),
-        LiveRootLayout.identity.key(context) == "scalive:identity-root"
+        LiveRootLayout.default.key(context) == "scalive:default-root"
       )
     },
     test("context adapters support identity and composition") {

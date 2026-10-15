@@ -151,6 +151,28 @@ object ZioHttpSpec extends ZIOSpecDefault:
         )
       )
     },
+    test("the default root layout renders a minimal document with the page title") {
+      object View extends LiveView.Eventless[Unit]:
+        override def pageTitle(model: Unit) = Some("Counter")
+        def mount(ctx: MountContext)        = ZIO.unit
+        def view(model: Signal[Unit])       = div("content")
+
+      for
+        response <- run(
+                      ZioHttp.routes(scalive.Live.router(scalive.live -> View), config),
+                      Request.get(URL.root)
+                    )
+        body <- response.body.asString.orDie
+      yield assertTrue(
+        body.startsWith("<!doctype html><html><head><meta charset=\"utf-8\">"),
+        body.contains(
+          "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
+        ),
+        body.contains(">Counter</title>"),
+        body.contains("<meta name=\"csrf-token\""),
+        body.contains("</head><body><div id=")
+      )
+    },
     test("disconnected bootstrap wraps and preserves the rendered root element") {
       object View extends LiveView.Eventless[Unit]:
         def mount(ctx: MountContext) = ZIO.unit
@@ -184,7 +206,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
                     )
         body     <- response.body.asString.orDie
         csrf <- ZIO
-                  .fromOption(attribute(body, "content"))
+                  .fromOption(csrfToken(body))
                   .orElseFail(new NoSuchElementException("csrf meta content"))
       yield assertTrue(
         body.contains(s"name=\"_csrf_token\" value=\"$csrf\""),
@@ -795,7 +817,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
                      "/",
                      route.routeIdentity,
                      route.sessionName,
-                     "scalive:identity-root"
+                     "scalive:default-root"
                    )
         static  <- ZioHttpSecurity.issueStatic(
                      config,
@@ -805,7 +827,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
                      "/",
                      route.routeIdentity,
                      route.sessionName,
-                     "scalive:identity-root"
+                     "scalive:default-root"
                    )
         join     = RootJoin(
                      url = Some("/"),
@@ -879,7 +901,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
         rootId    = attribute(body, "id").get
         session   = attribute(body, "data-phx-session").get
         static    = attribute(body, "data-phx-static").get
-        csrfToken = attribute(body, "content").get
+        pageCsrf  = csrfToken(body).get
         csrfCookie = response.headers(Header.SetCookie).map(_.value)
                        .find(_.name == "_scalive_csrf").map(_.content).get
         sessionClaims <- ZioHttpSecurity.verifySession(config, session)
@@ -897,7 +919,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
                         directRoutes,
                         config,
                         Some(csrfCookie),
-                        Some(csrfToken),
+                        Some(pageCsrf),
                         rootExists = false,
                         s"lv:$rootId",
                         baseJoin
@@ -907,7 +929,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
                             directRoutes,
                             config,
                             Some(csrfCookie),
-                            Some(csrfToken),
+                            Some(pageCsrf),
                             rootExists = false,
                             s"lv:$rootId",
                             baseJoin.copy(url = Some("https://example.test/page?tab=two"))
@@ -917,7 +939,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
                          directRoutes,
                          config,
                          Some(csrfCookie),
-                         Some(csrfToken),
+                         Some(pageCsrf),
                          rootExists = false,
                          s"lv:$rootId",
                          baseJoin.copy(url = Some("https://example.test/other?tab=one"))
@@ -1630,9 +1652,9 @@ object ZioHttpSpec extends ZIOSpecDefault:
         (reload, tab) = repeated
         reloadBody   <- reload.body.asString.orDie
         tabBody      <- tab.body.asString.orDie
-        firstToken    = attribute(firstBody, "content").get
-        reloadToken   = attribute(reloadBody, "content").get
-        tabToken      = attribute(tabBody, "content").get
+        firstToken    = csrfToken(firstBody).get
+        reloadToken   = csrfToken(reloadBody).get
+        tabToken      = csrfToken(tabBody).get
         firstValid   <- ZioHttpSecurity.verifyCsrf(config, firstToken, firstCookie.content).either
         reloadValid  <- ZioHttpSecurity.verifyCsrf(config, reloadToken, firstCookie.content).either
         tabValid     <- ZioHttpSecurity.verifyCsrf(config, tabToken, firstCookie.content).either
@@ -1650,7 +1672,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
         replacementValid <- ZioHttpSecurity
                               .verifyCsrf(
                                 config,
-                                attribute(invalidBody, "content").get,
+                                csrfToken(invalidBody).get,
                                 replacement.content
                               ).either
       yield assertTrue(
@@ -2258,7 +2280,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
       rootId   <- requiredAttribute(body, "id")
       session  <- requiredAttribute(body, "data-phx-session")
       static   <- requiredAttribute(body, "data-phx-static")
-      csrf     <- requiredAttribute(body, "content")
+      csrf     <- ZIO.fromOption(csrfToken(body)).orElseFail(AssertionError("missing CSRF token"))
       cookie <- ZIO
                   .fromOption(
                     response.headers(Header.SetCookie).map(_.value)
@@ -2379,6 +2401,9 @@ object ZioHttpSpec extends ZIOSpecDefault:
 
   private def requiredAttribute(html: String, name: String): Task[String] =
     ZIO.fromOption(attribute(html, name)).orElseFail(AssertionError(s"missing $name attribute"))
+
+  private def csrfToken(html: String): Option[String] =
+    "<meta name=\"csrf-token\" content=\"([^\"]+)\"".r.findFirstMatchIn(html).map(_.group(1))
 
   private def attribute(html: String, name: String): Option[String] =
     val pattern = (java.util.regex.Pattern.quote(name) + "=\"([^\"]+)\"").r

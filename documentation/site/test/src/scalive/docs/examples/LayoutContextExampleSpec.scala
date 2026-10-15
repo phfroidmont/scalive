@@ -104,7 +104,7 @@ object LayoutContextExampleSpec extends ZIOSpecDefault:
         def mount(ctx: MountContext)  = ZIO.unit
         def view(model: Signal[Unit]) = div(idAttr := "identity-content", "Page")
 
-      val root         = LiveRootLayout.identity.forContext[Any](identity)
+      val root         = LiveRootLayout.default.forContext[Any](identity)
       val applications = Vector(
         scalive.Live.router.withRootLayout(root)(scalive.live -> Page),
         scalive.Live.router(

@@ -430,7 +430,7 @@ object RoutedConstructionSpec extends ZIOSpecDefault:
           root.forContext(_.name)
 
         val layoutVariance: LiveLayout[String, String] = LiveLayout.identity
-        val rootVariance: LiveRootLayout[String, String] = LiveRootLayout.identity
+        val rootVariance: LiveRootLayout[String, String] = LiveRootLayout.default
       """)
 
       assertTrue(errors.isEmpty)
@@ -447,7 +447,7 @@ object RoutedConstructionSpec extends ZIOSpecDefault:
         object Root extends LiveRootLayout[Any, String]:
           override def key(context: LiveRootLayoutContext[Any, String]) = context.context
           def view[Msg](content: HtmlElement[Msg], title: Option[String], context: LiveRootLayoutContext[Any, String]) = content
-          override def forContext[C](select: C => String): LiveRootLayout[Any, C] = LiveRootLayout.identity
+          override def forContext[C](select: C => String): LiveRootLayout[Any, C] = LiveRootLayout.default
       """)
 
       assertTrue(
@@ -671,7 +671,7 @@ object RoutedConstructionSpec extends ZIOSpecDefault:
 
         val session: LiveSession[Any] = Live.session("main")(live -> View)
         val application: LiveApplication[Any] =
-          Live.router.withRootLayout(LiveRootLayout.identity)(session)
+          Live.router.withRootLayout(LiveRootLayout.default)(session)
       """)
       val executableErrors = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*

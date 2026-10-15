@@ -124,11 +124,11 @@ trait LiveRootLayout[-A, -Ctx]:
     *
     * Key and view apply the selector independently, so it must be pure and deterministic.
     * Parameters, request, URL, content, and page title are forwarded unchanged. This does not
-    * change the route or session context or make document-root attributes reactive. The identity
+    * change the route or session context or make document-root attributes reactive. The default
     * root stays unchanged and does not evaluate the selector because it consumes no context.
     */
   final def forContext[NewContext](select: NewContext => Ctx): LiveRootLayout[A, NewContext] =
-    if this eq LiveRootLayout.identity then LiveRootLayout.identity
+    if this eq LiveRootLayout.default then LiveRootLayout.default
     else
       new LiveRootLayout[A, NewContext]:
         private def project(context: LiveRootLayoutContext[A, NewContext]) =
@@ -151,15 +151,25 @@ end LiveRootLayout
 
 /** Predefined [[LiveRootLayout]] values. */
 object LiveRootLayout:
-  /** A root layout that renders the LiveView with no document around it.
+  /** A root layout that renders a minimal document around the LiveView.
     *
-    * It is the router's default, so a page has no `<html>`, `<head>`, or client scripts until a
-    * root layout is installed. All routes that use it share one document key.
+    * The `<head>` declares UTF-8 and a device-width viewport, and renders the LiveView's
+    * [[LiveView.pageTitle]] with `liveTitle`; the LiveView fills `<body>`. It is the router's
+    * default. Install another root layout for stylesheets, a `lang` attribute, or shared chrome.
+    * All routes that use it share one document key.
     */
-  val identity: LiveRootLayout[Any, Any] = new LiveRootLayout[Any, Any]:
-    override def key(context: LiveRootLayoutContext[Any, Any]) = "scalive:identity-root"
+  val default: LiveRootLayout[Any, Any] = new LiveRootLayout[Any, Any]:
+    override def key(context: LiveRootLayoutContext[Any, Any]) = "scalive:default-root"
     def view[Msg](
       content: HtmlElement[Msg],
       pageTitle: Option[String],
       context: LiveRootLayoutContext[Any, Any]
-    ) = content
+    ) =
+      htmlRootTag(
+        headTag(
+          metaTag(charset  := "utf-8"),
+          metaTag(nameAttr := "viewport", contentAttr := "width=device-width, initial-scale=1"),
+          liveTitle(pageTitle, default = "")
+        ),
+        bodyTag(content)
+      )

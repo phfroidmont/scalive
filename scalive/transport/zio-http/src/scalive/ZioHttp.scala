@@ -494,30 +494,19 @@ object ZioHttp:
                            (applicationId, lifecycle) =>
                              nestedLifecycles.update(_.updated(applicationId, lifecycle.value))
                          )
-        rendered <-
-          if selectedRootLayout eq LiveRootLayout.identity then
-            renderElement(
-              (input: Signal[(Model, URL)]) => rootContainer(lifecycle.view(input), rootAttrs),
-              model -> request.url,
-              turn,
-              nestedResolver,
-              csrfToken = issuedCsrf.token
-            )
-              .map(inner => inner.copy(html = document(issuedCsrf.token, inner.html)))
-          else
-            val rootView = (input: Signal[(Model, URL)]) =>
-              val content = rootContainer(lifecycle.view(input), rootAttrs)
-              val rooted  =
-                selectedRootLayout.view(content, lifecycle.pageTitle(model), rootContext)
-              injectCsrf(rooted, issuedCsrf.token)
-            renderElement(
-              rootView,
-              model -> request.url,
-              turn,
-              nestedResolver,
-              csrfToken = issuedCsrf.token,
-              includeDoctype = true
-            )
+        rootView = (input: Signal[(Model, URL)]) =>
+                     val content = rootContainer(lifecycle.view(input), rootAttrs)
+                     val rooted  =
+                       selectedRootLayout.view(content, lifecycle.pageTitle(model), rootContext)
+                     injectCsrf(rooted, issuedCsrf.token)
+        rendered <- renderElement(
+                      rootView,
+                      model -> request.url,
+                      turn,
+                      nestedResolver,
+                      csrfToken = issuedCsrf.token,
+                      includeDoctype = true
+                    )
         _               <- turn.runAfterRender(model)
         childLifecycles <- nestedLifecycles.get
         tokens          <- issueRootTokens(
@@ -3800,13 +3789,6 @@ object ZioHttp:
             issued => ZIO.succeed(issued -> false)
           )
       case None => ZioHttpSecurity.issueCsrf(config).map(_ -> true)
-
-  private def document(
-    csrfToken: String,
-    inner: String
-  ): String =
-    def escaped(value: String) = Escaping.escape(value)
-    s"<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"csrf-token\" content=\"${escaped(csrfToken)}\"></head><body>$inner</body></html>"
 
   private def csrfCookie(cookieToken: String, secure: Boolean): Cookie.Response =
     Cookie.Response(

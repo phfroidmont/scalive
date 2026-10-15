@@ -23825,14 +23825,14 @@
       ]
     },
     {
-      "id" : "val:scalive.LiveRootLayout.identity",
+      "id" : "val:scalive.LiveRootLayout.default",
       "ownerId" : "object:scalive.LiveRootLayout",
-      "qualifiedName" : "scalive.LiveRootLayout.identity",
+      "qualifiedName" : "scalive.LiveRootLayout.default",
       "kind" : "val",
       "signatures" : [
         {
-          "id" : "val:scalive.LiveRootLayout.identity:fda02b52ec477fca",
-          "signature" : "val identity: LiveRootLayout[Any, Any]"
+          "id" : "val:scalive.LiveRootLayout.default:dc5994bfbf2ebad2",
+          "signature" : "val default: LiveRootLayout[Any, Any]"
         }
       ]
     },

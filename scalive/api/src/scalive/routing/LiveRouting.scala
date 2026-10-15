@@ -859,7 +859,7 @@ object LiveSessionBuilder:
   *   installation order.
   * @param rootLayout
   *   The root layout used by routes whose session or route installs none; without
-  *   [[LiveRouter.withRootLayout]], it is [[LiveRootLayout.identity]].
+  *   [[LiveRouter.withRootLayout]], it is [[LiveRootLayout.default]].
   */
 final class LiveApplication[-R] private[scalive] (
   val routes: Vector[LiveRegistration[R] | LiveSession[R]],
@@ -935,7 +935,7 @@ object Live:
     * start](https://scalive.dev/learn/quick-start).
     */
   val router: LiveRouter =
-    LiveRouter(PathCodec.empty / "live", Vector.empty, LiveRootLayout.identity)
+    LiveRouter(PathCodec.empty / "live", Vector.empty, LiveRootLayout.default)
 
   /** Starts a route from a ZIO HTTP path codec. Most routes start from `live` instead. */
   def route[A](pathCodec: PathCodec[A]): LivePath[A] = LivePath(pathCodec)

@@ -332,7 +332,7 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
       rootId   <- requiredAttribute(body, "id")
       session  <- requiredAttribute(body, "data-phx-session")
       static   <- requiredAttribute(body, "data-phx-static")
-      csrf     <- requiredAttribute(body, "content")
+      csrf     <- ZIO.fromOption("<meta name=\"csrf-token\" content=\"([^\"]+)\"".r.findFirstMatchIn(body).map(_.group(1))).orElseFail(AssertionError("missing CSRF token"))
       cookie <- ZIO
                   .fromOption(
                     response.headers(Header.SetCookie).map(_.value)

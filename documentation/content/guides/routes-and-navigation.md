@@ -71,6 +71,15 @@ mount, browser back and forward, and patches agree. Use `handleParams` to
 canonicalize a successfully decoded URL only when the canonicalization cannot
 loop.
 
+A URL whose parameters don't decode never mounts the view. A page request for it
+gets `400 Bad Request`, and Scalive logs a warning with the path and the decode
+error. A live patch to it calls
+@:apiSymbol(def:scalive.LiveView.Routed.handleParamsDecodeError)`handleParamsDecodeError`@:@
+instead, which crashes the LiveView unless you override it. `queryOptional`
+decodes a missing value to `None`, but a malformed one still fails, so a view
+that must answer untrusted links itself declares the raw strings and parses
+them in `mapParams`.
+
 The documentation examples catalog is a real routed view. Its `topic` query
 parameter controls a URL-addressable filter, and every topic link builds a typed
 location before issuing a patch.

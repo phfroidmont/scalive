@@ -638,12 +638,11 @@ object ZioHttp:
       private def decodePath(url: URL): A =
         codec.decode(url.path).fold(error => throw Exception(error), identity)
 
-      // Parameters decode before the factory runs, so an invalid URL builds no view.
-      private def make(path: A, context: Ctx, url: URL): RIO[RF, RootLifecycle[Any, Any]] =
+      // Callers decode the parameters before the factory runs, so an invalid URL builds no view.
+      private def make(params: P, context: Ctx, url: URL): RIO[RF, RootLifecycle[Any, Any]] =
         val guard = definition.connectedTurnGuards.contramap((_: Unit) => context)
         for
-          params <- definition.paramsCodec.decode(path, url)
-          view   <- ZIO.suspend(definition.factory(context)).catchAllDefect(ZIO.fail(_))
+          view <- ZIO.suspend(definition.factory(context)).catchAllDefect(ZIO.fail(_))
           lifecycle = view match
                         case routed: LiveView.Routed[?, ?, ?] =>
                           routedLifecycle(
@@ -666,7 +665,20 @@ object ZioHttp:
           request,
           ().asInstanceOf[In]
         ).flatMap { case (context, claims) =>
-          make(path, context, request.url)
+          val url = request.url
+          definition.paramsCodec
+            .decode(path, url)
+            .tapError(error =>
+              ZIO.logWarning(
+                s"Rejecting disconnected route mount path=${url.path.encode}: ${error.getMessage}"
+              )
+            )
+            .mapError(_ => Response.badRequest)
+            .flatMap(params =>
+              make(params, context, url)
+                .tapErrorCause(ZIO.logErrorCause("Disconnected LiveView factory failed", _))
+                .mapError(_ => Response.internalServerError)
+            )
             .map { lifecycle =>
               val composed = composeLayouts(
                 lifecycle,
@@ -677,7 +689,7 @@ object ZioHttp:
                 decodePath
               )
               (composed, context: Any, claims, selectedRoot.asInstanceOf[LiveRootLayout[A, Any]])
-            }.mapError(_ => Response.internalServerError)
+            }
         }
 
       protected def connectedLifecycle(
@@ -704,29 +716,31 @@ object ZioHttp:
               )
             )
             .unless(selectedRoot.key(rootContext) == claims.rootLayoutKey) *>
-            make(path, context, url).map { lifecycle =>
-              val initialized = lifecycle.copy(mount =
-                mountContext =>
-                  ZIO.suspendSucceed {
-                    val initialize = mountContext.connection match
-                      case Connection.Disconnected         => ZIO.unit
-                      case Connection.Connected(connected) =>
-                        definition.connectedResourceInitializers.run(context, connected.resources)
-                    initialize *> lifecycle.mount(mountContext)
-                  }
-              )
-              PreparedConnected(
-                composeLayouts(
-                  initialized,
-                  request,
-                  context,
-                  definition.layouts,
-                  applicationLayouts,
-                  decodePath
-                ),
-                connected.admission
-              )
-            }).onError(_ => ZIO.foreachDiscard(connected.admission)(_.rollback))
+            definition.paramsCodec
+              .decode(path, url)
+              .flatMap(make(_, context, url)).map { lifecycle =>
+                val initialized = lifecycle.copy(mount =
+                  mountContext =>
+                    ZIO.suspendSucceed {
+                      val initialize = mountContext.connection match
+                        case Connection.Disconnected         => ZIO.unit
+                        case Connection.Connected(connected) =>
+                          definition.connectedResourceInitializers.run(context, connected.resources)
+                      initialize *> lifecycle.mount(mountContext)
+                    }
+                )
+                PreparedConnected(
+                  composeLayouts(
+                    initialized,
+                    request,
+                    context,
+                    definition.layouts,
+                    applicationLayouts,
+                    decodePath
+                  ),
+                  connected.admission
+                )
+              }).onError(_ => ZIO.foreachDiscard(connected.admission)(_.rollback))
         }
       end connectedLifecycle
 

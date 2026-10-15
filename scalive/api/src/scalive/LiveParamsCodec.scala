@@ -2,7 +2,7 @@ package scalive
 
 import zio.*
 import zio.http.*
-import zio.http.codec.{Combiner, HttpCodec, QueryCodec}
+import zio.http.codec.{Combiner, HttpCodec, HttpCodecError, QueryCodec}
 import zio.schema.Schema
 
 /** Bidirectionally maps route path/query values and typed routed parameters.
@@ -78,8 +78,8 @@ object LiveParamsCodec:
 
   /** A routed parameter decoding failure.
     *
-    * Initial failures prevent the routed LiveView from mounting. During connected parameter
-    * changes, [[LiveView.Routed.handleParamsDecodeError]] may recover them.
+    * An initial failure answers the page request with `400 Bad Request` and mounts nothing. During
+    * connected parameter changes, [[LiveView.Routed.handleParamsDecodeError]] may recover them.
     *
     * @param message
     *   a user-readable description of the invalid parameters
@@ -136,6 +136,8 @@ object LiveParamsCodec:
       def decode(pathParams: PathParams, url: URL) =
         codec
           .decodeRequest(Request.get(url))
+          // ZIO HTTP reports a missing or malformed value as an HttpCodecError defect.
+          .catchSomeDefect { case error: HttpCodecError => ZIO.fail(error) }
           .map(queryParams => combiner.combine(pathParams, queryParams))
           .mapError(toDecodeError)
 

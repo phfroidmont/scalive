@@ -1192,7 +1192,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
         body.contains("<span>moved</span>")
       )
     },
-    test("initial routed decode failure happens before factory and mount") {
+    test("initial routed decode failure answers 400 and logs before factory and mount") {
       val factories = AtomicInteger()
       val mounts     = AtomicInteger()
       val decoder = LiveParamsCodec.custom[Unit, Unit](
@@ -1206,18 +1206,47 @@ object ZioHttpSpec extends ZIOSpecDefault:
       for
         response <- run(
                       ZioHttp.routes(
-                        scalive.Live.router(scalive.live.params(decoder) -> {
+                        scalive.Live.router((scalive.live / "decoded").params(decoder) -> {
                           factories.incrementAndGet()
                           View
                         }),
                         config
                       ),
-                      Request.get(URL.root)
+                      Request.get(URL.decode("/decoded").toOption.get)
                     )
+        body <- response.body.asString.orDie
+        logs <- ZTestLogger.logOutput
       yield assertTrue(
-        response.status == Status.InternalServerError,
+        response.status == Status.BadRequest,
+        !body.contains("invalid params"),
         factories.get() == 0,
-        mounts.get() == 0
+        mounts.get() == 0,
+        logs.exists(entry =>
+          entry.logLevel == LogLevel.Warning && entry.message().contains("/decoded") &&
+            entry.message().contains("invalid params")
+        )
+      )
+    },
+    test("a malformed optional query value answers 400 and a missing one mounts") {
+      object View extends LiveView.Routed.Eventless[String, Option[java.util.UUID]]:
+        def mount(params: Option[java.util.UUID], ctx: MountContext) =
+          ZIO.succeed(params.fold("none")(_.toString))
+        def view(model: Signal[String]) = div(model)
+      val routes = ZioHttp.routes(
+        scalive.Live.router(
+          (scalive.live / "reset").queryOptional[java.util.UUID]("id") -> View
+        ),
+        config
+      )
+
+      for
+        malformed <- run(routes, Request.get(URL.decode("/reset?id=garbage").toOption.get))
+        missing   <- run(routes, Request.get(URL.decode("/reset").toOption.get))
+        body      <- missing.body.asString.orDie
+      yield assertTrue(
+        malformed.status == Status.BadRequest,
+        missing.status == Status.Ok,
+        body.contains("none")
       )
     },
     test("routed connected lifecycle mounts, handles params, and recovers patch decode failures") {

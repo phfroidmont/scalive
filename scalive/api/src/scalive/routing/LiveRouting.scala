@@ -633,7 +633,7 @@ final class LivePath[A] private[scalive] (path: PathCodec[A])
     query(HttpCodec.query[Query](name))
 
   /** Adds an optional query parameter, which decodes to `None` when it is absent, as in
-    * `queryOptional[String]("q")`.
+    * `queryOptional[String]("q")`. A value that is present but malformed still fails to decode.
     */
   def queryOptional[Query](
     name: String

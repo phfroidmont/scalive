@@ -46,11 +46,11 @@ end ThermostatLiveView
 
 object ThermostatLiveView:
   // docs:start learn-thermostat-model
-  final case class Model(reading: AsyncValue[Double])
+  final case class Model(reading: AsyncValue[Throwable, Double])
 
   enum Msg:
     case Refresh
-    case Measured(result: LiveAsyncResult[Double])
+    case Measured(result: LiveAsyncResult[Throwable, Double])
 
   private val Reading      = AsyncKey[Double]("reading")
   private val RefreshTimer = SubscriptionKey("refresh-timer")

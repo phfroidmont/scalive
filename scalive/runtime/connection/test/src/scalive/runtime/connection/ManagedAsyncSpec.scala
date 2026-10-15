@@ -55,6 +55,25 @@ object ManagedAsyncSpec extends ZIOSpecDefault:
 
     def view(model: Signal[Vector[String]]) = div(model.map(_.mkString("|")))
 
+  private val OutcomeKey = AsyncKey[Int]("outcome")
+
+  private enum OutcomeMessage:
+    case Run(task: IO[String, Int])
+    case Completed(result: LiveAsyncResult[String, Int])
+
+  private final class OutcomeFixture extends LiveView[OutcomeMessage, Vector[LiveAsyncResult[String, Int]]]:
+    def mount(ctx: MountContext) = ZIO.succeed(Vector.empty)
+
+    def handleMessage(
+      model: Vector[LiveAsyncResult[String, Int]],
+      ctx: MessageContext
+    ): OutcomeMessage => Task[Vector[LiveAsyncResult[String, Int]]] =
+      case OutcomeMessage.Run(task) =>
+        ctx.async.start(OutcomeKey)(task)(OutcomeMessage.Completed(_)).as(model)
+      case OutcomeMessage.Completed(result) => ZIO.succeed(model :+ result)
+
+    def view(model: Signal[Vector[LiveAsyncResult[String, Int]]]) = div(model.map(_.size.toString))
+
   override def spec = suite("ManagedAsyncSpec")(
     test("an immediately completing task publishes its starting turn before its completion") {
       ZIO.scoped {
@@ -95,6 +114,38 @@ object ManagedAsyncSpec extends ZIOSpecDefault:
           markers(successCompletion) == Vector("hook:succeeded", "mapped:success:succeeded"),
           markers(failureStart) == Vector("start:failure"),
           markers(failureCompletion) == Vector("hook:failed", "mapped:failure:failed")
+        )
+      }
+    },
+    test("typed failures, defects, and self-interruptions reach the owner, which keeps running") {
+      ZIO.scoped {
+        val defect = RuntimeException("driver crashed")
+        val tasks = Vector[IO[String, Int]](
+          ZIO.fail("quota"),
+          ZIO.die(defect),
+          ZIO.fail("first").ensuring(ZIO.die(defect)),
+          ZIO.interrupt,
+          ZIO.succeed(1)
+        )
+        for
+          outputs    <- Queue.unbounded[ConnectionOutput]
+          connection <- RootConnection.start(config, metadata, OutcomeFixture(), outputs.offer(_).unit)
+          _          <- outputs.take
+          _ <- ZIO.foreachDiscard(tasks.zipWithIndex) { (task, index) =>
+                 connection.submitInfo(OutcomeMessage.Run(task)) *>
+                   connection.inspectModel.repeatUntil(_.size == index + 1)
+               }
+          results <- connection.inspectModel
+          logs    <- ZTestLogger.logOutput
+        yield assertTrue(
+          results == Vector(
+            LiveAsyncResult.Failed("quota"),
+            LiveAsyncResult.Died(defect),
+            LiveAsyncResult.Failed("first"),
+            LiveAsyncResult.Cancelled(None),
+            LiveAsyncResult.Succeeded(1)
+          ),
+          logs.count(_.message().contains("managed async task 'outcome' died")) == 1
         )
       }
     },
@@ -322,9 +373,10 @@ object ManagedAsyncSpec extends ZIOSpecDefault:
     }
   )
 
-  private def status(result: LiveAsyncResult[?]): String = result match
+  private def status(result: LiveAsyncResult[?, ?]): String = result match
     case LiveAsyncResult.Succeeded(_)  => "succeeded"
     case LiveAsyncResult.Failed(_)     => "failed"
+    case LiveAsyncResult.Died(_)       => "died"
     case LiveAsyncResult.Cancelled(_)  => "cancelled"
 
   private def markers(output: ConnectionOutput): Vector[String] =

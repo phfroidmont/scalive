@@ -3,6 +3,7 @@ package scalive.runtime.connection
 import scala.util.Try
 
 import zio.Exit
+import zio.IO
 import zio.Promise
 import zio.Ref
 import zio.Scope
@@ -420,7 +421,8 @@ private object DeferredStreams extends Streams:
     Deferred.fail("delete stream item by DOM id")
 
 final private class JournaledAsync[Msg](journal: RootTurnJournal) extends Async[Msg]:
-  def start[A](key: AsyncKey[A])(task: Task[A])(toMsg: LiveAsyncResult[A] => Msg): Task[Unit] =
+  def start[E, A](key: AsyncKey[A])(task: IO[E, A])(toMsg: LiveAsyncResult[E, A] => Msg)
+    : Task[Unit] =
     journal.record(ResourceOperation.StartAsync(journal.owner, key, task, toMsg))
   def cancel[A](key: AsyncKey[A], reason: Option[String]): Task[Unit] =
     journal.record(

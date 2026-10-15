@@ -928,16 +928,18 @@ private[docs] object ExampleRegistry:
       scalaValue = Some(ProjectedScalaValueFormatter.format(value))
     )
 
-  private def asyncResultScala(result: LiveAsyncResult[?]): ProjectedScalaValue = result match
+  private def asyncResultScala(result: LiveAsyncResult[?, ?]): ProjectedScalaValue = result match
     case LiveAsyncResult.Succeeded(_) => constructor("LiveAsyncResult.Succeeded", wildcard)
     case LiveAsyncResult.Failed(_)    => constructor("LiveAsyncResult.Failed", wildcard)
+    case LiveAsyncResult.Died(_)      => constructor("LiveAsyncResult.Died", wildcard)
     case LiveAsyncResult.Cancelled(_) => constructor("LiveAsyncResult.Cancelled", wildcard)
 
-  private def asyncValueScala(value: AsyncValue[?]): ProjectedScalaValue = value match
+  private def asyncValueScala(value: AsyncValue[?, ?]): ProjectedScalaValue = value match
     case AsyncValue.Empty           => name("AsyncValue.Empty")
     case AsyncValue.Loading(_)      => constructor("AsyncValue.Loading", wildcard)
     case AsyncValue.Ok(_)           => constructor("AsyncValue.Ok", wildcard)
     case AsyncValue.Failed(_, _)    => constructor("AsyncValue.Failed", wildcard, wildcard)
+    case AsyncValue.Died(_, _)      => constructor("AsyncValue.Died", wildcard, wildcard)
     case AsyncValue.Cancelled(_, _) => constructor("AsyncValue.Cancelled", wildcard, wildcard)
 
   private def browserOperationScala(
@@ -988,16 +990,18 @@ private[docs] object ExampleRegistry:
     case NavigationExample.SearchPreset.TypedForms =>
       name("SearchPreset.TypedForms")
 
-  private def asyncResultLabel(result: LiveAsyncResult[?]): String = result match
+  private def asyncResultLabel(result: LiveAsyncResult[?, ?]): String = result match
     case LiveAsyncResult.Succeeded(_) => "Async report succeeded"
     case LiveAsyncResult.Failed(_)    => "Async report failed"
+    case LiveAsyncResult.Died(_)      => "Async report died"
     case LiveAsyncResult.Cancelled(_) => "Async report was cancelled"
 
-  private def asyncValueLabel(value: AsyncValue[?]): String = value match
+  private def asyncValueLabel(value: AsyncValue[?, ?]): String = value match
     case AsyncValue.Empty           => "empty"
     case AsyncValue.Loading(_)      => "loading"
     case AsyncValue.Ok(_)           => "succeeded"
     case AsyncValue.Failed(_, _)    => "failed"
+    case AsyncValue.Died(_, _)      => "died"
     case AsyncValue.Cancelled(_, _) => "cancelled"
 
   def validationErrors: Vector[String] =

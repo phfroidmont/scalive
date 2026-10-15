@@ -36,7 +36,7 @@ final class ProfileSaveLiveView(profiles: Profiles)
     case Msg.Saved(token, result) =>
       val transition = result match
         case LiveAsyncResult.Succeeded(_) => model.workflow.saveSucceeded(token)
-        case LiveAsyncResult.Failed(_)    =>
+        case LiveAsyncResult.Failed(_) | LiveAsyncResult.Died(_) =>
           model.workflow.saveFailed(token, SaveError("The profile could not be saved."))
         case LiveAsyncResult.Cancelled(_) => model.workflow.saveCancelled(token)
       transition match
@@ -98,7 +98,7 @@ object ProfileSaveLiveView:
   enum Msg:
     case Validate(event: Profile.Definition.Event)
     case Save(event: Profile.Definition.Event)
-    case Saved(token: FormSubmissionToken, result: LiveAsyncResult[Unit])
+    case Saved(token: FormSubmissionToken, result: LiveAsyncResult[Throwable, Unit])
     case DismissFailure
     case Reset
 // docs:end forms-workflow

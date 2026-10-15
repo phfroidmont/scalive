@@ -3,6 +3,7 @@ package scalive.runtime.kernel
 import java.time.Duration
 import java.time.Instant
 
+import zio.IO
 import zio.Promise
 import zio.Ref
 import zio.Task
@@ -116,11 +117,11 @@ final private[scalive] case class SessionEffects(
 sealed private[scalive] trait ResourceOperation
 
 private[scalive] object ResourceOperation:
-  final case class StartAsync[A, Msg](
+  final case class StartAsync[E, A, Msg](
     owner: OwnerId,
     key: AsyncKey[A],
-    task: Task[A],
-    toMessage: LiveAsyncResult[A] => Msg)
+    task: IO[E, A],
+    toMessage: LiveAsyncResult[E, A] => Msg)
       extends ResourceOperation
 
   final case class CancelAsync(
@@ -144,7 +145,7 @@ private[scalive] object ResourceOperation:
 
 final private[kernel] case class ManagedAsyncCompletion(
   name: String,
-  result: LiveAsyncResult[Any],
+  result: LiveAsyncResult[Any, Any],
   message: Any)
 
 sealed private[kernel] trait ManagedResource:
@@ -157,7 +158,7 @@ private[kernel] object ManagedResource:
   final case class Async(
     token: ResourceToken,
     prepared: PreparedResource,
-    mapResult: LiveAsyncResult[Any] => Any)
+    mapResult: LiveAsyncResult[Any, Any] => Any)
       extends Running
 
   final case class SubscriptionDefinition(
@@ -199,7 +200,7 @@ enum SessionCommand[+Msg]:
   private[kernel] case ManagedAsync(
     epoch: Epoch,
     token: ResourceToken,
-    result: LiveAsyncResult[Any]) extends SessionCommand[Nothing]
+    result: LiveAsyncResult[Any, Any]) extends SessionCommand[Nothing]
   private[kernel] case ManagedSubscription(
     epoch: Epoch,
     token: ResourceToken,

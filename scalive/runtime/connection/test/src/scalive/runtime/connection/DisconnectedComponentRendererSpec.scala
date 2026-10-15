@@ -99,16 +99,16 @@ object DisconnectedComponentRendererSpec extends ZIOSpecDefault:
           model: Signal[Vector[Int]],
         ) = div(idAttr := "result", items(model))
       val asyncDefinition =
-        new LiveComponent.Eventless[AsyncValue[Vector[Int]], AsyncValue[Vector[Int]]]:
-          def mount(props: AsyncValue[Vector[Int]], ctx: MountContext) = ZIO.succeed(props)
+        new LiveComponent.Eventless[AsyncValue[Nothing, Vector[Int]], AsyncValue[Nothing, Vector[Int]]]:
+          def mount(props: AsyncValue[Nothing, Vector[Int]], ctx: MountContext) = ZIO.succeed(props)
           override def update(
-            props: AsyncValue[Vector[Int]],
-            model: AsyncValue[Vector[Int]],
+            props: AsyncValue[Nothing, Vector[Int]],
+            model: AsyncValue[Nothing, Vector[Int]],
             ctx: UpdateContext
           ) = ZIO.succeed(props)
           def view(
-            props: Signal[AsyncValue[Vector[Int]]],
-            model: Signal[AsyncValue[Vector[Int]]],
+            props: Signal[AsyncValue[Nothing, Vector[Int]]],
+            model: Signal[AsyncValue[Nothing, Vector[Int]]],
           ) =
             val current = model.map(_.valueOption)
             div(
@@ -121,7 +121,7 @@ object DisconnectedComponentRendererSpec extends ZIOSpecDefault:
       val direct = component(directDefinition, "direct")
       val async  = component(asyncDefinition, "async")
       DisconnectedComponentRenderer
-        .renderWith[(String, AsyncValue[Vector[Int]]), Nothing, String](input =>
+        .renderWith[(String, AsyncValue[Nothing, Vector[Int]]), Nothing, String](input =>
           val caseName = input.map(_._1)
           val data     = input.map(_._2)
           val current  = data.map(_.valueOption)

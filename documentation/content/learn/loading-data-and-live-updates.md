@@ -72,8 +72,10 @@ companion object:
 
 `AsyncKey[Double]` names the task and fixes its result type. When the task
 finishes, Scalive sends `Msg.Measured(result)`, where `result` is a
-`LiveAsyncResult[Double]`: `Succeeded(value)`, `Failed(cause)`, or
-`Cancelled(reason)`. The task stops if the visitor leaves the page.
+`LiveAsyncResult[Throwable, Double]`, because `thermostat.temperature` is a
+`Task[Double]` that fails with a `Throwable`. It is `Succeeded(value)`,
+`Failed(error)`, `Died(defect)` for a bug, or `Cancelled(reason)`. The task stops
+if the visitor leaves the page.
 
 ## Refresh on a timer {#refresh-on-a-timer}
 

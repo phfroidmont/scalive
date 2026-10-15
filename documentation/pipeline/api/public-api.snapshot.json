@@ -680,8 +680,8 @@
       "kind" : "class",
       "signatures" : [
         {
-          "id" : "class:scalive.LiveAsyncEvent:17eaa0b628680b7e",
-          "signature" : "class LiveAsyncEvent[+Msg](key: AsyncKey[Any], result: LiveAsyncResult[Any], message: Msg)"
+          "id" : "class:scalive.LiveAsyncEvent:22802e94a1c7dd9e",
+          "signature" : "class LiveAsyncEvent[+Msg](key: AsyncKey[Any], result: LiveAsyncResult[Any, Any], message: Msg)"
         }
       ]
     },
@@ -1712,8 +1712,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.Async.start:0fd18d118c9df6db",
-          "signature" : "def start[A](key: AsyncKey[A])(task: zio.package.Task[A])(toMsg: LiveAsyncResult[A] => Msg): zio.package.Task[Unit]"
+          "id" : "def:scalive.Async.start:6a687dd74c3195f8",
+          "signature" : "def start[E, A](key: AsyncKey[A])(task: zio.package.IO[E, A])(toMsg: LiveAsyncResult[E, A] => Msg): zio.package.Task[Unit]"
         }
       ]
     },
@@ -1760,8 +1760,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.AsyncValue.empty:e78f51bd5ad19237",
-          "signature" : "def empty[A]: AsyncValue[A]"
+          "id" : "def:scalive.AsyncValue.empty:ca597697ddc608c4",
+          "signature" : "def empty[E, A]: AsyncValue[E, A]"
         }
       ]
     },
@@ -1772,8 +1772,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.AsyncValue.loading:55974c8e8bf1517a",
-          "signature" : "def loading[A]: AsyncValue[A]"
+          "id" : "def:scalive.AsyncValue.loading:c82e624cf5107dc5",
+          "signature" : "def loading[E, A]: AsyncValue[E, A]"
         }
       ]
     },
@@ -1784,8 +1784,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.AsyncValue.ok:f8109da31e6c1356",
-          "signature" : "def ok[A](value: A): AsyncValue[A]"
+          "id" : "def:scalive.AsyncValue.ok:f6a5f997266220be",
+          "signature" : "def ok[E, A](value: A): AsyncValue[E, A]"
         }
       ]
     },
@@ -10368,8 +10368,8 @@
       "kind" : "enum",
       "signatures" : [
         {
-          "id" : "enum:scalive.AsyncValue:cd298a4369e0f9a3",
-          "signature" : "enum AsyncValue[+A]"
+          "id" : "enum:scalive.AsyncValue:8889afb7a8ba6d2d",
+          "signature" : "enum AsyncValue[+E, +A]"
         }
       ]
     },
@@ -10380,8 +10380,20 @@
       "kind" : "enum",
       "signatures" : [
         {
-          "id" : "enum:scalive.AsyncValue.Cancelled:5c14e4c147a2c289",
-          "signature" : "enum Cancelled[+A](previous: Option[A], reason: Option[String]) extends AsyncValue[A]"
+          "id" : "enum:scalive.AsyncValue.Cancelled:4bf4cca5dcd462d1",
+          "signature" : "enum Cancelled[+A](previous: Option[A], reason: Option[String]) extends AsyncValue[Nothing, A]"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.AsyncValue.Died",
+      "ownerId" : "enum:scalive.AsyncValue",
+      "qualifiedName" : "scalive.AsyncValue.Died",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.AsyncValue.Died:71be3348ceab5b83",
+          "signature" : "enum Died[+A](previous: Option[A], defect: Throwable) extends AsyncValue[Nothing, A]"
         }
       ]
     },
@@ -10392,8 +10404,8 @@
       "kind" : "enum",
       "signatures" : [
         {
-          "id" : "enum:scalive.AsyncValue.Failed:5535834de35e48d4",
-          "signature" : "enum Failed[+A](previous: Option[A], cause: Throwable) extends AsyncValue[A]"
+          "id" : "enum:scalive.AsyncValue.Failed:6068213383c0c755",
+          "signature" : "enum Failed[+E, +A](previous: Option[A], error: E) extends AsyncValue[E, A]"
         }
       ]
     },
@@ -10404,8 +10416,8 @@
       "kind" : "enum",
       "signatures" : [
         {
-          "id" : "enum:scalive.AsyncValue.Loading:98d6031cdc56c012",
-          "signature" : "enum Loading[+A](previous: Option[A]) extends AsyncValue[A]"
+          "id" : "enum:scalive.AsyncValue.Loading:bcd5c5f745e56fa5",
+          "signature" : "enum Loading[+A](previous: Option[A]) extends AsyncValue[Nothing, A]"
         }
       ]
     },
@@ -10416,8 +10428,8 @@
       "kind" : "enum",
       "signatures" : [
         {
-          "id" : "enum:scalive.AsyncValue.Ok:8dfb692f07b9c631",
-          "signature" : "enum Ok[+A](value: A) extends AsyncValue[A]"
+          "id" : "enum:scalive.AsyncValue.Ok:ca3202cce19f47ad",
+          "signature" : "enum Ok[+A](value: A) extends AsyncValue[Nothing, A]"
         }
       ]
     },
@@ -11460,8 +11472,8 @@
       "kind" : "enum",
       "signatures" : [
         {
-          "id" : "enum:scalive.LiveAsyncResult:52cb0f21ea4ae176",
-          "signature" : "enum LiveAsyncResult[+A]"
+          "id" : "enum:scalive.LiveAsyncResult:eb194a55b8847868",
+          "signature" : "enum LiveAsyncResult[+E, +A]"
         }
       ]
     },
@@ -11472,8 +11484,20 @@
       "kind" : "enum",
       "signatures" : [
         {
-          "id" : "enum:scalive.LiveAsyncResult.Cancelled:d5d85f5a2dcec9a1",
-          "signature" : "enum Cancelled[+A](reason: Option[String]) extends LiveAsyncResult[A]"
+          "id" : "enum:scalive.LiveAsyncResult.Cancelled:25e839788ff87d9a",
+          "signature" : "enum Cancelled(reason: Option[String]) extends LiveAsyncResult[Nothing, Nothing]"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.LiveAsyncResult.Died",
+      "ownerId" : "enum:scalive.LiveAsyncResult",
+      "qualifiedName" : "scalive.LiveAsyncResult.Died",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.LiveAsyncResult.Died:d06740184fe5c492",
+          "signature" : "enum Died(defect: Throwable) extends LiveAsyncResult[Nothing, Nothing]"
         }
       ]
     },
@@ -11484,8 +11508,8 @@
       "kind" : "enum",
       "signatures" : [
         {
-          "id" : "enum:scalive.LiveAsyncResult.Failed:a54acc9df7828225",
-          "signature" : "enum Failed[+A](cause: Throwable) extends LiveAsyncResult[A]"
+          "id" : "enum:scalive.LiveAsyncResult.Failed:4c30a5002777487c",
+          "signature" : "enum Failed[+E](error: E) extends LiveAsyncResult[E, Nothing]"
         }
       ]
     },
@@ -11496,8 +11520,8 @@
       "kind" : "enum",
       "signatures" : [
         {
-          "id" : "enum:scalive.LiveAsyncResult.Succeeded:82ac27c7b24b409f",
-          "signature" : "enum Succeeded[+A](value: A) extends LiveAsyncResult[A]"
+          "id" : "enum:scalive.LiveAsyncResult.Succeeded:030c761cca47102e",
+          "signature" : "enum Succeeded[+A](value: A) extends LiveAsyncResult[Nothing, A]"
         }
       ]
     },
@@ -12348,8 +12372,8 @@
       "kind" : "extension",
       "signatures" : [
         {
-          "id" : "extension:scalive.AsyncValue.failure:3e3cf4312182c11d",
-          "signature" : "extension def failure[A](value: AsyncValue[A]): Option[Throwable]"
+          "id" : "extension:scalive.AsyncValue.failure:951402cb2d2577ab",
+          "signature" : "extension def failure[E, A](value: AsyncValue[E, A]): Option[E]"
         }
       ]
     },
@@ -12360,8 +12384,8 @@
       "kind" : "extension",
       "signatures" : [
         {
-          "id" : "extension:scalive.AsyncValue.isFailed:a06136cfe4b7b7c4",
-          "signature" : "extension def isFailed[A](value: AsyncValue[A]): Boolean"
+          "id" : "extension:scalive.AsyncValue.isFailed:4078bb24b8d40264",
+          "signature" : "extension def isFailed[E, A](value: AsyncValue[E, A]): Boolean"
         }
       ]
     },
@@ -12372,8 +12396,8 @@
       "kind" : "extension",
       "signatures" : [
         {
-          "id" : "extension:scalive.AsyncValue.isLoading:d9ee0314d796e163",
-          "signature" : "extension def isLoading[A](value: AsyncValue[A]): Boolean"
+          "id" : "extension:scalive.AsyncValue.isLoading:5e497995fb4deb70",
+          "signature" : "extension def isLoading[E, A](value: AsyncValue[E, A]): Boolean"
         }
       ]
     },
@@ -12384,8 +12408,8 @@
       "kind" : "extension",
       "signatures" : [
         {
-          "id" : "extension:scalive.AsyncValue.isOk:bd026b8c24d7e4ec",
-          "signature" : "extension def isOk[A](value: AsyncValue[A]): Boolean"
+          "id" : "extension:scalive.AsyncValue.isOk:6851a2f0b0fbf431",
+          "signature" : "extension def isOk[E, A](value: AsyncValue[E, A]): Boolean"
         }
       ]
     },
@@ -12396,8 +12420,8 @@
       "kind" : "extension",
       "signatures" : [
         {
-          "id" : "extension:scalive.AsyncValue.loading:0ea1162ebe21dad4",
-          "signature" : "extension def loading[A](value: AsyncValue[A])(reset: Boolean = ...): AsyncValue[A]"
+          "id" : "extension:scalive.AsyncValue.loading:211c67e16006c04b",
+          "signature" : "extension def loading[E, A](value: AsyncValue[E, A])(reset: Boolean = ...): AsyncValue[E, A]"
         }
       ]
     },
@@ -12408,8 +12432,8 @@
       "kind" : "extension",
       "signatures" : [
         {
-          "id" : "extension:scalive.AsyncValue.map:57c672e75125da84",
-          "signature" : "extension def map[A](value: AsyncValue[A])[B](f: A => B): AsyncValue[B]"
+          "id" : "extension:scalive.AsyncValue.map:95ab60e0ac0d48ee",
+          "signature" : "extension def map[E, A](value: AsyncValue[E, A])[B](f: A => B): AsyncValue[E, B]"
         }
       ]
     },
@@ -12420,8 +12444,8 @@
       "kind" : "extension",
       "signatures" : [
         {
-          "id" : "extension:scalive.AsyncValue.updated:436efc5419e9f8f2",
-          "signature" : "extension def updated[A](value: AsyncValue[A])(result: LiveAsyncResult[A]): AsyncValue[A]"
+          "id" : "extension:scalive.AsyncValue.updated:d4ba4c8273194c66",
+          "signature" : "extension def updated[E, A](value: AsyncValue[E, A])(result: LiveAsyncResult[E, A]): AsyncValue[E, A]"
         }
       ]
     },
@@ -12432,8 +12456,8 @@
       "kind" : "extension",
       "signatures" : [
         {
-          "id" : "extension:scalive.AsyncValue.valueOption:dec6f9bbf1250317",
-          "signature" : "extension def valueOption[A](value: AsyncValue[A]): Option[A]"
+          "id" : "extension:scalive.AsyncValue.valueOption:c518e8e63c6199ad",
+          "signature" : "extension def valueOption[E, A](value: AsyncValue[E, A]): Option[A]"
         }
       ]
     },
@@ -19821,26 +19845,50 @@
       ]
     },
     {
+      "id" : "val:scalive.AsyncValue.Died.defect",
+      "ownerId" : "enum:scalive.AsyncValue.Died",
+      "qualifiedName" : "scalive.AsyncValue.Died.defect",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.AsyncValue.Died.defect:854643b59ca1bbe3",
+          "signature" : "val defect: Throwable"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.AsyncValue.Died.previous",
+      "ownerId" : "enum:scalive.AsyncValue.Died",
+      "qualifiedName" : "scalive.AsyncValue.Died.previous",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.AsyncValue.Died.previous:f157f516a80c5308",
+          "signature" : "val previous: Option[A]"
+        }
+      ]
+    },
+    {
       "id" : "val:scalive.AsyncValue.Empty",
       "ownerId" : "object:scalive.AsyncValue",
       "qualifiedName" : "scalive.AsyncValue.Empty",
       "kind" : "val",
       "signatures" : [
         {
-          "id" : "val:scalive.AsyncValue.Empty:28882ca873f7c91a",
-          "signature" : "val Empty: AsyncValue[Nothing]"
+          "id" : "val:scalive.AsyncValue.Empty:5f622da756e05ceb",
+          "signature" : "val Empty: AsyncValue[Nothing, Nothing]"
         }
       ]
     },
     {
-      "id" : "val:scalive.AsyncValue.Failed.cause",
+      "id" : "val:scalive.AsyncValue.Failed.error",
       "ownerId" : "enum:scalive.AsyncValue.Failed",
-      "qualifiedName" : "scalive.AsyncValue.Failed.cause",
+      "qualifiedName" : "scalive.AsyncValue.Failed.error",
       "kind" : "val",
       "signatures" : [
         {
-          "id" : "val:scalive.AsyncValue.Failed.cause:c49ab2c2f9607baa",
-          "signature" : "val cause: Throwable"
+          "id" : "val:scalive.AsyncValue.Failed.error:c2e23b4ac29b03bf",
+          "signature" : "val error: E"
         }
       ]
     },
@@ -23247,8 +23295,8 @@
       "kind" : "val",
       "signatures" : [
         {
-          "id" : "val:scalive.LiveAsyncEvent.result:7a338d4f2af31ba4",
-          "signature" : "val result: LiveAsyncResult[Any]"
+          "id" : "val:scalive.LiveAsyncEvent.result:91f062ba989c56ef",
+          "signature" : "val result: LiveAsyncResult[Any, Any]"
         }
       ]
     },
@@ -23265,14 +23313,26 @@
       ]
     },
     {
-      "id" : "val:scalive.LiveAsyncResult.Failed.cause",
-      "ownerId" : "enum:scalive.LiveAsyncResult.Failed",
-      "qualifiedName" : "scalive.LiveAsyncResult.Failed.cause",
+      "id" : "val:scalive.LiveAsyncResult.Died.defect",
+      "ownerId" : "enum:scalive.LiveAsyncResult.Died",
+      "qualifiedName" : "scalive.LiveAsyncResult.Died.defect",
       "kind" : "val",
       "signatures" : [
         {
-          "id" : "val:scalive.LiveAsyncResult.Failed.cause:c49ab2c2f9607baa",
-          "signature" : "val cause: Throwable"
+          "id" : "val:scalive.LiveAsyncResult.Died.defect:854643b59ca1bbe3",
+          "signature" : "val defect: Throwable"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveAsyncResult.Failed.error",
+      "ownerId" : "enum:scalive.LiveAsyncResult.Failed",
+      "qualifiedName" : "scalive.LiveAsyncResult.Failed.error",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveAsyncResult.Failed.error:c2e23b4ac29b03bf",
+          "signature" : "val error: E"
         }
       ]
     },

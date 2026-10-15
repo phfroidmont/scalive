@@ -312,7 +312,7 @@ object Issue3931LiveView:
   private val Load = AsyncKey[String]("slow-data")
   final case class Model(value: Option[String] = None)
   enum Msg:
-    case Loaded(result: LiveAsyncResult[String])
+    case Loaded(result: LiveAsyncResult[Nothing, String])
 
 class Issue4209LiveView extends LiveView[Issue4209LiveView.Msg, Issue4209LiveView.Model]:
   import Issue4209LiveView.*

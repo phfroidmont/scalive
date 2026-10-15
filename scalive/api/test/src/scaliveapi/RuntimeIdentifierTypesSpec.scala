@@ -94,6 +94,32 @@ object RuntimeIdentifierTypesSpec extends ZIOSpecDefault:
 
       assertTrue(resultErrors.nonEmpty, rawNameErrors.nonEmpty)
     },
+    test("async results keep the task's typed error") {
+      val accepted = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        import zio.*
+        enum LoadError:
+          case Missing
+        enum Msg:
+          case Loaded(result: LiveAsyncResult[LoadError, Int])
+        val key = AsyncKey[Int]("load")
+        def start(async: Async[Msg]) =
+          async.start(key)(ZIO.fail(LoadError.Missing).as(1))(Msg.Loaded(_)) *>
+            async.start(key)(ZIO.succeed(1))(Msg.Loaded(_))
+      """)
+      val widenedErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        import zio.*
+        enum LoadError:
+          case Missing
+        enum Msg:
+          case Loaded(result: LiveAsyncResult[LoadError, Int])
+        def start(async: Async[Msg]) =
+          async.start(AsyncKey[Int]("load"))(ZIO.attempt(1))(Msg.Loaded(_))
+      """)
+
+      assertTrue(accepted.isEmpty, widenedErrors.nonEmpty)
+    },
     test("subscription operations reject raw names") {
       val directErrors = scala.compiletime.testing.typeCheckErrors("""
         import scalive.*

@@ -173,16 +173,16 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
         def view(props: Signal[Vector[Int]], model: Signal[Vector[Int]]) =
           div(idAttr := "result", items(model))
       val asyncDefinition =
-        new LiveComponent[AsyncValue[Vector[Int]], String, AsyncValue[Vector[Int]]]:
-          def mount(props: AsyncValue[Vector[Int]], ctx: MountContext) = ZIO.succeed(props)
+        new LiveComponent[AsyncValue[Nothing, Vector[Int]], String, AsyncValue[Nothing, Vector[Int]]]:
+          def mount(props: AsyncValue[Nothing, Vector[Int]], ctx: MountContext) = ZIO.succeed(props)
           def handleMessage(
-            props: AsyncValue[Vector[Int]],
-            model: AsyncValue[Vector[Int]],
+            props: AsyncValue[Nothing, Vector[Int]],
+            model: AsyncValue[Nothing, Vector[Int]],
             ctx: MessageContext
           ) = _ => ZIO.succeed(model)
           def view(
-            props: Signal[AsyncValue[Vector[Int]]],
-            model: Signal[AsyncValue[Vector[Int]]],
+            props: Signal[AsyncValue[Nothing, Vector[Int]]],
+            model: Signal[AsyncValue[Nothing, Vector[Int]]],
           ) =
             val current = model.map(_.valueOption)
             div(
@@ -192,7 +192,7 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
                 ""
               )
             )
-      val rootCompiled = RenderProgram.compile[(String, AsyncValue[Vector[Int]]), Nothing](input =>
+      val rootCompiled = RenderProgram.compile[(String, AsyncValue[Nothing, Vector[Int]]), Nothing](input =>
         val caseName = input.map(_._1)
         val data     = input.map(_._2)
         val current  = data.map(_.valueOption)
@@ -209,7 +209,7 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
           div(button("load"), button("remove"))
         )
       )
-      val componentCompiled = RenderProgram.compile[AsyncValue[Vector[Int]], String](model =>
+      val componentCompiled = RenderProgram.compile[AsyncValue[Nothing, Vector[Int]], String](model =>
         val current = model.map(_.valueOption)
         div(
           idAttr := "result",

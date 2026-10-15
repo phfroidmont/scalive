@@ -18,7 +18,7 @@ Scalive gives each connected LiveView and component three kinds of
 lifecycle-owned work:
 
 - [Asynchronous work](#run-finite-work-with-a-typed-key), on this page, runs one
-  finite `Task[A]`: a database query, service call, or report that succeeds,
+  finite `IO[E, A]`: a database query, service call, or report that succeeds,
   fails, or is cancelled.
 - [Subscriptions](subscriptions.md#prerequisites) run a
   `ZStream[Any, Nothing, Msg]` that can emit many messages over time: a clock,
@@ -74,10 +74,11 @@ every run through one helper:
 
 @:sourceRegion(documentation/site/src/scalive/docs/examples/AsyncReportExample.scala, async-report-start)
 
-The mapper receives a @:apiSymbol(enum:scalive.LiveAsyncResult)`LiveAsyncResult[A]`@:@:
-`Succeeded(value)`, `Failed(cause)`, or `Cancelled(reason)`. This is one task's
-completion, not persistent UI state. Handle it as an ordinary typed message so
-the model remains the single input to rendering.
+The mapper receives a @:apiSymbol(enum:scalive.LiveAsyncResult)`LiveAsyncResult[E, A]`@:@,
+where `E` is the task's error type: `Succeeded(value)`, `Failed(error)`,
+`Died(defect)`, or `Cancelled(reason)`. This is one task's completion, not
+persistent UI state. Handle it as an ordinary typed message so the model remains
+the single input to rendering.
 
 Starting the same key again interrupts and replaces its previous task. The
 obsolete task does not emit `Cancelled`, and its stale completion is not
@@ -87,10 +88,10 @@ and filtering old results yourself.
 
 ## Model finite work with AsyncValue {#model-finite-work-with-asyncvalue}
 
-@:apiSymbol(enum:scalive.AsyncValue)`AsyncValue[A]`@:@ is an optional application
+@:apiSymbol(enum:scalive.AsyncValue)`AsyncValue[E, A]`@:@ is an optional application
 model for rendering work across messages. It distinguishes empty, loading,
-successful, failed, and explicitly cancelled states. Loading, failure, and
-cancellation can retain the last successful value, which lets a refresh show
+successful, failed, died, and explicitly cancelled states. Every state but empty
+and successful can retain the last successful value, which lets a refresh show
 existing data instead of replacing the entire panel with a spinner. Keep it in
 the model:
 
@@ -104,13 +105,33 @@ Call `loading(reset = true)` when old data would be misleading. The default
 retains it. Render every state deliberately; a failed task is domain-visible
 state, not a reason for the LiveView process to crash. Match on the cases, or
 read one aspect with `valueOption`, `isLoading`, `isOk`, `isFailed`, or
-`failure`. `map` transforms the current and retained values and keeps the
-state.
+`failure`. `isFailed` covers both `Failed` and `Died`, since a view usually
+shows one alert for both, while `failure` returns only the typed error. `map`
+transforms the current and retained values and keeps the state.
 
-Do not expose arbitrary exception messages to visitors. Convert expected
-failures into stable, actionable copy and log diagnostic context separately.
-The report example displays a fixed failure explanation while the documentation
-site's diagnostic state viewer records only the state label.
+## Keep expected failures typed {#keep-expected-failures-typed}
+
+Give the task an error type the view can render. The report example's failing
+task is an `IO[ReportError, Report]`, so its model holds an
+`AsyncValue[ReportError, Report]` and the view explains each error:
+
+@:sourceRegion(documentation/site/src/scalive/docs/examples/AsyncReportExample.scala, async-report-status)
+
+A `Task[A]` fails with `Throwable`, so its exceptions arrive in `Failed`, and a
+`UIO[A]` cannot fail.
+
+A defect is a bug, such as `ZIO.die`, `orDie`, or an exception thrown inside
+`ZIO.succeed`. It arrives as `Died`, and Scalive logs it as a warning. Like a
+failure, it leaves the LiveView running: one broken task should not crash the
+page, and a task that dies on every connected mount would otherwise make the page
+reconnect in a loop. A task that interrupts itself arrives as `Cancelled(None)`.
+When a task both fails and dies, as in a failure followed by a defective
+finalizer, the typed failure arrives.
+
+Do not expose arbitrary exception messages to visitors. Render each typed error
+as stable, actionable copy, show generic copy for a defect, and log diagnostic
+context separately. The documentation site's diagnostic state viewer records
+only the state label.
 
 ## Cancel explicitly when it is user-visible {#cancel-explicitly-when-it-is-user-visible}
 

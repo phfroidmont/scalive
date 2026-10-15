@@ -974,7 +974,7 @@ object Issue3026LiveView:
 
   enum Msg:
     case ChangeStatus(data: FormData)
-    case Loaded(result: LiveAsyncResult[LoadResult])
+    case Loaded(result: LiveAsyncResult[Nothing, LoadResult])
     case Validate(value: Json)
     case Submit
 
@@ -1021,7 +1021,7 @@ object Issue3117LiveView:
   object Row extends LiveComponent[String, Row.Msg, Row.Model]:
     private val Load = AsyncKey[String]("foo")
     enum Msg:
-      case Loaded(result: LiveAsyncResult[String])
+      case Loaded(result: LiveAsyncResult[Nothing, String])
 
     final case class Model(result: Option[String] = None, started: Boolean = false)
 
@@ -1101,7 +1101,7 @@ object Issue3169LiveView:
   object FormComponent extends LiveComponent[Option[String], FormComponent.Msg, Option[Record]]:
     private val Load = AsyncKey[Record]("load")
     enum Msg:
-      case Loaded(result: LiveAsyncResult[Record])
+      case Loaded(result: LiveAsyncResult[Nothing, Record])
 
     def mount(props: Option[String], ctx: MountContext) =
       ZIO.succeed(None)
@@ -1752,9 +1752,11 @@ object Issue3941LiveView:
     private val Load = AsyncKey[String]("async_assign")
 
     enum Msg:
-      case Loaded(result: LiveAsyncResult[String])
+      case Loaded(result: LiveAsyncResult[Nothing, String])
 
-    final case class Model(item: String, asyncAssign: AsyncValue[String] = AsyncValue.empty)
+    final case class Model(
+      item: String,
+      asyncAssign: AsyncValue[Nothing, String] = AsyncValue.empty)
 
     def mount(props: String, ctx: MountContext) =
       ZIO.succeed(Model(props))
@@ -1896,7 +1898,7 @@ object Issue3979LiveView:
 
   enum Msg:
     case Bump
-    case DelayedUpdate(result: LiveAsyncResult[Int])
+    case DelayedUpdate(result: LiveAsyncResult[Nothing, Int])
 
   object CounterComponent extends LiveComponent[CounterProps, Unit, CounterProps]:
     def mount(props: CounterProps, ctx: MountContext) =
@@ -1978,11 +1980,11 @@ object Issue4027LiveView:
   final case class Item(id: Int, value: String)
   final case class Model(
     caseName: String = "first",
-    data: AsyncValue[Vector[Item]] = AsyncValue.ok(Vector.empty))
+    data: AsyncValue[Nothing, Vector[Item]] = AsyncValue.ok(Vector.empty))
 
   enum Msg:
     case Load, Remove
-    case Loaded(result: LiveAsyncResult[Vector[Item]])
+    case Loaded(result: LiveAsyncResult[Nothing, Vector[Item]])
 
   private val InitialItems = Vector(Item(1, "First"), Item(2, "Second"), Item(3, "Third"))
 
@@ -2007,30 +2009,30 @@ object Issue4027LiveView:
 
   object ReproLiveComponentWithAsyncResult
       extends LiveComponent[
-        AsyncValue[Vector[Item]],
+        AsyncValue[Nothing, Vector[Item]],
         Unit,
-        AsyncValue[Vector[Item]]
+        AsyncValue[Nothing, Vector[Item]]
       ]:
-    def mount(props: AsyncValue[Vector[Item]], ctx: MountContext) =
+    def mount(props: AsyncValue[Nothing, Vector[Item]], ctx: MountContext) =
       ZIO.succeed(props)
 
     override def update(
-      props: AsyncValue[Vector[Item]],
-      model: AsyncValue[Vector[Item]],
+      props: AsyncValue[Nothing, Vector[Item]],
+      model: AsyncValue[Nothing, Vector[Item]],
       ctx: UpdateContext
     ) =
       ZIO.succeed(props)
 
     def handleMessage(
-      props: AsyncValue[Vector[Item]],
-      model: AsyncValue[Vector[Item]],
+      props: AsyncValue[Nothing, Vector[Item]],
+      model: AsyncValue[Nothing, Vector[Item]],
       ctx: MessageContext
     ) =
       (_: Unit) => ZIO.succeed(model)
 
     override def view(
-      props: Signal[AsyncValue[Vector[Item]]],
-      model: Signal[AsyncValue[Vector[Item]]]
+      props: Signal[AsyncValue[Nothing, Vector[Item]]],
+      model: Signal[AsyncValue[Nothing, Vector[Item]]]
     ) =
       asyncResult(model)
 
@@ -2040,7 +2042,7 @@ object Issue4027LiveView:
       keyedItems(items)
     )
 
-  private def asyncResult(data: Signal[AsyncValue[Vector[Item]]]) =
+  private def asyncResult(data: Signal[AsyncValue[Nothing, Vector[Item]]]) =
     div(
       idAttr := "result",
       data

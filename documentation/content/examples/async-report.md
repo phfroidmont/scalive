@@ -29,12 +29,13 @@ query or service call.
 - Every button starts its task with `ctx.async.start(ReportTask)(task)(...)`.
   Starting the same key again interrupts the running task, so its result is
   never delivered.
-- The model keeps an `AsyncValue[Report]`. `loading()` marks work as running and
-  `updated(result)` applies each completion; both keep the last successful
-  report.
+- The model keeps an `AsyncValue[ReportError, Report]`. `loading()` marks work as
+  running and `updated(result)` applies each completion; both keep the last
+  successful report.
 - `ctx.async.cancel` interrupts the task and delivers a `Cancelled` result with
   the given reason. **Cancel report** is disabled while nothing runs.
-- The failure shows fixed copy rather than the exception's message.
+- The failing report fails with a typed `ReportError`, and the view shows one
+  explanation per error. A defect would arrive as `Died` and show generic copy.
 
 ## Related guides {#related-guides}
 

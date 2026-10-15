@@ -5,29 +5,40 @@ import zio.test.*
 import scalive.*
 
 object AsyncValueSpec extends ZIOSpecDefault:
-  private val cause = RuntimeException("sensor offline")
+  private enum SensorError:
+    case Offline
+
+  private val defect = RuntimeException("sensor driver crashed")
 
   override def spec = suite("AsyncValueSpec")(
-    test("reports a failure and its cause") {
-      val failed = AsyncValue.ok(20.5).loading().updated(LiveAsyncResult.Failed(cause))
+    test("keeps a typed failure apart from a defect, and the last value in both") {
+      val reading: AsyncValue[SensorError, Double] = AsyncValue.ok(20.5)
+      val failed = reading.loading().updated(LiveAsyncResult.Failed(SensorError.Offline))
+      val died   = reading.loading().updated(LiveAsyncResult.Died(defect))
 
       assertTrue(
+        failed == AsyncValue.Failed(Some(20.5), SensorError.Offline),
         failed.isFailed,
-        failed.failure.contains(cause),
-        failed.valueOption.contains(20.5),
-        !AsyncValue.ok(20.5).isFailed,
-        AsyncValue.ok(20.5).failure.isEmpty,
-        AsyncValue.loading[Double].failure.isEmpty
+        failed.failure.contains(SensorError.Offline),
+        died == AsyncValue.Died(Some(20.5), defect),
+        died.isFailed,
+        died.failure.isEmpty,
+        died.valueOption.contains(20.5),
+        !reading.isFailed,
+        reading.failure.isEmpty,
+        AsyncValue.loading[SensorError, Double].failure.isEmpty
       )
     },
     test("maps the current and previous values and keeps the state") {
-      def celsius(value: AsyncValue[Double]) = value.map(degrees => s"$degrees °C")
+      def celsius(value: AsyncValue[SensorError, Double]) = value.map(degrees => s"$degrees °C")
 
       assertTrue(
         celsius(AsyncValue.empty) == AsyncValue.Empty,
         celsius(AsyncValue.Loading(Some(20.5))) == AsyncValue.Loading(Some("20.5 °C")),
         celsius(AsyncValue.ok(20.5)) == AsyncValue.Ok("20.5 °C"),
-        celsius(AsyncValue.Failed(Some(20.5), cause)) == AsyncValue.Failed(Some("20.5 °C"), cause),
+        celsius(AsyncValue.Failed(Some(20.5), SensorError.Offline)) ==
+          AsyncValue.Failed(Some("20.5 °C"), SensorError.Offline),
+        celsius(AsyncValue.Died(Some(20.5), defect)) == AsyncValue.Died(Some("20.5 °C"), defect),
         celsius(AsyncValue.Cancelled(None, Some("stopped"))) ==
           AsyncValue.Cancelled(None, Some("stopped"))
       )

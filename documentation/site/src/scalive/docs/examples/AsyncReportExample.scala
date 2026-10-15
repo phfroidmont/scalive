@@ -60,7 +60,7 @@ final class AsyncReportExample(instanceId: String)
           ),
           reportPanel(
             report.map(reportState),
-            report.map(reportValue),
+            report.map(_.valueOption),
             report.map(reportStatus)
           )
         )
@@ -68,7 +68,7 @@ final class AsyncReportExample(instanceId: String)
   end view
 
   // docs:start async-report-start
-  private def start(model: Model, ctx: MessageContext, task: Task[Report]) =
+  private def start(model: Model, ctx: MessageContext, task: IO[ReportError, Report]) =
     ctx.async
       .start(ReportTask)(task)(Msg.ReportCompleted(_))
       .as(model.copy(report = model.report.loading()))
@@ -93,33 +93,34 @@ final class AsyncReportExample(instanceId: String)
       }
     )
 
-  private def reportState(value: AsyncValue[Report]): String = value match
+  private def reportState(value: AsyncValue[ReportError, Report]): String = value match
     case AsyncValue.Empty           => "Empty"
     case AsyncValue.Loading(_)      => "Loading"
     case AsyncValue.Ok(_)           => "Succeeded"
     case AsyncValue.Failed(_, _)    => "Failed"
+    case AsyncValue.Died(_, _)      => "Failed"
     case AsyncValue.Cancelled(_, _) => "Cancelled"
 
-  private def reportValue(value: AsyncValue[Report]): Option[Report] = value match
-    case AsyncValue.Empty                  => None
-    case AsyncValue.Loading(previous)      => previous
-    case AsyncValue.Ok(report)             => Some(report)
-    case AsyncValue.Failed(previous, _)    => previous
-    case AsyncValue.Cancelled(previous, _) => previous
-
-  private def reportStatus(value: AsyncValue[Report]): String = value match
-    case AsyncValue.Empty                => "Empty"
-    case AsyncValue.Loading(_)           => "Generating report..."
-    case AsyncValue.Ok(_)                => "Report completed."
-    case AsyncValue.Failed(_, _)         => "The deterministic data source rejected the report."
+  // docs:start async-report-status
+  private def reportStatus(value: AsyncValue[ReportError, Report]): String = value match
+    case AsyncValue.Empty                                 => "Empty"
+    case AsyncValue.Loading(_)                            => "Generating report..."
+    case AsyncValue.Ok(_)                                 => "Report completed."
+    case AsyncValue.Failed(_, ReportError.SourceRejected) =>
+      "The deterministic data source rejected the report."
+    case AsyncValue.Died(_, _)           => "Report generation stopped unexpectedly."
     case AsyncValue.Cancelled(_, reason) =>
       reason.getOrElse("Report generation was cancelled.")
+  // docs:end async-report-status
 end AsyncReportExample
 
 object AsyncReportExample:
   final case class Report(title: String, rows: Int, summary: String)
   // docs:start async-report-model
-  final case class Model(report: AsyncValue[Report] = AsyncValue.empty)
+  enum ReportError:
+    case SourceRejected
+
+  final case class Model(report: AsyncValue[ReportError, Report] = AsyncValue.empty)
   // docs:end async-report-model
 
   enum Msg:
@@ -129,28 +130,27 @@ object AsyncReportExample:
     case Retry
     case Cancel
     case Reset
-    case ReportCompleted(result: LiveAsyncResult[Report])
+    case ReportCompleted(result: LiveAsyncResult[ReportError, Report])
 
   private[docs] def reportKey(instanceId: String): AsyncKey[Report] =
     AsyncKey[Report](s"async-report-$instanceId")
 
-  private def successfulReport: Task[Report] =
+  private def successfulReport: UIO[Report] =
     ZIO
       .sleep(2.seconds).as(
         Report("Quarterly activity", 128, "The deterministic success path completed normally.")
       )
 
-  private def failingReport: Task[Report] =
-    ZIO.sleep(1.second) *>
-      ZIO.fail(new RuntimeException("The deterministic data source rejected the report."))
+  private def failingReport: IO[ReportError, Report] =
+    ZIO.sleep(1.second) *> ZIO.fail(ReportError.SourceRejected)
 
-  private def replacementReport: Task[Report] =
+  private def replacementReport: UIO[Report] =
     ZIO
       .sleep(600.millis).as(
         Report("Replacement report", 64, "The replacement suppressed the obsolete completion.")
       )
 
-  private def retryReport: Task[Report] =
+  private def retryReport: UIO[Report] =
     ZIO
       .sleep(800.millis).as(
         Report("Retried report", 128, "The retry completed with deterministic data.")

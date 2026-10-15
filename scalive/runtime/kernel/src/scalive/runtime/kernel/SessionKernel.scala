@@ -7,6 +7,7 @@ import scala.collection.immutable.Queue as ImmutableQueue
 import zio.Cause
 import zio.Clock
 import zio.Exit
+import zio.IO
 import zio.Promise
 import zio.Queue
 import zio.Ref
@@ -2694,7 +2695,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     ZIO
       .foldLeft(activeOperations)(ManagedPreparation(initial)) { (prepared, operation) =>
         operation match
-          case start: ResourceOperation.StartAsync[?, ?] =>
+          case start: ResourceOperation.StartAsync[?, ?, ?] =>
             val owner = start.owner
             val key   = ResourceKey.Async(start.key.value)
             for
@@ -2702,8 +2703,8 @@ final private[scalive] class SessionKernel[Msg, Model] private (
               token    <- identity(prepared.index.nextToken(owner, epoch, key))
               resource <- prepareAsyncResource(
                             token,
-                            start.task.asInstanceOf[Task[Any]],
-                            start.toMessage.asInstanceOf[LiveAsyncResult[Any] => Any],
+                            start.task.asInstanceOf[IO[Any, Any]],
+                            start.toMessage.asInstanceOf[LiveAsyncResult[Any, Any] => Any],
                             candidateScope
                           )
               replacement = prepared.index.install(token, resource)
@@ -2851,8 +2852,8 @@ final private[scalive] class SessionKernel[Msg, Model] private (
 
   private def prepareAsyncResource(
     token: ResourceToken,
-    task: Task[Any],
-    mapResult: LiveAsyncResult[Any] => Any,
+    task: IO[Any, Any],
+    mapResult: LiveAsyncResult[Any, Any] => Any,
     candidateScope: CandidateScope
   ): UIO[ManagedResource.Async] =
     for
@@ -2864,14 +2865,32 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                  _ => ZIO.unit,
                  _ =>
                    task.exit.flatMap { exit =>
-                     val result = exit match
-                       case Exit.Success(value) => LiveAsyncResult.Succeeded(value)
-                       case Exit.Failure(cause) => LiveAsyncResult.Failed(cause.squash)
-                     enqueueOwnedCommand(SessionCommand.ManagedAsync(epoch, token, result))
+                     val result    = asyncResult(exit)
+                     val logDefect = (result, token.key) match
+                       case (LiveAsyncResult.Died(_), ResourceKey.Async(name)) =>
+                         ZIO.logWarningCause(
+                           s"managed async task '$name' died with a defect",
+                           exit.causeOption.getOrElse(Cause.empty)
+                         )
+                       case _ => ZIO.unit
+                     logDefect *>
+                       enqueueOwnedCommand(SessionCommand.ManagedAsync(epoch, token, result))
                    }
                )
       _ <- worker.forkIn(scope)
     yield resource
+
+  // A typed failure wins over a defect, as in `catchAll`; an interruption the runtime did not
+  // request means the task interrupted itself.
+  private def asyncResult(exit: Exit[Any, Any]): LiveAsyncResult[Any, Any] = exit match
+    case Exit.Success(value) => LiveAsyncResult.Succeeded(value)
+    case Exit.Failure(cause) =>
+      cause.failureOption match
+        case Some(error) => LiveAsyncResult.Failed(error)
+        case None        =>
+          cause.dieOption match
+            case Some(defect) => LiveAsyncResult.Died(defect)
+            case None         => LiveAsyncResult.Cancelled(None)
 
   private def prepareSubscriptionResource(
     token: ResourceToken,

@@ -103,16 +103,21 @@ object ExampleRegistrySpec extends ZIOSpecDefault:
     test("projects managed work without report, error, or clock payloads") {
       val async   = ExampleRegistry.get("async-report").get
       val clock   = ExampleRegistry.get("subscription-clock").get
-      val failure = new RuntimeException("private service details")
+      val defect  = new RuntimeException("private service details")
+      val failure = AsyncReportExample.ReportError.SourceRejected
       assertTrue(
         async.resetMessage == AsyncReportExample.Msg.Reset,
         async
           .projectMessage(
             AsyncReportExample.Msg.ReportCompleted(LiveAsyncResult.Failed(failure))
           ).exists(_.summary == "Async report failed"),
+        async
+          .projectMessage(
+            AsyncReportExample.Msg.ReportCompleted(LiveAsyncResult.Died(defect))
+          ).exists(_.summary == "Async report died"),
         !async
           .projectMessage(
-            AsyncReportExample.Msg.ReportCompleted(LiveAsyncResult.Failed(failure))
+            AsyncReportExample.Msg.ReportCompleted(LiveAsyncResult.Died(defect))
           ).exists(_.toString.contains("private service details")),
         async
           .projectModel(

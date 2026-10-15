@@ -1,6 +1,7 @@
 package scalive
 
 import zio.Duration
+import zio.IO
 import zio.Task
 import zio.UIO
 import zio.ZIO
@@ -256,10 +257,11 @@ trait Async[Msg]:
     *
     * The task starts once the current mount or message commits. Starting a `key` that is already
     * running interrupts the previous task, which then delivers nothing; use this to refresh or to
-    * follow the latest query. Task failures arrive as [[LiveAsyncResult.Failed]] rather than
-    * failing the lifecycle.
+    * follow the latest query. A typed failure arrives as [[LiveAsyncResult.Failed]] and a defect as
+    * [[LiveAsyncResult.Died]]; neither fails the lifecycle. A `Task` fails with `Throwable`, so its
+    * exceptions arrive as `Failed`.
     */
-  def start[A](key: AsyncKey[A])(task: Task[A])(toMsg: LiveAsyncResult[A] => Msg): Task[Unit]
+  def start[E, A](key: AsyncKey[A])(task: IO[E, A])(toMsg: LiveAsyncResult[E, A] => Msg): Task[Unit]
 
   /** Interrupts the task running under `key` and sends its [[LiveAsyncResult.Cancelled]] message.
     *

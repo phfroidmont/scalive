@@ -649,7 +649,7 @@ object ComponentRuntimeSpec extends ZIOSpecDefault:
         operations <- turn.root.resourceOperationSnapshot
         taskStarted <- started.get
         owners = operations.map {
-                   case operation: ResourceOperation.StartAsync[?, ?] => operation.owner
+                   case operation: ResourceOperation.StartAsync[?, ?, ?] => operation.owner
                    case operation: ResourceOperation.CancelAsync      => operation.owner
                    case _ => throw AssertionError("unexpected resource operation")
                  }

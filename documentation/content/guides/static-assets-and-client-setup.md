@@ -22,7 +22,8 @@ the packaged clients.
 
 ## Load the packaged clients {#load-the-packaged-clients}
 
-`ZioHttp.routes` serves Scalive's own browser files below `/_scalive` and adds
+`ZioHttp.routes` serves Scalive's own browser files below `/_scalive`, or the
+router's [client path](configuration.md#configure-routes-and-assets), and adds
 them to every page's `<head>`, as it adds the CSRF `<meta>` element. With the
 default @:apiSymbol(enum:scalive.LiveClient)`LiveClient.Packaged`@:@, it adds:
 

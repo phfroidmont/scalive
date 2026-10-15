@@ -46,8 +46,8 @@ All four values are required:
 Construct the value once and reuse it. `ZioHttp.routes` also validates the
 assembled Live route catalog: its effect fails with
 @:apiSymbol(class:scalive.ZioHttp.AssemblyException)`ZioHttp.AssemblyException`@:@ for
-duplicate live-session names or duplicate rendered paths, before the server
-starts.
+duplicate live-session names, duplicate rendered paths, or a route that matches
+one of Scalive's browser files, before the server starts.
 
 ## Admit WebSocket origins {#admit-websocket-origins}
 
@@ -109,8 +109,9 @@ The remaining framework choices are made while assembling the application:
 | Concern | API and default | Requirement |
 | --- | --- | --- |
 | WebSocket path | `Live.router.withSocketPath`; default `/live` | The packaged client connects to it; a custom bundle must use the same mount. The WebSocket upgrade is the mount's `/websocket` child, `/live/websocket` by default. |
+| Scalive browser files | `Live.router.withClientPath`; default `/_scalive` | Scalive serves its navigation-guard runtime below it with either client, and the packaged Phoenix clients too. No Live route may match one of these files. |
 | Root and Live layouts | `Live.router.withRootLayout` and `.withLayout`; `LiveRootLayout.default` and no ordinary layouts by default | A custom root renders a complete `<html>`, `<head>`, and `<body>` with the application assets. Scalive inserts its CSRF metadata and browser scripts into the `<head>`. |
-| Phoenix clients | The `client` argument of `ZioHttp.routes`; default `LiveClient.Packaged`, served below `/_scalive` | Pass `LiveClient.Custom` when the application bundle imports both npm clients and connects its own `LiveSocket`. |
+| Phoenix clients | The `client` argument of `ZioHttp.routes`; default `LiveClient.Packaged`, served below the client path | Pass `LiveClient.Custom` when the application bundle imports both npm clients and connects its own `LiveSocket`. |
 | Static assets | `StaticAssetConfig.classpath`, `.directory`, `.deploymentClasspath`, or `.deploymentDirectory`; default mount `/static` | Load assets before startup, add `assets.routes`, and render versioned or final URLs from the same loaded value. |
 
 Use `classpath` or `directory` when Scalive should version one complete relative
@@ -124,6 +125,14 @@ This router serves its WebSocket below `/socket`:
 The packaged client then opens the WebSocket at `/socket/websocket`, and a
 reverse proxy must forward the upgrade on that path. A custom bundle passes the
 same `/socket` to its `LiveSocket`.
+
+An application served below a prefix declares its routes below it and moves the
+WebSocket and Scalive's browser files there too, so the edge forwards one path:
+
+@:sourceRegion(documentation/fixtures/guides/src/configuration/Configuration.scala, configuration-prefixed-paths)
+
+Every page then loads Scalive's scripts below `/app/_scalive` and connects to
+`/app/live/websocket`.
 
 Use [Client setup and static assets](static-assets-and-client-setup.md) for asset
 sources, versioned paths, deployment manifests, cache policy, and complete

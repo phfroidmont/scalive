@@ -6734,6 +6734,18 @@
       ]
     },
     {
+      "id" : "def:scalive.LiveRouter.withClientPath",
+      "ownerId" : "class:scalive.LiveRouter",
+      "qualifiedName" : "scalive.LiveRouter.withClientPath",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveRouter.withClientPath:508eb51458db5fc7",
+          "signature" : "def withClientPath(value: zio.http.codec.PathCodec[Unit]): LiveRouter"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.LiveRouter.withLayout",
       "ownerId" : "class:scalive.LiveRouter",
       "qualifiedName" : "scalive.LiveRouter.withLayout",
@@ -22809,6 +22821,18 @@
         {
           "id" : "val:scalive.Live.router:e352569d496f53a3",
           "signature" : "val router: LiveRouter"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveApplication.clientPath",
+      "ownerId" : "class:scalive.LiveApplication",
+      "qualifiedName" : "scalive.LiveApplication.clientPath",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveApplication.clientPath:3cb0c034aad321c4",
+          "signature" : "val clientPath: zio.http.codec.PathCodec[Unit]"
         }
       ]
     },

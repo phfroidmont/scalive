@@ -64,7 +64,7 @@ development only.
 ## Diagnose missing assets {#diagnose-missing-assets}
 
 If the HTML renders but remains disconnected, first verify that the scripts
-Scalive adds below `/_scalive`, or the custom client bundle, loaded successfully. Compare the response
+Scalive adds below its client path, `/_scalive` by default, or the custom client bundle, loaded successfully. Compare the response
 with the canonical
 [asset serving](static-assets-and-client-setup.md#serve-versioned-paths) and
 [tracked tag](static-assets-and-client-setup.md#render-tracked-tags) setup, then

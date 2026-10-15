@@ -854,6 +854,9 @@ object LiveSessionBuilder:
   *   The registered routes and named live sessions passed to the router, in declaration order.
   * @param socketPath
   *   The path of the LiveView WebSocket, `/live` unless set with [[LiveRouter.withSocketPath]].
+  * @param clientPath
+  *   The path below which Scalive serves its own browser files, `/_scalive` unless set with
+  *   [[LiveRouter.withClientPath]].
   * @param layouts
   *   The router's layouts, which wrap every route outside session and route layouts, in
   *   installation order.
@@ -864,6 +867,7 @@ object LiveSessionBuilder:
 final class LiveApplication[-R] private[scalive] (
   val routes: Vector[LiveRegistration[R] | LiveSession[R]],
   val socketPath: PathCodec[Unit],
+  val clientPath: PathCodec[Unit],
   val layouts: Vector[LiveLayout[Any, Any]],
   val rootLayout: LiveRootLayout[Any, Any])
 
@@ -871,13 +875,16 @@ private[scalive] object LiveApplication:
   def apply[R](
     routes: Vector[LiveRegistration[R] | LiveSession[R]],
     socketPath: PathCodec[Unit],
+    clientPath: PathCodec[Unit],
     layouts: Vector[LiveLayout[Any, Any]],
     rootLayout: LiveRootLayout[Any, Any]
-  ): LiveApplication[R] = new LiveApplication(routes, socketPath, layouts, rootLayout)
+  ): LiveApplication[R] =
+    new LiveApplication(routes, socketPath, clientPath, layouts, rootLayout)
 
 /** Collects an application's routes into a [[LiveApplication]]. Start from `Live.router`. */
 final class LiveRouter private[scalive] (
   private val socketPath: PathCodec[Unit],
+  private val clientPath: PathCodec[Unit],
   private val layouts: Vector[LiveLayout[Any, Any]],
   private val rootLayout: LiveRootLayout[Any, Any]):
 
@@ -885,14 +892,23 @@ final class LiveRouter private[scalive] (
     *
     * The browser's `LiveSocket` must connect to the same path.
     */
-  def withSocketPath(value: PathCodec[Unit]): LiveRouter = LiveRouter(value, layouts, rootLayout)
+  def withSocketPath(value: PathCodec[Unit]): LiveRouter =
+    LiveRouter(value, clientPath, layouts, rootLayout)
+
+  /** Serves Scalive's own browser files below `value` instead of `/_scalive`.
+    *
+    * Scalive adds these scripts to every page, with either client, so an application served below a
+    * prefix moves them there too, as in `withClientPath(PathCodec.empty / "app" / "_scalive")`.
+    */
+  def withClientPath(value: PathCodec[Unit]): LiveRouter =
+    LiveRouter(socketPath, value, layouts, rootLayout)
 
   /** Wraps every route in `value`.
     *
     * Router layouts sit outside session and route layouts, and nest in installation order.
     */
   def withLayout(value: LiveLayout[Any, Any]): LiveRouter =
-    LiveRouter(socketPath, layouts :+ value, rootLayout)
+    LiveRouter(socketPath, clientPath, layouts :+ value, rootLayout)
 
   /** Renders every route's document with `value`, unless a session or route installs its own.
     *
@@ -900,7 +916,7 @@ final class LiveRouter private[scalive] (
     * around it.
     */
   def withRootLayout(value: LiveRootLayout[Any, Any]): LiveRouter =
-    LiveRouter(socketPath, layouts, value)
+    LiveRouter(socketPath, clientPath, layouts, value)
 
   /** Builds the application from registered routes and named live sessions.
     *
@@ -916,15 +932,16 @@ final class LiveRouter private[scalive] (
   private[scalive] def application[R](
     routes: Seq[LiveRegistration[R] | LiveSession[R]]
   ): LiveApplication[R] =
-    LiveApplication(routes.toVector, socketPath, layouts, rootLayout)
+    LiveApplication(routes.toVector, socketPath, clientPath, layouts, rootLayout)
 end LiveRouter
 
 private[scalive] object LiveRouter:
   def apply(
     socketPath: PathCodec[Unit],
+    clientPath: PathCodec[Unit],
     layouts: Vector[LiveLayout[Any, Any]],
     rootLayout: LiveRootLayout[Any, Any]
-  ): LiveRouter = new LiveRouter(socketPath, layouts, rootLayout)
+  ): LiveRouter = new LiveRouter(socketPath, clientPath, layouts, rootLayout)
 
 /** Entry points for declaring a Scalive application. */
 object Live:
@@ -935,7 +952,12 @@ object Live:
     * start](https://scalive.dev/learn/quick-start).
     */
   val router: LiveRouter =
-    LiveRouter(PathCodec.empty / "live", Vector.empty, LiveRootLayout.default)
+    LiveRouter(
+      PathCodec.empty / "live",
+      PathCodec.empty / "_scalive",
+      Vector.empty,
+      LiveRootLayout.default
+    )
 
   /** Starts a route from a ZIO HTTP path codec. Most routes start from `live` instead. */
   def route[A](pathCodec: PathCodec[A]): LivePath[A] = LivePath(pathCodec)
@@ -953,6 +975,7 @@ object Live:
       Vector.empty,
       None
     )
+end Live
 
 /** The root path `/`, from which routes are declared, as in `live / "counter"`.
   *

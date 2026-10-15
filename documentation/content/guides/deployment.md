@@ -93,14 +93,14 @@ browser uses HTTPS. Scalive does not infer HTTPS from `Forwarded`,
 The edge must route all of the following to the application:
 
 - ordinary page and form requests;
-- static requests below `/_scalive` and every configured asset mount; and
+- static requests below the client path and every configured asset mount; and
 - WebSocket upgrade requests below the configured socket path.
 
 With the default router, the upgrade endpoint is `/live/websocket`. Scalive's
-own browser scripts are served below `/_scalive`; that static mount is separate
-from the socket path. If the router
-[uses another socket path](configuration.md#configure-routes-and-assets), forward
-that path's `/websocket` child instead.
+own browser scripts are served below the client path, `/_scalive` by default;
+that static mount is separate from the socket path. If the router
+[uses another socket or client path](configuration.md#configure-routes-and-assets),
+forward those instead.
 
 Preserve the upgrade request's query string, cookie header, and the browser's
 single `Origin` header: CSRF validation, the LiveView join, and
@@ -111,9 +111,11 @@ ones.
 
 Scalive supports only the WebSocket transport. There is no long-poll fallback,
 so a network or edge that blocks WebSocket upgrades leaves the page in its
-disconnected state. Scalive also has no external-path-prefix setting; an edge
-that adds a prefix must still expose page, WebSocket, and static paths exactly
-as the application renders them.
+disconnected state. Scalive also has no external-path-prefix setting. To serve
+the application below a prefix, declare its routes below it and
+[move the socket and client paths there](configuration.md#configure-routes-and-assets);
+an edge that adds a prefix itself must still expose page, WebSocket, and static
+paths exactly as the application renders them.
 
 ### Example: nginx {#example-nginx}
 

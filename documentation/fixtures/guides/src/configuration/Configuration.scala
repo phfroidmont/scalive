@@ -53,6 +53,15 @@ object SocketPath:
     )
   // docs:end configuration-socket-path
 
+object PrefixedPaths:
+  // docs:start configuration-prefixed-paths
+  val application = Live.router
+    .withSocketPath(PathCodec.empty / "app" / "live")
+    .withClientPath(PathCodec.empty / "app" / "_scalive")(
+      live / "app" -> CounterLiveView()
+    )
+  // docs:end configuration-prefixed-paths
+
 object Observers:
   // docs:start configuration-custom-observer
   val applicationObserver = LifecycleObserver.fromFunction { event =>

@@ -91,6 +91,45 @@ object BrowserFilesSpec extends ZIOSpecDefault:
         html   <- page(routes)
       yield assertTrue(html.contains("data-socket-path=\"/socket\""))
     },
+    test("the router's client path moves every browser file") {
+      val application = Live.router
+        .withClientPath(PathCodec.empty / "app" / "_scalive")
+        .withRootLayout(RootLayout())(live -> Page)
+      for
+        routes    <- ZioHttp.routes(application, config)
+        html      <- page(routes)
+        scripts    = sources(html).filterNot(_ == "/app.js")
+        responses <- ZIO.foreach(scripts)(get(routes, _))
+        moved     <- get(routes, scripts.head.stripPrefix("/app"))
+      yield assertTrue(
+        scripts.size == 4,
+        scripts.forall(_.startsWith("/app/_scalive/")),
+        scripts(0).matches("/app/_scalive/assets/[0-9a-f]{64}/navigation-guard\\.js"),
+        scripts(1).matches("/app/_scalive/live-view/[0-9a-f]{64}/phoenix\\.min\\.js"),
+        responses.forall(_.status == Status.Ok),
+        moved.status == Status.NotFound
+      )
+    },
+    test("only a route that matches a browser file fails assembly") {
+      val shadowing = live / "_scalive" / PathCodec.string("folder") / PathCodec.string("hash") /
+        PathCodec.string("file")
+      val outside = live / "_scalive" / "about"
+      for
+        custom <- ZioHttp
+                    .routes(Live.router(shadowing -> Page), config, client = LiveClient.Custom)
+                    .flip
+        moved <- ZioHttp
+                   .routes(
+                     Live.router.withClientPath(PathCodec.empty / "files")(shadowing -> Page),
+                     config
+                   ).either
+        unrelated <- ZioHttp.routes(Live.router(outside -> Page), config).either
+      yield assertTrue(
+        custom.getMessage.startsWith("route path overlaps Scalive's browser files below /_scalive:"),
+        moved.isRight,
+        unrelated.isRight
+      )
+    },
     test("a custom client gets only the navigation guard") {
       val application = Live.router.withRootLayout(RootLayout())(live -> Page)
       for

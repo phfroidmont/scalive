@@ -15,7 +15,8 @@ work, served by `ZioHttp.routes` as in the
 ## The guard runtime {#load-the-runtime}
 
 The guard needs a small browser runtime. `ZioHttp.routes` serves it below
-`/_scalive/assets` and adds it to every page's `<head>`, before the Phoenix
+`/_scalive/assets`, or the `assets` child of the router's client path, and adds
+it to every page's `<head>`, before the Phoenix
 clients and the root layout's own scripts, so it is installed before
 `LiveSocket` connects. Applications with a
 [custom client bundle](static-assets-and-client-setup.md#build-the-client-bundle)

@@ -123,12 +123,13 @@ object ZioHttp:
   /** Builds the ZIO HTTP routes that serve `application`: one GET route per page and the LiveView
     * WebSocket.
     *
-    * The routes also serve Scalive's own browser files below `/_scalive`, and Scalive adds them to
-    * every page's `<head>`. With the default `client`, they include the Phoenix clients and a
-    * script that connects them; see [[LiveClient]]. It fails with [[AssemblyException]] when the
-    * application is invalid, for example when two named live sessions share a name. `observer`
-    * receives structured lifecycle events. Ordinary HTTP handlers that need the same CSRF, flash,
-    * or cookie policy build a [[LiveSecurity]] from the same `config`.
+    * The routes also serve Scalive's own browser files below the router's client path, `/_scalive`
+    * by default, and Scalive adds them to every page's `<head>`. With the default `client`, they
+    * include the Phoenix clients and a script that connects them; see [[LiveClient]]. It fails with
+    * [[AssemblyException]] when the application is invalid, for example when two named live
+    * sessions share a name or a route matches one of those browser files. `observer` receives
+    * structured lifecycle events. Ordinary HTTP handlers that need the same CSRF, flash, or cookie
+    * policy build a [[LiveSecurity]] from the same `config`.
     */
   def routes[R](
     application: LiveApplication[R],
@@ -158,7 +159,11 @@ object ZioHttp:
       socketPath <- ZIO
                       .fromEither(application.socketPath.format(()))
                       .mapError(error => AssemblyException(s"invalid socket path: $error"))
-      browser <- BrowserFiles.load(client, socketPath.encode)
+      clientPath <- ZIO
+                      .fromEither(application.clientPath.format(()))
+                      .mapError(error => AssemblyException(s"invalid client path: $error"))
+      browser <- BrowserFiles.load(client, socketPath.encode, clientPath)
+      _       <- ZIO.fromEither(rejectBrowserFileRoutes(catalog, browser, clientPath))
     yield
       val getRoutes   = catalog.map(_.getRoute(config, lifecycleObserver, browser))
       val socketRoute = websocketRoute(
@@ -213,6 +218,23 @@ object ZioHttp:
       )
     else Right(catalog)
   end validate
+
+  // A route that matches one of Scalive's browser files would either hide it or never be reached.
+  private def rejectBrowserFileRoutes[R](
+    catalog: Vector[CompiledRoute[R]],
+    browser: BrowserFiles,
+    clientPath: Path
+  ): Either[AssemblyException, Unit] =
+    val overlapping =
+      catalog.filter(route => browser.paths.exists(path => route.matches(URL(path))))
+    if overlapping.isEmpty then Right(())
+    else
+      Left(
+        AssemblyException(
+          s"route path overlaps Scalive's browser files below ${clientPath.encode}: " +
+            overlapping.map(_.pathDescription).sorted.mkString(", ")
+        )
+      )
 
   final private[scalive] case class SessionMountClaims(values: Vector[String])
 

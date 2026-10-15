@@ -718,6 +718,13 @@ object ZioHttp:
             .unless(selectedRoot.key(rootContext) == claims.rootLayoutKey) *>
             definition.paramsCodec
               .decode(path, url)
+              // The client answers this rejection with a page request, which then answers 400.
+              .mapError(error =>
+                ConnectedMountRejected(
+                  LiveSessionMountFailure
+                    .unauthorized(s"invalid route parameters: ${error.message}")
+                )
+              )
               .flatMap(make(_, context, url)).map { lifecycle =>
                 val initialized = lifecycle.copy(mount =
                   mountContext =>

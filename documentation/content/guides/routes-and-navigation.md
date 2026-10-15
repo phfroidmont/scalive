@@ -73,7 +73,8 @@ loop.
 
 A URL whose parameters don't decode never mounts the view. A page request for it
 gets `400 Bad Request`, and Scalive logs a warning with the path and the decode
-error. A live patch to it calls
+error; live navigation to it falls back to that page request. A live patch to it
+calls
 @:apiSymbol(def:scalive.LiveView.Routed.handleParamsDecodeError)`handleParamsDecodeError`@:@
 instead, which crashes the LiveView unless you override it. `queryOptional`
 decodes a missing value to `None`, but a malformed one still fails, so a view

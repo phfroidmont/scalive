@@ -1249,6 +1249,36 @@ object ZioHttpSpec extends ZIOSpecDefault:
         body.contains("none")
       )
     },
+    test("a connected mount whose parameters fail to decode falls back to a page request") {
+      object View extends LiveView.Routed.Eventless[Unit, Option[java.util.UUID]]:
+        def mount(params: Option[java.util.UUID], ctx: MountContext) = ZIO.unit
+        def view(model: Signal[Unit]) = div()
+      val application =
+        scalive.Live.router(scalive.live.queryOptional[java.util.UUID]("id") -> View)
+      val route   = ZioHttp.validate(application).fold(throw _, identity).head
+      val joinRef = PhoenixRef.Value("1")
+      val ref     = PhoenixRef.Value("2")
+      val badUrl  = URL.decode("/?id=garbage").toOption.get
+
+      for
+        response <- run(ZioHttp.routes(application, config), Request.get(URL.root))
+        body     <- response.body.asString.orDie
+        claims <- ZioHttpSecurity.verifySession(config, attribute(body, "data-phx-session").get)
+        error  <- route.prepareConnected(badUrl, Request.get(badUrl), claims).flip
+      yield assertTrue(
+        ZioHttp.joinFailureEnvelope(joinRef, ref, "lv:root", error) == PhoenixEnvelope(
+          joinRef,
+          ref,
+          "lv:root",
+          "phx_reply",
+          Json.Obj(
+            "status"   -> Json.Str("error"),
+            "response" -> Json.Obj("reason" -> Json.Str("unauthorized"))
+          )
+        ),
+        error.getMessage.contains("id")
+      )
+    },
     test("routed connected lifecycle mounts, handles params, and recovers patch decode failures") {
       val events = scala.collection.mutable.ArrayBuffer.empty[String]
       val decoder = LiveParamsCodec.custom[Unit, String](

@@ -56,7 +56,7 @@ final class BlurFeedbackExample
         input(typ  := "hidden", nameAttr := choice.name, value := choice.fieldValue),
         button(typ := "button", on.click(Msg.SelectChoice), "Choose an option"),
         // A real composite widget dispatches this only when focus leaves the whole widget.
-        button(typ := "button", on.click(choice.blurred), "Close picker")
+        button(typ := "button", on.click(binding.blurred(Profile.Choice)), "Close picker")
       ),
       choice.errorFeedback(error => error.map(_.message)),
       rows.splitBy(_.key) { (key, row) =>

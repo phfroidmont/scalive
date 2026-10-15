@@ -144,16 +144,16 @@ object AuthHttpRoutes:
   val SessionCookieName    = "__scalive_docs_auth_lab"
   private val FormMaxBytes = 4096L
 
-final class LoginLiveView extends LiveView.Eventless[Unit]:
+final class LoginLiveView extends LiveView.Eventless[LoginForm.Definition.Form]:
   import LoginForm.*
   import LoginLiveView.*
 
-  def mount(ctx: MountContext) = ZIO.unit
+  def mount(ctx: MountContext) =
+    ZIO.succeed(Definition.initial(Email.initial(AuthService.DemoEmail)))
 
-  def view(model: Signal[Unit]): HtmlElement[Nothing] =
-    val loginForm     = Definition.initial(Email.initial(AuthService.DemoEmail))
-    val emailField    = loginForm.field(Email)
-    val passwordField = loginForm.field(Password)
+  def view(model: Signal[Definition.Form]): HtmlElement[Nothing] =
+    val emailField    = model.field(Email)
+    val passwordField = model.field(Password)
 
     articleTag(
       cls := "docs-auth-lab",

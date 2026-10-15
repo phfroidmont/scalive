@@ -15,11 +15,12 @@ controls a form needs.
 
 ## Render richer controls {#render-richer-controls}
 
-Ask the form for a field view, then render the control you need. Field views
-provide `text`, `email`, `tel`, `date`, `search`, `password`, `hidden`,
-`checkbox`, `textarea`, and `select` helpers. Normal attributes such as
-`autocomplete`, `maxlength`, `required`, `multiple`, or CSS classes remain
-available:
+Ask the form signal for a field's
+@:apiSymbol(class:scalive.FormControl)`FormControl`@:@, then render the control
+you need. A control provides `text`, `email`, `tel`, `date`, `search`,
+`password`, `hidden`, `checkbox`, `textarea`, and `select` helpers. Normal
+attributes such as `autocomplete`, `maxlength`, `required`, `multiple`, or CSS
+classes remain available:
 
 ```scala fragment
 val bio  = profileForm.field(Profile.Bio)
@@ -34,6 +35,11 @@ domain value, so a control keeps showing malformed input while its error is
 visible. The native `tel`, `date`, and `search` helpers do not introduce
 parsing, trimming, or domain validation. ARIA feedback stays opt-in through
 `validationAttributes`.
+
+The control owns the `id`, `name`, `value`, `type`, `checked`, `phx-change`, and
+`phx-blur` attributes of what it renders: a helper throws
+`IllegalArgumentException` when its modifiers set one. Use `onBlur` for a blur
+message, and `inputAttributes` for a custom input that renders its own element.
 
 A select marks every option found in `rawValues`; for a `multiple` select, use a
 repeated-value field such as `Root.texts`.
@@ -81,9 +87,9 @@ value is a separate semantic rule, expressible with
 ## Offer several checkbox choices {#offer-several-checkbox-choices}
 
 For repeated checkbox choices, use `Root.texts`, not the Boolean
-`FieldInput.checkbox` codec. A bound `FormControl` provides
-`item(key: String): FormControlItem[Msg]` so each checkbox has its own label
-target while all items submit under the same field name:
+`FieldInput.checkbox` codec. A control's `item(key: String)` returns a
+`FormControlItem`, so each checkbox has its own label target while all items
+submit under the same field name:
 
 @:sourceRegion(documentation/site/src/scalive/docs/examples/FormRecipes.scala, form-repeated-checkbox-items)
 
@@ -96,7 +102,9 @@ submission with no successful items decodes to `Vector.empty`.
 An item key is an immutable, stable identity, independent of its submitted
 token; it is not a signal. Arbitrary strings, including the empty string, are
 allowed; `null` is rejected. Keys are encoded losslessly into ASCII IDs scoped
-to the form instance, field, and repeated-row identity when present. The exact
+to the field, its repeated-row identity when present, and the form instance
+when the form is
+[bound](form-feedback-and-recovery.md#choose-when-feedback-appears). The exact
 ID format is private: use `item.id`, not a reconstructed ID. Keep keys unique
 among items of the same rendered control.
 
@@ -174,9 +182,10 @@ form-associated external control, or other custom markup. The runnable
 ## Write a custom input {#write-a-custom-input}
 
 A custom `FieldInput` defines both structural decoding and the inverse used by
-typed server updates. The field view continues to render the retained raw
-values rather than the decoded domain value, so a text control can show
-malformed input even when decoding fails:
+typed server updates. Render it with ordinary HTML and the control's
+`inputAttributes`, which carry the retained raw value rather than the decoded
+domain value, so a text control can show malformed input even when decoding
+fails:
 
 @:sourceRegion(documentation/site/src/scalive/docs/examples/FormRecipes.scala, form-custom-field-input)
 

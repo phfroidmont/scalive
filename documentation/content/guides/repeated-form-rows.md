@@ -35,9 +35,10 @@ presence control, then its fields:
 
 @:sourceRegion(documentation/fixtures/guides/src/forms/ContactForm.scala, forms-rows-render)
 
-Each row is a `Signal` of a row view, so `row.map(_.field(...))` selects a field
-view and `row.presence()` renders the hidden control that keeps the row in the
-next submission, even when all its visible fields are empty or unchecked.
+`splitBy` passes each row's key and a `Signal` of its row view. The key selects
+a row field's control with `contactForm.field(Contact.PhoneRows, key, field)`,
+and `row.presence()` renders the hidden control that keeps the row in the next
+submission, even when all its visible fields are empty or unchecked.
 
 ## Give rows stable keys {#give-rows-stable-keys}
 

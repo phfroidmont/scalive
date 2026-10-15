@@ -49,18 +49,12 @@ object FormRecipes:
     val Quantity   = Root.field("quantity", PositiveInteger)
     val Definition = Root.product[Order]((quantity = Quantity))
 
-    def quantityControl(form: Definition.Form): HtmlElement[Nothing] =
+    def quantityControl(form: Signal[Definition.Form]): HtmlElement[Nothing] =
       val quantity = form.field(Quantity)
       div(
         label(forId := quantity.id, "Quantity"),
-        input(
-          typ      := "text",
-          idAttr   := quantity.id,
-          nameAttr := quantity.name,
-          value    := quantity.fieldValue,
-          quantity.validationAttributes
-        ),
-        quantity.errorFeedback(error => error.message)
+        input(typ   := "text", quantity.inputAttributes, quantity.validationAttributes),
+        quantity.errorFeedback(error => error.map(_.message))
       )
   end QuantityForm
   // docs:end form-custom-field-input
@@ -75,13 +69,15 @@ object FormRecipes:
     val initial    = Definition.initial(Enabled.initial(true))
 
     enum Msg:
-      case Updated(update: Definition.Update)
+      case Changed(event: Definition.Event)
       case Submitted(event: Definition.Event)
 
     def render(form: Signal[Definition.Form]): HtmlElement[Msg] =
-      val binding = form.bind(DomRef("notifications-form"), Msg.Updated(_), Msg.Submitted(_))
-      val enabled = binding.field(Enabled)
-      binding.render(
+      val enabled = form.field(Enabled)
+      scalive.form(
+        idAttr := "notifications-form",
+        Definition.onChange(Msg.Changed(_)),
+        Definition.onSubmit(Msg.Submitted(_)),
         label(forId := enabled.id, "Enable notifications"),
         enabled.checkbox(enabled.validationAttributes),
         enabled.errorFeedback(error => error.map(_.message)),
@@ -98,18 +94,20 @@ object FormRecipes:
     val Definition = Root.product[Preferences]((topics = Topics))
 
     enum Msg:
-      case Updated(update: Definition.Update)
+      case Changed(event: Definition.Event)
       case Submitted(event: Definition.Event)
 
     def render(
       form: Signal[Definition.Form],
       researchToken: Signal[String]
     ): HtmlElement[Msg] =
-      val binding  = form.bind(DomRef("subscriptions-form"), Msg.Updated(_), Msg.Submitted(_))
-      val topics   = binding.field(Topics)
+      val topics   = form.field(Topics)
       val news     = topics.item("news-choice")
       val research = topics.item("research-choice")
-      binding.render(
+      scalive.form(
+        idAttr := "subscriptions-form",
+        Definition.onChange(Msg.Changed(_)),
+        Definition.onSubmit(Msg.Submitted(_)),
         fieldSet(
           legend("Topics"),
           news.checkbox("news", topics.validationAttributes),

@@ -257,7 +257,7 @@ object FormBindingSpec extends ZIOSpecDefault:
 
       assertTrue(compiled.left.exists {
         case RenderError.EvaluationFailed(error: IllegalArgumentException) =>
-          error.getMessage.contains("form binding owns attributes: phx-blur")
+          error.getMessage.contains("form control owns attributes: phx-blur")
         case _ => false
       })
     },
@@ -694,7 +694,10 @@ object FormBindingSpec extends ZIOSpecDefault:
               div(
                 item.checkbox(token, control.validationAttributes),
                 label(forId   := item.id, token),
-                button(idAttr := s"blur-${key.value}-$choiceKey", on.click(control.blurred))
+                button(
+                  idAttr := s"blur-${key.value}-$choiceKey",
+                  on.click(binding.blurred(ItemRows, key, ItemName))
+                )
               )
             }
           )
@@ -1009,7 +1012,7 @@ object FormBindingSpec extends ZIOSpecDefault:
           FormFeedback.AfterBlur
         )
         val control = binding.field(Name)
-        binding.render(control.text(), button(idAttr := "blur-name", on.click(control.blurred)))
+        binding.render(control.text(), button(idAttr := "blur-name", on.click(binding.blurred(Name))))
       }
 
       for
@@ -1042,7 +1045,10 @@ object FormBindingSpec extends ZIOSpecDefault:
         binding.render(
           binding.rows(ItemRows).splitBy(_.key) { (key, _) =>
             val control = binding.field(ItemRows, key, ItemName)
-            div(control.text(), button(idAttr := s"blur-${key.value}", on.click(control.blurred)))
+            div(
+              control.text(),
+              button(idAttr := s"blur-${key.value}", on.click(binding.blurred(ItemRows, key, ItemName)))
+            )
           }
         )
       }

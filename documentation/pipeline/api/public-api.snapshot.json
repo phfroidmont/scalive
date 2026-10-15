@@ -212,8 +212,8 @@
       "kind" : "class",
       "signatures" : [
         {
-          "id" : "class:scalive.FormControl:551423b847e53aac",
-          "signature" : "class FormControl[Owner, Input, Value, Msg]"
+          "id" : "class:scalive.FormControl:f27f263ee9fd70fd",
+          "signature" : "class FormControl[Owner, Input, Value, +Msg]"
         }
       ]
     },
@@ -224,8 +224,8 @@
       "kind" : "class",
       "signatures" : [
         {
-          "id" : "class:scalive.FormControlItem:eac60d805ec8c2fe",
-          "signature" : "class FormControlItem[Msg]"
+          "id" : "class:scalive.FormControlItem:6156e74210d0905d",
+          "signature" : "class FormControlItem[+Msg]"
         }
       ]
     },
@@ -3042,22 +3042,42 @@
       ]
     },
     {
+      "id" : "def:scalive.FormBinding.blurred",
+      "ownerId" : "class:scalive.FormBinding",
+      "qualifiedName" : "scalive.FormBinding.blurred",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FormBinding.blurred:6b7c63ddaa71db4b",
+          "signature" : "def blurred[Input, Value](field: FormField[Owner, Input, Value]): Msg"
+        },
+        {
+          "id" : "def:scalive.FormBinding.blurred:723e70fc8b45762b",
+          "signature" : "def blurred[Group, Input, Value](field: BoundFormField[Owner, Schema, Group, Input, Value]): Msg"
+        },
+        {
+          "id" : "def:scalive.FormBinding.blurred:7cf73e7cc3ba2fce",
+          "signature" : "def blurred[Group, Row, Input, Value](rows: RepeatedRows[Owner, Group, Row], key: FormRowKey[Group], field: FormField[Group, Input, Value]): Msg"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.FormBinding.field",
       "ownerId" : "class:scalive.FormBinding",
       "qualifiedName" : "scalive.FormBinding.field",
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.FormBinding.field:516b6485be08207c",
-          "signature" : "def field[Group, Row, Input, Value](rows: RepeatedRows[Owner, Group, Row], key: FormRowKey[Group], field: FormField[Group, Input, Value]): FormControl[Owner, Input, Value, Msg]"
+          "id" : "def:scalive.FormBinding.field:02f0e5c48f42ffac",
+          "signature" : "def field[Input, Value](field: FormField[Owner, Input, Value]): FormControl[Owner, Input, Value, Nothing]"
         },
         {
-          "id" : "def:scalive.FormBinding.field:5e5de73a56b6ffd1",
-          "signature" : "def field[Input, Value](field: FormField[Owner, Input, Value]): FormControl[Owner, Input, Value, Msg]"
+          "id" : "def:scalive.FormBinding.field:bb27239ed707c797",
+          "signature" : "def field[Group, Input, Value](field: BoundFormField[Owner, Schema, Group, Input, Value]): FormControl[Owner, Input, Value, Nothing]"
         },
         {
-          "id" : "def:scalive.FormBinding.field:f980b55d4d32e0d4",
-          "signature" : "def field[Group, Input, Value](field: BoundFormField[Owner, Schema, Group, Input, Value]): FormControl[Owner, Input, Value, Msg]"
+          "id" : "def:scalive.FormBinding.field:c38c3ff150893bae",
+          "signature" : "def field[Group, Row, Input, Value](rows: RepeatedRows[Owner, Group, Row], key: FormRowKey[Group], field: FormField[Group, Input, Value]): FormControl[Owner, Input, Value, Nothing]"
         }
       ]
     },
@@ -3080,12 +3100,12 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.FormBinding.optionalField:88472513201cd58e",
-          "signature" : "def optionalField[Group, Input, Value](field: BoundFormField[Owner, Schema, Group, Input, Value])(render: FormControl[Owner, Input, Value, Msg] => HtmlElement[Msg]): Mod[Msg]"
+          "id" : "def:scalive.FormBinding.optionalField:198fce3213ab4fd1",
+          "signature" : "def optionalField[Group, Input, Value](field: BoundFormField[Owner, Schema, Group, Input, Value])(render: FormControl[Owner, Input, Value, Nothing] => HtmlElement[Msg]): Mod[Msg]"
         },
         {
-          "id" : "def:scalive.FormBinding.optionalField:ff372450280a0cb5",
-          "signature" : "def optionalField[Group, Row, Input, Value](rows: RepeatedRows[Owner, Group, Row], key: FormRowKey[Group], field: FormField[Group, Input, Value])(render: FormControl[Owner, Input, Value, Msg] => HtmlElement[Msg]): Mod[Msg]"
+          "id" : "def:scalive.FormBinding.optionalField:1ec6d1220b2d6556",
+          "signature" : "def optionalField[Group, Row, Input, Value](rows: RepeatedRows[Owner, Group, Row], key: FormRowKey[Group], field: FormField[Group, Input, Value])(render: FormControl[Owner, Input, Value, Nothing] => HtmlElement[Msg]): Mod[Msg]"
         }
       ]
     },
@@ -3216,12 +3236,12 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.FormControl.checkbox:5af309fdeeb58c22",
-          "signature" : "def checkbox(mods: Mod.Input[Msg]*): HtmlElement[Msg]"
+          "id" : "def:scalive.FormControl.checkbox:834ac92ae2a112aa",
+          "signature" : "def checkbox[M >: Msg](checkedValue: String, mods: Mod.Input[M]*): HtmlElement[M]"
         },
         {
-          "id" : "def:scalive.FormControl.checkbox:d579cb82095c90ee",
-          "signature" : "def checkbox(checkedValue: String, mods: Mod.Input[Msg]*): HtmlElement[Msg]"
+          "id" : "def:scalive.FormControl.checkbox:c5d78f2c7a13f7c6",
+          "signature" : "def checkbox[M >: Msg](mods: Mod.Input[M]*): HtmlElement[M]"
         }
       ]
     },
@@ -3232,8 +3252,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.FormControl.date:af8f6713c274658e",
-          "signature" : "def date(mods: Mod.Input[Msg]*): HtmlElement[Msg]"
+          "id" : "def:scalive.FormControl.date:5603058495899937",
+          "signature" : "def date[M >: Msg](mods: Mod.Input[M]*): HtmlElement[M]"
         }
       ]
     },
@@ -3244,8 +3264,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.FormControl.email:0d5477b4b643eed6",
-          "signature" : "def email(mods: Mod.Input[Msg]*): HtmlElement[Msg]"
+          "id" : "def:scalive.FormControl.email:12229bb2a24581d3",
+          "signature" : "def email[M >: Msg](mods: Mod.Input[M]*): HtmlElement[M]"
         }
       ]
     },
@@ -3304,8 +3324,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.FormControl.hidden:981d303fbdec8b8e",
-          "signature" : "def hidden(mods: Mod.Input[Msg]*): HtmlElement[Msg]"
+          "id" : "def:scalive.FormControl.hidden:0ccca7f8b29396db",
+          "signature" : "def hidden[M >: Msg](mods: Mod.Input[M]*): HtmlElement[M]"
         }
       ]
     },
@@ -3364,12 +3384,12 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.FormControl.onBlur:0b2b4fa18db0f278",
-          "signature" : "def onBlur(message: Msg): FormControl[Owner, Input, Value, Msg]"
+          "id" : "def:scalive.FormControl.onBlur:2f0b7cfb8304e166",
+          "signature" : "def onBlur[M >: Msg](f: String => M): FormControl[Owner, Input, Value, M]"
         },
         {
-          "id" : "def:scalive.FormControl.onBlur:9f67d8b7d1efd590",
-          "signature" : "def onBlur(f: String => Msg): FormControl[Owner, Input, Value, Msg]"
+          "id" : "def:scalive.FormControl.onBlur:69c0dcb69b7bcb97",
+          "signature" : "def onBlur[M >: Msg](message: M): FormControl[Owner, Input, Value, M]"
         }
       ]
     },
@@ -3380,8 +3400,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.FormControl.password:e2b873b4b6e2a04b",
-          "signature" : "def password(mods: Mod.Input[Msg]*): HtmlElement[Msg]"
+          "id" : "def:scalive.FormControl.password:09056441b1572e52",
+          "signature" : "def password[M >: Msg](mods: Mod.Input[M]*): HtmlElement[M]"
         }
       ]
     },
@@ -3404,8 +3424,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.FormControl.search:ad79bf662515bdee",
-          "signature" : "def search(mods: Mod.Input[Msg]*): HtmlElement[Msg]"
+          "id" : "def:scalive.FormControl.search:861cf1a31c545917",
+          "signature" : "def search[M >: Msg](mods: Mod.Input[M]*): HtmlElement[M]"
         }
       ]
     },
@@ -3416,8 +3436,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.FormControl.select:dad9da82d10869a4",
-          "signature" : "def select(options: Iterable[(String, String)], mods: Mod.Input[Msg]*): HtmlElement[Msg]"
+          "id" : "def:scalive.FormControl.select:b07bf519507e1ba6",
+          "signature" : "def select[M >: Msg](options: Iterable[(String, String)], mods: Mod.Input[M]*): HtmlElement[M]"
         }
       ]
     },
@@ -3428,8 +3448,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.FormControl.tel:bd0e1d11a45c2ee4",
-          "signature" : "def tel(mods: Mod.Input[Msg]*): HtmlElement[Msg]"
+          "id" : "def:scalive.FormControl.tel:e993d36c30409d97",
+          "signature" : "def tel[M >: Msg](mods: Mod.Input[M]*): HtmlElement[M]"
         }
       ]
     },
@@ -3440,8 +3460,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.FormControl.text:0993c21ce95a6e4e",
-          "signature" : "def text(mods: Mod.Input[Msg]*): HtmlElement[Msg]"
+          "id" : "def:scalive.FormControl.text:69a5957d62c5cc38",
+          "signature" : "def text[M >: Msg](mods: Mod.Input[M]*): HtmlElement[M]"
         }
       ]
     },
@@ -3452,8 +3472,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.FormControl.textarea:e0189df17ae75df3",
-          "signature" : "def textarea(mods: Mod.Input[Msg]*): HtmlElement[Msg]"
+          "id" : "def:scalive.FormControl.textarea:42c19f34433c796d",
+          "signature" : "def textarea[M >: Msg](mods: Mod.Input[M]*): HtmlElement[M]"
         }
       ]
     },
@@ -3488,12 +3508,12 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.FormControlItem.checkbox:1163a66b6a56e83c",
-          "signature" : "def checkbox(checkedValue: Signal[String], mods: Mod.Input[Msg]*): HtmlElement[Msg]"
+          "id" : "def:scalive.FormControlItem.checkbox:2ad6aab49bcf3389",
+          "signature" : "def checkbox[M >: Msg](checkedValue: String, mods: Mod.Input[M]*): HtmlElement[M]"
         },
         {
-          "id" : "def:scalive.FormControlItem.checkbox:19fe0e74d3f7cc8d",
-          "signature" : "def checkbox(checkedValue: String, mods: Mod.Input[Msg]*): HtmlElement[Msg]"
+          "id" : "def:scalive.FormControlItem.checkbox:f2fe853e2d7a1da8",
+          "signature" : "def checkbox[M >: Msg](checkedValue: Signal[String], mods: Mod.Input[M]*): HtmlElement[M]"
         }
       ]
     },
@@ -4174,58 +4194,6 @@
       ]
     },
     {
-      "id" : "def:scalive.FormFieldView.checkbox",
-      "ownerId" : "class:scalive.FormFieldView",
-      "qualifiedName" : "scalive.FormFieldView.checkbox",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.FormFieldView.checkbox:4822a2c8d95e5941",
-          "signature" : "def checkbox[Msg](checkedValue: String, mods: Mod.Input[Msg]*): HtmlElement[Msg]"
-        },
-        {
-          "id" : "def:scalive.FormFieldView.checkbox:82de2c12cce3269d",
-          "signature" : "def checkbox[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg]"
-        }
-      ]
-    },
-    {
-      "id" : "def:scalive.FormFieldView.date",
-      "ownerId" : "class:scalive.FormFieldView",
-      "qualifiedName" : "scalive.FormFieldView.date",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.FormFieldView.date:23285868adc8a5ca",
-          "signature" : "def date[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg]"
-        }
-      ]
-    },
-    {
-      "id" : "def:scalive.FormFieldView.email",
-      "ownerId" : "class:scalive.FormFieldView",
-      "qualifiedName" : "scalive.FormFieldView.email",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.FormFieldView.email:b2f4088fbd8aee44",
-          "signature" : "def email[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg]"
-        }
-      ]
-    },
-    {
-      "id" : "def:scalive.FormFieldView.errorFeedback",
-      "ownerId" : "class:scalive.FormFieldView",
-      "qualifiedName" : "scalive.FormFieldView.errorFeedback",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.FormFieldView.errorFeedback:6403e5a7c2641423",
-          "signature" : "def errorFeedback(render: FormError[Owner] => Mod[Nothing], mods: Mod.Input[Nothing]*): HtmlElement[Nothing]"
-        }
-      ]
-    },
-    {
       "id" : "def:scalive.FormFieldView.errorId",
       "ownerId" : "class:scalive.FormFieldView",
       "qualifiedName" : "scalive.FormFieldView.errorId",
@@ -4270,18 +4238,6 @@
         {
           "id" : "def:scalive.FormFieldView.hasVisibleErrors:aa0913bf4de14407",
           "signature" : "def hasVisibleErrors: Boolean"
-        }
-      ]
-    },
-    {
-      "id" : "def:scalive.FormFieldView.hidden",
-      "ownerId" : "class:scalive.FormFieldView",
-      "qualifiedName" : "scalive.FormFieldView.hidden",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.FormFieldView.hidden:2de2a9b4aa2e035f",
-          "signature" : "def hidden[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         }
       ]
     },
@@ -4334,18 +4290,6 @@
       ]
     },
     {
-      "id" : "def:scalive.FormFieldView.password",
-      "ownerId" : "class:scalive.FormFieldView",
-      "qualifiedName" : "scalive.FormFieldView.password",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.FormFieldView.password:127f45ebe7d42dab",
-          "signature" : "def password[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg]"
-        }
-      ]
-    },
-    {
       "id" : "def:scalive.FormFieldView.rawValues",
       "ownerId" : "class:scalive.FormFieldView",
       "qualifiedName" : "scalive.FormFieldView.rawValues",
@@ -4366,78 +4310,6 @@
         {
           "id" : "def:scalive.FormFieldView.result:dbc2edcdecd07f60",
           "signature" : "def result: Either[FieldIssues, Value]"
-        }
-      ]
-    },
-    {
-      "id" : "def:scalive.FormFieldView.search",
-      "ownerId" : "class:scalive.FormFieldView",
-      "qualifiedName" : "scalive.FormFieldView.search",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.FormFieldView.search:fd4ea6e1eef42ece",
-          "signature" : "def search[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg]"
-        }
-      ]
-    },
-    {
-      "id" : "def:scalive.FormFieldView.select",
-      "ownerId" : "class:scalive.FormFieldView",
-      "qualifiedName" : "scalive.FormFieldView.select",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.FormFieldView.select:b5e7693db5d1da63",
-          "signature" : "def select[Msg](options: Iterable[(String, String)], mods: Mod.Input[Msg]*): HtmlElement[Msg]"
-        }
-      ]
-    },
-    {
-      "id" : "def:scalive.FormFieldView.tel",
-      "ownerId" : "class:scalive.FormFieldView",
-      "qualifiedName" : "scalive.FormFieldView.tel",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.FormFieldView.tel:29a360b09103314f",
-          "signature" : "def tel[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg]"
-        }
-      ]
-    },
-    {
-      "id" : "def:scalive.FormFieldView.text",
-      "ownerId" : "class:scalive.FormFieldView",
-      "qualifiedName" : "scalive.FormFieldView.text",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.FormFieldView.text:f5c4c75d5998abdf",
-          "signature" : "def text[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg]"
-        }
-      ]
-    },
-    {
-      "id" : "def:scalive.FormFieldView.textarea",
-      "ownerId" : "class:scalive.FormFieldView",
-      "qualifiedName" : "scalive.FormFieldView.textarea",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.FormFieldView.textarea:32de59f60d36ff3f",
-          "signature" : "def textarea[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg]"
-        }
-      ]
-    },
-    {
-      "id" : "def:scalive.FormFieldView.validationAttributes",
-      "ownerId" : "class:scalive.FormFieldView",
-      "qualifiedName" : "scalive.FormFieldView.validationAttributes",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.FormFieldView.validationAttributes:9dea34ee17695dc1",
-          "signature" : "def validationAttributes: Vector[Mod.Attr[Nothing]]"
         }
       ]
     },
@@ -4854,18 +4726,6 @@
         {
           "id" : "def:scalive.FormRowView.isUsed:a9e3234328b4b990",
           "signature" : "def isUsed: Boolean"
-        }
-      ]
-    },
-    {
-      "id" : "def:scalive.FormRowView.presence",
-      "ownerId" : "class:scalive.FormRowView",
-      "qualifiedName" : "scalive.FormRowView.presence",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.FormRowView.presence:5246d8556b0bd55e",
-          "signature" : "def presence[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         }
       ]
     },
@@ -12434,202 +12294,6 @@
       ]
     },
     {
-      "id" : "extension:scalive.FormFieldView.checkbox",
-      "ownerId" : "object:scalive.FormFieldView",
-      "qualifiedName" : "scalive.FormFieldView.checkbox",
-      "kind" : "extension",
-      "signatures" : [
-        {
-          "id" : "extension:scalive.FormFieldView.checkbox:9d84b6b6be140678",
-          "signature" : "extension def checkbox[Owner, Input, Value](field: Signal[FormFieldView[Owner, Input, Value]])[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg]"
-        },
-        {
-          "id" : "extension:scalive.FormFieldView.checkbox:da7dfb09b98b32ff",
-          "signature" : "extension def checkbox[Owner, Input, Value](field: Signal[FormFieldView[Owner, Input, Value]])[Msg](checkedValue: String, mods: Mod.Input[Msg]*): HtmlElement[Msg]"
-        }
-      ]
-    },
-    {
-      "id" : "extension:scalive.FormFieldView.date",
-      "ownerId" : "object:scalive.FormFieldView",
-      "qualifiedName" : "scalive.FormFieldView.date",
-      "kind" : "extension",
-      "signatures" : [
-        {
-          "id" : "extension:scalive.FormFieldView.date:f78a6b061f680f26",
-          "signature" : "extension def date[Owner, Input, Value](field: Signal[FormFieldView[Owner, Input, Value]])[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg]"
-        }
-      ]
-    },
-    {
-      "id" : "extension:scalive.FormFieldView.email",
-      "ownerId" : "object:scalive.FormFieldView",
-      "qualifiedName" : "scalive.FormFieldView.email",
-      "kind" : "extension",
-      "signatures" : [
-        {
-          "id" : "extension:scalive.FormFieldView.email:91b68bc16ed9b6ca",
-          "signature" : "extension def email[Owner, Input, Value](field: Signal[FormFieldView[Owner, Input, Value]])[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg]"
-        }
-      ]
-    },
-    {
-      "id" : "extension:scalive.FormFieldView.errorFeedback",
-      "ownerId" : "object:scalive.FormFieldView",
-      "qualifiedName" : "scalive.FormFieldView.errorFeedback",
-      "kind" : "extension",
-      "signatures" : [
-        {
-          "id" : "extension:scalive.FormFieldView.errorFeedback:5b7deacbcd7599ea",
-          "signature" : "extension def errorFeedback[Owner, Input, Value](field: Signal[FormFieldView[Owner, Input, Value]])(render: Signal[FormError[Owner]] => Mod[Nothing], mods: Mod.Input[Nothing]*): HtmlElement[Nothing]"
-        }
-      ]
-    },
-    {
-      "id" : "extension:scalive.FormFieldView.errorId",
-      "ownerId" : "object:scalive.FormFieldView",
-      "qualifiedName" : "scalive.FormFieldView.errorId",
-      "kind" : "extension",
-      "signatures" : [
-        {
-          "id" : "extension:scalive.FormFieldView.errorId:779a3d85b4e31115",
-          "signature" : "extension def errorId[Owner, Input, Value](field: Signal[FormFieldView[Owner, Input, Value]]): Signal[String]"
-        }
-      ]
-    },
-    {
-      "id" : "extension:scalive.FormFieldView.hasVisibleErrors",
-      "ownerId" : "object:scalive.FormFieldView",
-      "qualifiedName" : "scalive.FormFieldView.hasVisibleErrors",
-      "kind" : "extension",
-      "signatures" : [
-        {
-          "id" : "extension:scalive.FormFieldView.hasVisibleErrors:2d4db45783bd3a1d",
-          "signature" : "extension def hasVisibleErrors[Owner, Input, Value](field: Signal[FormFieldView[Owner, Input, Value]]): Signal[Boolean]"
-        }
-      ]
-    },
-    {
-      "id" : "extension:scalive.FormFieldView.hidden",
-      "ownerId" : "object:scalive.FormFieldView",
-      "qualifiedName" : "scalive.FormFieldView.hidden",
-      "kind" : "extension",
-      "signatures" : [
-        {
-          "id" : "extension:scalive.FormFieldView.hidden:32382089dc640895",
-          "signature" : "extension def hidden[Owner, Input, Value](field: Signal[FormFieldView[Owner, Input, Value]])[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg]"
-        }
-      ]
-    },
-    {
-      "id" : "extension:scalive.FormFieldView.id",
-      "ownerId" : "object:scalive.FormFieldView",
-      "qualifiedName" : "scalive.FormFieldView.id",
-      "kind" : "extension",
-      "signatures" : [
-        {
-          "id" : "extension:scalive.FormFieldView.id:32275701cc21037e",
-          "signature" : "extension def id[Owner, Input, Value](field: Signal[FormFieldView[Owner, Input, Value]]): Signal[String]"
-        }
-      ]
-    },
-    {
-      "id" : "extension:scalive.FormFieldView.name",
-      "ownerId" : "object:scalive.FormFieldView",
-      "qualifiedName" : "scalive.FormFieldView.name",
-      "kind" : "extension",
-      "signatures" : [
-        {
-          "id" : "extension:scalive.FormFieldView.name:20411c65c2cc2d4d",
-          "signature" : "extension def name[Owner, Input, Value](field: Signal[FormFieldView[Owner, Input, Value]]): Signal[String]"
-        }
-      ]
-    },
-    {
-      "id" : "extension:scalive.FormFieldView.password",
-      "ownerId" : "object:scalive.FormFieldView",
-      "qualifiedName" : "scalive.FormFieldView.password",
-      "kind" : "extension",
-      "signatures" : [
-        {
-          "id" : "extension:scalive.FormFieldView.password:68571f15d52a1059",
-          "signature" : "extension def password[Owner, Input, Value](field: Signal[FormFieldView[Owner, Input, Value]])[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg]"
-        }
-      ]
-    },
-    {
-      "id" : "extension:scalive.FormFieldView.search",
-      "ownerId" : "object:scalive.FormFieldView",
-      "qualifiedName" : "scalive.FormFieldView.search",
-      "kind" : "extension",
-      "signatures" : [
-        {
-          "id" : "extension:scalive.FormFieldView.search:ada3df26da00b601",
-          "signature" : "extension def search[Owner, Input, Value](field: Signal[FormFieldView[Owner, Input, Value]])[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg]"
-        }
-      ]
-    },
-    {
-      "id" : "extension:scalive.FormFieldView.select",
-      "ownerId" : "object:scalive.FormFieldView",
-      "qualifiedName" : "scalive.FormFieldView.select",
-      "kind" : "extension",
-      "signatures" : [
-        {
-          "id" : "extension:scalive.FormFieldView.select:eaaaf698ebc65040",
-          "signature" : "extension def select[Owner, Input, Value](field: Signal[FormFieldView[Owner, Input, Value]])[Msg](options: Iterable[(String, String)], mods: Mod.Input[Msg]*): HtmlElement[Msg]"
-        }
-      ]
-    },
-    {
-      "id" : "extension:scalive.FormFieldView.tel",
-      "ownerId" : "object:scalive.FormFieldView",
-      "qualifiedName" : "scalive.FormFieldView.tel",
-      "kind" : "extension",
-      "signatures" : [
-        {
-          "id" : "extension:scalive.FormFieldView.tel:14d2e5cd977af82b",
-          "signature" : "extension def tel[Owner, Input, Value](field: Signal[FormFieldView[Owner, Input, Value]])[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg]"
-        }
-      ]
-    },
-    {
-      "id" : "extension:scalive.FormFieldView.text",
-      "ownerId" : "object:scalive.FormFieldView",
-      "qualifiedName" : "scalive.FormFieldView.text",
-      "kind" : "extension",
-      "signatures" : [
-        {
-          "id" : "extension:scalive.FormFieldView.text:e78acd5e811d8dca",
-          "signature" : "extension def text[Owner, Input, Value](field: Signal[FormFieldView[Owner, Input, Value]])[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg]"
-        }
-      ]
-    },
-    {
-      "id" : "extension:scalive.FormFieldView.textarea",
-      "ownerId" : "object:scalive.FormFieldView",
-      "qualifiedName" : "scalive.FormFieldView.textarea",
-      "kind" : "extension",
-      "signatures" : [
-        {
-          "id" : "extension:scalive.FormFieldView.textarea:5aa88a72835e502e",
-          "signature" : "extension def textarea[Owner, Input, Value](field: Signal[FormFieldView[Owner, Input, Value]])[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg]"
-        }
-      ]
-    },
-    {
-      "id" : "extension:scalive.FormFieldView.validationAttributes",
-      "ownerId" : "object:scalive.FormFieldView",
-      "qualifiedName" : "scalive.FormFieldView.validationAttributes",
-      "kind" : "extension",
-      "signatures" : [
-        {
-          "id" : "extension:scalive.FormFieldView.validationAttributes:a29b137f38ae0b6c",
-          "signature" : "extension def validationAttributes[Owner, Input, Value](field: Signal[FormFieldView[Owner, Input, Value]]): Vector[Mod.Attr[Nothing]]"
-        }
-      ]
-    },
-    {
       "id" : "extension:scalive.FormRevision.value",
       "ownerId" : "object:scalive.FormRevision",
       "qualifiedName" : "scalive.FormRevision.value",
@@ -13180,24 +12844,12 @@
       "kind" : "extension",
       "signatures" : [
         {
-          "id" : "extension:scalive.field:3eb4eb34d09d0b92",
-          "signature" : "extension def field[Owner, Schema, Domain](form: Signal[Form[Owner, Schema, Domain]])[Input, Value](definition: FormField[Owner, Input, Value]): Signal[FormFieldView[Owner, Input, Value]]"
+          "id" : "extension:scalive.field:961c627be9625b81",
+          "signature" : "extension def field[Owner, Schema, Domain](form: Signal[Form[Owner, Schema, Domain]])[Group, Row, Input, Value](rows: RepeatedRows[Owner, Group, Row], key: FormRowKey[Group], definition: FormField[Group, Input, Value]): FormControl[Owner, Input, Value, Nothing]"
         },
         {
-          "id" : "extension:scalive.field:776803a0f1bf1f0c",
-          "signature" : "extension def field[Owner, Schema, Domain](form: Signal[Form[Owner, Schema, Domain]])[Group, Row, Input, Value](rows: RepeatedRows[Owner, Group, Row], key: FormRowKey[Group], definition: FormField[Group, Input, Value]): Signal[FormFieldView[Owner, Input, Value]]"
-        }
-      ]
-    },
-    {
-      "id" : "extension:scalive.fieldOption",
-      "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.fieldOption",
-      "kind" : "extension",
-      "signatures" : [
-        {
-          "id" : "extension:scalive.fieldOption:c382fd075e54ba55",
-          "signature" : "extension def fieldOption[Owner, Schema, Domain](form: Signal[Form[Owner, Schema, Domain]])[Group, Row, Input, Value](rows: RepeatedRows[Owner, Group, Row], key: FormRowKey[Group], definition: FormField[Group, Input, Value]): Signal[Option[FormFieldView[Owner, Input, Value]]]"
+          "id" : "extension:scalive.field:f90d357528bf8a7f",
+          "signature" : "extension def field[Owner, Schema, Domain](form: Signal[Form[Owner, Schema, Domain]])[Input, Value](definition: FormField[Owner, Input, Value]): FormControl[Owner, Input, Value, Nothing]"
         }
       ]
     },
@@ -17106,18 +16758,6 @@
       ]
     },
     {
-      "id" : "object:scalive.FormFieldView",
-      "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.FormFieldView",
-      "kind" : "object",
-      "signatures" : [
-        {
-          "id" : "object:scalive.FormFieldView:77d0104a87f6ab10",
-          "signature" : "object FormFieldView"
-        }
-      ]
-    },
-    {
       "id" : "object:scalive.FormInteraction",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.FormInteraction",
@@ -20377,18 +20017,6 @@
         {
           "id" : "val:scalive.FormCodec.formData:72663a4acc186a10",
           "signature" : "val formData: FormCodec[FormData]"
-        }
-      ]
-    },
-    {
-      "id" : "val:scalive.FormControl.blurred",
-      "ownerId" : "class:scalive.FormControl",
-      "qualifiedName" : "scalive.FormControl.blurred",
-      "kind" : "val",
-      "signatures" : [
-        {
-          "id" : "val:scalive.FormControl.blurred:3b548b6d60567fc7",
-          "signature" : "val blurred: Msg"
         }
       ]
     },

@@ -107,14 +107,14 @@ for the distinction between LiveView bindings and native event attributes.
 ## Render fields and errors {#render-fields-and-errors}
 
 Inside `view`, `model` is a `Signal[Model]`. `model.map(_.form)` selects the form
-as a `Signal[Form]`, and its `field` method returns a field view with the
-control's `id`, `name`, current value, and errors. In the render recipe above,
-`name.text(...)` renders a text input with all of them and `email.email(...)` an
-email input.
+as a `Signal[Form]`, and its `field` method returns a
+@:apiSymbol(class:scalive.FormControl)`FormControl`@:@ with the field's `id`,
+`name`, current value, and errors. In the render recipe above, `name.text(...)`
+renders a text input with all of them and `email.email(...)` an email input.
 
-@:apiSymbol(def:scalive.FormFieldView.validationAttributes)`validationAttributes`@:@
+@:apiSymbol(def:scalive.FormControl.validationAttributes)`validationAttributes`@:@
 connects the input to its feedback and adds `aria-invalid` when visible errors
-exist. @:apiSymbol(def:scalive.FormFieldView.errorFeedback)`errorFeedback`@:@
+exist. @:apiSymbol(def:scalive.FormControl.errorFeedback)`errorFeedback`@:@
 renders a stable live region whose errors stay hidden until that field is used
 or the form is submitted. Scalive owns the feedback ID, live-region attributes,
 visibility rules, and the `form-errors` and `form-error` wrappers. You render
@@ -123,14 +123,15 @@ recipe translates each key:
 
 @:sourceRegion(documentation/fixtures/guides/src/forms/ProfileLiveView.scala, forms-messages)
 
-A signal-backed field passes a `Signal[FormError]` to the renderer, so the
-recipe maps it: `error.map(value => message(value.message))`. Use a real `label`
+`errorFeedback` passes a `Signal[FormError]` to the renderer, so the recipe maps
+it: `error.map(value => message(value.message))`. Use a real `label`
 with `forId` for each input, and keep success feedback, such as the saved
 message, in a separate status region.
 
-The same field methods exist on a plain `Form` value. Use them when the form is
-not in the model: a constant form such as a login page, or an HTML form rendered
-by an ordinary HTTP handler. See
+On a plain `Form` value, `field` returns the field's read-only data, a
+@:apiSymbol(class:scalive.FormFieldView)`FormFieldView`@:@, for handlers and
+tests. Controls always render from the model, even for a form that never
+changes, such as a login page; see
 [Ordinary HTTP forms and redirects](http-forms-and-redirects.md#render-a-reusable-http-form).
 
 ## Reset deliberately {#reset-deliberately}

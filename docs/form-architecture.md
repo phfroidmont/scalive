@@ -711,7 +711,8 @@ projection.
 
 ## Rendering Fields
 
-A field view retains both raw editable values and successful typed projections:
+A field view is read-only data that retains both raw editable values and successful typed
+projections:
 
 ```scala
 final class FormFieldView[Owner, Input, Value] private[scalive] (...)
@@ -729,8 +730,14 @@ field.result
 field.errors
 field.visibleErrors
 field.isUsed
-field.validationAttributes
 ```
+
+`Form.field` returns it for handlers and tests. Rendering has one handle, `FormControl`, obtained
+from `field` on a form signal or from a `FormBinding`. A control from a form signal uses the
+field's logical id and reports no blur feedback; a bound control scopes its ids to the form
+instance and reports blur under the binding's feedback policy. Both own the attributes they
+render, and both offer the same control helpers, checkbox items, and error feedback. There are no
+value-level renderers: a form that is rendered keeps its state in the model.
 
 Controls render from raw values so invalid text and structural duplicate input are never replaced by
 a decoded or normalized domain value.

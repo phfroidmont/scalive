@@ -245,8 +245,7 @@ object FormDefinitionApiSpec extends ZIOSpecDefault:
         rowB.field(Title).name == "application[qualifications][row_b][title]",
         changed.valueOption.exists(_.qualifications.head.title == "Symbolic logic"),
         changedAfterMove.valueOption.exists(_.qualifications(1).title == "Analysis"),
-        replaced.values != form.values,
-        rowB.presence().mods.nonEmpty
+        replaced.values != form.values
       )
     },
     test("exposes signal-backed field and row rendering outside the scalive package") {
@@ -264,8 +263,8 @@ object FormDefinitionApiSpec extends ZIOSpecDefault:
 
         def render(form: Signal[definition.Form]): HtmlElement[Nothing] =
           div(
-            form.rows(rowSchema).splitBy(_.key.value) { (_, row) =>
-              val field = row.map(_.field(name))
+            form.rows(rowSchema).splitBy(_.key) { (key, row) =>
+              val field = form.field(rowSchema, key, name)
               div(
                 row.presence(),
                 label(forId := field.id, "Name"),
@@ -280,6 +279,7 @@ object FormDefinitionApiSpec extends ZIOSpecDefault:
                 field.checkbox("yes"),
                 field.textarea(),
                 field.select(Vector("first" -> "First")),
+                field.item("first").checkbox("first"),
                 field.errorFeedback(error => error.map(_.message))
               )
             }
@@ -358,37 +358,30 @@ object FormDefinitionApiSpec extends ZIOSpecDefault:
           case Updated, Submitted
 
         def render[Owner, Input, Value](
-          field: FormFieldView[Owner, Input, Value],
-          signal: Signal[FormFieldView[Owner, Input, Value]],
-          control: FormControl[Owner, Input, Value, Msg]
+          unbound: FormControl[Owner, Input, Value, Nothing],
+          control: FormControl[Owner, Input, Value, Nothing]
         ): Vector[HtmlElement[Msg]] =
-          val staticWithMessage = field.tel(
-            field.validationAttributes,
+          val unboundWithMessage = unbound.tel(
+            unbound.validationAttributes,
             placeholder := "Telephone",
             on.focus.withValue(Msg.Focused.apply)
           )
-          val signalWithMessage = signal.date(
-            signal.validationAttributes,
-            Vector(cls := "date"),
-            on.focus.withValue(Msg.Focused.apply)
-          )
+          val blurWithMessage: FormControl[Owner, Input, Value, Msg] =
+            unbound.onBlur(Msg.Focused(_))
           val controlWithMessage = control.search(
             Option(placeholder := "Search"),
             on.focus.withValue(Msg.Focused.apply)
           )
           Vector(
-            field.tel(),
-            field.date(),
-            field.search(),
-            signal.tel(),
-            signal.date(),
-            signal.search(),
+            unbound.tel(),
+            unbound.date(),
+            unbound.search(),
+            blurWithMessage.date(Vector(cls := "date")),
             control.tel(),
             control.date(),
             control.search(),
             input(typ := "number", control.inputAttributes, control.validationAttributes),
-            staticWithMessage,
-            signalWithMessage,
+            unboundWithMessage,
             controlWithMessage
           )
 
@@ -407,11 +400,7 @@ object FormDefinitionApiSpec extends ZIOSpecDefault:
             _ => Msg.Updated,
             _ => Msg.Submitted
           )
-          render(
-            definition.initial(field.initial("raw")).field(field),
-            form.field(field),
-            binding.field(field)
-          )
+          render(form.field(field), binding.field(field))
       """)
 
       assertTrue(errors.isEmpty)

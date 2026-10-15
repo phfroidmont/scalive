@@ -441,7 +441,7 @@ class FormDynamicInputsLiveView
             typ         := "text",
             idAttr      := "my-form_name",
             nameAttr    := DynamicInputsForm.Name.name,
-            value       := name.map(_.fieldValue),
+            value       := name.fieldValue,
             placeholder := "name"
           ),
           users.splitBy(value => value._1.key) { (_, entry) =>

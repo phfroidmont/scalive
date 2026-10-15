@@ -80,9 +80,10 @@ final class RepeatedContactsFormExample
         idAttr                    := "repeated-contacts-form",
         Contacts.Definition.onChange(Msg.Validate(_)),
         Contacts.Definition.onSubmit(Msg.Save(_)),
-        rows.splitBy(_.key.value) { (keyValue, row) =>
-          val nameField  = row.map(_.field(Contacts.Name))
-          val emailField = row.map(_.field(Contacts.Email))
+        rows.splitBy(_.key) { (key, row) =>
+          val keyValue   = key.value
+          val nameField  = contactForm.field(Contacts.Rows, key, Contacts.Name)
+          val emailField = contactForm.field(Contacts.Rows, key, Contacts.Email)
 
           fieldSet(
             dataAttr("contact-key") := keyValue,
@@ -115,7 +116,7 @@ final class RepeatedContactsFormExample
                 dataAttr("move-up") := "",
                 aria.label          := s"Move $keyValue up",
                 disabled            := rows.map(_.headOption.exists(_.key.value == keyValue)),
-                on.click(row.map(value => Msg.MoveUp(value.key))),
+                on.click(Msg.MoveUp(key)),
                 "Move up"
               ),
               button(
@@ -123,14 +124,14 @@ final class RepeatedContactsFormExample
                 dataAttr("move-down") := "",
                 aria.label            := s"Move $keyValue down",
                 disabled              := rows.map(_.lastOption.exists(_.key.value == keyValue)),
-                on.click(row.map(value => Msg.MoveDown(value.key))),
+                on.click(Msg.MoveDown(key)),
                 "Move down"
               ),
               button(
                 typ                    := "button",
                 dataAttr("remove-row") := "",
                 aria.label             := s"Remove $keyValue",
-                on.click(row.map(value => Msg.Remove(value.key))),
+                on.click(Msg.Remove(key)),
                 "Remove"
               )
             )

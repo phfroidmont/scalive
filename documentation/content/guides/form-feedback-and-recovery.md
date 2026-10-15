@@ -48,32 +48,33 @@ blur transport. `binding.render(...)` also rejects overrides of its owned ID and
 event bindings. Keep the feedback policy stable for a rendered form instance;
 the binding is the policy's configuration point.
 
-A bound control's `id` and feedback ID are scoped by the form `DomRef`; use its
-`id`, `validationAttributes`, and `errorFeedback` together for labels and ARIA.
-A bound control throws `IllegalArgumentException` when its modifiers set `id`,
-`name`, `value`, `type`, `checked`, `phx-change`, or `phx-blur`, which the
-binding owns. Plain and signal-backed field views append caller modifiers
-without that check, but an attribute they already render still fails the
-render as a duplicate. For a custom scalar input, `inputAttributes` supplies
-its retained `id`, `name`, value, and blur wiring.
+`binding.field` returns the same
+@:apiSymbol(class:scalive.FormControl)`FormControl`@:@ as `field` on the form
+signal, but its `id` and feedback ID are scoped by the form `DomRef`, so several
+instances of one definition can share a page. Use its `id`,
+`validationAttributes`, and `errorFeedback` together for labels and ARIA. For a
+custom scalar input, `inputAttributes` supplies its retained `id`, `name`,
+value, and blur wiring.
 
 ## Normalize a value on blur {#normalize-a-value-on-blur}
 
-Calling `.onBlur(value => Msg.NormalizePhone(value.trim))` on a bound control
-sends an application message after the feedback update. The command order does
-not wait for server acknowledgement, so it is not a race-free normalization
-mechanism; there is no `normalizeOnBlur` API. A later full-form snapshot can
-still overwrite a server-normalized value before its patch reaches the browser.
+Calling `.onBlur(value => Msg.NormalizePhone(value.trim))` on a control sends an
+application message when the field blurs; on a bound control, after the
+feedback update. The command order does not wait for server acknowledgement, so
+it is not a race-free normalization mechanism; there is no `normalizeOnBlur`
+API. A later full-form snapshot can still overwrite a server-normalized value
+before its patch reaches the browser.
 
 Scalar `.onBlur` uses the browser's `value`, or an empty string when absent; it
 is not the complete value vector of a multi-select. Within a `LiveComponent`,
 the form and its controls send their events to the component, like its other
 bindings.
 
-For a composite control, the widget owns its logical focus boundary and
-dispatches `control.blurred` only when focus leaves the whole widget. In keyed
+For a composite control, the widget owns its logical focus boundary and sends
+`binding.blurred(field)` only when focus leaves the whole widget. In keyed
 rendering, bind a row control with `binding.field(rows, key, field)` so blur
-state follows the stable row key. A bound row control must only be evaluated
+state follows the stable row key, and send `binding.blurred(rows, key, field)`
+from a composite row widget. A bound row control must only be evaluated
 while its row exists. Outside a keyed loop, use
 `binding.optionalField(rows, key, field)(control => ...)` or the overload
 accepting a `BoundFormField`; it omits the control safely when the row

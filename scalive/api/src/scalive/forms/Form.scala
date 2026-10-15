@@ -29,7 +29,7 @@ final class Form[Owner, Schema, Domain] private[scalive] (
   /** All validation errors, including errors currently hidden by interaction state. */
   def errors: FormErrors[Owner] = result.left.getOrElse(FormErrors.empty)
 
-  /** Returns the renderable view of a field declared by this form's definition.
+  /** Returns the current data of a field declared by this form's definition.
     *
     * This form takes a static field.
     */
@@ -39,7 +39,7 @@ final class Form[Owner, Schema, Domain] private[scalive] (
     require(owningDefinition.owns(definition), "field is not declared by this form definition")
     FormFieldView(this, definition, definition.address, definition.path)
 
-  /** Returns the renderable view of a field declared by this form's definition.
+  /** Returns the current data of a field declared by this form's definition.
     *
     * This form takes a row-bound field from [[FormRowView.bind]]. The bound row must still exist in
     * this form's current values; use [[fieldOption]] when it may have been removed.
@@ -386,10 +386,11 @@ final class BoundFormField[Owner, Schema, Group, Input, Value] private[scalive] 
   val address: FormAddress[Owner],
   val path: FormPath)
 
-/** Current renderable view of one static or row-bound field.
+/** The current data of one static or row-bound field: its identity, raw values, and errors.
   *
-  * Rendering reads [[rawValues]], not the decoded result, preserving malformed input where the
-  * native control permits it. Browser sanitization can make invalid raw dates appear empty.
+  * It is read-only; render the field with the [[FormControl]] from `field` on a form signal or from
+  * a [[FormBinding]]. Controls render [[rawValues]], not the decoded result, preserving malformed
+  * input where the native control permits it.
   *
   * @param address
   *   The field's stable logical address, which its DOM [[id]] and errors derive from.
@@ -442,144 +443,9 @@ final class FormFieldView[Owner, Input, Value] private[scalive] (
 
   /** Whether at least one field error is currently visible. */
   def hasVisibleErrors: Boolean = visibleErrors.nonEmpty
-
-  /** ARIA attributes linking the control to feedback and exposing visible invalidity. */
-  def validationAttributes: Vector[Mod.Attr[Nothing]] =
-    Vector(aria.describedby := errorId) ++
-      Option.when(hasVisibleErrors)(aria.invalid := "true").toVector
-
-  /** Renders a text input from the retained raw scalar value. */
-  def text[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg] =
-    _root_.scalive.input(
-      typ      := "text",
-      idAttr   := id,
-      nameAttr := name,
-      value    := fieldValue,
-      Mod.flatten(mods)
-    )
-
-  /** Renders an email input from the retained raw scalar value. */
-  def email[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg] =
-    _root_.scalive.input(
-      typ      := "email",
-      idAttr   := id,
-      nameAttr := name,
-      value    := fieldValue,
-      Mod.flatten(mods)
-    )
-
-  /** Renders a telephone input from the retained raw scalar value. */
-  def tel[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg] =
-    _root_.scalive.input(
-      typ      := "tel",
-      idAttr   := id,
-      nameAttr := name,
-      value    := fieldValue,
-      Mod.flatten(mods)
-    )
-
-  /** Renders a date input without parsing the retained raw scalar value. Native browser
-    * sanitization can make invalid raw dates appear empty.
-    */
-  def date[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg] =
-    _root_.scalive.input(
-      typ      := "date",
-      idAttr   := id,
-      nameAttr := name,
-      value    := fieldValue,
-      Mod.flatten(mods)
-    )
-
-  /** Renders a search input from the retained raw scalar value. */
-  def search[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg] =
-    _root_.scalive.input(
-      typ      := "search",
-      idAttr   := id,
-      nameAttr := name,
-      value    := fieldValue,
-      Mod.flatten(mods)
-    )
-
-  /** Renders a password input from the retained raw scalar value. */
-  def password[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg] =
-    _root_.scalive.input(
-      typ      := "password",
-      idAttr   := id,
-      nameAttr := name,
-      value    := fieldValue,
-      Mod.flatten(mods)
-    )
-
-  /** Renders a hidden input from the retained raw scalar value. */
-  def hidden[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg] =
-    _root_.scalive.input(
-      typ      := "hidden",
-      idAttr   := id,
-      nameAttr := name,
-      value    := fieldValue,
-      Mod.flatten(mods)
-    )
-
-  /** Renders a checkbox that is checked when the retained raw values contain its value.
-    *
-    * This form submits `"true"` when checked.
-    */
-  def checkbox[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg] = checkbox("true", mods*)
-
-  /** Renders a checkbox that is checked when the retained raw values contain its value.
-    *
-    * This form submits `checkedValue` when checked.
-    */
-  def checkbox[Msg](checkedValue: String, mods: Mod.Input[Msg]*): HtmlElement[Msg] =
-    _root_.scalive.input(
-      typ      := "checkbox",
-      idAttr   := id,
-      nameAttr := name,
-      value    := checkedValue,
-      checked  := rawValues.contains(checkedValue),
-      Mod.flatten(mods)
-    )
-
-  /** Renders a textarea from the retained raw scalar value. */
-  def textarea[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg] =
-    Form.textareaTag(idAttr := id, nameAttr := name, Mod.flatten(mods), fieldValue)
-
-  /** Renders options and selects every option represented in the retained raw values. */
-  def select[Msg](options: Iterable[(String, String)], mods: Mod.Input[Msg]*): HtmlElement[Msg] =
-    val selectedValues = rawValues.toSet
-    _root_.scalive.select(
-      idAttr   := id,
-      nameAttr := name,
-      Mod.flatten(mods),
-      options.map { case (optionValue, label) =>
-        _root_.scalive.option(
-          value    := optionValue,
-          selected := selectedValues.contains(optionValue),
-          label
-        )
-      }
-    )
-
-  /** Renders only [[visibleErrors]] in an ARIA live feedback container. */
-  def errorFeedback(
-    render: FormError[Owner] => Mod[Nothing],
-    mods: Mod.Input[Nothing]*
-  ): HtmlElement[Nothing] =
-    val messages = visibleErrors.map { error =>
-      Mod.Content.Tag(span(cls := "form-error", render(error)))
-    }
-    div(
-      idAttr           := errorId,
-      Form.feedbackFor := name,
-      aria.live        := "polite",
-      cls              := "form-errors",
-      Mod.flatten(mods),
-      messages
-    )
 end FormFieldView
 
-/** Signal-backed rendering operations for [[FormFieldView]]. */
-object FormFieldView:
+private[scalive] object FormFieldView:
   private[scalive] def apply[Owner, Input, Value](
     form: Form[Owner, ?, ?],
     definition: FormField[?, Input, Value],
@@ -591,162 +457,6 @@ object FormFieldView:
     val rowIndex = address.segments.indexWhere(_.isInstanceOf[FormAddressSegment.Row])
     val key      = address.segments(rowIndex).asInstanceOf[FormAddressSegment.Row].key
     new FormAddress(address.segments.take(rowIndex)) -> key
-
-  extension [Owner, Input, Value](field: Signal[FormFieldView[Owner, Input, Value]])
-    /** Signal of the current stable logical DOM id. */
-    def id: Signal[String] = field.map(_.id)
-
-    /** Signal of the current browser field name. */
-    def name: Signal[String] = field.map(_.name)
-
-    /** Signal of the DOM id reserved for the current field's feedback container. */
-    def errorId: Signal[String] = field.map(_.errorId)
-
-    /** Signal indicating whether at least one field error is currently visible. */
-    def hasVisibleErrors: Signal[Boolean] = field.map(_.hasVisibleErrors)
-
-    /** Signal-backed ARIA attributes for the current error visibility. */
-    def validationAttributes: Vector[Mod.Attr[Nothing]] = Vector(
-      aria.describedby := field.errorId,
-      aria.invalid.optional(field.hasVisibleErrors.map(value => Option.when(value)("true")))
-    )
-
-    /** Renders a signal-backed text input. */
-    def text[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg] =
-      input(
-        typ      := "text",
-        idAttr   := field.id,
-        nameAttr := field.name,
-        value    := field.map(_.fieldValue),
-        Mod.flatten(mods)
-      )
-
-    /** Renders a signal-backed email input. */
-    def email[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg] =
-      input(
-        typ      := "email",
-        idAttr   := field.id,
-        nameAttr := field.name,
-        value    := field.map(_.fieldValue),
-        Mod.flatten(mods)
-      )
-
-    /** Renders a signal-backed telephone input from the retained raw scalar value. */
-    def tel[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg] =
-      input(
-        typ      := "tel",
-        idAttr   := field.id,
-        nameAttr := field.name,
-        value    := field.map(_.fieldValue),
-        Mod.flatten(mods)
-      )
-
-    /** Renders a signal-backed date input without parsing the retained raw scalar value. Native
-      * browser sanitization can make invalid raw dates appear empty.
-      */
-    def date[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg] =
-      input(
-        typ      := "date",
-        idAttr   := field.id,
-        nameAttr := field.name,
-        value    := field.map(_.fieldValue),
-        Mod.flatten(mods)
-      )
-
-    /** Renders a signal-backed search input from the retained raw scalar value. */
-    def search[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg] =
-      input(
-        typ      := "search",
-        idAttr   := field.id,
-        nameAttr := field.name,
-        value    := field.map(_.fieldValue),
-        Mod.flatten(mods)
-      )
-
-    /** Renders a signal-backed password input. */
-    def password[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg] =
-      input(
-        typ      := "password",
-        idAttr   := field.id,
-        nameAttr := field.name,
-        value    := field.map(_.fieldValue),
-        Mod.flatten(mods)
-      )
-
-    /** Renders a signal-backed hidden input. */
-    def hidden[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg] =
-      input(
-        typ      := "hidden",
-        idAttr   := field.id,
-        nameAttr := field.name,
-        value    := field.map(_.fieldValue),
-        Mod.flatten(mods)
-      )
-
-    /** Renders a signal-backed checkbox that is checked when the raw values contain its value.
-      *
-      * This form submits `"true"` when checked.
-      */
-    def checkbox[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg] = checkbox("true", mods*)
-
-    /** Renders a signal-backed checkbox that is checked when the raw values contain its value.
-      *
-      * This form submits `checkedValue` when checked.
-      */
-    def checkbox[Msg](checkedValue: String, mods: Mod.Input[Msg]*): HtmlElement[Msg] =
-      input(
-        typ      := "checkbox",
-        idAttr   := field.id,
-        nameAttr := field.name,
-        value    := checkedValue,
-        checked  := field.map(_.rawValues.contains(checkedValue)),
-        Mod.flatten(mods)
-      )
-
-    /** Renders a signal-backed textarea. */
-    def textarea[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg] =
-      Form.textareaTag(
-        idAttr   := field.id,
-        nameAttr := field.name,
-        Mod.flatten(mods),
-        field.map(_.fieldValue)
-      )
-
-    /** Renders signal-backed options and selects every current raw value. */
-    def select[Msg](
-      options: Iterable[(String, String)],
-      mods: Mod.Input[Msg]*
-    ): HtmlElement[Msg] =
-      _root_.scalive.select(
-        idAttr   := field.id,
-        nameAttr := field.name,
-        Mod.flatten(mods),
-        options.map { case (optionValue, label) =>
-          _root_.scalive.option(
-            value    := optionValue,
-            selected := field.map(_.rawValues.contains(optionValue)),
-            label
-          )
-        }
-      )
-
-    /** Renders signal-backed visible errors in an ARIA live feedback container. */
-    def errorFeedback(
-      render: Signal[FormError[Owner]] => Mod[Nothing],
-      mods: Mod.Input[Nothing]*
-    ): HtmlElement[Nothing] =
-      div(
-        idAttr           := field.errorId,
-        Form.feedbackFor := field.name,
-        aria.live        := "polite",
-        cls              := "form-errors",
-        Mod.flatten(mods),
-        field.map(_.visibleErrors).splitByIndex { (_, error) =>
-          span(cls := "form-error", render(error))
-        }
-      )
-  end extension
-end FormFieldView
 
 /** Current values and validation state for one stable repeated row.
   *
@@ -778,7 +488,7 @@ final class FormRowView[Owner, Schema, Group, Row] private[scalive] (
     form.interaction.visibility == ErrorVisibility.All ||
       form.interaction.used.exists(_.startsWith(address))
 
-  /** Resolves a row-schema field to this keyed row's renderable path and address. */
+  /** Returns the current data of a row-schema field in this keyed row. */
   def field[Input, Value](
     definition: FormField[Group, Input, Value]
   ): FormFieldView[Owner, Input, Value] =
@@ -797,28 +507,15 @@ final class FormRowView[Owner, Schema, Group, Row] private[scalive] (
   ): BoundFormField[Owner, Schema, Group, Input, Value] =
     val view = field(definition)
     new BoundFormField(form.values.schemaIdentity, rows, key, definition, view.address, view.path)
-
-  /** Hidden control that preserves row existence and encounter order in core payloads. */
-  def presence[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg] =
-    val path = FormPath.fromSegments(
-      rows.path.segments ++ Vector(
-        FormPathSegment.Name(current.key),
-        FormPathSegment.Name(FormDefinition.RowPresenceName)
-      )
-    )
-    input(
-      typ      := "hidden",
-      idAttr   := FormAddress.append(address, Vector(FormDefinition.RowPresenceName)).id,
-      nameAttr := path.name,
-      value    := FormDefinition.RowPresenceValue,
-      Mod.flatten(mods)
-    )
 end FormRowView
 
-/** Signal-backed rendering operations for [[FormRowView]]. */
+/** Rendering operations for a [[FormRowView]] signal. */
 object FormRowView:
   extension [Owner, Schema, Group, Row](row: Signal[FormRowView[Owner, Schema, Group, Row]])
-    /** Signal-backed presence control for rows rendered with [[splitBy]]. */
+    /** Renders the hidden control that keeps the row, and its order, in the next submission.
+      *
+      * Render it in every row, even when all its visible fields are empty or unchecked.
+      */
     def presence[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg] =
       input(
         typ    := "hidden",
@@ -839,20 +536,29 @@ object FormRowView:
       )
 
 extension [Owner, Schema, Domain](form: Signal[Form[Owner, Schema, Domain]])
-  /** Resolves the view of a declared field for each current form value.
+  /** Returns the control that renders a declared field from the current form value.
     *
-    * This form takes a static field.
+    * The control uses the field's logical id and reports no blur feedback; use [[bind]] for
+    * controls scoped to one form instance. This form takes a static field.
     */
   def field[Input, Value](
     definition: FormField[Owner, Input, Value]
-  ): Signal[FormFieldView[Owner, Input, Value]] = form.map(_.field(definition))
+  ): FormControl[Owner, Input, Value, Nothing] =
+    FormControl.unbound(form.map(_.field(definition)))
 
-  /** Resolves the view of a declared field for each current form value.
+  /** Returns the control that renders a declared field from the current form value.
     *
-    * This form takes a field of the row with `key` in `rows`. The row must exist in every form
-    * value; use [[fieldOption]] when it may be removed.
+    * This form takes a field of the row with `key` in `rows`, inside a signal's keyed rendering
+    * callback. The row must exist whenever the control is evaluated.
     */
   def field[Group, Row, Input, Value](
+    rows: RepeatedRows[Owner, Group, Row],
+    key: FormRowKey[Group],
+    definition: FormField[Group, Input, Value]
+  ): FormControl[Owner, Input, Value, Nothing] =
+    FormControl.unbound(fieldView(rows, key, definition))
+
+  private[scalive] def fieldView[Group, Row, Input, Value](
     rows: RepeatedRows[Owner, Group, Row],
     key: FormRowKey[Group],
     definition: FormField[Group, Input, Value]
@@ -861,8 +567,7 @@ extension [Owner, Schema, Domain](form: Signal[Form[Owner, Schema, Domain]])
       _.getOrElse(throw new IllegalArgumentException("bound row no longer exists"))
     )
 
-  /** Resolves a keyed repeated-row field when its row exists in each current form value. */
-  def fieldOption[Group, Row, Input, Value](
+  private[scalive] def fieldOption[Group, Row, Input, Value](
     rows: RepeatedRows[Owner, Group, Row],
     key: FormRowKey[Group],
     definition: FormField[Group, Input, Value]

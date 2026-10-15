@@ -4,14 +4,14 @@ import zio.*
 
 import scalive.*
 
-final class LoginLiveView extends LiveView.Eventless[Unit]:
-  def mount(ctx: MountContext): Task[Unit] = ZIO.unit
+// docs:start http-forms-static-form
+final class LoginLiveView extends LiveView.Eventless[LoginForm.Definition.Form]:
+  def mount(ctx: MountContext): Task[LoginForm.Definition.Form] =
+    ZIO.succeed(LoginForm.Definition.initial())
 
-  // docs:start http-forms-static-form
-  def view(model: Signal[Unit]): HtmlElement[Nothing] =
-    val loginForm = LoginForm.Definition.initial()
-    val email     = loginForm.field(LoginForm.Email)
-    val password  = loginForm.field(LoginForm.Password)
+  def view(model: Signal[LoginForm.Definition.Form]): HtmlElement[Nothing] =
+    val email    = model.field(LoginForm.Email)
+    val password = model.field(LoginForm.Password)
 
     mainTag(
       flash(LoginError)(message => div(role := "alert", message)),

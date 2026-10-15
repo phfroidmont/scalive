@@ -142,7 +142,7 @@ class TypedFormFeedbackLiveView
             idAttr := "choice-close",
             typ    := "button",
             hidden := true,
-            on.click(choice.blurred)
+            on.click(binding.blurred(Choice))
           ),
           choice.errorFeedback(error => error.map(_.message))
         ),

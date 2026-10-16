@@ -771,7 +771,7 @@ object ComponentRuntimeSpec extends ZIOSpecDefault:
           case _ => false
       )
     },
-    test("managed failed and cancelled async results run hooks then mapped component messages") {
+    test("managed failed, died, and cancelled async results run hooks then mapped component messages") {
       val lifecycle = LifecycleId(3L)
       val id        = ComponentInstanceId(4L)
       val draft = TurnDraft[Unit, RootState[Unit, Unit]](
@@ -785,6 +785,7 @@ object ComponentRuntimeSpec extends ZIOSpecDefault:
                            val status = event.result match
                              case LiveAsyncResult.Succeeded(_) => "succeeded"
                              case LiveAsyncResult.Failed(_)    => "failed"
+                             case LiveAsyncResult.Died(_)      => "died"
                              case LiveAsyncResult.Cancelled(_) => "cancelled"
                            statuses.update(_ :+ status).as(LiveHookResult.cont(model))
                          )
@@ -815,6 +816,21 @@ object ComponentRuntimeSpec extends ZIOSpecDefault:
                     mounted.state,
                     mounted.draft
                   )
+        diedEvent: LiveAsyncEvent[Int] = LiveAsyncEvent(
+                      AsyncKey[Any]("died"),
+                      LiveAsyncResult.Died(RuntimeException("died")),
+                      3
+                    )
+        died <- environment.async(
+                  id,
+                  definition,
+                  (),
+                  failed.model,
+                  diedEvent,
+                  (_: Nothing) => ZIO.unit,
+                  failed.state,
+                  failed.draft
+                )
         cancelledEvent: LiveAsyncEvent[Int] = LiveAsyncEvent(
                            AsyncKey[Any]("cancelled"),
                            LiveAsyncResult.Cancelled(Some("cancelled")),
@@ -824,17 +840,18 @@ object ComponentRuntimeSpec extends ZIOSpecDefault:
                        id,
                        definition,
                        (),
-                       failed.model,
+                       died.model,
                        cancelledEvent,
                        (_: Nothing) => ZIO.unit,
-                       failed.state,
-                       failed.draft
+                       died.state,
+                       died.draft
                      )
         observed <- statuses.get
       yield assertTrue(
         failed.model == 5,
-        cancelled.model == 12,
-        observed == Vector("failed", "cancelled")
+        died.model == 8,
+        cancelled.model == 15,
+        observed == Vector("failed", "died", "cancelled")
       )
     }
   )

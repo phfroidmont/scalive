@@ -120,7 +120,8 @@ that case's value, and explains each error:
 @:sourceRegion(documentation/site/src/scalive/docs/examples/AsyncReportExample.scala, async-report-status)
 
 A `Task[A]` fails with `Throwable`, so its exceptions arrive in `Failed`, and a
-`UIO[A]` cannot fail.
+`UIO[A]` cannot fail. An application whose services all return `Task` can name
+the model type once, as in `type Loaded[A] = AsyncValue[Throwable, A]`.
 
 A defect is a bug, such as `ZIO.die`, `orDie`, or an exception thrown inside
 `ZIO.succeed`. It arrives as `Died`, and Scalive logs it as a warning. Like a

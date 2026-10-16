@@ -190,11 +190,16 @@ object Signal:
       * case, in any order:
       *
       * {{{
-      * report.matchCases { is =>
+      * enum Status:
+      *   case Idle
+      *   case Running(progress: Int)
+      *   case Failed(reason: String)
+      *
+      * status.matchCases { is =>
       *   (
-      *     is.Empty(_ => "No report yet"),
-      *     is.Ok(ok => p(ok.map(_.value.title))),
-      *     is.Failed(failed => p(role := "alert", failed.map(_.error.message)))
+      *     is.Idle(_ => "Idle"),
+      *     is.Running(running => span(running.map(_.progress.toString))),
+      *     is.Failed(failed => p(failed.map(_.reason)))
       *   )
       * }
       * }}}

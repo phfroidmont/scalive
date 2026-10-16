@@ -109,6 +109,18 @@ browser would not, such as a duplicated field, use the raw forms
 `changeForm(selector, fields)` and `submitForm(selector, fields)`, which send
 exactly the given fields.
 
+When a page renders the same definition in several forms, pass the `DomRef`
+that the form was bound with to pick one. The definition still types the
+assigned fields:
+
+```scala fragment
+view.changeForm(Address.Definition, Address.Shipping)(Address.City.initial("Ghent"))
+```
+
+`submitForm(definition, ref)` and `submitForm(definition, ref, submitter)` pick
+the form in the same way. Without the ref, these actions fail when several forms
+render the definition's fields.
+
 For a form with a [typed submitter](form-controls.md#route-multiple-submit-actions),
 pass the button that submits it. The harness appends its name and value to the
 submitted fields, as the Phoenix browser client does:

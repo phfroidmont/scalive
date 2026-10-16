@@ -46,7 +46,10 @@ registered by the parent.
 
 The typed `changeForm(definition)` and `submitForm(definition)` select the one
 form owning a field that the definition declares, and fail when none or several
-match. As in the browser, a control with a `form` attribute belongs to the form
+match. `changeForm(definition, ref)`, `submitForm(definition, ref)`, and
+`submitForm(definition, ref, submitter)` select the form whose id is `ref`
+instead, and fail when no such form renders a field of the definition. As in the
+browser, a control with a `form` attribute belongs to the form
 with that id, even outside or nested in another form, and any other control
 belongs to its closest ancestor form. They build the payload as the Phoenix
 client does: the form's successful controls in DOM order (checked checkboxes and

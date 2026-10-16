@@ -342,14 +342,41 @@ final class ConnectedView[-Msg] private[testing] (
     * assigned fields would, as in `view.changeForm(Signup.Definition)(Signup.Name.initial("Ada"))`.
     * The payload starts from the form's rendered values, with the assigned fields replaced. Like
     * the browser, it marks fields the visitor has neither edited nor submitted as unused, so only
-    * edited fields show their errors. With one field assignment, `_target` names that field.
+    * edited fields show their errors. With one field assignment, `_target` names that field. When
+    * several forms render fields of `definition`, pass the `DomRef` of the one to edit.
     */
   def changeForm[Owner](
     definition: FormDefinition[Owner, ?]
   )(
     assignments: FormInitial[Owner]*
   ): Task[ConnectedAction] =
-    dispatchTypedForm(definition, assignments.toVector, submitter = None, submitting = false)
+    dispatchTypedForm(
+      ConnectedDom.formFor(_, definition),
+      definition,
+      assignments.toVector,
+      submitter = None,
+      submitting = false
+    )
+
+  /** Dispatches a form's `phx-change` binding.
+    *
+    * This form edits the form with the ID `ref`, for a page that renders `definition` more than
+    * once, as in `view.changeForm(Signup.Definition, Billing)(Signup.Name.initial("Ada"))`. The
+    * form must render fields of `definition`.
+    */
+  def changeForm[Owner](
+    definition: FormDefinition[Owner, ?],
+    ref: DomRef
+  )(
+    assignments: FormInitial[Owner]*
+  ): Task[ConnectedAction] =
+    dispatchTypedForm(
+      ConnectedDom.formFor(_, definition, ref),
+      definition,
+      assignments.toVector,
+      submitter = None,
+      submitting = false
+    )
 
   /** Dispatches a form's `phx-submit` binding.
     *
@@ -369,14 +396,41 @@ final class ConnectedView[-Msg] private[testing] (
     * This form submits the one form that renders fields of `definition`, with the assigned fields
     * replacing its rendered values, as in
     * `view.submitForm(Signup.Definition)(Signup.Name.initial("Ada"))`. Submitting marks every field
-    * of the form as used, as the browser does.
+    * of the form as used, as the browser does. When several forms render fields of `definition`,
+    * pass the `DomRef` of the one to submit.
     */
   def submitForm[Owner](
     definition: FormDefinition[Owner, ?]
   )(
     assignments: FormInitial[Owner]*
   ): Task[ConnectedAction] =
-    dispatchTypedForm(definition, assignments.toVector, submitter = None, submitting = true)
+    dispatchTypedForm(
+      ConnectedDom.formFor(_, definition),
+      definition,
+      assignments.toVector,
+      submitter = None,
+      submitting = true
+    )
+
+  /** Dispatches a form's `phx-submit` binding.
+    *
+    * This form submits the form with the ID `ref`, for a page that renders `definition` more than
+    * once, as in `view.submitForm(Signup.Definition, Billing)(Signup.Name.initial("Ada"))`. The
+    * form must render fields of `definition`.
+    */
+  def submitForm[Owner](
+    definition: FormDefinition[Owner, ?],
+    ref: DomRef
+  )(
+    assignments: FormInitial[Owner]*
+  ): Task[ConnectedAction] =
+    dispatchTypedForm(
+      ConnectedDom.formFor(_, definition, ref),
+      definition,
+      assignments.toVector,
+      submitter = None,
+      submitting = true
+    )
 
   /** Dispatches a form's `phx-submit` binding.
     *
@@ -389,7 +443,34 @@ final class ConnectedView[-Msg] private[testing] (
   )(
     assignments: FormInitial[Owner]*
   ): Task[ConnectedAction] =
-    dispatchTypedForm(definition, assignments.toVector, Some(submitter), submitting = true)
+    dispatchTypedForm(
+      ConnectedDom.formFor(_, definition),
+      definition,
+      assignments.toVector,
+      Some(submitter),
+      submitting = true
+    )
+
+  /** Dispatches a form's `phx-submit` binding.
+    *
+    * This form submits the form with the ID `ref` and also sends the submit button that `submitter`
+    * describes, as in
+    * `view.submitForm(Profile.Definition, Home, Profile.Submitter.raw(Intent.Save))(...)`.
+    */
+  def submitForm[Owner](
+    definition: FormDefinition[Owner, ?],
+    ref: DomRef,
+    submitter: RawFormSubmitter
+  )(
+    assignments: FormInitial[Owner]*
+  ): Task[ConnectedAction] =
+    dispatchTypedForm(
+      ConnectedDom.formFor(_, definition, ref),
+      definition,
+      assignments.toVector,
+      Some(submitter),
+      submitting = true
+    )
 
   /** Sends one typed server message and waits for its committed output. */
   def send(message: Msg): Task[ConnectedAction] = session.send(state, message)
@@ -475,6 +556,7 @@ final class ConnectedView[-Msg] private[testing] (
     yield result
 
   private def dispatchTypedForm[Owner](
+    findForm: String => Element,
     definition: FormDefinition[Owner, ?],
     assignments: Vector[FormInitial[Owner]],
     submitter: Option[RawFormSubmitter],
@@ -485,7 +567,7 @@ final class ConnectedView[-Msg] private[testing] (
       current  <- html
       used     <- state.usedFields.get
       prepared <- ZIO.attempt {
-                    val form             = ConnectedDom.formFor(current, definition)
+                    val form             = findForm(current)
                     val binding          = ConnectedDom.requiredBinding(form, attribute)
                     val controls         = ConnectedDom.controls(form)
                     val (data, assigned) =
@@ -559,10 +641,28 @@ private object ConnectedDom:
 
   /** The one rendered form owning a field that `definition` declares. */
   def formFor(html: String, definition: FormDefinition[?, ?]): Element =
-    val forms = Jsoup.parseBodyFragment(html).select("form").asScala.toVector.filter { form =>
-      FormOwner.controls(form).exists(control => definition.declares(control.attr("name")))
-    }
-    exactlyOne(forms, s"form rendering fields of the '${definition.root.name}' form definition")
+    val forms =
+      Jsoup.parseBodyFragment(html).select("form").asScala.toVector.filter(ownsField(_, definition))
+    val description = s"form rendering fields of the '${definition.root.name}' form definition"
+    if forms.size > 1 then
+      throw IllegalArgumentException(
+        s"Expected one $description, found ${forms.size}. Pass the DomRef of the form to use."
+      )
+    exactlyOne(forms, description)
+
+  /** The rendered form with the ID `ref`, which must own a field that `definition` declares. */
+  def formFor(html: String, definition: FormDefinition[?, ?], ref: DomRef): Element =
+    val forms =
+      Jsoup.parseBodyFragment(html).select("form").asScala.toVector.filter(_.id == ref.value)
+    val form = exactlyOne(forms, s"form with the ID '${ref.value}'")
+    if !ownsField(form, definition) then
+      throw IllegalArgumentException(
+        s"The form '${ref.value}' renders no field of the '${definition.root.name}' form definition."
+      )
+    form
+
+  private def ownsField(form: Element, definition: FormDefinition[?, ?]): Boolean =
+    FormOwner.controls(form).exists(control => definition.declares(control.attr("name")))
 
   /** The named controls of one form, read as the browser's `FormData` reads them. */
   final case class FormControls(

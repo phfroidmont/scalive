@@ -9734,6 +9734,10 @@
         {
           "id" : "def:scalive.testing.ConnectedView.changeForm:9fc0c85291215071",
           "signature" : "def changeForm[Owner](definition: FormDefinition[Owner, ?])(assignments: FormInitial[Owner]*): zio.package.Task[testing.ConnectedAction]"
+        },
+        {
+          "id" : "def:scalive.testing.ConnectedView.changeForm:f9001850fcd2e38e",
+          "signature" : "def changeForm[Owner](definition: FormDefinition[Owner, ?], ref: DomRef)(assignments: FormInitial[Owner]*): zio.package.Task[testing.ConnectedAction]"
         }
       ]
     },
@@ -9843,6 +9847,14 @@
       "qualifiedName" : "scalive.testing.ConnectedView.submitForm",
       "kind" : "def",
       "signatures" : [
+        {
+          "id" : "def:scalive.testing.ConnectedView.submitForm:6421bc00ae90710d",
+          "signature" : "def submitForm[Owner](definition: FormDefinition[Owner, ?], ref: DomRef, submitter: RawFormSubmitter)(assignments: FormInitial[Owner]*): zio.package.Task[testing.ConnectedAction]"
+        },
+        {
+          "id" : "def:scalive.testing.ConnectedView.submitForm:c7f6a0f45995ca68",
+          "signature" : "def submitForm[Owner](definition: FormDefinition[Owner, ?], ref: DomRef)(assignments: FormInitial[Owner]*): zio.package.Task[testing.ConnectedAction]"
+        },
         {
           "id" : "def:scalive.testing.ConnectedView.submitForm:e80cc7c20ff46f7f",
           "signature" : "def submitForm[Owner](definition: FormDefinition[Owner, ?], submitter: RawFormSubmitter)(assignments: FormInitial[Owner]*): zio.package.Task[testing.ConnectedAction]"

@@ -82,6 +82,42 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
           span(dataAttr("saved") := "", model.map(_.saved.fold("")(_.toString)))
         )
 
+    val Billing  = DomRef("billing")
+    val Shipping = DomRef("shipping")
+    val Notes    = DomRef("notes")
+
+    enum TwinMsg:
+      case Updated(ref: DomRef, update: Definition.Update)
+      case Submitted(ref: DomRef, event: Definition.Event)
+
+    /** Renders the signup definition twice, as billing and shipping forms. */
+    class TwinSignupView extends LiveView[TwinMsg, Map[DomRef, String]]:
+      def mount(ctx: MountContext) = ZIO.succeed(Map.empty)
+      def handleMessage(model: Map[DomRef, String], ctx: MessageContext) =
+        case TwinMsg.Updated(ref, update) =>
+          val name = update.applyTo(Definition.initial()).form.field(Name).fieldValue
+          ZIO.succeed(model.updated(ref, s"changed $name"))
+        case TwinMsg.Submitted(ref, event) =>
+          val name   = event.data.values(Name.name).lastOption.getOrElse("")
+          val intent = event.data.values("intent").mkString
+          ZIO.succeed(model.updated(ref, s"submitted $name $intent".trim))
+      def view(model: Signal[Map[DomRef, String]]) =
+        def signup(ref: DomRef) =
+          val binding = model.map(_ => Definition.initial()).bind(
+            ref,
+            TwinMsg.Updated(ref, _),
+            TwinMsg.Submitted(ref, _)
+          )
+          div(
+            binding.render(binding.field(Name).text()),
+            span(dataAttr(ref.value) := "", model.map(_.getOrElse(ref, "")))
+          )
+        div(
+          signup(Billing),
+          signup(Shipping),
+          form(Notes.attr, input(nameAttr := "note"))
+        )
+
   private enum ChildMsg:
     case Clicked
 
@@ -253,6 +289,36 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
           result    <- connected.submitForm(SignupForm.Definition)().either
         yield assertTrue(
           result.left.exists(_.getMessage.contains("form rendering fields of the 'signup' form"))
+        )
+      }
+    },
+    test("typed form actions pick one of several forms for a definition by DomRef") {
+      import SignupForm.*
+      ZIO.scoped {
+        for
+          view      <- ConnectedRender.join(TwinSignupView())
+          ambiguous <- view.submitForm(Definition)().either
+          _         <- view.changeForm(Definition, Shipping)(Name.initial("Ada"))
+          changed   <- view.text("[data-shipping]")
+          untouched <- view.text("[data-billing]")
+          _         <- view.submitForm(Definition, Billing)(Name.initial("Bob"))
+          submitted <- view.text("[data-billing]")
+          _         <- view.submitForm(Definition, Shipping, RawFormSubmitter("intent", "save"))(
+                         Name.initial("Cy")
+                       )
+          withSubmitter <- view.text("[data-shipping]")
+          missing       <- view.changeForm(Definition, DomRef("missing"))().either
+          unrelated     <- view.submitForm(Definition, Notes)().either
+        yield assertTrue(
+          ambiguous.left.exists(_.getMessage.contains("found 2. Pass the DomRef of the form")),
+          changed == "changed Ada",
+          untouched.isEmpty,
+          submitted == "submitted Bob",
+          withSubmitter == "submitted Cy save",
+          missing.left.exists(_.getMessage.contains("Expected one form with the ID 'missing'")),
+          unrelated.left.exists(
+            _.getMessage.contains("'notes' renders no field of the 'signup' form definition")
+          )
         )
       }
     },

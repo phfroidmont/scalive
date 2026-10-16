@@ -481,6 +481,10 @@ object Mod:
         extends Attr[Nothing]
     private[scalive] case SignalValueAsPresence(name: String, value: Signal[Boolean])
         extends Attr[Nothing]
+
+    /** `phx-drop-target` naming the upload while its owner allows it, and nothing otherwise. */
+    private[scalive] case ManagedUploadDropTarget(definition: upload.LiveUploadDef[?])
+        extends Attr[Nothing]
     private[scalive] case CompositeStatic(name: String, value: String) extends Attr[Nothing]
     private[scalive] case CompositeSignalValue(name: String, value: Signal[String])
         extends Attr[Nothing]
@@ -548,7 +552,7 @@ object Mod:
       project: (String, Signal[A]) => HtmlElement[Msg]) extends Content[Msg]
     private[scalive] case ManagedUpload[R, Msg](
       definition: upload.LiveUploadDef[R],
-      body: Signal[upload.LiveUpload[R]] => Mod[Msg])              extends Content[Msg]
+      body: Signal[upload.LiveUpload[R]] => Content[Msg])          extends Content[Msg]
     private[scalive] case Tag[Msg](element: HtmlElement[Msg])      extends Content[Msg]
     private[scalive] case Component[Msg](spec: ComponentSpec[Msg]) extends Content[Msg]
     private[scalive] case NestedView(spec: NestedViewSpec)         extends Content[Nothing]

@@ -787,13 +787,22 @@ final class LiveUploadDef[Result] private (
     *
     * The signal follows the upload as the visitor selects, uploads, and cancels files, so no
     * message has to refresh it. Render the upload's controls inside, as in
-    * `TextFiles.render(upload => div(upload.dropTarget, liveFileInput(upload)))`. `body` produces
-    * content, such as an element or `upload.map(_.entries).splitBy(...)`; call `render` again for
-    * content elsewhere in the view. Nothing renders before [[Uploads.allow]] or after
+    * `TextFiles.render(upload => div(TextFiles.dropTarget, liveFileInput(upload)))`. `body`
+    * produces content, such as an element or `upload.map(_.entries).splitBy(...)`, never an
+    * attribute; use [[dropTarget]] to make an outer element a drop zone, and call `render` again
+    * for content elsewhere in the view. Nothing renders before [[Uploads.allow]] or after
     * [[Uploads.disallow]].
     */
-  def render[Msg](body: Signal[LiveUpload[Result]] => Mod[Msg]): Mod[Msg] =
+  def render[Msg](body: Signal[LiveUpload[Result]] => Mod.Content[Msg]): Mod.Content[Msg] =
     Mod.Content.ManagedUpload(this, body)
+
+  /** Makes the element a drop zone for this upload's files (`phx-drop-target`).
+    *
+    * Put it on any element of the LiveView or component that allows the upload, such as the page's
+    * outer element, which stays rendered as the upload comes and goes. The attribute renders while
+    * the upload is allowed and is omitted before [[Uploads.allow]] or after [[Uploads.disallow]].
+    */
+  def dropTarget: Mod.Attr[Nothing] = Mod.Attr.ManagedUploadDropTarget(this)
 
   private[scalive] def withName(value: String): LiveUploadDef[Result] =
     new LiveUploadDef(

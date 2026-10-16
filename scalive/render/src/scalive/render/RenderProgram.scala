@@ -612,6 +612,9 @@ object RenderProgram:
         case Mod.Attr.SignalValueAsPresence(name, value) =>
           dynamicAttribute(name, value)(AttributeTemplate.DynamicPresence.apply)
             .map(AttributeCandidate.Scalar.apply)
+        case Mod.Attr.ManagedUploadDropTarget(definition) =>
+          val ref = state.map(_.upload(definition).map(_.ref))
+          compileAttribute(scalive.phx.dropTarget.optional(ref))
         case Mod.Attr.CompositeStatic(name, value) =>
           nonNullString(value, s"attribute '$name'")
             .map(value =>
@@ -866,16 +869,9 @@ object RenderProgram:
           )
           compileContent(Mod.Content.SignalStream(stream, project))
         case Mod.Content.ManagedUpload(definition, body) =>
-          val upload = state.map(_.upload(definition))
-          body(upload.map(_.get)) match
-            case content: Mod.Content[Msg] =>
-              compileChoice(upload.map(_.isDefined), Vector(true -> Vector(content)))
-            case _ =>
-              Left(
-                RenderError.InvalidHtml(
-                  s"upload '${definition.name}' must render content, not attributes"
-                )
-              )
+          val upload  = state.map(_.upload(definition))
+          val content = body(upload.map(_.get))
+          compileChoice(upload.map(_.isDefined), Vector(true -> Vector(content)))
         case Mod.Content.Component(spec) =>
           for
             _  <- validateComponentSpec(spec)

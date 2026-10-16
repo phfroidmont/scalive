@@ -37,7 +37,7 @@ final class TextUploadExample extends LiveView[TextUploadExample.Msg, TextUpload
         TextFiles.render { upload =>
           div(
             cls := "docs-upload-dropzone",
-            upload.dropTarget,
+            TextFiles.dropTarget,
             label(forId := upload.map(_.ref.value), "Text file"),
             liveFileInput(
               upload,

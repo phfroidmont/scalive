@@ -166,8 +166,8 @@ object ApiReferencePipelineSpec extends ZIOSpecDefault:
           symbol.qualifiedName == "scalive.component" && symbol.kind == ApiSymbolKind.Def
         ).exists(_.signatures.size == 4),
         liveViewTrait.exists(_.signatures.exists(_.signature == "trait LiveView[Msg, Model]")),
-        hasSignature(symbols, "scalive.dropTarget", ApiSymbolKind.Extension,
-          "extension def dropTarget[R](upload: Signal[LiveUpload[R]]): Mod.Attr[Nothing]"),
+        hasSignature(symbols, "scalive.onProgress", ApiSymbolKind.Extension,
+          "extension def onProgress[R](upload: Signal[LiveUpload[R]])[Msg](message: Msg): UploadProgress[Msg]"),
         signaturesHideSyntheticParents(symbols),
         hooks.exists(_.signatures.exists(_.signature == "def hooks: LiveHooks[Msg, Model]")),
         routedEventless.exists(_.signatures.exists(_.signature ==

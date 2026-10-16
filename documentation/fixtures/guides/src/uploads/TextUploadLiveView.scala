@@ -52,12 +52,12 @@ final class TextUploadLiveView extends LiveView[Msg, Model]:
   // docs:start uploads-render
   def view(model: Signal[Model]): HtmlElement[Msg] =
     form(
+      TextFiles.dropTarget,
       on.change(_ => Msg.Validate),
       on.submit(Msg.Save),
       TextFiles.render { upload =>
         div(
           div(
-            upload.dropTarget,
             label(forId := upload.map(_.ref.value), "Text file"),
             liveFileInput(upload),
             errorMessages(uploadErrors(upload))

@@ -6,7 +6,7 @@ extension [A](items: IterableOnce[A])
     * This form renders a plain collection, such as a constant list of options. Keys are compared
     * with `==`.
     */
-  def splitBy[Key, Msg](key: A => Key)(project: (Key, A) => HtmlElement[Msg]): Mod[Msg] =
+  def splitBy[Key, Msg](key: A => Key)(project: (Key, A) => HtmlElement[Msg]): Mod.Content[Msg] =
     val entries = items.iterator.map { item =>
       val itemKey = key(item)
       Mod.Content.Keyed.Entry(itemKey, project(itemKey, item))
@@ -17,7 +17,7 @@ extension [A](items: IterableOnce[A])
     *
     * This form renders a plain collection, such as a constant list of options.
     */
-  def splitByIndex[Msg](project: (Int, A) => HtmlElement[Msg]): Mod[Msg] =
+  def splitByIndex[Msg](project: (Int, A) => HtmlElement[Msg]): Mod.Content[Msg] =
     val entries = items.iterator.zipWithIndex.map { case (item, index) =>
       Mod.Content.Keyed.Entry(index, project(index, item))
     }.toVector
@@ -35,7 +35,7 @@ extension [A, Items <: Iterable[A]](items: Signal[Items])
     key: A => Key
   )(
     project: (Key, Signal[A]) => HtmlElement[Msg]
-  ): Mod[Msg] =
+  ): Mod.Content[Msg] =
     Mod.Content.SignalKeyed(items.map(values => values: Iterable[A]), key, project)
 
   /** Renders one element per item, identifying each row by its position.
@@ -43,7 +43,7 @@ extension [A, Items <: Iterable[A]](items: Signal[Items])
     * This form follows a signal of the collection. Prefer [[splitBy]] when items have a stable key,
     * so that inserting or removing an item does not change the rows after it.
     */
-  def splitByIndex[Msg](project: (Int, Signal[A]) => HtmlElement[Msg]): Mod[Msg] =
+  def splitByIndex[Msg](project: (Int, Signal[A]) => HtmlElement[Msg]): Mod.Content[Msg] =
     Mod.Content.SignalKeyedByIndex(items.map(values => values: Iterable[A]), project)
 
 extension [A, Id](definition: streams.LiveStreamDef[A, Id])
@@ -53,7 +53,7 @@ extension [A, Id](definition: streams.LiveStreamDef[A, Id])
     * Rendering a stream it never created fails the render. Prefer [[renderIn]], which also sets up
     * the container.
     */
-  def stream[Msg](project: (String, Signal[A]) => HtmlElement[Msg]): Mod[Msg] =
+  def stream[Msg](project: (String, Signal[A]) => HtmlElement[Msg]): Mod.Content[Msg] =
     Mod.Content.ManagedStream(definition, project)
 
   /** Renders this stream's items inside `container`.
@@ -160,6 +160,7 @@ private def isAttr(mod: Mod[?], expectedName: String): Boolean = mod match
   case Mod.Attr.SignalValue(name, _)                  => name == expectedName
   case Mod.Attr.SignalOptionalValue(name, _)          => name == expectedName
   case Mod.Attr.SignalValueAsPresence(name, _)        => name == expectedName
+  case Mod.Attr.ManagedUploadDropTarget(_)            => phx.dropTarget.name == expectedName
   case Mod.Attr.CompositeStatic(name, _)              => name == expectedName
   case Mod.Attr.CompositeSignalValue(name, _)         => name == expectedName
   case Mod.Attr.CompositeSignalOptionalValue(name, _) => name == expectedName

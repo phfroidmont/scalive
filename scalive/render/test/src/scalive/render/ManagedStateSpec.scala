@@ -49,18 +49,45 @@ object ManagedStateSpec extends ZIOSpecDefault:
         !notAllowed.contains("input")
       )
     },
-    test("an upload body may render content other than one element, but not attributes") {
+    test("an upload body may render content other than one element") {
       val siblings = div(
         Files.render(upload => liveFileInput(upload)),
         Files.render(upload => upload.map(_.ref.value))
       )
-      for
-        rendered  <- render(siblings, TestState(uploads = Map(Files.name -> upload)))
-        attribute <- render(div(Files.render(_.dropTarget)), TestState()).exit
+      for rendered <- render(siblings, TestState(uploads = Map(Files.name -> upload)))
       yield assertTrue(
         rendered.contains("data-phx-upload-ref=\"phx-files\""),
-        rendered.endsWith(">phx-files</div>"),
-        attribute.causeOption.exists(_.prettyPrint.contains("must render content"))
+        rendered.endsWith(">phx-files</div>")
+      )
+    },
+    test("an upload body must be content, not an attribute") {
+      val content = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+
+        val Files = LiveUploadDef.inMemory("files", LiveUploadAccept.Any)
+        div(
+          Files.render(upload => div(Files.dropTarget, liveFileInput(upload))),
+          Files.render(upload => upload.map(_.entries).splitBy(_.ref)((_, entry) => p("entry"))),
+          Files.render(upload => upload.map(_.ref.value)),
+          Files.render(_ => "text")
+        )
+      """)
+      val attribute = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+
+        val Files = LiveUploadDef.inMemory("files", LiveUploadAccept.Any)
+        div(Files.render(_ => Files.dropTarget))
+      """)
+      assertTrue(content.isEmpty, attribute.nonEmpty)
+    },
+    test("an upload drop target renders while the upload is allowed, outside its body") {
+      val view = div(Files.dropTarget, Files.render(upload => liveFileInput(upload)))
+      for
+        allowed    <- render(view, TestState(uploads = Map(Files.name -> upload)))
+        notAllowed <- render(view, TestState())
+      yield assertTrue(
+        allowed.startsWith("<div phx-drop-target=\"phx-files\">"),
+        notAllowed == "<div></div>"
       )
     },
     test("a stream renders from the owner's state and fails when the owner never created it") {

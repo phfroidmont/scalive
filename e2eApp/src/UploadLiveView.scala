@@ -82,15 +82,17 @@ class UploadLiveView() extends LiveView.Routed[Msg, Model, QueryParams]:
       link.pushNavigateUnsafe("/upload?replaced=1", "Replace view"),
       model
         .map(_.mode).choose(
-          UploadMode.values.toSeq.map(mode =>
-            mode -> uploadDefinition(mode).render(upload => uploadForm(model, upload))
-          )*
+          UploadMode.values.toSeq.map { mode =>
+            val definition = uploadDefinition(mode)
+            mode -> definition.render(upload => uploadForm(model, definition, upload))
+          }*
         )
     )
   end view
 
   private def uploadForm(
     model: Signal[Model],
+    definition: LiveUploadDef[Chunk[Byte]],
     upload: Signal[LiveUpload[Chunk[Byte]]]
   ): HtmlElement[Msg] =
     form(
@@ -104,7 +106,7 @@ class UploadLiveView() extends LiveView.Routed[Msg, Model, QueryParams]:
       ),
       sectionTag(
         idAttr := "drop-target",
-        upload.dropTarget,
+        definition.dropTarget,
         div(
           idAttr := "drop-target-inner",
           span("Inner drop target child"),

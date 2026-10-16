@@ -34,14 +34,14 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
     * Never pass text that a visitor or another untrusted source can influence: it can inject
     * scripts into the page. Text passed as a plain string is escaped instead.
     */
-  def rawHtml(html: String): Mod[Nothing] = Mod.Content.Text(html, raw = true)
+  def rawHtml(html: String): Mod.Content[Nothing] = Mod.Content.Text(html, raw = true)
 
   /** Inserts `html` without escaping it.
     *
     * Never pass text that a visitor or another untrusted source can influence: it can inject
     * scripts into the page. Text passed as a plain string is escaped instead.
     */
-  def rawHtml(html: Signal[String]): Mod[Nothing] = Mod.Content.SignalText(html, raw = true)
+  def rawHtml(html: Signal[String]): Mod.Content[Nothing] = Mod.Content.SignalText(html, raw = true)
 
   /** Names one instance of a stateful component, to render it with `render(props)`.
     *
@@ -98,7 +98,7 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
     value: => LiveView[Msg, Model],
     sticky: Boolean = false,
     linkParentOnCrash: Boolean = false
-  ): Mod[Nothing] =
+  ): Mod.Content[Nothing] =
     Mod.Content.NestedView(NestedViewSpec.Static(id, () => value, sticky, linkParentOnCrash))
 
   /** Embeds a nested LiveView with its own lifecycle, identified by `id`.
@@ -113,7 +113,7 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
     linkParentOnCrash: A => Boolean
   )(
     factory: A => LiveView[Msg, Model]
-  ): Mod[Nothing] =
+  ): Mod.Content[Nothing] =
     Mod.Content.NestedView(
       NestedViewSpec.Dynamic(id, value, factory, sticky, linkParentOnCrash)
     )
@@ -128,7 +128,7 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
     value: Signal[A]
   )(
     factory: A => LiveView[Msg, Model]
-  ): Mod[Nothing] = liveView(id, value, sticky = false, _ => false)(factory)
+  ): Mod.Content[Nothing] = liveView(id, value, sticky = false, _ => false)(factory)
 
   private lazy val portalTemplateTag = HtmlTag("template")
   private lazy val phxPortal         = dataAttr("phx-portal")
@@ -164,7 +164,7 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
   /** Renders flash messages set with `ctx.flash`. */
   object flash:
     /** Renders the message for `kind` with `project`, and nothing while there is none. */
-    def apply(kind: FlashKind)(project: String => HtmlElement[Nothing]): Mod[Nothing] =
+    def apply(kind: FlashKind)(project: String => HtmlElement[Nothing]): Mod.Content[Nothing] =
       Mod.Content.Flash(kind, project)
 
     /** Clears flash when the element is clicked, without a message to the LiveView.
@@ -533,7 +533,7 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
     lazy val update = HtmlAttr[PhxUpdate]("phx-update", Encoder(_.value))
 
     /** The raw `phx-drop-target` attribute, naming the upload that receives files dropped on the
-      * element. Prefer `upload.dropTarget`.
+      * element. Prefer [[LiveUploadDef.dropTarget]].
       */
     lazy val dropTarget = HtmlAttr[UploadRef]("phx-drop-target", Encoder(_.value))
 
@@ -718,12 +718,6 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
     def replaceTextWith(text: String): Mod.Attr[Nothing] = phx.disableWith := text
 
   extension [R](upload: Signal[LiveUpload[R]])
-    /** Makes the element a drop zone for this upload's files (`phx-drop-target`).
-      *
-      * Use it on the upload from [[LiveUploadDef.render]]'s body.
-      */
-    def dropTarget: Mod.Attr[Nothing] = phx.dropTarget := upload.map(_.ref)
-
     /** Sends a message each time the browser reports transfer progress for this upload
       * (`phx-progress`).
       *
@@ -744,12 +738,13 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
       UploadProgress(upload.map(_.ref), on.uploadProgress(f))
 
   /** Converts a string to text content, escaped when rendered, so a string can be a child. */
-  implicit def stringToMod(value: String): Mod[Nothing] = Mod.Content.Text(value)
+  implicit def stringToMod(value: String): Mod.Content[Nothing] = Mod.Content.Text(value)
 
   /** Converts a signal of a string to text content that follows it, escaped when rendered. */
-  implicit def signalStringToMod(value: Signal[String]): Mod[Nothing] =
+  implicit def signalStringToMod(value: Signal[String]): Mod.Content[Nothing] =
     Mod.Content.SignalText(value)
 
   /** Converts an element to child content where a [[Mod]] is expected, as in `appended`. */
-  implicit def htmlElementToMod[Msg](value: HtmlElement[Msg]): Mod[Msg] = Mod.Content.Tag(value)
+  implicit def htmlElementToMod[Msg](value: HtmlElement[Msg]): Mod.Content[Msg] =
+    Mod.Content.Tag(value)
 end scalive

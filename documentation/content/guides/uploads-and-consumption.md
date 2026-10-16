@@ -51,12 +51,15 @@ is still uploading, reads it with `ctx.uploads.get`.
 Render the upload with
 @:apiSymbol(def:scalive.LiveUploadDef.render)`TextFiles.render`@:@. Its body receives
 a @:apiSymbol(class:scalive.LiveUpload)`Signal[LiveUpload[Result]]`@:@ that
-Scalive keeps current, and renders while the upload is allowed. The body can be
-an element or other content, such as the entries' `splitBy`; call `render` again
-where another part of the view needs the upload. Use
+Scalive keeps current, and renders while the upload is allowed. The body is
+content, such as an element or the entries' `splitBy`, never an attribute; call
+`render` again where another part of the view needs the upload. Use
 @:apiSymbol(def:scalive.liveFileInput)`liveFileInput`@:@ rather than assembling
-protocol attributes by hand, and put `upload.dropTarget` on any element that
-should accept files dropped for this upload:
+protocol attributes by hand, and put
+@:apiSymbol(def:scalive.LiveUploadDef.dropTarget)`TextFiles.dropTarget`@:@ on the
+element that should accept files dropped for this upload. It reads the upload
+itself, so it can sit outside `render`, here on the form, and renders only while
+the upload is allowed:
 
 @:sourceRegion(documentation/fixtures/guides/src/uploads/TextUploadLiveView.scala, uploads-render)
 

@@ -497,7 +497,7 @@ class Issue3647LiveView extends LiveView[Issue3647LiveView.Msg, Issue3647LiveVie
       Upload.render { upload =>
         sectionTag(
           cls := "pending-uploads",
-          upload.dropTarget,
+          Upload.dropTarget,
           styleAttr := "min-height: 100%;",
           h3(upload.map(current => s"Pending Uploads (${current.entries.length})")),
           upload.map(_.entries).splitBy(_.ref) { (_, entry) =>

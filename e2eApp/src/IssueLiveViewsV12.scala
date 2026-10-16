@@ -205,7 +205,7 @@ object Issue3368LiveView:
             idAttr := "upload-form",
             on.change(_ => Msg.Validate),
             on.submit(Msg.Save),
-            div(idAttr := "dropzone", upload.dropTarget, "Drop files here"),
+            div(idAttr := "dropzone", Upload.dropTarget, "Drop files here"),
             liveFileInput(upload),
             button(typ := "submit", "Upload")
           )

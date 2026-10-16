@@ -173,7 +173,7 @@ final case class LiveComponentInstance[Props, Msg, Model](
     *
     * This form passes a constant `props` value.
     */
-  def render(props: Props): Mod[Nothing] =
+  def render(props: Props): Mod.Content[Nothing] =
     Mod.Content.Component(ComponentSpec.Plain(component, id, props))
 
   /** Renders this instance at this place in the owner's view, with `props`.
@@ -181,7 +181,7 @@ final case class LiveComponentInstance[Props, Msg, Model](
     * This form passes props that follow a [[Signal]]; the instance receives each changed value in
     * [[LiveComponent.update]].
     */
-  def render(props: Signal[Props]): Mod[Nothing] =
+  def render(props: Signal[Props]): Mod.Content[Nothing] =
     Mod.Content.Component(ComponentSpec.PlainSignal(component, id, props))
 
 /** Component instances whose ID follows a signal. */
@@ -205,14 +205,14 @@ object LiveComponentInstance:
       *
       * This form passes a constant `props` value.
       */
-    def render(props: Props): Mod[Nothing] = render(id.map(_ => props))
+    def render(props: Props): Mod.Content[Nothing] = render(id.map(_ => props))
 
     /** Renders the instance with the current ID at this place in the owner's view, with `props`.
       *
       * This form passes props that follow a [[Signal]]; the instance receives each changed value in
       * [[LiveComponent.update]].
       */
-    def render(props: Signal[Props]): Mod[Nothing] =
+    def render(props: Signal[Props]): Mod.Content[Nothing] =
       Mod.Content.Component(ComponentSpec.Dynamic(component, id, props))
 
 /** One named instance of a component that reports outputs, as returned by
@@ -234,7 +234,7 @@ final case class LiveComponentOutputInstance[Props, Msg, Model, Output](
     *
     * This form passes a constant `props` value.
     */
-  def render[OwnerMsg](props: Props, onOutput: Output => OwnerMsg): Mod[OwnerMsg] =
+  def render[OwnerMsg](props: Props, onOutput: Output => OwnerMsg): Mod.Content[OwnerMsg] =
     Mod.Content.Component(ComponentSpec.Output(component, id, props, onOutput))
 
   /** Renders this instance at this place in the owner's view, with `props`, and turns each of its
@@ -246,7 +246,7 @@ final case class LiveComponentOutputInstance[Props, Msg, Model, Output](
   def render[OwnerMsg](
     props: Signal[Props],
     onOutput: Output => OwnerMsg
-  ): Mod[OwnerMsg] =
+  ): Mod.Content[OwnerMsg] =
     Mod.Content.Component(ComponentSpec.OutputSignal(component, id, props, onOutput))
 
 /** Instances of components that report outputs, whose ID follows a signal. */
@@ -271,7 +271,7 @@ object LiveComponentOutputInstance:
       *
       * This form passes a constant `props` value.
       */
-    def render[OwnerMsg](props: Props, onOutput: Output => OwnerMsg): Mod[OwnerMsg] =
+    def render[OwnerMsg](props: Props, onOutput: Output => OwnerMsg): Mod.Content[OwnerMsg] =
       render(id.map(_ => props), onOutput)
 
     /** Renders the instance with the current ID at this place in the owner's view, with `props`,
@@ -283,7 +283,7 @@ object LiveComponentOutputInstance:
     def render[OwnerMsg](
       props: Signal[Props],
       onOutput: Output => OwnerMsg
-    ): Mod[OwnerMsg] =
+    ): Mod.Content[OwnerMsg] =
       Mod.Content.Component(ComponentSpec.OutputDynamic(component, id, props, onOutput))
 end LiveComponentOutputInstance
 

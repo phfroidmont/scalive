@@ -351,6 +351,7 @@ object Form:
     case Mod.Attr.SignalValue(name, _)                  => Some(name)
     case Mod.Attr.SignalOptionalValue(name, _)          => Some(name)
     case Mod.Attr.SignalValueAsPresence(name, _)        => Some(name)
+    case Mod.Attr.ManagedUploadDropTarget(_)            => Some(phx.dropTarget.name)
     case Mod.Attr.CompositeStatic(name, _)              => Some(name)
     case Mod.Attr.CompositeSignalValue(name, _)         => Some(name)
     case Mod.Attr.CompositeSignalOptionalValue(name, _) => Some(name)

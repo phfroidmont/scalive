@@ -880,17 +880,24 @@ The whole form may be invalid while every row remains independently visible thro
 Rows are rendered from current form values, not from the successful whole-form domain result:
 
 ```scala
-form.rows(QualificationRows).splitBy(_.key) { (_, row) =>
-  val title     = row.field(Title)
-  val awardedOn = row.field(AwardedOn)
+val application = model.map(_.form)
+
+application.rows(QualificationRows).splitBy(_.key) { (key, row) =>
+  val title     = application.field(QualificationRows, key, Title)
+  val awardedOn = application.field(QualificationRows, key, AwardedOn)
 
   div(
+    row.presence(),
     title.text(title.validationAttributes),
     title.errorFeedback(renderError),
     awardedOn.text(awardedOn.validationAttributes)
   )
 }
 ```
+
+`splitBy` passes each row's key and a signal of its row view. The key selects a row field's
+`FormControl` from the form signal, and `row.presence()` renders the row-presence control. A
+`FormBinding` offers the same keyed `field(rows, key, field)` for bound controls.
 
 A row view exposes conceptually:
 
@@ -905,7 +912,8 @@ row.field(Title)
 row.bind(Title)
 ```
 
-`row.bind(Title)` is a stable bound-field handle for programmatic updates. Its logical address
+`row.field(Title)` returns the row field's read-only `FormFieldView`, as `Form.field` does for a
+root field. `row.bind(Title)` is a stable bound-field handle for programmatic updates. Its logical address
 contains the group and row key.
 
 Rendering uses `row.key` as the keyed `Signal.splitBy` identity so reordering retains DOM nodes,

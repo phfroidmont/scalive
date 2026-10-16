@@ -557,10 +557,10 @@ private object ConnectedDom:
         Option(matched.closest("[data-phx-component]")).map(_.attr("data-phx-component").toLong)
     }
 
-  /** The one rendered form containing a field that `definition` declares. */
+  /** The one rendered form owning a field that `definition` declares. */
   def formFor(html: String, definition: FormDefinition[?, ?]): Element =
     val forms = Jsoup.parseBodyFragment(html).select("form").asScala.toVector.filter { form =>
-      form.select("[name]").asScala.exists(control => definition.declares(control.attr("name")))
+      FormOwner.controls(form).exists(control => definition.declares(control.attr("name")))
     }
     exactlyOne(forms, s"form rendering fields of the '${definition.root.name}' form definition")
 
@@ -571,10 +571,8 @@ private object ConnectedDom:
     hiddenOnly: Set[String])
 
   def controls(form: Element): FormControls =
-    val named = form
-      .select("input[name], select[name], textarea[name], button[name]").asScala.toVector
-      .filter(_.attr("name").nonEmpty)
-    val successful = named.filterNot(disabled(form, _)).flatMap { element =>
+    val named      = FormOwner.controls(form).filter(_.attr("name").nonEmpty)
+    val successful = named.filterNot(disabled).flatMap { element =>
       val name = element.attr("name")
       element.tagName match
         case "select" =>
@@ -626,12 +624,16 @@ private object ConnectedDom:
       .filter(_.attr("name") == name)
     exactlyOne(inputs, s"file input for the '$name' upload").attr("data-phx-upload-ref")
 
-  private def disabled(form: Element, element: Element): Boolean =
-    element.hasAttr("disabled") ||
-      element
-        .parents().asScala.takeWhile(_ ne form).exists(parent =>
-          parent.tagName == "fieldset" && parent.hasAttr("disabled")
-        )
+  /** Like the browser, a disabled fieldset disables every descendant except those inside its first
+    * `legend` child, whether or not the fieldset is inside the control's form.
+    */
+  private def disabled(element: Element): Boolean =
+    val ancestors = element.parents().asScala.toVector
+
+    def disabledBy(fieldset: Element): Boolean =
+      val firstLegend = fieldset.children().asScala.find(_.tagName == "legend")
+      fieldset.hasAttr("disabled") && !firstLegend.exists(legend => ancestors.exists(_ eq legend))
+    element.hasAttr("disabled") || ancestors.filter(_.tagName == "fieldset").exists(disabledBy)
 
   def urlEncoded(fields: Vector[(String, String)]): String =
     fields.map { case (name, value) => s"${encode(name)}=${encode(value)}" }.mkString("&")

@@ -190,6 +190,38 @@ object DisconnectedRenderSpec extends ZIOSpecDefault:
         destination.text == "browser=None;session=Some(ready);fragment=true"
       )
     },
+    test("lists the fields each form owns, following form attributes") {
+      val routes = Routes(
+        Method.GET / "forms" -> handler(
+          htmlResponse(
+            """<form id="first" action="/first">
+              |  <input name="tag" value="first-own">
+              |  <input name="tag" form="second" value="nested-elsewhere">
+              |</form>
+              |<input name="tag" form="first" value="outside-in">
+              |<form id="second" action="/second"><input name="tag" value="second-own"></form>
+              |<form id="outside" action="/outside"></form>
+              |<input name="note" form="outside" value="all-outside">
+              |""".stripMargin
+          )
+        )
+      )
+
+      for
+        page <- DisconnectedRender.run(routes, Request.get(url("/forms")))
+      yield assertTrue(
+        page.forms.map(_.values("tag")) == Vector(
+          Vector("first-own", "outside-in"),
+          Vector("nested-elsewhere", "second-own"),
+          Vector()
+        ),
+        page.forms.map(_.names) == Vector(
+          Vector("tag", "tag"),
+          Vector("tag", "tag"),
+          Vector("note")
+        )
+      )
+    },
     test("submits a relative GET form by replacing its action query") {
       val routes = Routes(
         Method.GET / "forms" / "new" -> handler(

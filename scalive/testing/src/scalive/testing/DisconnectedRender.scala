@@ -171,11 +171,13 @@ final class RenderedForm private[testing] (
   def method: Method =
     if attribute("method").exists(_.equalsIgnoreCase("post")) then Method.POST else Method.GET
 
-  /** Returns named descendant controls in DOM order. */
+  /** Returns the named controls this form owns, in DOM order.
+    *
+    * As in the browser, a control with a `form` attribute belongs to the form with that id, even
+    * outside or nested in another form, and any other control belongs to its closest ancestor form.
+    */
   def fields: Vector[RenderedField] =
-    element
-      .select("button[name], input[name], select[name], textarea[name]").asScala.toVector
-      .map(RenderedField(_))
+    FormOwner.controls(element).map(RenderedField(_))
 
   /** Returns every selected field name, retaining duplicates and DOM order. */
   def names: Vector[String] = fields.map(_.name)

@@ -365,6 +365,76 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
         toSeveral.isLeft
       )
     },
+    test("collects form controls by form owner in tree order, like FormData") {
+      val html =
+        """<form id="first">
+          |  <input name="tag" value="first-own">
+          |  <input name="tag" form="second" value="nested-elsewhere">
+          |  <input name="lost" form="missing" value="no-owner">
+          |  <input name="lost" form="" value="empty-owner">
+          |</form>
+          |<input name="tag" form="first" value="outside-in">
+          |<form id="second"><input name="tag" value="second-own"></form>
+          |<div id="second-copy"><input name="tag" form="second-copy" value="not-a-form"></div>
+          |""".stripMargin
+
+      def fields(id: String) =
+        ZIO.attempt(ConnectedDom.controls(ConnectedDom.selectOne(html, s"#$id")).successful)
+
+      for
+        first  <- fields("first")
+        second <- fields("second")
+      yield assertTrue(
+        first == Vector("tag" -> "first-own", "tag" -> "outside-in"),
+        second == Vector("tag" -> "nested-elsewhere", "tag" -> "second-own")
+      )
+    },
+    test("finds the form for a definition by the controls it owns") {
+      val html =
+        """<form id="decoy"><input name="signup[email]" form="signup" value="ada@example.com"></form>
+          |<form id="signup" phx-submit="save"></form>
+          |<input name="signup[name]" form="signup" value="Ada">
+          |""".stripMargin
+
+      for
+        form   <- ZIO.attempt(ConnectedDom.formFor(html, SignupForm.Definition))
+        fields <- ZIO.attempt(ConnectedDom.controls(form).successful)
+      yield assertTrue(
+        form.id == "signup",
+        fields == Vector("signup[email]" -> "ada@example.com", "signup[name]" -> "Ada")
+      )
+    },
+    test("skips controls disabled by any fieldset ancestor, except in its first legend") {
+      val html =
+        """<fieldset disabled>
+          |  <form id="inside"><input name="inside" value="disabled"></form>
+          |  <input name="outside" form="legend" value="disabled">
+          |</fieldset>
+          |<form id="legend">
+          |  <fieldset disabled>
+          |    <legend>
+          |      <input name="first-legend" value="enabled">
+          |      <fieldset disabled><input name="inner-fieldset" value="disabled"></fieldset>
+          |    </legend>
+          |    <legend><input name="second-legend" value="disabled"></legend>
+          |    <div><legend><input name="nested-legend" value="disabled"></legend></div>
+          |    <input name="body" value="disabled">
+          |  </fieldset>
+          |</form>
+          |""".stripMargin
+
+      def fields(id: String) =
+        ZIO.attempt(ConnectedDom.controls(ConnectedDom.selectOne(html, s"#$id")))
+
+      for
+        inside <- fields("inside")
+        legend <- fields("legend")
+      yield assertTrue(
+        inside.successful.isEmpty,
+        inside.names == Set("inside"),
+        legend.successful == Vector("first-legend" -> "enabled")
+      )
+    },
     test("sends a component's bindings to the instance that renders them") {
       object Counter extends LiveComponent[String, ChildMsg, Int]:
         def mount(props: String, ctx: MountContext) = ZIO.succeed(0)

@@ -44,10 +44,10 @@ application routes.
 
 ## Render a reusable HTTP form {#render-a-reusable-http-form}
 
-Render the form with @:apiSymbol(def:scalive.Form.http)`Form.http`@:@. Controls
-render from the model, so even this login page, whose form never changes, keeps
-`Definition.initial()` as its model and reads its fields from the model signal.
-The controls and codecs come from `LoginForm.Definition`:
+Render the form with @:apiSymbol(def:scalive.Form.http)`Form.http`@:@. This login
+page's form never changes, so it needs no model: `field` on the plain
+`Definition.initial()` value returns the same controls as on a form signal. The
+controls and codecs come from `LoginForm.Definition`:
 
 @:sourceRegion(documentation/fixtures/guides/src/httpforms/LoginLiveView.scala, http-forms-static-form)
 

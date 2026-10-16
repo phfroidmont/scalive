@@ -301,8 +301,8 @@ object FormBindingSpec extends ZIOSpecDefault:
       yield assertTrue(
         unchecked.valueOption.contains(Consent(false)),
         checked.valueOption.contains(Consent(true)),
-        unchecked.field(Accepted).rawValues.isEmpty,
-        checked.field(Accepted).rawValues == Vector("true"),
+        unchecked.fieldView(Accepted).rawValues.isEmpty,
+        checked.fieldView(Accepted).rawValues == Vector("true"),
         !falseHtml.contains(" checked"),
         trueHtml.contains(" checked"),
         HtmlRenderer.render(updatedTrue.tree).contains(" checked"),
@@ -344,8 +344,8 @@ object FormBindingSpec extends ZIOSpecDefault:
           yield assertTrue(
             checked.valueOption.contains(Consent(true)),
             unchecked.valueOption.contains(Consent(false)),
-            checked.field(accepted).rawValues == Vector(token),
-            unchecked.field(accepted).rawValues.isEmpty,
+            checked.fieldView(accepted).rawValues == Vector(token),
+            unchecked.fieldView(accepted).rawValues.isEmpty,
             beforeHtml.contains(s"value=\"$token\""),
             afterHtml.contains(s"value=\"$token\""),
             beforeHtml.contains(" checked"),
@@ -374,7 +374,7 @@ object FormBindingSpec extends ZIOSpecDefault:
         fromFalse.form.valueOption.contains(Consent(false)),
         fromTrue.valuesChanged,
         fromTrue.form.valueOption.contains(Consent(false)),
-        fromTrue.form.field(Accepted).rawValues.isEmpty
+        fromTrue.form.fieldView(Accepted).rawValues.isEmpty
       )
     },
     test("checkbox submissions show invalid raw feedback while retaining checked tokens") {
@@ -395,7 +395,7 @@ object FormBindingSpec extends ZIOSpecDefault:
                             case BindingDispatch.Owner(ConsentMsg.Submitted(event)) => event
                           }.get
             rendered <- program.evaluate(submitted.form, Some(candidate.commit))
-            field = submitted.form.field(Accepted)
+            field = submitted.form.fieldView(Accepted)
             html  = HtmlRenderer.render(rendered.tree)
           yield assertTrue(
             submitted.kind == FormEventKind.Submitted,
@@ -537,7 +537,7 @@ object FormBindingSpec extends ZIOSpecDefault:
         all      = elements(after.tree.root)
         parentId = s"profile-${Name.address.id}"
       yield assertTrue(
-        invalid.field(Name).input.isLeft,
+        invalid.fieldView(Name).input.isLeft,
         invalid.errors.all.map(_.address) == Vector(Name.address),
         inputs.map(isChecked) == Vector(true, true, false),
         checkboxes(before).forall(textAttribute(_, "aria-invalid").isEmpty),
@@ -596,7 +596,7 @@ object FormBindingSpec extends ZIOSpecDefault:
             program.evaluate(form).map { candidate =>
               val inputs = checkboxes(candidate)
               assertTrue(
-                form.field(values).rawValues == raw,
+                form.fieldView(values).rawValues == raw,
                 inputs.flatMap(textAttribute(_, "value")) == tokens.flatMap(t => Vector(t, t)),
                 inputs.map(isChecked) == tokens.flatMap(t => Vector.fill(2)(raw.contains(t))),
                 inputs.forall(textAttribute(_, "name").contains("choices[values]"))
@@ -894,7 +894,7 @@ object FormBindingSpec extends ZIOSpecDefault:
           Right(BindingDispatch.Owner(ProfileMsg.BlurValue(""))),
         applied.kind == FormUpdateKind.Blurred,
         applied.target.contains(Name.address),
-        applied.form.field(Name).visibleErrors.map(_.message) == Vector("Name is required")
+        applied.form.fieldView(Name).visibleErrors.map(_.message) == Vector("Name is required")
       )
       end for
     },
@@ -1030,8 +1030,8 @@ object FormBindingSpec extends ZIOSpecDefault:
         applied.kind == FormUpdateKind.Blurred,
         !applied.valuesChanged,
         applied.target.contains(Name.address),
-        applied.form.field(Name).fieldValue == "",
-        applied.form.field(Name).visibleErrors.nonEmpty
+        applied.form.fieldView(Name).fieldValue == "",
+        applied.form.fieldView(Name).visibleErrors.nonEmpty
       )
     },
     test("keyed repeated-field blur resolves the retained row key") {
@@ -1075,7 +1075,7 @@ object FormBindingSpec extends ZIOSpecDefault:
         applied.target.contains(rowAAddress),
         applied.form.interaction.isBlurred(rowAAddress),
         applied.form
-          .field(applied.form.rows(ItemRows).find(_.key == RowA).get.bind(ItemName))
+          .fieldView(applied.form.rows(ItemRows).find(_.key == RowA).get.bind(ItemName))
           .visibleErrors.nonEmpty
       )
     },
@@ -1190,7 +1190,7 @@ object FormBindingSpec extends ZIOSpecDefault:
       yield assertTrue(
         changed.kind == FormUpdateKind.Blurred,
         changed.target.contains(Name.address),
-        changed.form.field(Name).fieldValue == "next",
+        changed.form.fieldView(Name).fieldValue == "next",
         recovered.kind == FormUpdateKind.Recovered
       )
     },

@@ -92,7 +92,7 @@ final class FormBinding[Owner, Schema, Domain, Msg] private[scalive] (
     */
   def field[Input, Value](field: FormField[Owner, Input, Value])
     : FormControl[Owner, Input, Value, Nothing] =
-    control(current.map(_.field(field)))
+    control(current.map(_.fieldView(field)))
 
   /** Binds one field to a [[FormControl]] whose ids are scoped to this form instance.
     *
@@ -101,7 +101,7 @@ final class FormBinding[Owner, Schema, Domain, Msg] private[scalive] (
     */
   def field[Group, Input, Value](field: BoundFormField[Owner, Schema, Group, Input, Value])
     : FormControl[Owner, Input, Value, Nothing] =
-    control(current.map(_.field(field)))
+    control(current.map(_.fieldView(field)))
 
   /** Binds one field to a [[FormControl]] whose ids are scoped to this form instance.
     *
@@ -113,7 +113,7 @@ final class FormBinding[Owner, Schema, Domain, Msg] private[scalive] (
     key: FormRowKey[Group],
     field: FormField[Group, Input, Value]
   ): FormControl[Owner, Input, Value, Nothing] =
-    control(current.fieldView(rows, key, field))
+    control(current.rowFieldView(rows, key, field))
 
   /** Renders one repeated-row field with `render`, or nothing while its row is absent.
     *
@@ -125,7 +125,7 @@ final class FormBinding[Owner, Schema, Domain, Msg] private[scalive] (
   )(
     render: FormControl[Owner, Input, Value, Nothing] => HtmlElement[Msg]
   ): Mod[Msg] =
-    current.map(_.fieldOption(field)).option(view => render(control(view)))
+    current.map(_.fieldViewOption(field)).option(view => render(control(view)))
 
   /** Renders one repeated-row field with `render`, or nothing while its row is absent.
     *
@@ -139,7 +139,7 @@ final class FormBinding[Owner, Schema, Domain, Msg] private[scalive] (
   )(
     render: FormControl[Owner, Input, Value, Nothing] => HtmlElement[Msg]
   ): Mod[Msg] =
-    current.fieldOption(rows, key, field).option(view => render(control(view)))
+    current.rowFieldViewOption(rows, key, field).option(view => render(control(view)))
 
   /** The update message that marks a field as blurred.
     *
@@ -201,11 +201,14 @@ private[scalive] object FormBinding:
 
 /** The handle that renders one field's controls and error feedback.
   *
-  * Get one from `field` on a form signal, or from a [[FormBinding]]. [[view]] exposes the field's
-  * read-only data. A control from a form signal uses the field's logical id and reports no blur
-  * feedback. A control from a binding scopes its ids to the form instance, so several instances of
-  * one definition do not share DOM identities, and reports blur under the binding's feedback
-  * policy.
+  * Get one from `field` on a form value or a form signal, or from a [[FormBinding]]. A control from
+  * a form value or a form signal uses the field's logical id and reports no blur feedback, so one
+  * rendering helper serves live and static pages alike. A control from a binding scopes its ids to
+  * the form instance, so several instances of one definition do not share DOM identities, and
+  * reports blur under the binding's feedback policy.
+  *
+  * [[view]] is a signal for rendering; read field data in handlers with `fieldView` on the form
+  * value.
   *
   * The control owns the `id`, `name`, `value`, `type`, `checked`, `phx-change`, and `phx-blur`
   * attributes of every control it renders, in any letter case. The control helpers throw
@@ -213,8 +216,8 @@ private[scalive] object FormBinding:
   * a custom control, use [[inputAttributes]] instead of a helper.
   *
   * @param view
-  *   The field's current read-only data. Its ids are not scoped to a form instance; render with
-  *   this control's ids instead.
+  *   The field's current read-only data, for rendering. Its ids are not scoped to a form instance;
+  *   render with this control's ids instead.
   */
 final class FormControl[Owner, Input, Value, +Msg] private[scalive] (
   val view: Signal[FormFieldView[Owner, Input, Value]],

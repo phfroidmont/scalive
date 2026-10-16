@@ -128,11 +128,26 @@ it: `error.map(value => message(value.message))`. Use a real `label`
 with `forId` for each input, and keep success feedback, such as the saved
 message, in a separate status region.
 
-On a plain `Form` value, `field` returns the field's read-only data, a
-@:apiSymbol(class:scalive.FormFieldView)`FormFieldView`@:@, for handlers and
-tests. Controls always render from the model, even for a form that never
-changes, such as a login page; see
-[Ordinary HTTP forms and redirects](http-forms-and-redirects.md#render-a-reusable-http-form).
+### Render from a form value {#render-from-a-form-value}
+
+`field` returns the same control on a plain `Form` value, for pages without a
+form signal: static HTML rendered with
+@:apiSymbol(def:scalive.StaticHtml.render)`StaticHtml.render`@:@, a root layout,
+or a form that never changes, such as a login page. A control from a form value
+renders exactly like one from a form signal, so one rendering helper serves
+both:
+
+@:sourceRegion(documentation/site/src/scalive/docs/examples/FormRecipes.scala, form-shared-controls)
+
+`passwordInput` only sees a
+@:apiSymbol(class:scalive.FormControl)`FormControl`@:@. A control from a form
+value is fixed to that value; inside a LiveView, render a form that changes from
+its signal so the page follows the model.
+
+To read a field's data in a handler or test, use `fieldView`, which returns a
+read-only @:apiSymbol(class:scalive.FormFieldView)`FormFieldView`@:@ with its
+raw values, decoded input, and errors. A row's `fieldView` and the form's
+`fieldViewOption` do the same for repeated rows.
 
 ## Reset deliberately {#reset-deliberately}
 

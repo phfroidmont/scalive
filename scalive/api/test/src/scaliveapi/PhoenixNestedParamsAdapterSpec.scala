@@ -34,8 +34,8 @@ object PhoenixNestedParamsAdapterSpec extends ZIOSpecDefault:
 
       assertTrue(
         rows.map(_.key.value) == Vector("key_b", "new_0"),
-        rows.head.field(Name).rawValues == Vector("Beta"),
-        rows(1).field(Name).rawValues.isEmpty,
+        rows.head.fieldView(Name).rawValues == Vector("Beta"),
+        rows(1).fieldView(Name).rawValues.isEmpty,
         first.form.values == replay.form.values,
         first.errors.all.map(_.message) == Vector("Name is required")
       )
@@ -101,7 +101,7 @@ object PhoenixNestedParamsAdapterSpec extends ZIOSpecDefault:
       )
       val row = event.form.rows(ItemRows).head
 
-      assertTrue(row.key.value == "custom_0", row.field(Name).rawValues == Vector("Blank"))
+      assertTrue(row.key.value == "custom_0", row.fieldView(Name).rawValues == Vector("Blank"))
     },
     test("bounds indexed Phoenix rows, values, and errors") {
       val limitedDefinition = Definition.withLimits(
@@ -125,7 +125,7 @@ object PhoenixNestedParamsAdapterSpec extends ZIOSpecDefault:
 
       assertTrue(
         event.form.rows(ItemRows).size == 1,
-        event.form.rows(ItemRows).head.field(Name).rawValues == Vector("first"),
+        event.form.rows(ItemRows).head.fieldView(Name).rawValues == Vector("first"),
         event.errors.all.size <= 2,
         event.errors.all.exists(_.code.contains("too_many_values")),
         event.errors.all.exists(_.code.contains("too_many_rows"))
@@ -193,7 +193,7 @@ object PhoenixNestedParamsAdapterSpec extends ZIOSpecDefault:
         FormEventKind.Recovered,
         Some(target)
       )
-      val field = event.form.rows(ItemRows).head.field(Name)
+      val field = event.form.rows(ItemRows).head.fieldView(Name)
 
       assertTrue(
         event.kind == FormEventKind.Recovered,

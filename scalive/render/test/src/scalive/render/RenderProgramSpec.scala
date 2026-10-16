@@ -271,7 +271,7 @@ object RenderProgramSpec extends ZIOSpecDefault:
       var projectedScope = Option.empty[SignalScope]
       val compiled = RenderProgram.compile[Vector[String], String] { items =>
         div(items.splitBy(identity) { (key, item) =>
-          projectedScope = SignalEvaluation.scopeOf(item).toOption
+          projectedScope = SignalEvaluation.scopeOf(item).toOption.flatten
           if key == "bad" then button(on.click("first"), on.click("duplicate"))
           else button(on.click(item)((value, _) => value), item)
         })

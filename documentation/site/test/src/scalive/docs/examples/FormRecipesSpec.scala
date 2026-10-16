@@ -1,8 +1,13 @@
 package scalive.docs.examples
 
+import scala.jdk.CollectionConverters.*
+
+import org.jsoup.Jsoup
+import zio.ZIO
 import zio.test.*
 
 import scalive.*
+import scalive.render.{HtmlRenderer, RenderProgram}
 
 object FormRecipesSpec extends ZIOSpecDefault:
   override def spec = suite("FormRecipesSpec")(
@@ -36,11 +41,11 @@ object FormRecipesSpec extends ZIOSpecDefault:
 
       assertTrue(
         notifications.initial.valueOption.contains(notifications.Preferences(true)),
-        notifications.initial.field(notifications.Enabled).rawValues == Vector("true"),
+        notifications.initial.fieldView(notifications.Enabled).rawValues == Vector("true"),
         unchecked.valueOption.contains(notifications.Preferences(false)),
-        unchecked.form.field(notifications.Enabled).rawValues.isEmpty,
+        unchecked.form.fieldView(notifications.Enabled).rawValues.isEmpty,
         malformed.valueOption.isEmpty,
-        malformed.form.field(notifications.Enabled).visibleErrors.map(_.code) ==
+        malformed.form.fieldView(notifications.Enabled).visibleErrors.map(_.code) ==
           Vector(Some("invalid_checkbox"))
       )
     },
@@ -55,7 +60,61 @@ object FormRecipesSpec extends ZIOSpecDefault:
       assertTrue(
         selected.valueOption.contains(topics.Preferences(Vector("news", "research"))),
         empty.valueOption.contains(topics.Preferences(Vector.empty)),
-        empty.form.field(topics.Topics).rawValues.isEmpty
+        empty.form.fieldView(topics.Topics).rawValues.isEmpty
+      )
+    },
+    test("renders a submitted form value's controls as static HTML") {
+      val password = FormRecipes.PasswordForm
+      val form     = password.Definition
+        .event(
+          FormData(Vector(password.Current.name -> "old", password.Replacement.name -> "")),
+          FormEventKind.Submitted
+        )
+        .form
+      val current     = form.fieldView(password.Current)
+      val replacement = form.fieldView(password.Replacement)
+
+      for html <- password.rendered(form)
+      yield assertTrue(
+        html.contains(
+          s"""<input type="password" id="${current.id}" name="password[current]" value="old" aria-describedby="${current.errorId}">"""
+        ),
+        html.contains(
+          s"""<input type="password" id="${replacement.id}" name="password[replacement]" value="" aria-describedby="${replacement.errorId}" aria-invalid="true">"""
+        ),
+        html.contains("""<span class="form-error">Choose a new password.</span>""")
+      )
+    },
+    test("renders Phoenix rows as controls whose submission decodes to the same rows") {
+      val phones = FormRecipes.PhoenixPhoneForm
+      val home   = FormRowKey.from[phones.Phones.type]("home").toOption.get
+      val work   = FormRowKey.from[phones.Phones.type]("work").toOption.get
+      val form   = phones.Definition.initial(
+        phones.PhoneRows.initial(
+          phones.PhoneRows.row(home)(phones.Label.initial("Home"), phones.Number.initial("555")),
+          phones.PhoneRows.row(work)(phones.Label.initial("Work"), phones.Number.initial("777"))
+        )
+      )
+
+      for
+        program   <- ZIO.fromEither(RenderProgram.compile[Unit, phones.Msg](_ => phones.render(form)))
+        candidate <- program.evaluate(())
+        html      = HtmlRenderer.render(candidate.tree)
+        submitted = Jsoup
+                      .parse(html).select("input[name]").asScala.toVector
+                      .map(input => input.attr("name") -> input.attr("value"))
+        event = phones.Adapter.event(FormData(submitted), FormEventKind.Submitted)
+      yield assertTrue(
+        html.contains(
+          """<label for="contact-form_phones_1_number">Phone number</label><input type="tel" id="contact-form_phones_1_number" name="contact[phones][1][number]" value="777">"""
+        ),
+        html.contains(
+          """<input type="text" id="contact-form_phones_0_label" name="contact[phones][0][label]" value="Home">"""
+        ),
+        event.valueOption.contains(
+          phones.Contact(Vector(phones.Phone("Home", "555"), phones.Phone("Work", "777")))
+        ),
+        event.form.rows(phones.PhoneRows).map(_.key) == Vector(home, work)
       )
     },
     test("keeps malformed custom-control input available for rendering") {
@@ -66,7 +125,7 @@ object FormRecipesSpec extends ZIOSpecDefault:
           FormEventKind.Changed
         )
         .form
-      val field = form.field(quantity.Quantity)
+      val field = form.fieldView(quantity.Quantity)
 
       assertTrue(
         !form.isValid,

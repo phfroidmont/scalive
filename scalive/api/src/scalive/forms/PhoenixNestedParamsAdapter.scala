@@ -114,14 +114,7 @@ final class PhoenixNestedParamsAdapter[Owner, Schema, Domain, Group, Row] privat
     index: Int,
     field: FormField[Group, Input, Value]
   ): String =
-    require(rows.typedFields.exists(_ eq field), "field is not declared by this repeated group")
-    require(index >= 0, "Phoenix row index must not be negative")
-    FormPath
-      .fromSegments(
-        rows.path.segments ++ Vector(
-          FormPathSegment.Name(index.toString)
-        ) ++ field.relativePath.segments
-      ).name
+    indexedPath(index, field).name
 
   /** Phoenix-compatible positional id; use only at the compatibility rendering boundary. */
   def fieldId[Input, Value](
@@ -138,6 +131,32 @@ final class PhoenixNestedParamsAdapter[Owner, Schema, Domain, Group, Row] privat
       )
     ((formId +: groupNames) ++ Vector(index.toString) ++ FormDefinition.names(field.relativePath))
       .mkString("_")
+
+  /** Returns the control that renders a row field under its Phoenix-compatible positional name and
+    * id, for `row` rendered at `index`.
+    *
+    * Its value and errors come from the row's stable keyed address, so they follow the row when it
+    * moves. Its name is [[fieldName]] and its id is [[fieldId]]. Like `field` on a form value, it
+    * reports no blur feedback.
+    */
+  def field[Input, Value](
+    formId: String,
+    row: FormRowView[Owner, Schema, Group, Row],
+    index: Int,
+    field: FormField[Group, Input, Value]
+  ): FormControl[Owner, Input, Value, Nothing] =
+    val id   = fieldId(formId, index, field)
+    val view = row.fieldView(field).withPath(indexedPath(index, field))
+    new FormControl(Signal.constant(view), Signal.constant(id), None, None)
+
+  private def indexedPath[Input, Value](index: Int, field: FormField[Group, Input, Value])
+    : FormPath =
+    require(rows.typedFields.exists(_ eq field), "field is not declared by this repeated group")
+    require(index >= 0, "Phoenix row index must not be negative")
+    FormPath.fromSegments(
+      rows.path.segments ++ Vector(FormPathSegment.Name(index.toString)) ++
+        field.relativePath.segments
+    )
 
   /** Renders the required mapping from a positional index to a row's stable key. */
   def persistentId(

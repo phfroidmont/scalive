@@ -29,30 +29,69 @@ final class Form[Owner, Schema, Domain] private[scalive] (
   /** All validation errors, including errors currently hidden by interaction state. */
   def errors: FormErrors[Owner] = result.left.getOrElse(FormErrors.empty)
 
-  /** Returns the current data of a field declared by this form's definition.
+  /** Returns the control that renders a declared field from this form value.
+    *
+    * The control renders like one from `field` on a form signal: it uses the field's logical id and
+    * reports no blur feedback. Use it where no form signal exists, such as markup rendered with
+    * `StaticHtml.render` or a form that never changes. This form takes a static field.
+    */
+  def field[Input, Value](
+    definition: FormField[Owner, Input, Value]
+  ): FormControl[Owner, Input, Value, Nothing] =
+    FormControl.unbound(Signal.constant(fieldView(definition)))
+
+  /** Returns the control that renders a declared field from this form value.
+    *
+    * This form takes a row-bound field from [[FormRowView.bind]], whose row must still exist in
+    * this form's current values.
+    */
+  def field[Group, Input, Value](
+    definition: BoundFormField[Owner, Schema, Group, Input, Value]
+  ): FormControl[Owner, Input, Value, Nothing] =
+    FormControl.unbound(Signal.constant(fieldView(definition)))
+
+  /** Returns the control that renders a declared field from this form value.
+    *
+    * This form takes a field of the row with `key` in `rows`, which must exist in this form's
+    * current values.
+    */
+  def field[Group, Row, Input, Value](
+    rows: RepeatedRows[Owner, Group, Row],
+    key: FormRowKey[Group],
+    definition: FormField[Group, Input, Value]
+  ): FormControl[Owner, Input, Value, Nothing] =
+    val view = this
+      .rows(rows).find(_.key == key).getOrElse(
+        throw new IllegalArgumentException("bound row no longer exists")
+      ).fieldView(definition)
+    FormControl.unbound(Signal.constant(view))
+
+  /** Returns the current data of a field declared by this form's definition, for handlers and
+    * tests. Render the field with [[field]] instead.
     *
     * This form takes a static field.
     */
-  def field[Input, Value](
+  def fieldView[Input, Value](
     definition: FormField[Owner, Input, Value]
   ): FormFieldView[Owner, Input, Value] =
     require(owningDefinition.owns(definition), "field is not declared by this form definition")
     FormFieldView(this, definition, definition.address, definition.path)
 
-  /** Returns the current data of a field declared by this form's definition.
+  /** Returns the current data of a field declared by this form's definition, for handlers and
+    * tests. Render the field with [[field]] instead.
     *
     * This form takes a row-bound field from [[FormRowView.bind]]. The bound row must still exist in
-    * this form's current values; use [[fieldOption]] when it may have been removed.
+    * this form's current values; use [[fieldViewOption]] when it may have been removed.
     */
-  def field[Group, Input, Value](
+  def fieldView[Group, Input, Value](
     definition: BoundFormField[Owner, Schema, Group, Input, Value]
   ): FormFieldView[Owner, Input, Value] =
-    fieldOption(definition).getOrElse(
+    fieldViewOption(definition).getOrElse(
       throw new IllegalArgumentException("bound row no longer exists")
     )
 
-  /** Returns the current view of a schema-bound field when its row still exists. */
-  def fieldOption[Group, Input, Value](
+  /** Returns the current data of a row-bound field when its row still exists. */
+  def fieldViewOption[Group, Input, Value](
     definition: BoundFormField[Owner, Schema, Group, Input, Value]
   ): Option[FormFieldView[Owner, Input, Value]] =
     require(
@@ -389,8 +428,9 @@ final class BoundFormField[Owner, Schema, Group, Input, Value] private[scalive] 
 
 /** The current data of one static or row-bound field: its identity, raw values, and errors.
   *
-  * It is read-only; render the field with the [[FormControl]] from `field` on a form signal or from
-  * a [[FormBinding]]. Controls render [[rawValues]], not the decoded result, preserving malformed
+  * Get one from `fieldView` on a form value, for handlers and tests. It is read-only; render the
+  * field with the [[FormControl]] from `field` on a form value, a form signal, or a
+  * [[FormBinding]]. Controls render [[rawValues]], not the decoded result, preserving malformed
   * input where the native control permits it.
   *
   * @param address
@@ -444,6 +484,10 @@ final class FormFieldView[Owner, Input, Value] private[scalive] (
 
   /** Whether at least one field error is currently visible. */
   def hasVisibleErrors: Boolean = visibleErrors.nonEmpty
+
+  /** This field's data under another browser path, keeping its logical address. */
+  private[scalive] def withPath(path: FormPath): FormFieldView[Owner, Input, Value] =
+    new FormFieldView(form, definition, address, path)
 end FormFieldView
 
 private[scalive] object FormFieldView:
@@ -490,7 +534,7 @@ final class FormRowView[Owner, Schema, Group, Row] private[scalive] (
       form.interaction.used.exists(_.startsWith(address))
 
   /** Returns the current data of a row-schema field in this keyed row. */
-  def field[Input, Value](
+  def fieldView[Input, Value](
     definition: FormField[Group, Input, Value]
   ): FormFieldView[Owner, Input, Value] =
     require(rows.typedFields.exists(_ eq definition), "field is not declared by this row schema")
@@ -506,7 +550,7 @@ final class FormRowView[Owner, Schema, Group, Row] private[scalive] (
   def bind[Input, Value](
     definition: FormField[Group, Input, Value]
   ): BoundFormField[Owner, Schema, Group, Input, Value] =
-    val view = field(definition)
+    val view = fieldView(definition)
     new BoundFormField(form.values.schemaIdentity, rows, key, definition, view.address, view.path)
 end FormRowView
 
@@ -545,7 +589,17 @@ extension [Owner, Schema, Domain](form: Signal[Form[Owner, Schema, Domain]])
   def field[Input, Value](
     definition: FormField[Owner, Input, Value]
   ): FormControl[Owner, Input, Value, Nothing] =
-    FormControl.unbound(form.map(_.field(definition)))
+    FormControl.unbound(form.map(_.fieldView(definition)))
+
+  /** Returns the control that renders a declared field from the current form value.
+    *
+    * This form takes a row-bound field from [[FormRowView.bind]]. The bound row must exist whenever
+    * the control is evaluated.
+    */
+  def field[Group, Input, Value](
+    definition: BoundFormField[Owner, Schema, Group, Input, Value]
+  ): FormControl[Owner, Input, Value, Nothing] =
+    FormControl.unbound(form.map(_.fieldView(definition)))
 
   /** Returns the control that renders a declared field from the current form value.
     *
@@ -557,18 +611,18 @@ extension [Owner, Schema, Domain](form: Signal[Form[Owner, Schema, Domain]])
     key: FormRowKey[Group],
     definition: FormField[Group, Input, Value]
   ): FormControl[Owner, Input, Value, Nothing] =
-    FormControl.unbound(fieldView(rows, key, definition))
+    FormControl.unbound(rowFieldView(rows, key, definition))
 
-  private[scalive] def fieldView[Group, Row, Input, Value](
+  private[scalive] def rowFieldView[Group, Row, Input, Value](
     rows: RepeatedRows[Owner, Group, Row],
     key: FormRowKey[Group],
     definition: FormField[Group, Input, Value]
   ): Signal[FormFieldView[Owner, Input, Value]] =
-    fieldOption(rows, key, definition).map(
+    rowFieldViewOption(rows, key, definition).map(
       _.getOrElse(throw new IllegalArgumentException("bound row no longer exists"))
     )
 
-  private[scalive] def fieldOption[Group, Row, Input, Value](
+  private[scalive] def rowFieldViewOption[Group, Row, Input, Value](
     rows: RepeatedRows[Owner, Group, Row],
     key: FormRowKey[Group],
     definition: FormField[Group, Input, Value]
@@ -582,7 +636,7 @@ extension [Owner, Schema, Domain](form: Signal[Form[Owner, Schema, Domain]])
         rows.typedFields.exists(_ eq definition),
         "field is not declared by this row schema"
       )
-      current.rows(rows).find(_.key == key).map(_.field(definition))
+      current.rows(rows).find(_.key == key).map(_.fieldView(definition))
     }
 
   /** Resolves stable repeated row views for each current form value. */

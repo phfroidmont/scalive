@@ -1,5 +1,7 @@
 package scalive.docs.examples
 
+import zio.IO
+
 import scalive.*
 
 /** Compile-checked fragments used by the typed Forms guide. */
@@ -23,6 +25,42 @@ object FormRecipes:
       )
     }
   // docs:end form-cross-field-validation
+
+  // docs:start form-shared-controls
+  object PasswordForm:
+    final case class PasswordChange(current: String, replacement: String)
+
+    val Root        = FormRoot("password")
+    val Current     = Root.text("current").required(FieldIssue("Enter your current password."))
+    val Replacement = Root.text("replacement").required(FieldIssue("Choose a new password."))
+    val Definition  = Root.product[PasswordChange]((current = Current, replacement = Replacement))
+
+    def passwordInput(
+      control: FormControl[Root.type, String, String, Nothing],
+      text: String
+    ): HtmlElement[Nothing] =
+      div(
+        label(forId := control.id, text),
+        control.password(control.validationAttributes),
+        control.errorFeedback(error => error.map(_.message))
+      )
+
+    def liveFields(form: Signal[Definition.Form]): HtmlElement[Nothing] =
+      div(
+        passwordInput(form.field(Current), "Current password"),
+        passwordInput(form.field(Replacement), "New password")
+      )
+
+    def staticFields(form: Definition.Form): HtmlElement[Nothing] =
+      div(
+        passwordInput(form.field(Current), "Current password"),
+        passwordInput(form.field(Replacement), "New password")
+      )
+
+    def rendered(form: Definition.Form): IO[StaticHtmlError, String] =
+      StaticHtml.render(staticFields(form))
+  end PasswordForm
+  // docs:end form-shared-controls
 
   // docs:start form-custom-field-input
   object QuantityForm:
@@ -156,26 +194,16 @@ object FormRecipes:
         Adapter.onChange(Msg.Validate(_)),
         Adapter.onSubmit(Msg.Save(_)),
         form.rows(PhoneRows).zipWithIndex.map { case (row, index) =>
-          val phoneLabel  = row.field(Label)
-          val phoneNumber = row.field(Number)
+          val phoneLabel  = Adapter.field("contact-form", row, index, Label)
+          val phoneNumber = Adapter.field("contact-form", row, index, Number)
           fieldSet(
             Adapter.persistentId(row, index),
             Adapter.sortControl(row, index),
             legend(s"Phone ${index + 1}"),
-            label(forId := Adapter.fieldId("contact-form", index, Label), "Phone label"),
-            input(
-              typ      := "text",
-              idAttr   := Adapter.fieldId("contact-form", index, Label),
-              nameAttr := Adapter.fieldName(index, Label),
-              value    := phoneLabel.fieldValue
-            ),
-            label(forId := Adapter.fieldId("contact-form", index, Number), "Phone number"),
-            input(
-              typ      := "tel",
-              idAttr   := Adapter.fieldId("contact-form", index, Number),
-              nameAttr := Adapter.fieldName(index, Number),
-              value    := phoneNumber.fieldValue
-            ),
+            label(forId := phoneLabel.id, "Phone label"),
+            phoneLabel.text(),
+            label(forId := phoneNumber.id, "Phone number"),
+            phoneNumber.tel(),
             button(
               typ        := "button",
               nameAttr   := Adapter.dropName,

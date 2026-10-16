@@ -23,17 +23,21 @@ final private[render] class SignalScope private (
   def isClosed: Boolean = closed.get() || parent.exists(_.isClosed)
 
   def validate(signal: Signal[?]): Either[RenderError, Unit] =
-    SignalEvaluation.scopeOf(signal).flatMap { owner =>
+    SignalEvaluation.scopeOf(signal).flatMap { scope =>
       if isClosed then Left(RenderError.SignalScopeViolation(s"signal scope $id is closed"))
-      else if owner.isClosed then
-        Left(RenderError.SignalScopeViolation(s"signal scope ${owner.id} is closed"))
-      else if owner.isAncestorOf(this) then Right(())
       else
-        Left(
-          RenderError.SignalScopeViolation(
-            s"signal scope ${owner.id} is not visible from render scope $id"
-          )
-        )
+        scope match
+          // A signal built only from constants is visible from every scope.
+          case None                          => Right(())
+          case Some(owner) if owner.isClosed =>
+            Left(RenderError.SignalScopeViolation(s"signal scope ${owner.id} is closed"))
+          case Some(owner) if owner.isAncestorOf(this) => Right(())
+          case Some(owner)                             =>
+            Left(
+              RenderError.SignalScopeViolation(
+                s"signal scope ${owner.id} is not visible from render scope $id"
+              )
+            )
     }
 
   private def isAncestorOf(descendant: SignalScope): Boolean =
@@ -88,12 +92,13 @@ object SignalEvaluation:
   ): Transaction =
     Transaction(previous, revision, PackedSignalValue[[Value] =>> Value, A](source, value))
 
-  private[render] def scopeOf(signal: Signal[?]): Either[RenderError, SignalScope] =
+  /** The scope that owns `signal`, or `None` when it is built only from constants. */
+  private[render] def scopeOf(signal: Signal[?]): Either[RenderError, Option[SignalScope]] =
     signal.expression match
-      case Signal.Expression.Source(source: SignalSource[?]) => return Right(source.scope)
+      case Signal.Expression.Source(source: SignalSource[?]) => return Right(Some(source.scope))
       case _                                                 => ()
 
-    val scopes = IdentityHashMap[Signal[?], SignalScope]()
+    val scopes = IdentityHashMap[Signal[?], Option[SignalScope]]()
     val stack  = ArrayDeque[ScopeFrame](ScopeFrame.Visit(signal))
 
     while stack.nonEmpty do
@@ -102,8 +107,9 @@ object SignalEvaluation:
           current.expression match
             case Signal.Expression.Source(identity) =>
               identity match
-                case source: SignalSource[?] => scopes.put(current, source.scope): Unit
+                case source: SignalSource[?] => scopes.put(current, Some(source.scope)): Unit
                 case _ => return Left(RenderError.SignalScopeViolation("unknown signal source"))
+            case Signal.Expression.Constant(_)       => scopes.put(current, None): Unit
             case Signal.Expression.Mapped(parent, _) =>
               stack.append(ScopeFrame.CompleteMapped(current, parent))
               stack.append(ScopeFrame.Visit(parent))
@@ -115,16 +121,19 @@ object SignalEvaluation:
         case ScopeFrame.CompleteMapped(current, parent) =>
           scopes.put(current, scopes.get(parent)): Unit
         case ScopeFrame.CompleteZipped(current, left, right) =>
-          val leftScope  = scopes.get(left)
-          val rightScope = scopes.get(right)
-          SignalScope.narrowest(leftScope, rightScope) match
-            case Some(scope) => scopes.put(current, scope): Unit
-            case None        =>
-              return Left(
-                RenderError.SignalScopeViolation(
-                  s"signals from sibling scopes ${leftScope.id} and ${rightScope.id} cannot be combined"
-                )
-              )
+          (scopes.get(left), scopes.get(right)) match
+            case (None, rightScope)                  => scopes.put(current, rightScope): Unit
+            case (leftScope, None)                   => scopes.put(current, leftScope): Unit
+            case (Some(leftScope), Some(rightScope)) =>
+              SignalScope.narrowest(leftScope, rightScope) match
+                case Some(scope) => scopes.put(current, Some(scope)): Unit
+                case None        =>
+                  return Left(
+                    RenderError.SignalScopeViolation(
+                      s"signals from sibling scopes ${leftScope.id} and ${rightScope.id} cannot be combined"
+                    )
+                  )
+    end while
 
     Right(scopes.get(signal))
   end scopeOf
@@ -149,7 +158,7 @@ object SignalEvaluation:
     def bindSource[A](signal: Signal[A], value: A): Either[RenderError, Unit] =
       signal.expression match
         case Signal.Expression.Source(_) =>
-          scopeOf(signal).flatMap { owner =>
+          scopeOf(signal).map(_.get).flatMap { owner =>
             if owner.isClosed then
               Left(RenderError.SignalScopeViolation(s"signal scope ${owner.id} is closed"))
             else if sources.containsKey(signal) then
@@ -183,6 +192,8 @@ object SignalEvaluation:
                 evaluateSource(current) match
                   case Left(error) => return Left(error)
                   case Right(_)    => ()
+              case Signal.Expression.Constant(value) =>
+                putEvaluated(current, changedSample(current, value, Vector.empty))
               case mapped @ Signal.Expression.Mapped(parent, f) =>
                 stack.append(EvaluationFrame.CompleteMapped(mapped, parent, f))
                 stack.append(EvaluationFrame.Visit(parent))

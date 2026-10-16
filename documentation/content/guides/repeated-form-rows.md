@@ -87,10 +87,14 @@ while the sibling array controls are `contact[phones_sort][]` and
 @:sourceRegion(documentation/site/src/scalive/docs/examples/FormRecipes.scala, form-phoenix-repeated-controls)
 
 The bounded `PhoenixNestedParamsAdapter` translates the compatibility payload
-into the same keyed form projection. `persistentIdName(index)` reconnects each
-positional index to a stable key, `sortName` supplies order and requests `"new"`
-rows, and `dropName` removes indexes. Keep an empty `dropName` control so
-removing the last row still submits the group. `configured` accepts
+into the same keyed form projection. `Adapter.field(formId, row, index, field)`
+returns the row field's
+@:apiSymbol(class:scalive.FormControl)`FormControl`@:@ under the positional name
+and id, such as `contact[phones][0][number]`, while its value and errors come
+from the row's stable key. `persistentId(row, index)` reconnects each positional
+index to that key, `sortName` supplies order and requests `"new"` rows, and
+`dropName` removes indexes. Keep an empty `dropName` control so removing the
+last row still submits the group. `configured` accepts
 deterministic key allocation and blank-row policy when its defaults do not
 match the application. Prefer the core keyed controls for new Scalive
 interfaces; use the adapter when interoperating with Phoenix-style clients or

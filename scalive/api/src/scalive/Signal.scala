@@ -99,10 +99,14 @@ object Signal:
     case Source[A](identity: Object)                     extends Expression[A]
     case Mapped[A, B](parent: Signal[A], f: A => B)      extends Expression[B]
     case Zipped[A, B](left: Signal[A], right: Signal[B]) extends Expression[(A, B)]
+    case Constant[A](value: A)                           extends Expression[A]
 
     final private[scalive] def expression: Expression[A] = this
 
   private[scalive] def source[A](identity: Object): Signal[A] = Expression.Source(identity)
+
+  /** A signal that always holds `value` and is visible from every render scope. */
+  private[scalive] def constant[A](value: A): Signal[A] = Expression.Constant(value)
 
   extension [A](left: Signal[A])
     /** Combines two signals and derives a value when sampled, without flattening either input. The

@@ -56,10 +56,10 @@ object FormFeedbackSpec extends ZIOSpecDefault:
       assertTrue(
         changed.kind == FormUpdateKind.Changed,
         changed.valuesChanged,
-        changed.form.field(Name).visibleErrors.isEmpty,
+        changed.form.fieldView(Name).visibleErrors.isEmpty,
         blurred.kind == FormUpdateKind.Blurred,
         blurred.target.contains(Name.address),
-        blurred.form.field(Name).visibleErrors.nonEmpty,
+        blurred.form.fieldView(Name).visibleErrors.nonEmpty,
         blurred.form.result == changed.form.result
       )
     },
@@ -74,12 +74,12 @@ object FormFeedbackSpec extends ZIOSpecDefault:
 
       assertTrue(
         changed.interaction.isBlurred(Name.address),
-        changed.field(Name).visibleErrors.nonEmpty,
+        changed.fieldView(Name).visibleErrors.nonEmpty,
         submitted.interaction.visibility == ErrorVisibility.All,
         recovered.interaction.visibility == ErrorVisibility.All,
-        recovered.field(Name).visibleErrors.nonEmpty,
+        recovered.fieldView(Name).visibleErrors.nonEmpty,
         changedAfterSubmit.interaction.visibility == ErrorVisibility.All,
-        changedAfterSubmit.field(Name).visibleErrors.nonEmpty
+        changedAfterSubmit.fieldView(Name).visibleErrors.nonEmpty
       )
     },
     test("recovery preserves blur history for a field absent from the payload") {
@@ -190,9 +190,9 @@ object FormFeedbackSpec extends ZIOSpecDefault:
 
       assertTrue(
         blurred.target.contains(bound.address),
-        blurred.form.field(bound).visibleErrors.nonEmpty,
+        blurred.form.fieldView(bound).visibleErrors.nonEmpty,
         !removed.interaction.isBlurred(bound.address),
-        removed.fieldOption(bound).isEmpty,
+        removed.fieldViewOption(bound).isEmpty,
         stale.target.isEmpty,
         !replaced.interaction.isBlurred(bound.address)
       )
@@ -221,8 +221,8 @@ object FormFeedbackSpec extends ZIOSpecDefault:
       )
 
       assertTrue(
-        Try(current.field(foreign)).isFailure,
-        Try(current.fieldOption(foreign)).isFailure
+        Try(current.fieldView(foreign)).isFailure,
+        Try(current.fieldViewOption(foreign)).isFailure
       )
     },
     test("incoming keyed blur resolves existing rows and row removal clears history") {

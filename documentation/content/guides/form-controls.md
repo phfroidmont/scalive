@@ -15,7 +15,7 @@ controls a form needs.
 
 ## Render richer controls {#render-richer-controls}
 
-Ask the form signal for a field's
+Ask the form, or the form signal, for a field's
 @:apiSymbol(class:scalive.FormControl)`FormControl`@:@, then render the control
 you need. A control provides `text`, `email`, `tel`, `date`, `search`,
 `password`, `hidden`, `checkbox`, `textarea`, and `select` helpers. Normal

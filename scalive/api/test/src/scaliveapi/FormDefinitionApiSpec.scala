@@ -103,17 +103,17 @@ object FormDefinitionApiSpec extends ZIOSpecDefault:
 
       assertTrue(
         initial.valueOption.contains(Settings(false)),
-        initial.field(enabled).input == Right(false),
-        initial.field(enabled).rawValues.isEmpty,
+        initial.fieldView(enabled).input == Right(false),
+        initial.fieldView(enabled).rawValues.isEmpty,
         checked.valueOption.contains(Settings(true)),
-        checked.field(enabled).input == Right(true),
-        checked.field(enabled).rawValues == Vector("true"),
+        checked.fieldView(enabled).input == Right(true),
+        checked.fieldView(enabled).rawValues == Vector("true"),
         checked.values == definition.initial(enabled.initial(true)).values,
         unchecked.valueOption.contains(Settings(false)),
-        unchecked.field(enabled).rawValues.isEmpty,
+        unchecked.fieldView(enabled).rawValues.isEmpty,
         unchecked.values == initial.values,
         absent.valueOption.contains(Settings(false)),
-        absent.field(enabled).rawValues.isEmpty,
+        absent.fieldView(enabled).rawValues.isEmpty,
         absent.values == initial.values
       )
     },
@@ -132,7 +132,7 @@ object FormDefinitionApiSpec extends ZIOSpecDefault:
       assertTrue(cases.forall { (raw, issue) =>
         val data  = FormData(raw.map(enabled.name -> _))
         val event = definition.event(data, FormEventKind.Submitted)
-        val field = event.form.field(enabled)
+        val field = event.form.fieldView(enabled)
 
         event.data.raw == data.raw &&
         field.rawValues == raw &&
@@ -162,14 +162,14 @@ object FormDefinitionApiSpec extends ZIOSpecDefault:
         event.errors.all.isEmpty,
         event.form.rows(rows).map(_.key) == Vector(key),
         row.result.contains(Settings(false)),
-        row.field(enabled).input == Right(false),
-        row.field(enabled).rawValues.isEmpty,
+        row.fieldView(enabled).input == Right(false),
+        row.fieldView(enabled).rawValues.isEmpty,
         event.form.values == initial.values,
         checked.rows(rows).head.result.contains(Settings(true)),
-        checked.rows(rows).head.field(enabled).rawValues == Vector("true"),
+        checked.rows(rows).head.fieldView(enabled).rawValues == Vector("true"),
         unchecked.rows(rows).map(_.key) == Vector(key),
         unchecked.rows(rows).head.result.contains(Settings(false)),
-        unchecked.rows(rows).head.field(enabled).rawValues.isEmpty,
+        unchecked.rows(rows).head.fieldView(enabled).rawValues.isEmpty,
         unchecked.values == initial.values
       )
     },
@@ -187,9 +187,9 @@ object FormDefinitionApiSpec extends ZIOSpecDefault:
           Profile("Ada", Email("ada@example.com"), Vector("scala", "liveview"))
         ),
         updated.valueOption.exists(_.email == Email("grace@example.com")),
-        duplicate.field(EmailField).rawValues == Vector("first", "second"),
-        duplicate.field(EmailField).fieldValue == "second",
-        duplicate.field(EmailField).input.isLeft,
+        duplicate.fieldView(EmailField).rawValues == Vector("first", "second"),
+        duplicate.fieldView(EmailField).fieldValue == "second",
+        duplicate.fieldView(EmailField).input.isLeft,
         duplicate.errors.all.map(_.code) == Vector(Some("duplicate_value"))
       )
     },
@@ -242,7 +242,7 @@ object FormDefinitionApiSpec extends ZIOSpecDefault:
       assertTrue(
         form.valueOption.exists(_.qualifications.map(_.title) == Vector("Mathematics", "Logic")),
         reordered.rows(QualificationRows).map(_.key.value) == Vector("row_b", "row_a"),
-        rowB.field(Title).name == "application[qualifications][row_b][title]",
+        rowB.fieldView(Title).name == "application[qualifications][row_b][title]",
         changed.valueOption.exists(_.qualifications.head.title == "Symbolic logic"),
         changedAfterMove.valueOption.exists(_.qualifications(1).title == "Analysis"),
         replaced.values != form.values
@@ -405,6 +405,60 @@ object FormDefinitionApiSpec extends ZIOSpecDefault:
 
       assertTrue(errors.isEmpty)
     },
+    test("field returns a control on a form value and a form signal, and fieldView the data") {
+      val errors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+
+        final case class Phone(number: String)
+        final case class Contact(name: String, phones: Vector[Phone])
+        val root = FormRoot("contact")
+        val name = root.text("name")
+        val group = root.rows("phones")
+        val number = group.text("number")
+        val rows = group.product[Phone]((number = number))
+        val definition = root.product[Contact]((name = name, phones = rows))
+
+        def render[Owner](control: FormControl[Owner, String, String, Nothing]): HtmlElement[Nothing] =
+          div(control.text(control.validationAttributes), control.errorFeedback(_.map(_.message)))
+
+        def static(form: definition.Form, key: FormRowKey[group.type]): Vector[HtmlElement[Nothing]] =
+          val bound = form.rows(rows).head.bind(number)
+          Vector(
+            render(form.field(name)),
+            render(form.field(bound)),
+            render(form.field(rows, key, number))
+          )
+
+        def live(
+          form: Signal[definition.Form],
+          bound: BoundFormField[root.type, definition.Schema, group.type, String, String],
+          key: FormRowKey[group.type]
+        ): Vector[HtmlElement[Nothing]] =
+          Vector(
+            render(form.field(name)),
+            render(form.field(bound)),
+            render(form.field(rows, key, number))
+          )
+
+        def views(form: definition.Form): Vector[FormFieldView[root.type, String, String]] =
+          val row = form.rows(rows).head
+          Vector(form.fieldView(name), form.fieldView(row.bind(number)), row.fieldView(number)) ++
+            form.fieldViewOption(row.bind(number))
+      """)
+      val readOnlyField = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+
+        final case class Profile(name: String)
+        val root = FormRoot("profile")
+        val name = root.text("name")
+        val definition = root.product[Profile]((name = name))
+
+        def view(form: definition.Form): FormFieldView[root.type, String, String] =
+          form.field(name)
+      """)
+
+      assertTrue(errors.isEmpty, readOnlyField.nonEmpty)
+    },
     test("projects core row-presence controls and attaches row errors to stable addresses") {
       val data = FormData(
         Vector(
@@ -422,8 +476,8 @@ object FormDefinitionApiSpec extends ZIOSpecDefault:
 
       assertTrue(
         rows.map(_.key.value) == Vector("row_b", "row_a"),
-        rows.head.field(Title).rawValues == Vector(""),
-        rows.head.field(Title).visibleErrors.map(_.message) == Vector("Title is required"),
+        rows.head.fieldView(Title).rawValues == Vector(""),
+        rows.head.fieldView(Title).visibleErrors.map(_.message) == Vector("Title is required"),
         rows(1).result.contains(Qualification("Mathematics", "1835")),
         event.form.valueOption.isEmpty
       )
@@ -526,7 +580,7 @@ object FormDefinitionApiSpec extends ZIOSpecDefault:
       )
 
       assertTrue(
-        event.form.field(ApplicantName).rawValues == Vector("first"),
+        event.form.fieldView(ApplicantName).rawValues == Vector("first"),
         event.form.rows(QualificationRows).map(_.key.value) == Vector("row_a"),
         event.errors.all.size <= 3,
         event.errors.all.count(_.code.contains("too_many_values")) == 1,

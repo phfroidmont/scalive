@@ -95,7 +95,7 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
       def mount(ctx: MountContext) = ZIO.succeed(Map.empty)
       def handleMessage(model: Map[DomRef, String], ctx: MessageContext) =
         case TwinMsg.Updated(ref, update) =>
-          val name = update.applyTo(Definition.initial()).form.field(Name).fieldValue
+          val name = update.applyTo(Definition.initial()).form.fieldView(Name).fieldValue
           ZIO.succeed(model.updated(ref, s"changed $name"))
         case TwinMsg.Submitted(ref, event) =>
           val name   = event.data.values(Name.name).lastOption.getOrElse("")

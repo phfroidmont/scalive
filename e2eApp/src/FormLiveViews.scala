@@ -449,7 +449,7 @@ class FormDynamicInputsLiveView
           users.splitBy(value => value._1.key) { (_, entry) =>
             val row      = entry.map(_._1)
             val index    = entry.map(_._2)
-            val userName = row.map(_.field(DynamicInputsForm.UserName))
+            val userName = row.map(_.fieldView(DynamicInputsForm.UserName))
             div(
               styleAttr := "padding: 4px; border: 1px solid gray;",
               input(

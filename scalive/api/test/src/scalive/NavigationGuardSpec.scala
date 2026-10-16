@@ -9,6 +9,7 @@ object NavigationGuardSpec extends ZIOSpecDefault:
       case Signal.Expression.Mapped(parent, project) => project(evaluate(parent, sourceValue))
       case Signal.Expression.Zipped(left, right) =>
         (evaluate(left, sourceValue), evaluate(right, sourceValue)).asInstanceOf[A]
+      case Signal.Expression.Constant(value) => value
 
   override def spec = suite("NavigationGuardSpec")(
     test("renders the guard message only while dirty") {

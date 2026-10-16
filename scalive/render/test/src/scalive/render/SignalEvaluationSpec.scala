@@ -255,7 +255,7 @@ object SignalEvaluationSpec extends ZIOSpecDefault:
       val closed = child.validate(Signal.combine((rootSignal, childOne, childTwo)))
 
       assertTrue(
-        ancestry.exists(_ eq child),
+        ancestry.exists(_.exists(_ eq child)),
         incompatible.isLeft,
         closed.isLeft
       )
@@ -349,7 +349,7 @@ object SignalEvaluationSpec extends ZIOSpecDefault:
       val transaction = SignalEvaluation.begin(SignalEvaluation.empty, revision, source, 0)
       val sampled     = transaction.sample(mapped)
 
-      assertTrue(owner.exists(_ eq SignalEvaluation.scopeOf(source).toOption.get)) &&
+      assertTrue(owner == SignalEvaluation.scopeOf(source)) &&
       assertTrue(sampled.exists(_.value == 50000))
     },
     test("evaluates and validates deep binary combination chains with scalar outputs") {
@@ -437,6 +437,30 @@ object SignalEvaluationSpec extends ZIOSpecDefault:
 
       val combined = left.combineWithFn(right)((_, value) => value)
       assertTrue(transaction.sample(combined).isLeft, evaluated == Vector("left"))
+    },
+    test("constants are visible from every scope and keep their revision") {
+      val root        = SignalScope.root()
+      val child       = root.child().toOption.get
+      val childSignal = Signal.source[Int](SignalSource[Int](child))
+      val constant    = Signal.constant("fixed")
+      val combined    = constant.combineWith(childSignal)
+      val length      = constant.map(_.length)
+      val revision    = RenderRevision.next(RenderRevision.initial).toOption.get
+      val nextRev     = RenderRevision.next(revision).toOption.get
+      val first       = SignalEvaluation.begin(SignalEvaluation.empty, revision, childSignal, 1)
+      val firstSample = first.sample(length)
+      val second      = SignalEvaluation.begin(first.result, nextRev, childSignal, 2)
+
+      assertTrue(
+        SignalEvaluation.scopeOf(constant) == Right(None),
+        root.validate(constant).isRight,
+        child.validate(constant).isRight,
+        SignalEvaluation.scopeOf(combined).exists(_.exists(_ eq child)),
+        root.validate(combined).isLeft,
+        firstSample.exists(_.value == 5),
+        second.sample(length) == firstSample,
+        second.sample(combined).exists(_.value == ("fixed", 2))
+      )
     },
     test("allows ancestor signals and rejects sibling scope combinations") {
       val root         = SignalScope.root()

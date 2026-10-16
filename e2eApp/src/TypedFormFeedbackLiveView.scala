@@ -228,18 +228,21 @@ class TypedFormFeedbackLiveView
       div(idAttr := "topics-blur-count", model.map(_.topicsBlurCount.toString)),
       div(idAttr := "submit-count", model.map(_.submitCount.toString)),
       div(idAttr := "effects", model.map(_.effects.mkString("|"))),
-      div(idAttr := "server-name", formSignal.map(_.field(Name).fieldValue)),
-      div(idAttr := "server-email", formSignal.map(_.field(Email).fieldValue)),
-      div(idAttr := "server-phone", formSignal.map(_.field(Phone).fieldValue)),
+      div(idAttr := "server-name", formSignal.map(_.fieldView(Name).fieldValue)),
+      div(idAttr := "server-email", formSignal.map(_.fieldView(Email).fieldValue)),
+      div(idAttr := "server-phone", formSignal.map(_.fieldView(Phone).fieldValue)),
       div(
         idAttr := "server-date-raw",
-        formSignal.map(_.field(Date).rawValues.toJson)
+        formSignal.map(_.fieldView(Date).rawValues.toJson)
       ),
-      div(idAttr := "server-notes", formSignal.map(_.field(Notes).fieldValue)),
-      div(idAttr := "server-choice", formSignal.map(_.field(Choice).fieldValue)),
-      div(idAttr := "server-checkbox", formSignal.map(_.field(Checkbox).rawValues.mkString(","))),
-      div(idAttr := "server-topics", formSignal.map(_.field(Topics).rawValues.toJson)),
-      div(idAttr := "server-select", formSignal.map(_.field(Select).rawValues.mkString(","))),
+      div(idAttr := "server-notes", formSignal.map(_.fieldView(Notes).fieldValue)),
+      div(idAttr := "server-choice", formSignal.map(_.fieldView(Choice).fieldValue)),
+      div(
+        idAttr := "server-checkbox",
+        formSignal.map(_.fieldView(Checkbox).rawValues.mkString(","))
+      ),
+      div(idAttr := "server-topics", formSignal.map(_.fieldView(Topics).rawValues.toJson)),
+      div(idAttr := "server-select", formSignal.map(_.fieldView(Select).rawValues.mkString(","))),
       div(
         idAttr := "result",
         formSignal.map(form => if form.valueOption.nonEmpty then "valid" else "invalid")
@@ -391,7 +394,7 @@ object TypedFormFeedbackLiveView:
           name.text(name.validationAttributes),
           name.errorFeedback(error => error.map(_.message))
         ),
-        div(idAttr := "component-server-name", formSignal.map(_.field(Name).fieldValue)),
+        div(idAttr := "component-server-name", formSignal.map(_.fieldView(Name).fieldValue)),
         div(idAttr := "component-blur-value", model.map(_.blurValue)),
         div(idAttr := "component-blur-count", model.map(_.blurCount.toString))
       )

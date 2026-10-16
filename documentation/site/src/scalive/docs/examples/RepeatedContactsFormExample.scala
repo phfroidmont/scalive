@@ -161,7 +161,7 @@ final class RepeatedContactsFormExample
             li(
               dataAttr("summary-key") := keyValue,
               row.map { value =>
-                val name = value.field(Contacts.Name).fieldValue
+                val name = value.fieldView(Contacts.Name).fieldValue
                 s"$keyValue — ${if name.isBlank then "(blank)" else name}"
               }
             )

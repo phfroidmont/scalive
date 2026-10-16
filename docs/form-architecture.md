@@ -557,6 +557,7 @@ form.isValid
 form.valueOption
 form.errors
 form.field(Name)
+form.fieldView(Name)
 form.rows(QualificationRows)
 ```
 
@@ -732,12 +733,14 @@ field.visibleErrors
 field.isUsed
 ```
 
-`Form.field` returns it for handlers and tests. Rendering has one handle, `FormControl`, obtained
-from `field` on a form signal or from a `FormBinding`. A control from a form signal uses the
-field's logical id and reports no blur feedback; a bound control scopes its ids to the form
-instance and reports blur under the binding's feedback policy. Both own the attributes they
-render, and both offer the same control helpers, checkbox items, and error feedback. There are no
-value-level renderers: a form that is rendered keeps its state in the model.
+`Form.fieldView` returns it for handlers and tests. Rendering has one handle, `FormControl`, obtained
+from `field` on a form value, on a form signal, or on a `FormBinding`. One name per operation: `field`
+always returns a control, whatever the receiver, so one rendering helper serves live pages, static
+pages rendered with `StaticHtml.render`, and HTTP handlers. A control from a form value or a form
+signal uses the field's logical id and reports no blur feedback; a bound control scopes its ids to
+the form instance and reports blur under the binding's feedback policy. All own the attributes they
+render, and all offer the same control helpers, checkbox items, and error feedback. A control from
+a form value renders that value as a constant signal.
 
 Controls render from raw values so invalid text and structural duplicate input are never replaced by
 a decoded or normalized domain value.
@@ -908,13 +911,13 @@ row.result
 row.errors
 row.visibleErrors
 row.isUsed
-row.field(Title)
+row.fieldView(Title)
 row.bind(Title)
 ```
 
-`row.field(Title)` returns the row field's read-only `FormFieldView`, as `Form.field` does for a
-root field. `row.bind(Title)` is a stable bound-field handle for programmatic updates. Its logical address
-contains the group and row key.
+`row.fieldView(Title)` returns the row field's read-only `FormFieldView`, as `Form.fieldView` does
+for a root field. `row.bind(Title)` is a stable bound-field handle for programmatic updates. Its
+logical address contains the group and row key.
 
 Rendering uses `row.key` as the keyed `Signal.splitBy` identity so reordering retains DOM nodes,
 bindings, focus, and row-local rendering state.

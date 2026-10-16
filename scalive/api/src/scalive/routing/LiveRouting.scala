@@ -269,8 +269,9 @@ sealed class LiveRouteSetup[A, P] private[scalive] (
 
   /** Runs `aspect` before this route mounts and passes its output to the LiveView's factory.
     *
-    * The aspect receives the route's parameters and URL, and `In`, the context of the enclosing
-    * named live session. See [route mount
+    * The aspect receives the values decoded from the route's path, not its query or mapped
+    * parameters, with the URL and `In`, the context of the enclosing named live session. See [route
+    * mount
     * aspects](https://scalive.dev/guides/live-sessions-and-mount-aspects#derive-route-context).
     */
   def withMountAspect[R, In, Out, Result](

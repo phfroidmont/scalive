@@ -105,9 +105,11 @@ object LiveView:
 
   /** A LiveView whose route decodes parameters from the path and query.
     *
-    * Register it on a route that declares its parameters with `query`, `queryOptional`, or
-    * `params`. Scalive passes the decoded `Params` to [[mount]], and to [[handleParams]] after each
-    * live patch. A routed definition is deliberately not an unrouted [[LiveView]]. See the [routes
+    * Register it on a route whose parameters are `Params`: the path values of a route such as
+    * `live / "items" / PathCodec.int("id")`, or what `query`, `queryOptional`, `params`, or
+    * `mapParams` produce. Scalive passes the decoded `Params` to [[mount]], and to [[handleParams]]
+    * after each live patch. A routed definition is deliberately not an unrouted [[LiveView]]. See
+    * the [routes
     * guide](https://scalive.dev/guides/routes-and-navigation#mount-and-react-to-parameters).
     */
   trait Routed[Msg, Model, Params]:

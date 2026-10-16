@@ -43,7 +43,7 @@ it for an application.
 | Router live route | @:apiSymbol(val:scalive.live)`live`@:@ with @:apiSymbol(val:scalive.Live.router)`Live.router`@:@ | Connects a URL pattern to a LiveView through typed route declarations. |
 | Route parameters | @:apiSymbol(trait:scalive.LiveView.Routed)`LiveView.Routed`@:@ and route codecs | Decodes path and query data before application code uses it. |
 | Root and live layouts | @:apiSymbol(trait:scalive.LiveRootLayout)`LiveRootLayout`@:@ and @:apiSymbol(trait:scalive.LiveLayout)`LiveLayout`@:@ | Separates the complete HTML document from shared markup around live content. |
-| `live_session` and `on_mount` | @:apiSymbol(def:scalive.Live.session)`Live.session`@:@, @:apiSymbol(class:scalive.LiveSessionMountAspect)`LiveSessionMountAspect`@:@, and @:apiSymbol(class:scalive.LiveRouteMountAspect)`LiveRouteMountAspect`@:@ | Groups routes; session aspects carry minimal signed claims across the HTTP-to-socket boundary, while claimless route aspects rerun with typed path parameters and URL for every route mount. |
+| `live_session` and `on_mount` | @:apiSymbol(def:scalive.Live.session)`Live.session`@:@, @:apiSymbol(class:scalive.LiveSessionMountAspect)`LiveSessionMountAspect`@:@, and @:apiSymbol(class:scalive.LiveRouteMountAspect)`LiveRouteMountAspect`@:@ | Groups routes; session aspects carry minimal signed claims across the HTTP-to-socket boundary, while claimless route aspects rerun with the route's typed path values and URL for every route mount. |
 | Commands and hooks | @:apiSymbol(val:scalive.JS)`JS`@:@ and DOM hooks | Describes client effects and integrates JavaScript when a browser API is required. |
 
 The names do not imply identical APIs or complete behavior coverage. They show

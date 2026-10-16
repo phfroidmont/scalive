@@ -77,13 +77,60 @@ error; live navigation to it falls back to that page request. A live patch to it
 calls
 @:apiSymbol(def:scalive.LiveView.Routed.handleParamsDecodeError)`handleParamsDecodeError`@:@
 instead, which crashes the LiveView unless you override it. `queryOptional`
-decodes a missing value to `None`, but a malformed one still fails, so a view
-that must answer untrusted links itself declares the raw strings and parses
-them in `mapParams`.
+decodes a missing value to `None`, but a malformed one still fails; a view that
+must answer every link itself is shown in
+[Accept optional and untrusted query values](#accept-optional-and-untrusted-query-values).
 
 The documentation examples catalog is a real routed view. Its `topic` query
 parameter controls a URL-addressable filter, and every topic link builds a typed
 location before issuing a patch.
+
+## Accept optional and untrusted query values {#accept-optional-and-untrusted-query-values}
+
+A view that needs one optional query value, such as a login page that sends the
+visitor back where they came from, is a routed view on a route that adds that
+value. Declare the plain path as well, and build ordinary links from it: a route
+value only describes a URL, so adding a query to it leaves the plain path's
+`location` unchanged. Check the untrusted value once, in `mapParams`. Here a
+`returnTo` that leaves the site decodes to `None`, so the login page cannot be
+used for an open redirect:
+
+@:sourceRegion(documentation/fixtures/guides/src/routing/QueryValues.scala, routing-return-to)
+
+Register only the route with the query. It matches every URL the plain path
+matches, so registering both fails assembly as a duplicate path:
+
+@:sourceRegion(documentation/fixtures/guides/src/routing/QueryValues.scala, routing-query-registration)
+
+The view receives the value in `mount`. It needs no `handleParams` when it
+doesn't react to patches, and registering it with `context` or `from` works as
+for any view, so a login page inside a named live session keeps its session
+context:
+
+@:sourceRegion(documentation/fixtures/guides/src/routing/QueryValues.scala, routing-return-to-view)
+
+Links that send the visitor nowhere afterwards use the plain path, and links
+that do use the query route:
+
+@:sourceRegion(documentation/fixtures/guides/src/routing/QueryValues.scala, routing-return-to-links)
+
+A view whose links are built elsewhere, such as a password reset link sent by
+email, must answer every URL itself, including one with a missing or malformed
+value. A typed query such as `queryOptional[UUID]` would answer a malformed
+value with `400 Bad Request` instead. Declare the values as optional strings and
+parse them in `mapParams` into a type with a case for a link that cannot be
+used:
+
+@:sourceRegion(documentation/fixtures/guides/src/routing/QueryValues.scala, routing-reset-link)
+
+Every such URL now mounts the view: a bare `/reset-password`, a garbled UUID,
+or a missing code decodes to `ResetLink.Unusable`, which the view renders as its
+own message. `Unusable` encodes as no query at all, so code that sends the
+visitor back after a failed reset can use
+`ResetRoutes.resetPassword.location(ResetLink.Unusable)`. A query that repeats a
+name, as in `?id=a&id=b`, still fails to decode; build the codec with
+@:apiSymbol(def:scalive.LiveParamsCodec.custom)`LiveParamsCodec.custom`@:@ and
+read `url.queryParams` when the view must answer that as well.
 
 ## Give a LiveView its services {#give-a-liveview-its-services}
 

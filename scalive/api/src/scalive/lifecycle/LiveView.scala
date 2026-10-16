@@ -41,8 +41,9 @@ trait LiveView[Msg, Model]:
     * Defaults to none.
     *
     * A hook's `this.pushEvent(name, payload)` reaches [[handleMessage]] as the message declared for
-    * `name`, as in `BrowserEvents.on(CopyResultEvent)(Msg.CopyFinished(_))`. See [browser
-    * integration](https://scalive.dev/guides/browser-integration).
+    * `name`, as in `BrowserEvents.on(CopyResultEvent)(Msg.CopyFinished(_))`. An event that isn't
+    * declared is logged and ignored, so a view that delegates to another must forward this too. See
+    * [browser integration](https://scalive.dev/guides/browser-integration).
     */
   def browserEvents: BrowserEvents[Msg] = BrowserEvents.none
 

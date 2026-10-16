@@ -399,6 +399,8 @@ private class NestedFormContentLiveView(initialQuery: FormQueryParams)
 
   override def hooks = delegate.hooks
 
+  override def browserEvents = delegate.browserEvents
+
   def handleMessage(model: FormLiveView.Model, ctx: MessageContext) =
     delegate.update(model, ctx)
 

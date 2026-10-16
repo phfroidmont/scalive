@@ -52,6 +52,30 @@ object BindingTableSpec extends ZIOSpecDefault:
 
       assertTrue(first.isRight, duplicate == Left(RenderError.DuplicateBinding(id)))
     },
+    test("tells generated binding IDs apart from browser event names") {
+      val compiled = RenderProgram.compile[Unit, Int] { _ =>
+        div(
+          button(on.click(1)),
+          button(on.click(JS.push(2).push(3))),
+          form(idAttr := "profile:form", on.change(_ => 4)),
+          form(idAttr := "pushing", on.change(JS.push(5)))
+        )
+      }
+      val names = Vector("copied", "save", "b1", "f3:ab", "f2:ab:js:", "j", "js1", "j1:js:", "")
+
+      for
+        program   <- ZIO.fromEither(compiled)
+        candidate <- program.evaluate(())
+        generated  = candidate.bindings.ids.map(_.encoded)
+      yield assertTrue(
+        generated.exists(_.startsWith("b")),
+        generated.exists(id => id.startsWith("j") && id.contains(":js:")),
+        generated.exists(id => id.startsWith("f") && !id.contains(":js:")),
+        generated.exists(id => id.startsWith("f") && id.contains(":js:")),
+        generated.forall(BindingId.isGenerated),
+        !names.exists(BindingId.isGenerated)
+      )
+    },
     test("namespaces bindings to the owning render program") {
       val firstProgram  = RenderProgram.compile[Unit, Int](_ => button(on.click(1)))
       val secondProgram = RenderProgram.compile[Unit, Int](_ => button(on.click(2)))

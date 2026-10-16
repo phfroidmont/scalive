@@ -1563,9 +1563,19 @@ private[scalive] object RootConnection:
                    case LiveEventHookResult.Continue(_) if target.isEmpty =>
                      lifecycle.browserEvents.decode(event.bindingId, event.value)
                    case _ => None
+      undeclared = result match
+                     case LiveEventHookResult.Continue(_) if target.isEmpty =>
+                       declared.isEmpty && isNamedBrowserEvent(event)
+                     case _ => false
       _ <- ZIO.foreachDiscard(declared.flatMap(_.left.toOption)) { error =>
              ZIO.logWarning(s"browser event '${event.bindingId}' was malformed: $error")
            }
+      _ <-
+        ZIO.when(undeclared) {
+          ZIO.logWarning(
+            s"browser event '${event.bindingId}' is not declared in browserEvents and was ignored"
+          )
+        }
       draft <- rootDraft(
                  state,
                  lifecycle,
@@ -1583,6 +1593,7 @@ private[scalive] object RootConnection:
       case (_: LiveEventHookResult.Halt[Model], _) => ClientEventInterception.Halt(draft)
       case (_, Some(Right(message))) => ClientEventInterception.Dispatch(draft, message)
       case (_, Some(Left(_)))        => ClientEventInterception.Halt(draft)
+      case (_, None) if undeclared   => ClientEventInterception.Halt(draft)
       case (_, None)                 => ClientEventInterception.Continue(draft)
 
   private def runEventTurn[Msg, Model](

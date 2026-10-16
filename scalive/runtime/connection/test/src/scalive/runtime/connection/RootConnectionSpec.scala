@@ -19,6 +19,9 @@ object RootConnectionSpec extends ZIOSpecDefault:
     connectParams = Map("token" -> Json.Str("exact"))
   )
 
+  // Shaped like a binding Scalive renders, from a render program that never exists.
+  private val staleBinding = BindingId.fromEncoded(s"b${Long.MaxValue}:0")
+
   private final class Counter(mounts: Ref[Int]) extends LiveView[Int, Int]:
     override def mount(ctx: MountContext): Task[Int] = mounts.updateAndGet(_ + 1).as(0)
     override def handleMessage(model: Int, ctx: MessageContext): Int => Task[Int] =
@@ -102,8 +105,7 @@ object RootConnectionSpec extends ZIOSpecDefault:
           connection <- RootConnection.start(config, metadata, Counter(mounts), outputs.offer(_).unit)
           _       <- outputs.take
           command = CommandId.fresh().toOption.get
-          unknown = BindingId.fromEncoded("unknown")
-          _       <- connection.submitEvent(command, unknown, BindingPayload.Params(Map.empty))
+          _       <- connection.submitEvent(command, staleBinding, BindingPayload.Params(Map.empty))
           rejected <- outputs.take
         yield assertTrue(
           rejected match
@@ -131,7 +133,7 @@ object RootConnectionSpec extends ZIOSpecDefault:
                                )
                           _ <- connection.offerEvent(
                                  rejected,
-                                 BindingId.fromEncoded("unknown"),
+                                 staleBinding,
                                  BindingPayload.Params(Map.empty)
                                )
                           first  <- outputs.take
@@ -163,7 +165,7 @@ object RootConnectionSpec extends ZIOSpecDefault:
                )
           _ <- connection.offerEvent(
                  rejected,
-                 BindingId.fromEncoded("unknown"),
+                 staleBinding,
                  BindingPayload.Params(Map.empty)
                )
           first  <- outputs.take
@@ -172,9 +174,7 @@ object RootConnectionSpec extends ZIOSpecDefault:
           first.isInstanceOf[ConnectionOutput.Reply],
           second == ConnectionOutput.Rejected(
             rejected,
-            scalive.runtime.kernel.SessionRejection.UnknownBinding(
-              BindingId.fromEncoded("unknown")
-            )
+            scalive.runtime.kernel.SessionRejection.UnknownBinding(staleBinding)
           )
         )
       }
@@ -374,6 +374,69 @@ object RootConnectionSpec extends ZIOSpecDefault:
           afterBad <- connection.inspectModel
           messages <- hooked.get
         yield assertTrue(afterGood == 7, afterBad == 7, messages == Vector(2))
+      }
+    },
+    test("an undeclared browser event is logged and consumed; a stale binding is still rejected") {
+      ZIO.scoped {
+        for
+          mounts  <- Ref.make(0)
+          outputs <- Queue.unbounded[ConnectionOutput]
+          connection <- RootConnection.start(config, metadata, Counter(mounts), outputs.offer(_).unit)
+          _      <- outputs.take
+          pushed  = CommandId.fresh().toOption.get
+          _ <- connection.submitNamedEvent(
+                 pushed,
+                 BindingId.fromEncoded("copied"),
+                 BindingPayload.Params(Map.empty),
+                 "copied",
+                 "{}"
+               )
+          pushedOutput <- outputs.take
+          raw           = CommandId.fresh().toOption.get
+          _ <- connection.submitEvent(raw, BindingId.fromEncoded("save"), BindingPayload.Params(Map.empty))
+          rawOutput   <- outputs.take
+          stale        = CommandId.fresh().toOption.get
+          _           <- connection.submitEvent(stale, staleBinding, BindingPayload.Params(Map.empty))
+          staleOutput <- outputs.take
+          model       <- connection.inspectModel
+          logs        <- ZTestLogger.logOutput
+          warnings     = logs.filter(_.logLevel == LogLevel.Warning).map(_.message())
+        yield assertTrue(
+          pushedOutput.isInstanceOf[ConnectionOutput.Reply],
+          rawOutput.isInstanceOf[ConnectionOutput.Reply],
+          staleOutput == ConnectionOutput.Rejected(
+            stale,
+            scalive.runtime.kernel.SessionRejection.UnknownBinding(staleBinding)
+          ),
+          model == 0,
+          warnings.exists(message => message.contains("'copied'") && message.contains("browserEvents")),
+          warnings.exists(_.contains("'save'")),
+          !warnings.exists(_.contains(staleBinding.encoded))
+        )
+      }
+    },
+    test("a rendered binding that a hook executes still dispatches its message") {
+      ZIO.scoped {
+        for
+          mounts  <- Ref.make(0)
+          outputs <- Queue.unbounded[ConnectionOutput]
+          connection <- RootConnection.start(config, metadata, Counter(mounts), outputs.offer(_).unit)
+          joined  <- outputs.take
+          binding  = bindingFrom(joined)
+          // A hook's `this.js().exec(...)` sends a rendered push with the type "hook".
+          event = LiveEvent(
+                    kind = "hook",
+                    bindingId = binding.encoded,
+                    value = Json.Obj(),
+                    params = Map.empty,
+                    cid = None,
+                    meta = None
+                  )
+          command = CommandId.fresh().toOption.get
+          _      <- connection.submitRawEvent(command, binding, BindingPayload.Params(Map.empty), event)
+          output <- outputs.take
+          model  <- connection.inspectModel
+        yield assertTrue(output.isInstanceOf[ConnectionOutput.Reply], model == 1)
       }
     },
     test("raw event hooks can halt with a correlated browser reply") {

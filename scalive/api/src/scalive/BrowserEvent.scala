@@ -80,7 +80,7 @@ object BrowserToServerEvent:
   * name, payload)` reaches the component that renders `target`. The payload is decoded as the
   * event's type, and the message then goes through event hooks and `handleMessage`, like a
   * binding's message. A payload that does not decode is logged and consumed without changing the
-  * model. Build it with `on`, as in
+  * model, and so is an event that isn't declared. Build it with `on`, as in
   * `BrowserEvents.on(CopyResultEvent)(Msg.CopyFinished(_)).on(ScrollEvent)(Msg.Scrolled(_))`.
   *
   * @tparam Msg

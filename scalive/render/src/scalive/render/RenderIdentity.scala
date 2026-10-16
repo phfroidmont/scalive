@@ -66,6 +66,23 @@ object BindingId:
 
   private[render] def js(slot: BindingSlotId): BindingId = s"j${BindingSlotId.value(slot)}"
 
+  // A JS command names each push it contains by its own ID followed by `:js:<index>`.
+  private val EventShape      = "b\\d+:\\d+(?::js:\\d+)?".r
+  private val FormChangeShape = "(?s)f(\\d+):(.*)".r
+  private val JsShape         = "j\\d+(?::js:\\d+)?".r
+  private val JsPushSuffix    = "(?::js:\\d+)?".r
+
+  /** Returns whether `value` has the shape of an ID built above, or of a push inside one, rather
+    * than an event name.
+    */
+  private[scalive] def isGenerated(value: String): Boolean = value match
+    case EventShape() | JsShape()      => true
+    case FormChangeShape(length, rest) =>
+      length.toIntOption.exists(formId =>
+        formId <= rest.length && JsPushSuffix.matches(rest.drop(formId))
+      )
+    case _ => false
+
   def fromEncoded(value: String): BindingId = value
 
   extension (id: BindingId) def encoded: String = id

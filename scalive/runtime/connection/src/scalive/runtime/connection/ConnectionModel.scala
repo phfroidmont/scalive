@@ -3,6 +3,8 @@ package scalive.runtime.connection
 import zio.json.ast.Json
 
 import scalive.FlashKind
+import scalive.LiveEvent
+import scalive.render.BindingId
 import scalive.render.RenderDelta
 import scalive.runtime.contracts.CommandId
 import scalive.runtime.contracts.LifecycleId
@@ -12,6 +14,15 @@ import scalive.runtime.kernel.SessionEffects
 import scalive.runtime.kernel.SessionFailure
 import scalive.runtime.kernel.SessionRejection
 import scalive.runtime.resources.UploadControlReply
+
+/** Whether `event` is named by the browser, pushed from JavaScript or set by a raw `phx` attribute,
+  * rather than a binding Scalive rendered. Only a declared browser event can handle it.
+  *
+  * The name decides, not the event's kind: a rendered JS command that a hook executes arrives with
+  * the kind `hook` and a generated binding ID.
+  */
+private[connection] def isNamedBrowserEvent(event: LiveEvent): Boolean =
+  !BindingId.isGenerated(event.bindingId)
 
 final private[scalive] case class RootConnectionMetadata(
   staticChanged: Boolean,

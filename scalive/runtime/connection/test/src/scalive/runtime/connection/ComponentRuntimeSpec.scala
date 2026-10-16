@@ -403,6 +403,45 @@ object ComponentRuntimeSpec extends ZIOSpecDefault:
         yield assertTrue(componentModel.contains(3), rootModel == 200)
       }
     },
+    test("an undeclared event pushed to a component is logged and consumed") {
+      ZIO.scoped {
+        val definition = new LiveComponent[Unit, Int, Int]:
+          def mount(props: Unit, ctx: MountContext) = ZIO.succeed(0)
+          def handleMessage(props: Unit, model: Int, ctx: MessageContext): Int => Task[Int] =
+            value => ZIO.succeed(model + value)
+          def view(props: Signal[Unit], model: Signal[Int]) = div()
+        val instance = component(definition, "undeclared")
+        val view = new LiveView[Unit, Unit]:
+          def mount(ctx: MountContext) = ZIO.unit
+          def handleMessage(model: Unit, ctx: MessageContext): Unit => Task[Unit] = _ => ZIO.unit
+          def view(model: Signal[Unit]) = div(instance.render(()))
+        for
+          sink       <- Queue.unbounded[ConnectionOutput]
+          connection <- RootConnection.start(config, metadata, view, sink.offer(_).unit)
+          _          <- sink.take
+          id         <- connection.inspectComponentIds.map(_.head)
+          pushed     <- connection
+                      .submitComponentNamedEvent(
+                        CommandId.fresh().toOption.get,
+                        id,
+                        scalive.render.BindingId.fromEncoded("copied"),
+                        BindingPayload.Params(Map.empty),
+                        "copied",
+                        "{}"
+                      ).either
+          _     <- connection.submitComponentMessage(CommandId.fresh().toOption.get, id, 2)
+          model <- connection.inspectComponentModel[Int](id)
+          logs  <- ZTestLogger.logOutput
+        yield assertTrue(
+          pushed.isRight,
+          model.contains(2),
+          logs.exists(entry =>
+            entry.logLevel == LogLevel.Warning && entry.message().contains("'copied'") &&
+              entry.message().contains("browserEvents")
+          )
+        )
+      }
+    },
     test("component flash and client effects are threaded into the committed root turn") {
       ZIO.scoped {
         val pushed = ServerToBrowserEvent[Int]("component-effect")

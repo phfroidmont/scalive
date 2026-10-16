@@ -38,7 +38,7 @@ trait LiveComponent[Props, Msg, Model]:
     * A hook's `this.pushEventTo(target, name, payload)`, with a `target` inside this instance,
     * reaches [[handleMessage]] as the message declared for `name`, as in
     * `BrowserEvents.on(CopyResultEvent)(Msg.Copied(_))`. Events pushed with `pushEvent` reach the
-    * LiveView instead.
+    * LiveView instead. An event that isn't declared is logged and ignored.
     */
   def browserEvents: BrowserEvents[Msg] = BrowserEvents.none
 

@@ -26,8 +26,7 @@ object `package` extends Module:
   object model extends build.ScalaCommon:
     def mvnDeps = Seq(mvn"dev.zio::zio-json:1.1.0")
 
-    object test extends ScalaTests with TestModule.ZioTest:
-      def zioTestVersion = "2.1.26"
+    object test extends ScaliveTests
 
   object pipeline extends build.ScalaCommon:
     def moduleDeps = Seq(model, build.scalive)
@@ -87,6 +86,7 @@ object `package` extends Module:
       val dependencies = apiDependencyClasspath().map(_.path).mkString(java.io.File.pathSeparator)
       os.proc(
         "java",
+        forkArgs(),
         "-cp",
         classpath,
         "scalive.docs.pipeline.ApiReferenceTool",
@@ -106,6 +106,7 @@ object `package` extends Module:
       val dependencies = apiDependencyClasspath().map(_.path).mkString(java.io.File.pathSeparator)
       os.proc(
         "java",
+        forkArgs(),
         "-cp",
         classpath,
         "scalive.docs.pipeline.ApiReferenceTool",
@@ -126,6 +127,7 @@ object `package` extends Module:
       val output = Task.dest / "api-reference.json"
       os.proc(
         "java",
+        forkArgs(),
         "-cp",
         classpath,
         "scalive.docs.pipeline.ApiReferenceTool",
@@ -150,8 +152,7 @@ object `package` extends Module:
       val dependencies = apiDependencyClasspath().map(_.path).mkString(java.io.File.pathSeparator)
 
       val classpath = runClasspath().map(_.path).mkString(java.io.File.pathSeparator)
-      val arguments = Seq(
-        "java",
+      val arguments = Seq("java") ++ forkArgs() ++ Seq(
         "-cp",
         classpath,
         "scalive.docs.pipeline.GenerateDocumentation",
@@ -170,18 +171,16 @@ object `package` extends Module:
       PathRef(Task.dest)
     }
 
-    object test extends ScalaTests with TestModule.ZioTest:
+    object test extends ScaliveTests:
       override def moduleDeps = super.moduleDeps ++ Seq(build.scalive.testing)
-      def zioTestVersion = "2.1.26"
 
   object quickStartFixture extends build.ScalaCommon:
     def moduleDeps = Seq(build.scalive)
 
     override def moduleDir = super.moduleDir / os.up / "fixtures" / "quick-start"
 
-    object test extends ScalaTests with TestModule.ZioTest:
+    object test extends ScaliveTests:
       override def moduleDeps = super.moduleDeps ++ Seq(build.scalive.testing)
-      def zioTestVersion = "2.1.26"
 
   /** The quick-start application as the Learn pages extend it, in the same `quickstart` package.
     *
@@ -192,9 +191,8 @@ object `package` extends Module:
 
     override def moduleDir = super.moduleDir / os.up / "fixtures" / "learn"
 
-    object test extends ScalaTests with TestModule.ZioTest:
+    object test extends ScaliveTests:
       override def moduleDeps = super.moduleDeps ++ Seq(build.scalive.testing)
-      def zioTestVersion = "2.1.26"
 
   /** Compiled recipes embedded in guides with `@:sourceRegion`. */
   object guideFixtures extends build.ScalaCommon:
@@ -203,9 +201,8 @@ object `package` extends Module:
 
     override def moduleDir = super.moduleDir / os.up / "fixtures" / "guides"
 
-    object test extends ScalaTests with TestModule.ZioTest:
+    object test extends ScaliveTests:
       override def moduleDeps = super.moduleDeps ++ Seq(build.scalive.testing)
-      def zioTestVersion = "2.1.26"
 
   object site extends build.ScalaCommon with build.NpmAssets:
     def moduleDeps = Seq(build.scalive, model)
@@ -243,9 +240,8 @@ object `package` extends Module:
       os.proc("npm", "test").call(cwd = moduleDir)
     }
 
-    object test extends ScalaTests with TestModule.ZioTest:
+    object test extends ScaliveTests:
       override def moduleDeps = super.moduleDeps ++ Seq(build.scalive.testing)
-      def zioTestVersion = "2.1.26"
 
   def check = Task {
     model.test.testCached()
@@ -267,6 +263,7 @@ object `package` extends Module:
     val classpath = pipeline.runClasspath().map(_.path).mkString(java.io.File.pathSeparator)
     os.proc(
       "java",
+      pipeline.forkArgs(),
       "-cp",
       classpath,
       "scalive.docs.pipeline.ExternalLinkChecker",

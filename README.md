@@ -79,6 +79,13 @@ The Nix shell also provides the hash-pinned Phoenix client resources required by
 the Mill build. Run maintainer builds inside `nix develop`; published artifacts
 remain self-contained and impose no Nix requirement on application consumers.
 
+Each checkout runs its own Mill daemon. Its heap is capped in the `build.mill`
+header (`mill-jvm-opts`), which also makes it return unused heap to the system
+when idle. The JVMs the build forks are capped too: tests through
+`ScaliveTests.forkArgs`, and `run`, `runBackground`, JMH benchmarks and the
+documentation tools through `ScalaCommon.forkArgs`, which the browser-test apps
+override.
+
 The [snapshot workflow](.github/workflows/publish-snapshot.yml) also runs the
 root-slice and upstream Phoenix LiveView browser suites.
 

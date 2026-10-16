@@ -5,6 +5,7 @@
 //| - com.lihaoyi::mill-contrib-jmh:1.3.0
 //| mill-version: 1.3.0
 //| mill-jvm-version: system
+//| mill-jvm-opts: ["-Xmx4g", "-XX:G1PeriodicGCInterval=15000", "-XX:MinHeapFreeRatio=10", "-XX:MaxHeapFreeRatio=30"]
 
 package build
 
@@ -33,6 +34,13 @@ trait ScalaCommon extends ScalaModule with ScalafmtModule with ScalafixModule:
     "-deprecation"
   )
 
+  // Heap cap of the JVMs started by `run`, `runBackground`, JMH and the documentation tools.
+  def forkArgs = Seq("-Xmx1g")
+
+  trait ScaliveTests extends ScalaTests with TestModule.ZioTest:
+    def zioTestVersion = Versions.zioTest
+    def forkArgs       = Seq("-Xmx1g")
+
 trait PublishCommon extends PublishModule:
   def artifactDescription: String
 
@@ -54,8 +62,7 @@ trait PublishCommon extends PublishModule:
   )
 
 trait ScaliveModule extends ScalaCommon:
-  object test extends ScalaTests with scalalib.TestModule.ZioTest:
-    def zioTestVersion = Versions.zioTest
+  object test extends ScaliveTests
 
 trait PublishedScaliveModule extends ScaliveModule with PublishCommon
 
@@ -287,6 +294,7 @@ object benchmarks extends ScalaCommon with JmhModule:
 object e2eApp extends ScalaCommon with NpmAssets:
   def moduleDeps = Seq(scalive)
   def mvnDeps    = Seq(mvn"dev.zio::zio-logging:2.5.3")
+  override def forkArgs = Seq("-Xmx512m")
 
   def resources = Task {
     super.resources() :+ bundle()
@@ -294,3 +302,4 @@ object e2eApp extends ScalaCommon with NpmAssets:
 
 object rootSliceApp extends ScalaCommon:
   def moduleDeps = Seq(scalive)
+  override def forkArgs = Seq("-Xmx512m")

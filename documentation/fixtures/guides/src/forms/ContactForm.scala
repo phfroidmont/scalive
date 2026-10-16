@@ -39,10 +39,10 @@ final class ContactLiveView extends LiveView[ContactLiveView.Msg, ContactLiveVie
       idAttr := "contact-form",
       Contact.Definition.onChange(Msg.Validate(_)),
       Contact.Definition.onSubmit(Msg.Save(_)),
-      contactForm.rows(Contact.PhoneRows).splitBy(_.key) { (key, row) =>
+      contactForm.rows(Contact.PhoneRows).splitBy(_.key) { (key, _) =>
         val number = contactForm.field(Contact.PhoneRows, key, Contact.PhoneNumber)
         div(
-          row.presence(),
+          contactForm.presence(Contact.PhoneRows, key),
           label(forId := number.id, "Phone number"),
           number.tel(number.validationAttributes)
         )

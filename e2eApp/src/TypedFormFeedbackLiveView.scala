@@ -167,11 +167,11 @@ class TypedFormFeedbackLiveView
         notes.errorFeedback(error => error.map(_.message)),
         div(
           idAttr := "rows",
-          rows.splitBy(_.key) { (key, row) =>
+          rows.splitBy(_.key) { (key, _) =>
             val rowName = binding.field(RowSchema, key, RowName)
             div(
               dataAttr("row-key") := key.value,
-              row.presence(),
+              binding.presence(RowSchema, key),
               rowName.text(rowName.validationAttributes),
               rowName.errorFeedback(error => error.map(_.message)),
               button(

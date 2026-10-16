@@ -80,8 +80,8 @@ codec rejects `"on"` and `"false"`, and does not accept hidden unchecked fallbac
 inputs. In change and submit payloads, omitted or disabled controls decode as
 false; the codec does not preserve their previous values. A checkbox-only
 [repeated row](repeated-form-rows.md#model-repeated-rows) still needs its
-`row.presence()` control to retain the row when unchecked. Requiring a checked
-value is a separate semantic rule, expressible with
+`presence(rows, key)` control to retain the row when unchecked. Requiring a
+checked value is a separate semantic rule, expressible with
 `field.validate(issue)(identity)`.
 
 ## Offer several checkbox choices {#offer-several-checkbox-choices}

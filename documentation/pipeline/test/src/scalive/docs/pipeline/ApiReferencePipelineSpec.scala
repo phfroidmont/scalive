@@ -240,6 +240,7 @@ object ApiReferencePipelineSpec extends ZIOSpecDefault:
         "scalive.FormBinding",
         "scalive.FormBinding.blurred",
         "scalive.FormBinding.field",
+        "scalive.FormBinding.presence",
         "scalive.FormControl",
         "scalive.FormControl.checkbox",
         "scalive.FormControl.email",
@@ -310,7 +311,7 @@ object ApiReferencePipelineSpec extends ZIOSpecDefault:
         "extension:scalive.bind",
         "extension:scalive.field",
         "extension:scalive.rows",
-        "extension:scalive.FormRowView.presence"
+        "extension:scalive.presence"
       )
       val forms        = symbols.filter(symbol => required(symbol.qualifiedName))
       val extensions   = symbols.filter(symbol => requiredExtensions(symbol.id))

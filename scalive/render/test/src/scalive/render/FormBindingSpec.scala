@@ -688,7 +688,7 @@ object FormBindingSpec extends ZIOSpecDefault:
         binding.render(binding.rows(ItemRows).splitBy(_.key) { (key, row) =>
           val control = binding.field(ItemRows, key, ItemName)
           div(
-            row.presence(),
+            binding.presence(ItemRows, key),
             row.map(_ => Vector("a", "b")).splitBy(identity) { (choiceKey, token) =>
               val item = control.item(choiceKey)
               div(
@@ -1124,6 +1124,183 @@ object FormBindingSpec extends ZIOSpecDefault:
         !afterHtml.contains("basket[items][row_a][name]")
       )
     },
+    test("row presence renders logical ids from a form signal and scoped ids from a binding") {
+      val initial = BasketDefinition.initial(
+        ItemRows.initial(ItemRows.row(RowA)(), ItemRows.row(RowB)())
+      )
+      val compiled = RenderProgram.compile[BasketDefinition.Form, BasketMsg] { source =>
+        val first  = source.bind(DomRef("first"), BasketMsg.Updated(_), BasketMsg.Submitted(_))
+        val second = source.bind(DomRef("second"), BasketMsg.Updated(_), BasketMsg.Submitted(_))
+        div(
+          source.rows(ItemRows).splitBy(_.key) { (key, _) =>
+            div(source.presence(ItemRows, key, dataAttr("row") := key.value))
+          },
+          first.render(first.rows(ItemRows).splitBy(_.key) { (key, _) =>
+            div(first.presence(ItemRows, key))
+          }),
+          second.render(second.presence(ItemRows, RowA))
+        )
+      }
+
+      for
+        program <- ZIO.fromEither(compiled)
+        before  <- program.evaluate(initial)
+        after   <- program.evaluate(
+                   initial.movedBefore(ItemRows, RowB, RowA),
+                   Some(before.commit)
+                 )
+        presences = (candidate: RenderCandidate[?]) =>
+                      elements(candidate.tree.root)
+                        .filter(element =>
+                          element.tag == "input" && textAttribute(element, "type").contains("hidden")
+                        ).map(element =>
+                          (textAttribute(element, "id"), textAttribute(element, "name"))
+                        )
+        html = HtmlRenderer.render(before.tree)
+      yield assertTrue(
+        html.contains(
+          s"<input type=\"hidden\" id=\"${presenceId(RowA)}\" name=\"basket[items][row_a][_scalive_row]\" value=\"1\" data-row=\"row_a\">"
+        ),
+        presences(before) == Vector(
+          Some(presenceId(RowA)) -> Some("basket[items][row_a][_scalive_row]"),
+          Some(presenceId(RowB)) -> Some("basket[items][row_b][_scalive_row]"),
+          Some(s"first-${presenceId(RowA)}") ->
+            Some("basket[items][row_a][_scalive_row]"),
+          Some(s"first-${presenceId(RowB)}") ->
+            Some("basket[items][row_b][_scalive_row]"),
+          Some(s"second-${presenceId(RowA)}") ->
+            Some("basket[items][row_a][_scalive_row]")
+        ),
+        presences(after) == Vector(
+          Some(presenceId(RowB)) -> Some("basket[items][row_b][_scalive_row]"),
+          Some(presenceId(RowA)) -> Some("basket[items][row_a][_scalive_row]"),
+          Some(s"first-${presenceId(RowB)}") ->
+            Some("basket[items][row_b][_scalive_row]"),
+          Some(s"first-${presenceId(RowA)}") ->
+            Some("basket[items][row_a][_scalive_row]"),
+          Some(s"second-${presenceId(RowA)}") ->
+            Some("basket[items][row_a][_scalive_row]")
+        )
+      )
+      end for
+    },
+    test("row presence submits rows whose visible fields are all absent") {
+      val compiled = RenderProgram.compile[BasketDefinition.Form, BasketMsg] { source =>
+        val binding = source.bind(DomRef("basket"), BasketMsg.Updated(_), BasketMsg.Submitted(_))
+        binding.render(binding.rows(ItemRows).splitBy(_.key) { (key, _) =>
+          div(binding.presence(ItemRows, key))
+        })
+      }
+      val initial = BasketDefinition.initial(
+        ItemRows.initial(ItemRows.row(RowB)(), ItemRows.row(RowA)())
+      )
+
+      for
+        program   <- ZIO.fromEither(compiled)
+        candidate <- program.evaluate(initial)
+        submitted = elements(candidate.tree.root)
+                      .filter(_.tag == "input").flatMap(element =>
+                        textAttribute(element, "name").zip(textAttribute(element, "value"))
+                      )
+        event = BasketDefinition.event(FormData(submitted), FormEventKind.Submitted)
+      yield assertTrue(event.form.rows(ItemRows).map(_.key) == Vector(RowB, RowA))
+      end for
+    },
+    test("row presence rejects owned attributes case-insensitively through groups") {
+      val owned = Vector[Mod.Attr[BasketMsg]](
+        idAttr := "custom",
+        Mod.Attr.Static("NAME", "custom"),
+        Mod.Attr.Group(Vector(cls := "allowed", value := "0")),
+        typ := "text"
+      )
+      val fromForm = owned.map { mod =>
+        RenderProgram.compile[BasketDefinition.Form, BasketMsg] { source =>
+          div(source.presence(ItemRows, RowA, mod))
+        }
+      }
+      val fromBinding = owned.map { mod =>
+        RenderProgram.compile[BasketDefinition.Form, BasketMsg] { source =>
+          val binding =
+            source.bind(DomRef("basket"), BasketMsg.Updated(_), BasketMsg.Submitted(_))
+          binding.render(binding.presence(ItemRows, RowA, mod))
+        }
+      }
+
+      assertTrue(fromForm.forall(_.isLeft), fromBinding.forall(_.isLeft))
+    },
+    test("row presence rejects a repeated group of another definition even when cast") {
+      val OtherRoot       = FormRoot("basket")
+      val OtherItems      = OtherRoot.rows("items")
+      val OtherRows       = OtherItems.product[Item]((name = OtherItems.text("name")))
+      val foreign         =
+        OtherRows.asInstanceOf[RepeatedRows[BasketRoot.type, Items.type, Item]]
+      val initial = BasketDefinition.initial(ItemRows.initial(ItemRows.row(RowA)()))
+
+      def compile(rows: RepeatedRows[BasketRoot.type, Items.type, Item]) =
+        RenderProgram.compile[BasketDefinition.Form, BasketMsg] { source =>
+          val binding =
+            source.bind(DomRef("basket"), BasketMsg.Updated(_), BasketMsg.Submitted(_))
+          div(source.presence(rows, RowA), binding.render(binding.presence(rows, RowA)))
+        }
+
+      for
+        ownedProgram   <- ZIO.fromEither(compile(ItemRows))
+        owned          <- ownedProgram.evaluate(initial)
+        foreignProgram <- ZIO.fromEither(compile(foreign))
+        foreignExit    <- foreignProgram.evaluate(initial).exit
+      yield assertTrue(
+        HtmlRenderer.render(owned.tree).contains("basket[items][row_a][_scalive_row]"),
+        foreignExit.isFailure
+      )
+    },
+    test("row presence leaves with its keyed row and rejects a row that is absent") {
+      val initial = BasketDefinition.initial(
+        ItemRows.initial(ItemRows.row(RowA)(), ItemRows.row(RowB)())
+      )
+      val withoutA = initial.removed(ItemRows, RowA)
+      val rowA     = "basket[items][row_a][_scalive_row]"
+      val rowB     = "basket[items][row_b][_scalive_row]"
+
+      def compile(view: Signal[BasketDefinition.Form] => HtmlElement[BasketMsg]) =
+        ZIO.fromEither(RenderProgram.compile[BasketDefinition.Form, BasketMsg](view))
+      def bind(source: Signal[BasketDefinition.Form]) =
+        source.bind(DomRef("basket"), BasketMsg.Updated(_), BasketMsg.Submitted(_))
+      def presenceNames(candidate: RenderCandidate[?]) =
+        elements(candidate.tree.root).filter(_.tag == "input").flatMap(textAttribute(_, "name"))
+      def rejectsAbsentRow(result: Either[RenderError, ?]) = result match
+        case Left(RenderError.EvaluationFailed(error)) =>
+          error.getMessage.contains("bound row no longer exists")
+        case _ => false
+
+      for
+        keyed <- compile { source =>
+                   val binding = bind(source)
+                   div(
+                     source.rows(ItemRows).splitBy(_.key) { (key, _) =>
+                       div(source.presence(ItemRows, key))
+                     },
+                     binding.render(binding.rows(ItemRows).splitBy(_.key) { (key, _) =>
+                       div(binding.presence(ItemRows, key))
+                     })
+                   )
+                 }
+        before   <- keyed.evaluate(initial)
+        after    <- keyed.evaluate(withoutA, Some(before.commit))
+        fromForm <- compile(source => div(source.presence(ItemRows, RowA)))
+        formRun  <- fromForm.evaluate(withoutA).either
+        fromBinding <- compile { source =>
+                         val binding = bind(source)
+                         binding.render(binding.presence(ItemRows, RowA))
+                       }
+        bindingRun <- fromBinding.evaluate(withoutA).either
+      yield assertTrue(
+        presenceNames(before) == Vector(rowA, rowB, rowA, rowB),
+        presenceNames(after) == Vector(rowB, rowB),
+        rejectsAbsentRow(formRun),
+        rejectsAbsentRow(bindingRun)
+      )
+      end for
+    },
     test("bound field renders and rejects a foreign definition even when cast") {
       val initial = BasketDefinition.initial(
         ItemRows.initial(ItemRows.row(RowA)(ItemName.initial("owned-value")))
@@ -1337,6 +1514,13 @@ object FormBindingSpec extends ZIOSpecDefault:
     textAttribute(element, name)
       .map(BindingId.fromEncoded)
       .getOrElse(throw IllegalStateException(s"Missing $name binding attribute"))
+
+  private def presenceId(key: FormRowKey[Items.type]): String =
+    FormAddress
+      .append(
+        FormAddress.row(ItemRows.address, key.value),
+        Vector(FormDefinition.RowPresenceName)
+      ).id
 
   private def textAttribute(element: EvaluatedNode.Element, name: String): Option[String] =
     element.attributes.collectFirst {

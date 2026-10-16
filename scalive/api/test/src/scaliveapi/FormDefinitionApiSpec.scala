@@ -263,10 +263,10 @@ object FormDefinitionApiSpec extends ZIOSpecDefault:
 
         def render(form: Signal[definition.Form]): HtmlElement[Nothing] =
           div(
-            form.rows(rowSchema).splitBy(_.key) { (key, row) =>
+            form.rows(rowSchema).splitBy(_.key) { (key, _) =>
               val field = form.field(rowSchema, key, name)
               div(
-                row.presence(),
+                form.presence(rowSchema, key),
                 label(forId := field.id, "Name"),
                 dataAttr("field-name") := field.name,
                 dataAttr("field-error-id") := field.errorId,
@@ -335,12 +335,58 @@ object FormDefinitionApiSpec extends ZIOSpecDefault:
           binding.render(
             binding.rows(rows).splitBy(_.key) { (key, row) =>
               val control = binding.field(rows, key, values)
-              div(row.presence(), render(control, row.map(_.key.value)))
+              div(binding.presence(rows, key), render(control, row.map(_.key.value)))
             }
           )
       """)
 
       assertTrue(errors.isEmpty)
+    },
+    test("row presence requires a key of the row group and a group of the form's root") {
+      inline val shared = """
+        import scalive.*
+        final case class Item(name: String)
+        final case class Basket(items: Vector[Item], extras: Vector[Item])
+        val root = FormRoot("basket")
+        val items = root.rows("items")
+        val extras = root.rows("extras")
+        val itemRows = items.product[Item]((name = items.text("name")))
+        val extraRows = extras.product[Item]((name = extras.text("name")))
+        val definition = root.product[Basket]((items = itemRows, extras = extraRows))
+        val other = FormRoot("other")
+        val otherItems = other.rows("items")
+        val otherRows = otherItems.product[Item]((name = otherItems.text("name")))
+        val itemKey = FormRowKey.from[items.type]("row_a").toOption.get
+        val extraKey = FormRowKey.from[extras.type]("row_a").toOption.get
+        val otherKey = FormRowKey.from[otherItems.type]("row_a").toOption.get
+        def form: Signal[definition.Form] = ???
+        def binding = form.bind[Unit](DomRef("basket"), _ => (), _ => ())
+      """
+      val matching = scala.compiletime.testing.typeCheckErrors(shared + """
+        val presences: Vector[HtmlElement[Unit]] = Vector(
+          form.presence(itemRows, itemKey),
+          binding.presence(extraRows, extraKey, cls := "row")
+        )
+      """)
+      val formKeyOfAnotherGroup = scala.compiletime.testing.typeCheckErrors(shared + """
+        form.presence(itemRows, extraKey)
+      """)
+      val bindingKeyOfAnotherGroup = scala.compiletime.testing.typeCheckErrors(shared + """
+        binding.presence(extraRows, itemKey)
+      """)
+      val formRowsOfAnotherRoot = scala.compiletime.testing.typeCheckErrors(shared + """
+        form.presence(otherRows, otherKey)
+      """)
+      val bindingRowsOfAnotherRoot = scala.compiletime.testing.typeCheckErrors(shared + """
+        binding.presence(otherRows, otherKey)
+      """)
+      assertTrue(
+        matching.isEmpty,
+        formKeyOfAnotherGroup.nonEmpty,
+        bindingKeyOfAnotherGroup.nonEmpty,
+        formRowsOfAnotherRoot.nonEmpty,
+        bindingRowsOfAnotherRoot.nonEmpty
+      )
     },
     test("checkbox items require an explicit token") {
       val missingToken = scala.compiletime.testing.typeCheckErrors("""

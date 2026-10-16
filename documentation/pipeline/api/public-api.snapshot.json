@@ -3166,6 +3166,18 @@
       ]
     },
     {
+      "id" : "def:scalive.FormBinding.presence",
+      "ownerId" : "class:scalive.FormBinding",
+      "qualifiedName" : "scalive.FormBinding.presence",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FormBinding.presence:62b58218d2683276",
+          "signature" : "def presence[Group, Row](rows: RepeatedRows[Owner, Group, Row], key: FormRowKey[Group], mods: Mod.Input[Msg]*): HtmlElement[Msg]"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.FormBinding.render",
       "ownerId" : "class:scalive.FormBinding",
       "qualifiedName" : "scalive.FormBinding.render",
@@ -12446,18 +12458,6 @@
       ]
     },
     {
-      "id" : "extension:scalive.FormRowView.presence",
-      "ownerId" : "object:scalive.FormRowView",
-      "qualifiedName" : "scalive.FormRowView.presence",
-      "kind" : "extension",
-      "signatures" : [
-        {
-          "id" : "extension:scalive.FormRowView.presence:9247d26c96117342",
-          "signature" : "extension def presence[Owner, Schema, Group, Row](row: Signal[FormRowView[Owner, Schema, Group, Row]])[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg]"
-        }
-      ]
-    },
-    {
       "id" : "extension:scalive.JSCommands.addClass",
       "ownerId" : "object:scalive.JSCommands",
       "qualifiedName" : "scalive.JSCommands.addClass",
@@ -12982,6 +12982,18 @@
         {
           "id" : "extension:scalive.onProgress:5e229348e46ac57f",
           "signature" : "extension def onProgress[R](upload: Signal[LiveUpload[R]])[Msg](f: Map[String, String] => Msg): UploadProgress[Msg]"
+        }
+      ]
+    },
+    {
+      "id" : "extension:scalive.presence",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.presence",
+      "kind" : "extension",
+      "signatures" : [
+        {
+          "id" : "extension:scalive.presence:da96a016dd5cda6b",
+          "signature" : "extension def presence[Owner, Schema, Domain](form: Signal[Form[Owner, Schema, Domain]])[Group, Row, Msg](rows: RepeatedRows[Owner, Group, Row], key: FormRowKey[Group], mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         }
       ]
     },
@@ -17002,18 +17014,6 @@
         {
           "id" : "object:scalive.FormRowKey:43124f27244440ec",
           "signature" : "object FormRowKey"
-        }
-      ]
-    },
-    {
-      "id" : "object:scalive.FormRowView",
-      "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.FormRowView",
-      "kind" : "object",
-      "signatures" : [
-        {
-          "id" : "object:scalive.FormRowView:13ce9e965f16fbbb",
-          "signature" : "object FormRowView"
         }
       ]
     },

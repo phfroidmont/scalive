@@ -890,7 +890,7 @@ application.rows(QualificationRows).splitBy(_.key) { (key, row) =>
   val awardedOn = application.field(QualificationRows, key, AwardedOn)
 
   div(
-    row.presence(),
+    application.presence(QualificationRows, key),
     title.text(title.validationAttributes),
     title.errorFeedback(renderError),
     awardedOn.text(awardedOn.validationAttributes)
@@ -899,8 +899,9 @@ application.rows(QualificationRows).splitBy(_.key) { (key, row) =>
 ```
 
 `splitBy` passes each row's key and a signal of its row view. The key selects a row field's
-`FormControl` from the form signal, and `row.presence()` renders the row-presence control. A
-`FormBinding` offers the same keyed `field(rows, key, field)` for bound controls.
+`FormControl` from the form signal, and `presence(rows, key)` renders the row-presence control. A
+`FormBinding` offers the same keyed `field(rows, key, field)` and `presence(rows, key)` for bound
+controls.
 
 A row view exposes conceptually:
 

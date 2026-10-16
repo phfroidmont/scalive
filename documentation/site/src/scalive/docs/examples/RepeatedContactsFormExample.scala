@@ -88,7 +88,7 @@ final class RepeatedContactsFormExample
           fieldSet(
             dataAttr("contact-key") := keyValue,
             cls                     := "docs-contact-row",
-            row.presence(),
+            contactForm.presence(Contacts.Rows, key),
             legend(row.map(value => s"Contact ${value.key.value}")),
             div(
               cls := "docs-profile-field",

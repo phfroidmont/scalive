@@ -177,7 +177,24 @@ final class FormBinding[Owner, Schema, Domain, Msg] private[scalive] (
       )
     )
 
-  /** Row views for keyed rendering, including the existing row presence helpers. */
+  /** Renders the hidden control that keeps the row with `key` in `rows`, and its order, in the next
+    * submission.
+    *
+    * Render it in every row, inside a signal's keyed rendering callback, even when all the row's
+    * visible fields are empty or unchecked. The row must exist whenever the control is evaluated.
+    * Its id is scoped to this form instance.
+    *
+    * The control owns its `id`, `name`, `value`, and `type` attributes. Setting one in `mods`, in
+    * any letter case, throws `IllegalArgumentException`.
+    */
+  def presence[Group, Row](
+    rows: RepeatedRows[Owner, Group, Row],
+    key: FormRowKey[Group],
+    mods: Mod.Input[Msg]*
+  ): HtmlElement[Msg] =
+    Form.rowPresence(current, rows, key, id => s"${ref.value}-$id", mods)
+
+  /** Row views for keyed rendering, with the stable keys that [[field]] and [[presence]] take. */
   def rows[Group, Row](rows: RepeatedRows[Owner, Group, Row])
     : Signal[Vector[FormRowView[Owner, Schema, Group, Row]]] = current.rows(rows)
 end FormBinding

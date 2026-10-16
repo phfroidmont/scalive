@@ -59,10 +59,10 @@ final class BlurFeedbackExample
         button(typ := "button", on.click(binding.blurred(Profile.Choice)), "Close picker")
       ),
       choice.errorFeedback(error => error.map(_.message)),
-      rows.splitBy(_.key) { (key, row) =>
+      rows.splitBy(_.key) { (key, _) =>
         val email = binding.field(Profile.ContactRows, key, Profile.ContactEmail)
         div(
-          row.presence(),
+          binding.presence(Profile.ContactRows, key),
           label(forId := email.id, "Contact email"),
           email.email(email.validationAttributes),
           email.errorFeedback(error => error.map(_.message))

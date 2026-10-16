@@ -54,7 +54,8 @@ signal, but its `id` and feedback ID are scoped by the form `DomRef`, so several
 instances of one definition can share a page. Use its `id`,
 `validationAttributes`, and `errorFeedback` together for labels and ARIA. For a
 custom scalar input, `inputAttributes` supplies its retained `id`, `name`,
-value, and blur wiring.
+value, and blur wiring. `binding.presence(rows, key)` likewise scopes the id of
+a repeated row's hidden presence control.
 
 ## Normalize a value on blur {#normalize-a-value-on-blur}
 

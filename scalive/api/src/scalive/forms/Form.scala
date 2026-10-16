@@ -404,6 +404,40 @@ object Form:
     case Mod.Attr.RoutedBinding(name, _)                => Some(name)
     case Mod.Attr.Group(attrs)                          => attrs.flatMap(attributeName).headOption
     case _: Mod.Content[?]                              => None
+
+  /** Renders the hidden row presence control, with its logical id mapped through `scopeId`. */
+  private[scalive] def rowPresence[Owner, Group, Row, Msg](
+    form: Signal[Form[Owner, ?, ?]],
+    rows: RepeatedRows[Owner, Group, Row],
+    key: FormRowKey[Group],
+    scopeId: String => String,
+    mods: Seq[Mod.Input[Msg]]
+  ): HtmlElement[Msg] =
+    val logicalId = FormAddress
+      .append(FormAddress.row(rows.address, key.value), Vector(FormDefinition.RowPresenceName)).id
+    val name = FormPath
+      .fromSegments(
+        rows.path.segments ++ Vector(
+          FormPathSegment.Name(key.value),
+          FormPathSegment.Name(FormDefinition.RowPresenceName)
+        )
+      ).name
+    val owned = form.map { current =>
+      require(
+        current.owningDefinition.owns(rows),
+        "repeated group is not declared by this form definition"
+      )
+      require(current.rows(rows).exists(_.key == key), "bound row no longer exists")
+      scopeId(logicalId)
+    }
+    input(
+      typ      := "hidden",
+      idAttr   := owned,
+      nameAttr := name,
+      value    := FormDefinition.RowPresenceValue,
+      FormBinding.checked("row presence", Mod.flatten(mods), Set("id", "name", "value", "type"))
+    )
+  end rowPresence
 end Form
 
 /** A row-bound field handle safe for keyed programmatic updates.
@@ -554,32 +588,6 @@ final class FormRowView[Owner, Schema, Group, Row] private[scalive] (
     new BoundFormField(form.values.schemaIdentity, rows, key, definition, view.address, view.path)
 end FormRowView
 
-/** Rendering operations for a [[FormRowView]] signal. */
-object FormRowView:
-  extension [Owner, Schema, Group, Row](row: Signal[FormRowView[Owner, Schema, Group, Row]])
-    /** Renders the hidden control that keeps the row, and its order, in the next submission.
-      *
-      * Render it in every row, even when all its visible fields are empty or unchecked.
-      */
-    def presence[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg] =
-      input(
-        typ    := "hidden",
-        idAttr := row.map { value =>
-          FormAddress.append(value.address, Vector(FormDefinition.RowPresenceName)).id
-        },
-        nameAttr := row.map { value =>
-          FormPath
-            .fromSegments(
-              value.rows.path.segments ++ Vector(
-                FormPathSegment.Name(value.key.value),
-                FormPathSegment.Name(FormDefinition.RowPresenceName)
-              )
-            ).name
-        },
-        value := FormDefinition.RowPresenceValue,
-        Mod.flatten(mods)
-      )
-
 extension [Owner, Schema, Domain](form: Signal[Form[Owner, Schema, Domain]])
   /** Returns the control that renders a declared field from the current form value.
     *
@@ -612,6 +620,24 @@ extension [Owner, Schema, Domain](form: Signal[Form[Owner, Schema, Domain]])
     definition: FormField[Group, Input, Value]
   ): FormControl[Owner, Input, Value, Nothing] =
     FormControl.unbound(rowFieldView(rows, key, definition))
+
+  /** Renders the hidden control that keeps the row with `key` in `rows`, and its order, in the next
+    * submission.
+    *
+    * Render it in every row, inside a signal's keyed rendering callback, even when all the row's
+    * visible fields are empty or unchecked. The row must exist whenever the control is evaluated.
+    * Its id is the row's logical id; use [[FormBinding.presence]] for a control scoped to one form
+    * instance.
+    *
+    * The control owns its `id`, `name`, `value`, and `type` attributes. Setting one in `mods`, in
+    * any letter case, throws `IllegalArgumentException`.
+    */
+  def presence[Group, Row, Msg](
+    rows: RepeatedRows[Owner, Group, Row],
+    key: FormRowKey[Group],
+    mods: Mod.Input[Msg]*
+  ): HtmlElement[Msg] =
+    Form.rowPresence(form, rows, key, identity, mods)
 
   private[scalive] def rowFieldView[Group, Row, Input, Value](
     rows: RepeatedRows[Owner, Group, Row],

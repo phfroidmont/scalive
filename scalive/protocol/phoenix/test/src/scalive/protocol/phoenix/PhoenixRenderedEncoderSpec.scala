@@ -464,6 +464,79 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
         )
       )
     },
+    test("resends stream statics when a row's static structure changes") {
+      val identity = LiveStreamIdentity.fresh()
+      def handle(generation: Long, item: StreamItem, insert: Boolean) = stream(
+        identity,
+        generation,
+        Vector(item),
+        if insert then Vector((item, StreamAt.Last, None, false)) else Vector.empty
+      )
+      val compiled = RenderProgram.compile[LiveStream[StreamItem], Nothing](model =>
+        div(
+          model.stream((domId, item) =>
+            span(
+              idAttr := domId,
+              item.map(_.label),
+              item.map(_.label.startsWith("preview")).when(em("details"))
+            )
+          )
+        )
+      )
+      for
+        program   <- ZIO.fromEither(compiled)
+        candidate <- program.evaluate(handle(1L, StreamItem("a", "plain"), insert = true))
+        encoded   <- ZIO.fromEither(PhoenixRenderedEncoder.initial(candidate.tree))
+        second    <- program.evaluate(
+                    handle(2L, StreamItem("a", "preview"), insert = true),
+                    Some(candidate.commit)
+                  )
+        changed <- ZIO.fromEither(
+                     PhoenixRenderedEncoder
+                       .update(encoded._1, TreeDiffer.diff(candidate.tree, second.tree))
+                   )
+        third <- program.evaluate(
+                   handle(3L, StreamItem("a", "preview again"), insert = true),
+                   Some(second.commit)
+                 )
+        unchanged <- ZIO.fromEither(
+                       PhoenixRenderedEncoder
+                         .update(changed._1, TreeDiffer.diff(second.tree, third.tree))
+                     )
+      yield assertTrue(
+        changed._2 == Json.Obj(
+          "0" -> Json.Obj(
+            "s" -> Json.Arr(
+              Json.Str("<span id=\""),
+              Json.Str("\">"),
+              Json.Str("<em>details</em></span>")
+            ),
+            "k" -> Json.Obj(
+              "0" -> Json.Obj("0" -> Json.Str("a"), "1" -> Json.Str("preview")),
+              "kc" -> Json.Num(1)
+            ),
+            "stream" -> Json.Arr(
+              Json.Str("0"),
+              Json.Arr(Json.Arr(Json.Str("a"), Json.Num(-1), Json.Null, Json.Bool(false))),
+              Json.Arr()
+            )
+          )
+        ),
+        unchanged._2 == Json.Obj(
+          "0" -> Json.Obj(
+            "k" -> Json.Obj(
+              "0" -> Json.Obj("0" -> Json.Str("a"), "1" -> Json.Str("preview again")),
+              "kc" -> Json.Num(1)
+            ),
+            "stream" -> Json.Arr(
+              Json.Str("0"),
+              Json.Arr(Json.Arr(Json.Str("a"), Json.Num(-1), Json.Null, Json.Bool(false))),
+              Json.Arr()
+            )
+          )
+        )
+      )
+    },
     test("projects row-local bindings as keyed stream dynamics") {
       val identity = LiveStreamIdentity.fresh()
       val initial = stream(

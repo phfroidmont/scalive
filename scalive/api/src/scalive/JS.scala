@@ -400,6 +400,11 @@ object JSCommands:
       * currently supported Phoenix client does not observe its camel-case name, so setting it does
       * not currently trigger page-loading lifecycle events.
       *
+      * Commands run in order, but a later [[pushNavigate]] or [[replaceNavigate]] replaces the
+      * LiveView and may stop it before it has handled the pushed message. When the message must be
+      * handled first, navigate from its handler with `ctx.nav.pushNavigate` instead. A patch keeps
+      * the LiveView running and is not affected.
+      *
       * A push must be attached to a typed HTML event binding such as `on.click(JS.push(message))`.
       * `ctx.client.exec` does not accept it. Standalone JSON encoding cannot allocate its binding
       * ID and therefore leaves an unresolved placeholder.

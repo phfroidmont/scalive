@@ -145,14 +145,14 @@ object scalive extends PublishedScaliveBundle:
 
   private val liveViewClientResourceDigests = Seq(
     "META-INF/scalive/live-view-client/PROVENANCE.md" ->
-      "0c4e94fe65ce36438976d47602914b186b0049ecb3235f9365a6b28355000d5f",
-    "META-INF/scalive/live-view-client/phoenix-1.8.9-live-view-1.2.10/phoenix.min.js" ->
-      "7f96de34f92e9d8bab93552210a435ec1bdb049fa54793eba876ab5153e1c233",
-    "META-INF/scalive/live-view-client/phoenix-1.8.9-live-view-1.2.10/phoenix_live_view.min.js" ->
-      "0a18a51060d0dc19842068191400b2e0f3f75c853af0a04a879e29b91ec0a629",
-    "META-INF/licenses/scalive/live-view-client/phoenix-1.8.9-LICENSE.md" ->
+      "3b9fc4bae95791ea7781ce7ad9dad7c9daed7a88ab5381e75db00790874ad336",
+    "META-INF/scalive/live-view-client/phoenix-1.8.15-live-view-1.2.12/phoenix.min.js" ->
+      "02470e33af505595906535b87432092c19e1053a0029c7257986837781891e41",
+    "META-INF/scalive/live-view-client/phoenix-1.8.15-live-view-1.2.12/phoenix_live_view.min.js" ->
+      "b3644c575949ce39f4cebf2d53f01eee659ae2ac4111075f4a7ece1002fecadc",
+    "META-INF/licenses/scalive/live-view-client/phoenix-1.8.15-LICENSE.md" ->
       "41a686069f0199ff369d7e5277d5267385cc54d9199f1efc960bacbe2e799255",
-    "META-INF/licenses/scalive/live-view-client/phoenix-live-view-1.2.10-LICENSE.md" ->
+    "META-INF/licenses/scalive/live-view-client/phoenix-live-view-1.2.12-LICENSE.md" ->
       "5a76ffa3373ac1fbc8c8645967b980896154c26113c827d3c01c4b0158c057c6"
   )
 

@@ -7,10 +7,10 @@ section = project
 
 ## Compatibility target {#compatibility-target}
 
-Scalive currently tracks Phoenix LiveView `v1.2.10`. This pinned version is the
+Scalive currently tracks Phoenix LiveView `v1.2.12`. This pinned version is the
 reference point for the statuses below; behavior added to later Phoenix
 LiveView releases is not implied to be supported. The published Scalive artifact
-includes the corresponding Phoenix LiveView `1.2.10` and Phoenix `1.8.9`
+includes the corresponding Phoenix LiveView `1.2.12` and Phoenix `1.8.15`
 packaged browser-global clients; applications may instead own a custom npm bundle
 using those supported versions.
 
@@ -44,7 +44,7 @@ prove that every server-side edge case in the same feature area is covered.
 | Area and upstream reference | Status | What works | Known gaps |
 | --- | --- | --- | --- |
 | Browser behavior (Phoenix LiveView browser suite, `test/e2e/tests`) | Browser coverage | All 207 scenarios of the pinned browser suite pass against Scalive with retries disabled. | None for the pinned version. |
-| Wire protocol and diff encoding (`Phoenix.LiveView.Socket`, `Phoenix.LiveView.Diff`, JS client protocol) | Native coverage substantial | Message envelopes, component and stream projection, rendered deltas, events, redirects, joins, uploads, and the `v1.2.10` client protocol. | Exact error payloads, reconnect behavior, and stale cases have not all been compared with Phoenix. |
+| Wire protocol and diff encoding (`Phoenix.LiveView.Socket`, `Phoenix.LiveView.Diff`, JS client protocol) | Native coverage substantial | Message envelopes, component and stream projection, rendered deltas, events, redirects, joins, uploads, and the `v1.2.12` client protocol. | Exact error payloads, reconnect behavior, and stale cases have not all been compared with Phoenix. |
 | Static HTTP render and connected bootstrap (`mount/3`, `handle_params/3`, `render/1`) | Native coverage substantial | Disconnected render, connected mount, initial parameter handling, bootstrap patch and redirect loops, static tracking, and root shell rendering. | Error, crash, and reconnect behavior has not all been compared with Phoenix. |
 | Live routes (`Phoenix.LiveView.Router.live/4`) | Native coverage substantial | A typed route algebra: `live`, path codecs, GET-only routes, duplicate validation, typed route parameters, and typed environment inference. | No equivalent of `@live_action`, `:metadata`, or `:private`. |
 | Live sessions (`Phoenix.LiveView.Router.live_session/3`) | Native coverage substantial | `Live.session`, duplicate name validation, connected-navigation boundaries, claim-bearing `LiveSessionMountAspect`s, admission, and named live-session layouts. | Session aspects are available only on named live-session builders; HTTP-only cookies and headers are consumed at session or document boundaries, and only minimal signed claims cross into connected mount. |
@@ -78,9 +78,9 @@ prove that every server-side edge case in the same feature area is covered.
 | Streams (`stream/4`, insert, delete, async, configure) | Partial | Typed streams with create, batch insert, reset, insert/delete/delete-by-DOM-ID, component scope, and Phoenix operations. A retained row keeps its binding ID while its events use the row's latest value. | No `stream_async` equivalent. Existing-stream batch and reset placement follows Phoenix; creation has no placement option, which Phoenix ignores there. |
 | Async tasks (`start_async/3`) | Native coverage substantial | Typed named tasks for roots and components with success, typed failure, defect (Phoenix's `{:exit, reason}`), cancellation, hooks, replacement, side effects, and deterministic cleanup. | Complex Phoenix task keys map to explicit typed string declarations; there is no task-supervisor option. |
 | Async assigns (`assign_async/3`) | Not implemented | `AsyncValue` represents empty, loading, success, typed failure, defect, cancellation, and preserved previous values; applications update it through typed completion messages. | No field-level helper that updates the model for you. |
-| JS commands (`Phoenix.LiveView.JS`) | Native coverage substantial | Class, visibility, transition, dispatch, exec, focus, attribute, navigation, push, ignore-attribute, and server-pushed execution commands. | Command JSON matches the `v1.2.10` client only. |
+| JS commands (`Phoenix.LiveView.JS`) | Native coverage substantial | Class, visibility, transition, dispatch, exec, focus, attribute, navigation, push, ignore-attribute, and server-pushed execution commands. | Command JSON matches the `v1.2.12` client only. |
 | Client events and hooks (`push_event/3`, `handleEvent`, `phx-hook`) | Native coverage substantial | Directional typed payload contracts, root and component handlers, event diff payloads, required hook IDs, and raw-hook replies. | JavaScript subscription and emission remain string-based; browser hook behavior is largely delegated to the upstream JS client. |
-| DOM bindings and patch attributes (`phx-*`) | Native coverage substantial | Typed event/form/JS bindings, targets, upload progress, stream/ignore/update attributes, `phx-patch-focused`, `phx-no-unused-field`, lifecycle bindings, and connected/disconnected visibility. | Bindings match the `v1.2.10` client only. |
+| DOM bindings and patch attributes (`phx-*`) | Native coverage substantial | Typed event/form/JS bindings, targets, upload progress, stream/ignore/update attributes, `phx-patch-focused`, `phx-no-unused-field`, lifecycle bindings, and connected/disconnected visibility. | Bindings match the `v1.2.12` client only. |
 | Static asset tracking (`phx-track-static`, `_track_static`) | Native coverage substantial | Tracked static `href` and `src` values feed `ConnectedMetadata.staticChanged`; raw join parameters are available through connected `connectParams`; the packaged client graph is served as immutable assets. | Exact `_track_static` metadata and reconnect behavior have not been compared with Phoenix; Phoenix-owned keys are not a stable application contract. |
 | Title updates (`live_title`, `@page_title`) | Native coverage substantial | Typed `pageTitle(model)` drives disconnected HTML, connected diffs, fallback resets, and sticky rejoins; `liveTitle` supplies default, prefix, and suffix metadata. | Title ownership across navigation between routed root views has limited coverage. |
 | Portals and focus wrap (`Phoenix.Component.portal/1`, `focus_wrap/1`) | Native coverage substantial | `portal` and `focusWrap` helpers. | None known. |
@@ -126,4 +126,4 @@ ergonomics, Scalive prefers the better Scala API. For a conceptual mapping, read
 When evaluating a feature, check its row's status and known gaps rather than
 relying on the existence of a similarly named API. For a compatibility bug,
 follow the [issue reporting guidance](index.md#report-an-issue) and include the
-upstream `v1.2.10` documentation or test that defines the expected behavior.
+upstream `v1.2.12` documentation or test that defines the expected behavior.

@@ -158,8 +158,8 @@ private[scalive] object PhoenixRenderedEncoder:
     ref: String,
     rows: Vector[ProjectedStreamRow],
     operations: ProjectedStreamOperations,
-    hasTemplate: Boolean,
-    includeStatics: Boolean)
+    // The row statics the client last received, or None before they are sent.
+    sentStatics: Option[Vector[String]])
   final private[phoenix] case class SparseChanges(
     slots: Set[TemplateSlotId],
     streams: Set[TemplateId],
@@ -289,6 +289,7 @@ private[scalive] object PhoenixRenderedEncoder:
     ProjectedStreamOperations(Vector.empty, Vector.empty, reset = false)
 
   private def clearPending(state: PhoenixRenderedState): PhoenixRenderedState =
+    // Records the stream statics the client now holds, so the next diff can tell if they changed.
     def clearNode(node: ProjectedNode): ProjectedNode = node.copy(parts = node.parts.map {
       case ProjectedPart.Node(child)   => ProjectedPart.Node(clearNode(child))
       case ProjectedPart.Nested(child) => ProjectedPart.Nested(clearNode(child))
@@ -306,7 +307,7 @@ private[scalive] object PhoenixRenderedEncoder:
           stream.copy(
             rows = stream.rows.map(row => row.copy(child = clearNode(row.child))),
             operations = emptyStreamOperations,
-            includeStatics = false
+            sentStatics = streamStatics(stream, state.components).toOption
           )
         )
       case part => part
@@ -465,8 +466,7 @@ private[scalive] object PhoenixRenderedEncoder:
       ref,
       rows,
       ProjectedStreamOperations(inserts, stream.operations.deletes, stream.operations.reset),
-      rows.nonEmpty || inserts.nonEmpty,
-      includeStatics = true
+      sentStatics = None
     )
 
   private def projectStreamRow(
@@ -834,12 +834,7 @@ private[scalive] object PhoenixRenderedEncoder:
         case StreamLimit.KeepLast(count)  => rows = rows.takeRight(count)
       }
     }
-    stream.copy(
-      rows = rows,
-      operations = operations,
-      hasTemplate = stream.hasTemplate || operations.inserts.nonEmpty,
-      includeStatics = !stream.hasTemplate && operations.inserts.nonEmpty
-    )
+    stream.copy(rows = rows, operations = operations)
 
   private def updateSlot(
     root: ProjectedNode,
@@ -1174,8 +1169,9 @@ private[scalive] object PhoenixRenderedEncoder:
       sparseChanges.exists(_.streams.contains(stream.id))
     if !shouldEmit then Right(Json.Obj.empty)
     else
-      val templateRows = selectedRows ++ stream.rows.map(_ -> Option.empty[SparseChanges])
-      val flattened    = traverse(templateRows) { case (row, rowChanges) =>
+      val templateRows =
+        selectedRows ++ streamTemplateRows(stream).map(_ -> Option.empty[SparseChanges])
+      val flattened = traverse(templateRows) { case (row, rowChanges) =>
         flatten(row.child, components, rowChanges)
       }
       flattened
@@ -1189,8 +1185,10 @@ private[scalive] object PhoenixRenderedEncoder:
           val keyedFields = selectedPayloads.zipWithIndex.map { case (value, index) =>
             index.toString -> value
           } :+ ("kc" -> Json.Num(selectedCount))
-          val metadata       = streamMetadata(stream)
-          val includeStatics = sparseChanges.isEmpty || stream.includeStatics
+          val metadata = streamMetadata(stream)
+          // A row whose static structure changed, such as a conditional that now renders,
+          // needs new statics: the client renders every inserted row from the last ones sent.
+          val includeStatics = sparseChanges.isEmpty || !stream.sentStatics.contains(statics)
           val fields         =
             (if includeStatics then Vector("s" -> Json.Arr(statics.map(Json.Str(_))*))
              else Vector.empty) ++
@@ -1198,6 +1196,17 @@ private[scalive] object PhoenixRenderedEncoder:
           Right(Json.Obj(fields*))
         }.flatten
   end streamJson
+
+  // Rows whose statics the client's stream template must cover.
+  private def streamTemplateRows(stream: ProjectedStream): Vector[ProjectedStreamRow] =
+    stream.operations.inserts.map(_.row) ++ stream.rows
+
+  private def streamStatics(
+    stream: ProjectedStream,
+    components: Map[Int, ProjectedComponent]
+  ): Either[PhoenixEncodingError, Vector[String]] =
+    traverse(streamTemplateRows(stream))(row => flatten(row.child, components, None))
+      .flatMap(normalizeStreamRows).map(_._1)
 
   private def normalizeStreamRows(
     rows: Vector[(Vector[String], Vector[(Option[TemplateSlotId], Json)])]

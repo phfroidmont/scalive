@@ -2081,6 +2081,51 @@ object ZioHttpSpec extends ZIOSpecDefault:
         )
       }
     },
+    test("a non-join message without a join ref addresses the topic's current join") {
+      val event        = BrowserToServerEvent[Json]("count")
+      val handlerCalls = AtomicInteger()
+      val view = new LiveView[Unit, Int]:
+        override val browserEvents = BrowserEvents.on(event)(_ => ())
+        def mount(ctx: MountContext) = ZIO.succeed(0)
+        def handleMessage(model: Int, ctx: MessageContext): Unit => Task[Int] =
+          _ => ZIO.succeed(handlerCalls.incrementAndGet()).as(model + 1)
+        def view(model: Signal[Int]) = div(model.map(_.toString))
+      val application = scalive.Live.router(scalive.live -> view)
+
+      def click(socket: SocketClient, topic: String, joinRef: PhoenixRef, ref: String) =
+        socket.send(
+          PhoenixEnvelope(
+            joinRef,
+            PhoenixRef.Value(ref),
+            topic,
+            "event",
+            Json.Obj(
+              "type"  -> Json.Str("click"),
+              "event" -> Json.Str(event.value),
+              "value" -> Json.Obj.empty,
+              "cid"   -> Json.Null
+            )
+          )
+        ) *> socket.receiveReply(ref, topic)
+
+      withServer(application) { port =>
+        for
+          page   <- bootstrap(port)
+          socket <- connect(port, page)
+          topic = s"lv:${page.rootId}"
+          joined  <- joinRoot(socket, page)
+          missing <- click(socket, topic, PhoenixRef.Null, "2")
+          stale   <- click(socket, topic, PhoenixRef.Value("previous-join"), "3")
+          _       <- socket.close
+        yield assertTrue(
+          status(joined) == "ok",
+          status(missing) == "ok",
+          missing.joinRef == PhoenixRef.Value("root-join"),
+          status(stale) == "error",
+          handlerCalls.get() == 1
+        )
+      }
+    },
     test("reload guard returns a full redirect to the current URL without running the event") {
       val event        = BrowserToServerEvent[Json]("reload-event")
       val handlerCalls = AtomicInteger()

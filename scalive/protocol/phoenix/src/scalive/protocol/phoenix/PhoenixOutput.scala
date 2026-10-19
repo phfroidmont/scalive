@@ -117,8 +117,16 @@ private[scalive] object PhoenixOutput:
   def close(joinRef: PhoenixRef, topic: String): PhoenixEnvelope =
     PhoenixEnvelope(joinRef, PhoenixRef.Null, topic, "phx_close", Json.Obj.empty)
 
+  /** A crashed channel reports `channel_crash`, which the client tells apart from transport errors.
+    */
   def channelError(joinRef: PhoenixRef, topic: String): PhoenixEnvelope =
-    PhoenixEnvelope(joinRef, PhoenixRef.Null, topic, "phx_error", Json.Obj.empty)
+    PhoenixEnvelope(
+      joinRef,
+      PhoenixRef.Null,
+      topic,
+      "phx_error",
+      Json.Obj("reason" -> Json.Str("channel_crash"))
+    )
 
   def livePatch(
     joinRef: PhoenixRef,

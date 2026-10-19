@@ -28,7 +28,7 @@ them to every page's `<head>`, as it adds the CSRF `<meta>` element. With the
 default @:apiSymbol(enum:scalive.LiveClient)`LiveClient.Packaged`@:@, it adds:
 
 - the [navigation-guard](navigation-guards.md#prerequisites) runtime and the
-  upstream Phoenix `1.8.9` and Phoenix LiveView `1.2.10` browser-global builds,
+  upstream Phoenix `1.8.15` and Phoenix LiveView `1.2.12` browser-global builds,
   just before the root layout's first `<script>`, or at the end of `<head>`
   when it has none;
 - the CSRF `<meta>` element and a script that connects the clients, at the end
@@ -206,8 +206,8 @@ the same supported Phoenix packages and bundle an application entry point:
     "build": "esbuild assets/js/app.js --bundle --platform=browser --format=iife --target=es2020 --outfile=dist/app.js"
   },
   "dependencies": {
-    "phoenix": "1.8.9",
-    "phoenix_live_view": "1.2.10"
+    "phoenix": "1.8.15",
+    "phoenix_live_view": "1.2.12"
   },
   "devDependencies": {
     "esbuild": "0.28.1"

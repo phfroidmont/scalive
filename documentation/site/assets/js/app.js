@@ -10,7 +10,7 @@ import {
   createLiveTraceAdapter,
   LiveTraceSocket,
   traceSessionParameter,
-} from "./xray/phoenix-live-view-1.2.10.js"
+} from "./xray/phoenix-live-view-1.2.12.js"
 
 const connectionRoot = document.documentElement
 const themeStorageKey = "scalive.docs.theme"

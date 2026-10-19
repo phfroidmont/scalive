@@ -339,6 +339,16 @@ const hooks = {
       })
     }
   },
+  ".Issue4444HoldLock": {
+    mounted() {
+      this.el.querySelector("#run").addEventListener("click", () => {
+        // ref 0: its reply patches the parent while ref 1 still holds the lock
+        this.pushEvent("prepare", {})
+        // ref 1: the server triggers the child component update, then sleeps
+        this.pushEvent("hold", {})
+      })
+    }
+  },
   IdPassthrough: {
     mounted() {
       window.issue4325Lifecycle.mounted++

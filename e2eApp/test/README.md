@@ -67,7 +67,7 @@ Scalive-specific Phoenix-client defect.
 
 ## Scope
 
-The raw spike suite runs Chromium against the pinned Phoenix LiveView 1.2.10 client.
+The raw spike suite runs Chromium against the pinned Phoenix LiveView 1.2.12 client.
 Focus/blur ordering and button-click focus behavior are not yet verified in
 Firefox or WebKit. Tests do not establish recovery, dynamic row identity,
 component removal, IME behavior, or a general stale-value reconciliation policy.

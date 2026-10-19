@@ -22,7 +22,7 @@ private[scalive] object BrowserFiles:
   private val connectFile   = "connect.js"
   private val runtimeFiles  = Seq(guardFile, connectFile)
 
-  private val clientPrefix = "META-INF/scalive/live-view-client/phoenix-1.8.9-live-view-1.2.10"
+  private val clientPrefix = "META-INF/scalive/live-view-client/phoenix-1.8.15-live-view-1.2.12"
   private val phoenixFile  = "phoenix.min.js"
   private val liveViewFile = "phoenix_live_view.min.js"
   private val clientFiles  = Seq(phoenixFile, liveViewFile)

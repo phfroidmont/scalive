@@ -8,8 +8,8 @@
     "build:daisy-css": "tailwindcss -i assets/css/daisy.css -o dist/daisy.css --minify"
   },
   "dependencies": {
-    "phoenix": "1.8.9",
-    "phoenix_live_view": "1.2.10"
+    "phoenix": "1.8.15",
+    "phoenix_live_view": "1.2.12"
   },
   "devDependencies": {
     "@tailwindcss/cli": "4.3.3",

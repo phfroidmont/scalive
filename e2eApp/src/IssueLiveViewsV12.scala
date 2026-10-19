@@ -2,7 +2,8 @@ import java.nio.charset.StandardCharsets
 
 import zio.durationInt
 import zio.json.ast.Json
-import zio.{Chunk, ZIO}
+import zio.stream.ZStream
+import zio.{Chunk, Queue, ZIO}
 
 import scalive.*
 import scalive.codecs.StringAsIsEncoder
@@ -685,3 +686,140 @@ object Issue4368LiveView:
     chunkSize = 5,
     autoUpload = true
   )
+
+class Issue4442LiveView extends LiveView[Issue4442LiveView.Msg, Unit]:
+  import Issue4442LiveView.*
+
+  def mount(ctx: MountContext) = ctx.streams.create(Items, List(Item(1, preview = false)))
+
+  def handleMessage(model: Unit, ctx: MessageContext) =
+    case Msg.Reset  => ctx.streams.reset(Items, List(Item(1, preview = true)))
+    case Msg.Insert => ctx.streams.insert(Items, Item(1, preview = true))
+
+  override def view(model: Signal[Unit]) =
+    div(
+      button(idAttr := "reset", on.click(Msg.Reset), "Add preview with stream reset"),
+      button(idAttr := "insert", on.click(Msg.Insert), "Add preview with stream_insert"),
+      div(
+        idAttr     := "items",
+        phx.update := PhxUpdate.Stream,
+        Items.stream((domId, item) =>
+          div(
+            idAttr := domId,
+            span(item.map(current => s"Row ${current.id}")),
+            // Portal IDs are static, so this fixture keeps upstream's single row.
+            item
+              .map(_.preview).when(
+                portal(DomRef("preview-1"), target = DomSelector.css("#portal-target"))(
+                  p(idAttr := "preview-content-1", "Ticket details")
+                )
+              )
+          )
+        )
+      ),
+      div(idAttr := "portal-target")
+    )
+end Issue4442LiveView
+
+object Issue4442LiveView:
+  final case class Item(id: Int, preview: Boolean)
+  enum Msg:
+    case Reset, Insert
+  private val Items = LiveStreamDef.byId[Item, Int]("items")(_.id)
+
+class Issue4444LiveView
+    extends LiveView.Routed[Issue4444LiveView.Msg, Issue4444LiveView.Model, Option[String]]:
+  import Issue4444LiveView.*
+
+  def mount(variant: Option[String], ctx: MountContext) =
+    Queue.unbounded[Unit].map(childUpdates => Model(variant.getOrElse("skip"), 0, childUpdates))
+
+  override def browserEvents =
+    BrowserEvents
+      .on(BrowserToServerEvent[Json]("prepare"))(_ => Msg.Prepare)
+      .on(BrowserToServerEvent[Json]("hold"))(_ => Msg.Hold)
+
+  def handleMessage(model: Model, ctx: MessageContext) =
+    case Msg.Prepare => ZIO.succeed(model.copy(outsideCount = model.outsideCount + 1))
+    case Msg.Hold    =>
+      // The child updates its component while this event still holds the lock.
+      model.childUpdates.offer(()) *> ZIO.sleep(500.millis).as(model)
+    case Msg.UpdateParentComponent =>
+      ctx.components
+        .sendUpdate(
+          component(Label, "parent-component"),
+          LabelProps("parent-component", "parent 1")
+        )
+        .as(model)
+
+  override def view(model: Signal[Model]) =
+    val child = liveView("child-lv", model.map(_.childUpdates))(ChildLiveView(_))
+    div(
+      model
+        .map(_.variant == "root").choose(
+          div(
+            idAttr   := "locked",
+            phx.hook := ".Issue4444HoldLock",
+            div(idAttr    := "outside-count", model.map(_.outsideCount.toString)),
+            button(idAttr := "run", typ := "button", "Run"),
+            child
+          ),
+          div(
+            div(idAttr := "outside-count", model.map(_.outsideCount.toString)),
+            button(
+              idAttr := "update-parent",
+              on.click(Msg.UpdateParentComponent),
+              "Update parent component"
+            ),
+            div(
+              idAttr   := "locked",
+              phx.hook := ".Issue4444HoldLock",
+              Signal.when(model.map(_.variant == "collision"))(
+                component(Label, "parent-component")
+                  .render(LabelProps("parent-component", "parent 0"))
+              ),
+              button(idAttr := "run", typ := "button", "Run"),
+              child
+            )
+          )
+        )
+    )
+  end view
+end Issue4444LiveView
+
+object Issue4444LiveView:
+  final case class Model(variant: String, outsideCount: Int, childUpdates: Queue[Unit])
+  enum Msg:
+    case Prepare, Hold, UpdateParentComponent
+
+  final case class LabelProps(id: String, label: String)
+
+  object Label extends LiveComponent.Eventless[LabelProps, LabelProps]:
+    def mount(props: LabelProps, ctx: MountContext) = ZIO.succeed(props)
+    override def update(props: LabelProps, model: LabelProps, ctx: UpdateContext) =
+      ZIO.succeed(props)
+    def view(props: Signal[LabelProps], model: Signal[LabelProps]) =
+      div(
+        idAttr := model.map(_.id),
+        span(idAttr := model.map(current => s"${current.id}-label"), model.map(_.label))
+      )
+
+  class ChildLiveView(updates: Queue[Unit]) extends LiveView[Unit, Unit]:
+    def mount(ctx: MountContext) =
+      ctx.connection.whenConnected(
+        _.subscriptions.start(SubscriptionKey("parent-updates"))(ZStream.fromQueue(updates))
+      )
+
+    def handleMessage(model: Unit, ctx: MessageContext) =
+      _ =>
+        ctx.components.sendUpdate(
+          component(Label, "child-component"),
+          LabelProps("child-component", "child 1")
+        )
+
+    override def view(model: Signal[Unit]) =
+      div(
+        idAttr := "child-root",
+        component(Label, "child-component").render(LabelProps("child-component", "child 0"))
+      )
+end Issue4444LiveView

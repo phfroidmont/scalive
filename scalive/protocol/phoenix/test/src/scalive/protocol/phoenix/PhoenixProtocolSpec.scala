@@ -335,7 +335,7 @@ object PhoenixProtocolSpec extends ZIOSpecDefault:
           "status" -> Json.Str("ok"),
           "response" -> Json.Obj(
             "rendered"         -> rendered,
-            "liveview_version" -> Json.Str("1.2.10")
+            "liveview_version" -> Json.Str("1.2.12")
           )
         ),
         event.ref == ref,
@@ -388,7 +388,7 @@ object PhoenixProtocolSpec extends ZIOSpecDefault:
           PhoenixRef.Null,
           "lv:root",
           "phx_error",
-          Json.Obj.empty
+          Json.Obj("reason" -> Json.Str("channel_crash"))
         )
       )
     },

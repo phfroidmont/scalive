@@ -21,16 +21,16 @@
     "liveview-upstream": {
       "flake": false,
       "locked": {
-        "lastModified": 1787236769,
-        "narHash": "sha256-bjIVJxZSnhJI4jcggr3NFLBZzO6FpMYCsTh7wRYFEqM=",
+        "lastModified": 1789551258,
+        "narHash": "sha256-ypRbzGyidnyXV6O7eXqsEDSm9ZLDANboBdzx9VBq2NE=",
         "owner": "phoenixframework",
         "repo": "phoenix_live_view",
-        "rev": "d7f327cda0a1c2eb979357889fa612ceada70258",
+        "rev": "83ab190252ebb61256648e829152d21a59785155",
         "type": "github"
       },
       "original": {
         "owner": "phoenixframework",
-        "ref": "v1.2.10",
+        "ref": "v1.2.12",
         "repo": "phoenix_live_view",
         "type": "github"
       }

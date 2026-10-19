@@ -1599,6 +1599,22 @@ object ZioHttp:
       )
 
     private def handleEnvelope(envelope: PhoenixEnvelope): ZIO[R & Scope, Throwable, Unit] =
+      addressedEnvelope(envelope).flatMap(dispatchEnvelope)
+
+    // Like Phoenix, a non-join message without a join ref addresses the topic's current join.
+    // A stale, non-null join ref is still rejected by the handlers.
+    private def addressedEnvelope(envelope: PhoenixEnvelope): UIO[PhoenixEnvelope] =
+      if envelope.joinRef != PhoenixRef.Null || envelope.event == "phx_join" then
+        ZIO.succeed(envelope)
+      else
+        joined.get.zip(uploads.get).map { (lifecycles, uploadChannels) =>
+          val current = lifecycles
+            .get(envelope.topic).map(_.joinRef)
+            .orElse(uploadChannels.get(envelope.topic).map(_.joinRef))
+          current.fold(envelope)(joinRef => envelope.copy(joinRef = joinRef))
+        }
+
+    private def dispatchEnvelope(envelope: PhoenixEnvelope): ZIO[R & Scope, Throwable, Unit] =
       PhoenixProtocol.decodeEnvelope(envelope) match
         case Left(error)                                   => ZIO.fail(Exception(error))
         case Right(PhoenixInbound.Heartbeat(joinRef, ref)) =>

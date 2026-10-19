@@ -7,7 +7,7 @@ import {
   sanitizeProtocol,
   wrapDecoder,
   wrapEncoder,
-} from "./phoenix-live-view-1.2.10.js"
+} from "./phoenix-live-view-1.2.12.js"
 
 test("encoder forwards the exact serialized value before observing it", async () => {
   const encoded = new ArrayBuffer(4)

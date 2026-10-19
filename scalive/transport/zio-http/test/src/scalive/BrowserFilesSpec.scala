@@ -78,8 +78,8 @@ object BrowserFilesSpec extends ZIOSpecDefault:
           _.header(Header.CacheControl).contains(StaticAssetCache.default.immutable)
         ),
         bodies(0).contains("[data-scalive-navigation-guard]"),
-        sha256(bodies(1)) == "7f96de34f92e9d8bab93552210a435ec1bdb049fa54793eba876ab5153e1c233",
-        sha256(bodies(2)) == "0a18a51060d0dc19842068191400b2e0f3f75c853af0a04a879e29b91ec0a629",
+        sha256(bodies(1)) == "02470e33af505595906535b87432092c19e1053a0029c7257986837781891e41",
+        sha256(bodies(2)) == "b3644c575949ce39f4cebf2d53f01eee659ae2ac4111075f4a7ece1002fecadc",
         bodies(3).contains("window.liveSocketOptions"),
         head.status == Status.Ok
       )
@@ -150,10 +150,10 @@ object BrowserFilesSpec extends ZIOSpecDefault:
       assertTrue(
         classLoader.getResource("META-INF/scalive/live-view-client/PROVENANCE.md") != null,
         classLoader.getResource(
-          "META-INF/licenses/scalive/live-view-client/phoenix-1.8.9-LICENSE.md"
+          "META-INF/licenses/scalive/live-view-client/phoenix-1.8.15-LICENSE.md"
         ) != null,
         classLoader.getResource(
-          "META-INF/licenses/scalive/live-view-client/phoenix-live-view-1.2.10-LICENSE.md"
+          "META-INF/licenses/scalive/live-view-client/phoenix-live-view-1.2.12-LICENSE.md"
         ) != null
       )
     }

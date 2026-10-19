@@ -31,10 +31,10 @@ with a readable message, so `ZIO.fromEither(ZioHttpConfig(...))` can fail a
 For local development, the quick start uses
 @:apiSymbol(def:scalive.ZioHttpConfig.local)`ZioHttpConfig.local(port)`@:@ instead.
 It admits `http://localhost:port` and `http://127.0.0.1:port`, sends cookies
-without `Secure`, and signs with a random secret drawn at startup. Never deploy
-it.
+without `Secure`, signs with a random secret drawn at startup, and enables
+[`reloadOnRestart`](#reload-pages-after-a-restart). Never deploy it.
 
-All four values are required:
+The first four values are required:
 
 | Setting | Meaning and validation | Production guidance |
 | --- | --- | --- |
@@ -42,12 +42,37 @@ All four values are required:
 | `sessionMaxAge` | Maximum accepted age for framework-issued LiveView and CSRF values. Construction rejects zero or negative durations. HTTP flash values have an independent 60-second lifetime. | Choose an explicit policy. This setting does not define authentication-session retention or make a browser cookie persistent. |
 | `secureCookie` | Controls the `Secure` attribute on framework cookies and cookies created through `LiveSecurity.cookies`. Scalive does not infer it from TLS or proxy headers. | Use `true` whenever the browser-facing origin is HTTPS. Local plain HTTP normally requires `false`. |
 | `allowedWebSocketOrigins` | Non-empty set of exact browser origins admitted for WebSocket upgrades. Construction rejects a set with no usable origin. | List every browser-facing page origin that may connect. See [Admit WebSocket origins](#admit-websocket-origins). |
+| `reloadOnRestart` | Optional, `false` by default. When `true`, a page rendered by an earlier server process reloads when it reconnects. | Development only. See [Reload pages after a restart](#reload-pages-after-a-restart). |
 
 Construct the value once and reuse it. `ZioHttp.routes` also validates the
 assembled Live route catalog: its effect fails with
 @:apiSymbol(class:scalive.ZioHttp.AssemblyException)`ZioHttp.AssemblyException`@:@ for
 duplicate live-session names, duplicate rendered paths, or a route that matches
 one of Scalive's browser files, before the server starts.
+
+## Reload pages after a restart {#reload-pages-after-a-restart}
+
+A development loop that rebuilds the application on change, such as
+`mill -w app.runBackground`, restarts the server for every change. Open pages
+reconnect to the new process, but a reconnect only re-renders the LiveView: the
+`<head>` keeps the previous stylesheets and scripts, and the root layout stays
+as it was. With a stable signing secret, the old session is still valid, so
+nothing reloads the page.
+
+Set `reloadOnRestart` in the development configuration:
+
+@:sourceRegion(documentation/fixtures/guides/src/configuration/Configuration.scala, configuration-reload-on-restart)
+
+Each server process signs its identity into the pages it renders. When a page
+from an earlier process joins, Scalive rejects the join and the Phoenix client
+loads the page again, so changed assets, root layouts, and views all appear.
+Pages rendered by the current process join normally.
+
+Keep it `false` in deployments. Every deployment would reload every open page,
+discarding form input that LiveView otherwise restores after a reconnect, and
+with several replicas a page rendered by one would not join another. Use
+[`staticChanged`](static-assets-and-client-setup.md#read-connect-metadata) to
+react to changed assets in production instead.
 
 ## Admit WebSocket origins {#admit-websocket-origins}
 

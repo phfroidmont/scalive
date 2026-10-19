@@ -45,6 +45,18 @@ object TransportConfig:
 end TransportConfig
 // docs:end configuration-load
 
+object DevelopmentConfig:
+  // docs:start configuration-reload-on-restart
+  def make(secret: String, port: Int): Either[ZioHttpConfig.Error, ZioHttpConfig] =
+    ZioHttpConfig(
+      signingSecret = secret,
+      sessionMaxAge = Duration.ofDays(7),
+      secureCookie = false,
+      allowedWebSocketOrigins = Set(WebSocketOrigin.http("localhost", port)),
+      reloadOnRestart = true
+    )
+  // docs:end configuration-reload-on-restart
+
 object SocketPath:
   // docs:start configuration-socket-path
   val application = Live.router

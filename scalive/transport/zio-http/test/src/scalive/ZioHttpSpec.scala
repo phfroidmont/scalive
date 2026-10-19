@@ -850,6 +850,83 @@ object ZioHttpSpec extends ZIOSpecDefault:
         factories.get() == 0
       )
     },
+    test("reloadOnRestart rejects a root join rendered by an earlier server process") {
+      object View extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        def view(model: Signal[Unit]) = div()
+
+      val application  = scalive.Live.router(scalive.live -> View)
+      val directRoutes = ZioHttp.validate(application).fold(throw _, identity)
+      val reloading    = ZioHttpConfig(
+        "01234567890123456789012345678901",
+        Duration.ofMinutes(30),
+        secureCookie = false,
+        allowedWebSocketOrigins = Set(WebSocketOrigin.https("scalive.test")),
+        reloadOnRestart = true
+      ).toOption.get
+      val route = directRoutes.head
+
+      def rootJoin(serverInstance: String) =
+        for
+          session <- ZioHttpSecurity.issueSession(
+                       config,
+                       "root-id",
+                       LifecycleId(1L),
+                       0,
+                       "/",
+                       route.routeIdentity,
+                       route.sessionName,
+                       serverInstance = serverInstance
+                     )
+          static <- ZioHttpSecurity.issueStatic(
+                      config,
+                      "root-id",
+                      LifecycleId(1L),
+                      0,
+                      "/",
+                      route.routeIdentity,
+                      route.sessionName,
+                      serverInstance = serverInstance
+                    )
+        yield RootJoin(
+          url = Some("/"),
+          redirect = None,
+          flash = None,
+          session = session,
+          static = Some(static),
+          params = Map.empty,
+          sticky = false
+        )
+
+      for
+        csrf <- ZioHttpSecurity.issueCsrf(config)
+        admit = (config: ZioHttpConfig, join: RootJoin) =>
+                  ZioHttpAdmission
+                    .admit(
+                      directRoutes,
+                      config,
+                      Some(csrf.cookieToken),
+                      Some(csrf.token),
+                      rootExists = false,
+                      "lv:root-id",
+                      join
+                    ).either
+        earlier  <- rootJoin("earlier-process")
+        current  <- rootJoin(ZioHttp.serverInstance)
+        rejected <- admit(reloading, earlier)
+        admitted <- admit(reloading, current)
+        ignored  <- admit(config, earlier)
+        response <- run(ZioHttp.routes(application, reloading), Request.get(URL.root))
+        body     <- response.body.asString.orDie
+        rendered <- ZioHttpSecurity.verifySession(reloading, attribute(body, "data-phx-session").get)
+      yield assertTrue(
+        rejected == Left("page rendered by an earlier server process"),
+        admitted.isRight,
+        ignored.isRight,
+        rendered.serverInstance == ZioHttp.serverInstance,
+        !config.reloadOnRestart
+      )
+    },
     test("root admission accepts same-route URL changes and rejects a different route") {
       object View extends LiveView.Eventless[Unit]:
         def mount(ctx: MountContext) = ZIO.unit

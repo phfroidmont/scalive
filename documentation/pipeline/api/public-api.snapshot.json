@@ -9180,8 +9180,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.ZioHttpConfig.apply:8e3162552e0850fb",
-          "signature" : "def apply(signingSecret: String, sessionMaxAge: java.time.Duration, secureCookie: Boolean, allowedWebSocketOrigins: Set[WebSocketOrigin]): Either[ZioHttpConfig.Error, ZioHttpConfig]"
+          "id" : "def:scalive.ZioHttpConfig.apply:f67126667975a657",
+          "signature" : "def apply(signingSecret: String, sessionMaxAge: java.time.Duration, secureCookie: Boolean, allowedWebSocketOrigins: Set[WebSocketOrigin], reloadOnRestart: Boolean = ...): Either[ZioHttpConfig.Error, ZioHttpConfig]"
         }
       ]
     },
@@ -25497,6 +25497,18 @@
         {
           "id" : "val:scalive.ZioHttpConfig.allowedWebSocketOrigins:59a6ec8a7b36b559",
           "signature" : "val allowedWebSocketOrigins: Set[WebSocketOrigin]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.ZioHttpConfig.reloadOnRestart",
+      "ownerId" : "class:scalive.ZioHttpConfig",
+      "qualifiedName" : "scalive.ZioHttpConfig.reloadOnRestart",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.ZioHttpConfig.reloadOnRestart:5dfa0e077827bbf4",
+          "signature" : "val reloadOnRestart: Boolean"
         }
       ]
     },

@@ -36,17 +36,21 @@ final private[scalive] case class UploadCredentialClaims(
   *   Whether framework cookies carry the `Secure` attribute.
   * @param allowedWebSocketOrigins
   *   The exact canonical browser origins admitted at the WebSocket upgrade boundary.
+  * @param reloadOnRestart
+  *   Whether a page rendered by an earlier server process reloads when it reconnects.
   */
 final class ZioHttpConfig private (
   private[scalive] val signingSecretBytes: Array[Byte],
   val sessionMaxAge: Duration,
   val secureCookie: Boolean,
-  val allowedWebSocketOrigins: Set[WebSocketOrigin]):
+  val allowedWebSocketOrigins: Set[WebSocketOrigin],
+  val reloadOnRestart: Boolean):
   override def equals(other: Any): Boolean = other match
     case that: ZioHttpConfig =>
       sessionMaxAge == that.sessionMaxAge &&
       secureCookie == that.secureCookie &&
       allowedWebSocketOrigins == that.allowedWebSocketOrigins &&
+      reloadOnRestart == that.reloadOnRestart &&
       MessageDigest.isEqual(signingSecretBytes, that.signingSecretBytes)
     case _ => false
 
@@ -54,11 +58,12 @@ final class ZioHttpConfig private (
     var result = sessionMaxAge.hashCode()
     result = 31 * result + java.util.Arrays.hashCode(signingSecretBytes)
     result = 31 * result + java.lang.Boolean.hashCode(secureCookie)
+    result = 31 * result + java.lang.Boolean.hashCode(reloadOnRestart)
     31 * result + allowedWebSocketOrigins.hashCode()
 
   /** Describes the configuration with the signing secret redacted, so it is safe to log. */
   override def toString: String =
-    s"ZioHttpConfig(signingSecret=<redacted>, sessionMaxAge=$sessionMaxAge, secureCookie=$secureCookie, allowedWebSocketOrigins=$allowedWebSocketOrigins)"
+    s"ZioHttpConfig(signingSecret=<redacted>, sessionMaxAge=$sessionMaxAge, secureCookie=$secureCookie, allowedWebSocketOrigins=$allowedWebSocketOrigins, reloadOnRestart=$reloadOnRestart)"
 
 /** The validating constructor for [[ZioHttpConfig]] and its errors. */
 object ZioHttpConfig:
@@ -90,12 +95,19 @@ object ZioHttpConfig:
     * replica must use the same secret, and changing it invalidates outstanding signed values.
     * `sessionMaxAge` must be positive, and `allowedWebSocketOrigins` must not be empty. A failed
     * check returns the matching [[Error]].
+    *
+    * `reloadOnRestart` is for development. With it, a page rendered before the server process
+    * started reloads when it reconnects, so changed assets, root layouts, and views appear without
+    * a manual refresh. Leave it off in deployments: every open page would reload after a deploy and
+    * lose form input that LiveView would otherwise recover, and with several replicas a page
+    * rendered by one would not join another.
     */
   def apply(
     signingSecret: String,
     sessionMaxAge: Duration,
     secureCookie: Boolean,
-    allowedWebSocketOrigins: Set[WebSocketOrigin]
+    allowedWebSocketOrigins: Set[WebSocketOrigin],
+    reloadOnRestart: Boolean = false
   ): Either[Error, ZioHttpConfig] =
     val secretBytes = signingSecret.getBytes(StandardCharsets.UTF_8)
     if secretBytes.length < 32 then Left(Error.SecretTooShort(secretBytes.length))
@@ -109,16 +121,18 @@ object ZioHttpConfig:
           secretBytes.clone(),
           sessionMaxAge,
           secureCookie,
-          allowedWebSocketOrigins
+          allowedWebSocketOrigins,
+          reloadOnRestart
         )
       )
 
   /** Creates a configuration for running the application on this machine during development.
     *
     * It admits pages served at `http://localhost:port` and `http://127.0.0.1:port`, sends cookies
-    * without `Secure`, and signs with a random secret drawn on each call, so restarting the server
-    * makes open pages reload. Never deploy it: build a deployment's configuration with [[apply]]
-    * from its own settings. Fails when `port` is not a TCP port.
+    * without `Secure`, signs with a random secret drawn on each call, and enables
+    * `reloadOnRestart`, so restarting the server makes open pages reload. Never deploy it: build a
+    * deployment's configuration with [[apply]] from its own settings. Fails when `port` is not a
+    * TCP port.
     */
   def local(port: Int): IO[WebSocketOrigin.Error, ZioHttpConfig] =
     for
@@ -133,7 +147,8 @@ object ZioHttpConfig:
       secret,
       Duration.ofDays(7),
       secureCookie = false,
-      Set(localhost, loopback)
+      Set(localhost, loopback),
+      reloadOnRestart = true
     )
 end ZioHttpConfig
 
@@ -148,6 +163,7 @@ private[scalive] object ZioHttpSecurity:
     rootLayoutKey: String = "scalive:default-root",
     sessionMountClaims: Vector[String] = Vector.empty,
     issuedAtEpochSecond: Long,
+    serverInstance: String = "",
     initialFlash: Map[String, String] = Map.empty,
     nestedLifecycles: Map[String, Long] = Map.empty)
       derives JsonCodec
@@ -212,6 +228,7 @@ private[scalive] object ZioHttpSecurity:
     sessionIdentity: Option[String] = None,
     rootLayoutKey: String = "scalive:default-root",
     sessionMountClaims: Vector[String] = Vector.empty,
+    serverInstance: String = "",
     initialFlash: Map[String, String] = Map.empty,
     nestedLifecycles: Map[String, Long] = Map.empty
   ): UIO[String] =
@@ -226,6 +243,7 @@ private[scalive] object ZioHttpSecurity:
       sessionIdentity,
       rootLayoutKey,
       sessionMountClaims,
+      serverInstance,
       initialFlash,
       nestedLifecycles
     )
@@ -248,6 +266,7 @@ private[scalive] object ZioHttpSecurity:
     sessionIdentity: Option[String] = None,
     rootLayoutKey: String = "scalive:default-root",
     sessionMountClaims: Vector[String] = Vector.empty,
+    serverInstance: String = "",
     initialFlash: Map[String, String] = Map.empty,
     nestedLifecycles: Map[String, Long] = Map.empty
   ): UIO[String] =
@@ -262,6 +281,7 @@ private[scalive] object ZioHttpSecurity:
       sessionIdentity,
       rootLayoutKey,
       sessionMountClaims,
+      serverInstance,
       initialFlash,
       nestedLifecycles
     )
@@ -471,6 +491,7 @@ private[scalive] object ZioHttpSecurity:
     sessionIdentity: Option[String],
     rootLayoutKey: String,
     sessionMountClaims: Vector[String],
+    serverInstance: String,
     initialFlash: Map[String, String],
     nestedLifecycles: Map[String, Long]
   ): UIO[String] =
@@ -488,6 +509,7 @@ private[scalive] object ZioHttpSecurity:
           rootLayoutKey,
           sessionMountClaims,
           issuedAt,
+          serverInstance,
           initialFlash,
           nestedLifecycles
         )

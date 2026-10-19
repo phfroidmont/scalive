@@ -49,6 +49,12 @@ object ZioHttp:
   private[scalive] val DisconnectCloseCode = 1001
   private val secureRandom                 = SecureRandom()
 
+  /** Identifies this server process in the root tokens it issues, for `reloadOnRestart`. */
+  private[scalive] val serverInstance: String =
+    val bytes = Array.ofDim[Byte](12)
+    secureRandom.nextBytes(bytes)
+    java.util.Base64.getUrlEncoder.withoutPadding().encodeToString(bytes)
+
   private def monotonicNanos: UIO[Long] = ZIO.succeed(java.lang.System.nanoTime())
 
   private[scalive] trait RuntimeObserverFactory:
@@ -3934,6 +3940,7 @@ object ZioHttp:
         sessionName,
         rootLayoutKey,
         mountClaims.values,
+        serverInstance,
         initialFlash,
         nestedLifecycles
       ).zipPar(
@@ -3947,6 +3954,7 @@ object ZioHttp:
           sessionName,
           rootLayoutKey,
           mountClaims.values,
+          serverInstance,
           initialFlash,
           nestedLifecycles
         )
@@ -4081,6 +4089,10 @@ private[scalive] object ZioHttpAdmission:
       _ <- ZIO.fail("session identity differs").unless(session.sessionIdentity == route.sessionName)
       _ <- ZIO.fail("missing root layout identity").when(session.rootLayoutKey.isEmpty)
       _ <- ZIO.fail("route path differs").unless(route.matches(url))
+      // The client answers with a page request, which the current server renders.
+      _ <- ZIO
+             .fail("page rendered by an earlier server process")
+             .when(config.reloadOnRestart && session.serverInstance != ZioHttp.serverInstance)
     yield Admitted(route, url, session)
     checked
   end admit

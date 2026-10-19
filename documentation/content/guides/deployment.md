@@ -169,14 +169,41 @@ declared final path with its declared `immutable` or `revalidate` policy.
 
 A CDN or edge may preserve those response headers, but must not apply immutable
 caching to application HTML or mutable asset URLs. Immutable manifest entries
-must have content-addressed or otherwise stable URLs, and deployments must retain
-old outputs while active clients and dynamic imports can still request them. An
-immutable file replaced in place returns `404` until the application reloads its
-asset description; publish a new final path instead. See
+must have content-addressed or otherwise stable URLs. An immutable file replaced
+in place returns `404` until the application reloads its asset description;
+publish a new final path instead. See
 [Client setup and static assets](static-assets-and-client-setup.md#serve-versioned-paths)
 for versioned trees and
 [deployment manifests](static-assets-and-client-setup.md#load-a-deployment-manifest)
 for final-path behavior.
+
+### Know what a deployment invalidates {#know-what-a-deployment-invalidates}
+
+A server serves only the assets it loaded at startup. A page opened before a
+deployment keeps the files it already loaded, but files it requests later go to
+the new server: lazily imported chunks, and fonts or images that its CSS
+references. A URL the new server no longer serves returns `404`.
+
+Which URLs survive depends on the asset model:
+
+| Model | After a deployment |
+| --- | --- |
+| Classpath or directory tree | Changing any file changes the asset-set digest, so every URL moves, including those of unchanged fonts and images. Browsers download the unchanged files again. In exchange, relative references between files resolve without rewriting. |
+| Deployment manifest with content-hashed names | Unchanged files keep their URLs. Only files whose bytes changed move. |
+
+Prefer a bundler that emits content-hashed names, loaded through a
+[deployment manifest](static-assets-and-client-setup.md#load-a-deployment-manifest),
+when open pages request assets after their first load or when assets are large.
+To keep a moved URL working, the deployment must still provide its old file: list
+it in the manifest, or serve an archive of previous outputs at the edge.
+
+During a rolling deployment, a page rendered by a new replica can request a new
+asset from a replica that does not have it yet. Serve assets from storage every
+version shares, or route a browser to one replica for the duration of the
+rollout.
+
+Pages that keep running on assets from before the deployment can
+[offer a reload](layouts.md#offer-a-reload-after-a-deployment) from a layout.
 
 ## Scale and roll out {#scale-horizontally}
 

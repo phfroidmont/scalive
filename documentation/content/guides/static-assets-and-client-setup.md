@@ -127,7 +127,9 @@ returns a URL such as `/static/<asset-set-digest>/app.js`. A tree entry such as
 `chunks/editor.js` is served at `/static/<asset-set-digest>/chunks/editor.js`.
 Relative JavaScript imports, worker URLs, CSS URLs, fonts, and source maps
 therefore resolve within the same versioned namespace without rewriting file
-contents or inserting a digest into each filename.
+contents or inserting a digest into each filename. The same digest means that
+changing any file moves every URL; see
+[what a deployment invalidates](deployment.md#know-what-a-deployment-invalidates).
 
 Versioned responses default to `public`, a one-year `max-age`, and `immutable`.
 Their digests are pinned when assets load. An in-place file mutation makes its
@@ -338,8 +340,8 @@ manifest:
 
 | Model | Path and cache ownership | Choose it when |
 | --- | --- | --- |
-| Classpath or directory tree | Scalive owns one asset-set version namespace and its cache policy. | The build can preserve relative paths and package or deploy the complete output tree. |
-| Deployment manifest | The external build owns exact final paths and the cache policy for each file. | The build already emits content-addressed names, generated files, chunks, or other outputs whose final paths must be preserved. |
+| Classpath or directory tree | Scalive owns one asset-set version namespace and its cache policy. | The build can preserve relative paths and package or deploy the complete output tree, and a deployment may move every URL. |
+| Deployment manifest | The external build owns exact final paths and the cache policy for each file. | The build already emits content-addressed names, generated files, chunks, or other outputs whose final paths must be preserved, or unchanged files must keep their URLs across deployments. |
 
 Generated or chunked output works with either model: preserve the complete
 relative tree for a classpath or directory tree, or inventory every output in a

@@ -588,6 +588,9 @@ final private[scalive] class RootConnection[Msg, Model] private (
       val pendingLimit = event match
         case Event.Patch(_, _) => config.ingressCapacity + 2
         case _                 => config.ingressCapacity + 1
+      val repliesInAdmissionOrder = event match
+        case Event.Patch(_, _) => false
+        case _                 => true
       for
         response <- Promise.make[ConnectionError, Unit]
         _        <- ingressGate
@@ -613,7 +616,7 @@ final private[scalive] class RootConnection[Msg, Model] private (
                              current.valuesIterator.map(_.sequence).maxOption.fold(0L)(_ + 1L)
                            Right(()) -> current.updated(
                              command,
-                             PendingCommand(sequence, response)
+                             PendingCommand(sequence, response, repliesInAdmissionOrder)
                            )
                        }.flatMap {
                          case Left((error, Some((depth, capacity)))) =>
@@ -847,8 +850,9 @@ final private[scalive] class RootConnection[Msg, Model] private (
   private def awaitEarlierCommands(command: CommandId): UIO[Unit] =
     pending.get.flatMap { current =>
       current.get(command) match
-        case None                 => ZIO.unit
-        case Some(currentCommand) =>
+        case None                                                            => ZIO.unit
+        case Some(currentCommand) if !currentCommand.repliesInAdmissionOrder => ZIO.unit
+        case Some(currentCommand)                                            =>
           ZIO.foreachDiscard(
             current.valuesIterator.filter(_.sequence < currentCommand.sequence).toVector
           )(_.response.await.ignore)
@@ -1075,9 +1079,15 @@ final private[scalive] class RootConnection[Msg, Model] private (
 end RootConnection
 
 private[scalive] object RootConnection:
+  /** @param repliesInAdmissionOrder
+    *   Whether the reply waits for every earlier command to complete. A patch does not: while
+    *   navigation awaits it, the kernel runs a matching patch ahead of the earlier commands it
+    *   deferred, whose replies can only follow the patch reply.
+    */
   final private case class PendingCommand(
     sequence: Long,
-    response: Promise[ConnectionError, Unit])
+    response: Promise[ConnectionError, Unit],
+    repliesInAdmissionOrder: Boolean)
 
   private enum Event:
     case Browser(

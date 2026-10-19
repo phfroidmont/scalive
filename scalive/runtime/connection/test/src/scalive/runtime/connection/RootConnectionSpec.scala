@@ -790,6 +790,45 @@ object RootConnectionSpec extends ZIOSpecDefault:
         )
       }
     },
+    test("a browser patch acknowledgement replies before an event deferred behind it") {
+      ZIO.scoped {
+        val destination = URL.decode("/next").toOption.get
+        for
+          outputs <- Queue.unbounded[ConnectionOutput]
+          view = new LiveView[Int, Int]:
+                   def mount(ctx: MountContext): Task[Int] = ZIO.succeed(0)
+                   def handleMessage(model: Int, ctx: MessageContext): Int => Task[Int] =
+                     message =>
+                       if model == 0 then ctx.nav.pushPatchUnsafe("/next").as(model + message)
+                       else ZIO.succeed(model + message)
+                   def view(model: Signal[Int]) = button(on.click(1), model.map(_.toString))
+          connection <- RootConnection.start(config, metadata, view, outputs.offer(_).unit)
+          joined     <- outputs.take
+          binding     = bindingFrom(joined)
+          navigating  = CommandId.fresh().toOption.get
+          _ <- connection.submitEvent(navigating, binding, BindingPayload.Params(Map.empty))
+          _ <- outputs.take
+          // Admitted before the patch, but the kernel defers it until the patch is acknowledged.
+          deferred = CommandId.fresh().toOption.get
+          _ <- connection.offerEvent(deferred, binding, BindingPayload.Params(Map.empty))
+          patch = CommandId.fresh().toOption.get
+          _      <- connection.submitPatch(patch, destination)
+          first  <- outputs.take
+          second <- outputs.take
+          model  <- connection.inspectModel
+        yield assertTrue(
+          first match
+            case ConnectionOutput.Reply(`patch`, _, _) => true
+            case _                                     => false
+          ,
+          second match
+            case ConnectionOutput.Reply(`deferred`, _, _) => true
+            case _                                        => false
+          ,
+          model == 2
+        )
+      }
+    } @@ TestAspect.timeout(10.seconds),
     test("URL synchronization updates the next lifecycle turn") {
       ZIO.scoped {
         val destination = URL.decode("/next?source=root").toOption.get

@@ -625,18 +625,22 @@ final private[scalive] case class DeferredSessionCommand[Msg, Model](
   input: SessionCommand[Msg],
   response: Promise[SessionRejection, TurnResult])
 
+/** A patch, or a navigation that keeps the lifecycle, waiting for the browser's acknowledgement.
+  *
+  * `candidate` is the whole turn that requested it, model and resource operations included. It
+  * commits on acknowledgement, before `handleParams` runs for `destination`.
+  */
 final private[scalive] case class PendingNavigation[Msg, Model](
   id: NavigationId,
   source: URL,
   destination: URL,
   kind: NavigationKind,
   committed: Committed[Msg, Model],
-  stagedModel: Model,
   flash: Map[FlashKind, String],
   deadline: Instant,
   redirectCount: Int,
   deferred: Vector[DeferredSessionCommand[Msg, Model]],
-  componentCandidate: Option[TurnCandidate[Msg, Model]] = None,
+  candidate: TurnCandidate[Msg, Model],
   componentDestructions: Vector[Object] = Vector.empty)
 
 enum SessionState[Msg, Model]:

@@ -280,7 +280,10 @@ While a live patch is awaiting browser acknowledgement, the kernel records the
 navigation identity and lifecycle epoch, defers ordinary commands in a bounded
 queue, and applies a timeout. Only the matching URL acknowledgement resumes
 parameter handling. This prevents both stale acknowledgements and a full normal
-mailbox from deadlocking navigation.
+mailbox from deadlocking navigation. The turn that requested the patch stays a
+staged candidate, with its model and resource operations, until that
+acknowledgement commits it; parameter handling then starts from the committed
+turn.
 
 ## Scoped resources and cleanup {#scoped-resources}
 

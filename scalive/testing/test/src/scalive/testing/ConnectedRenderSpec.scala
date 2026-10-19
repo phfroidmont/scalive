@@ -139,6 +139,10 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
   private enum RoutedNavigationMsg:
     case Navigate
 
+  private enum PatchAsyncMsg:
+    case Save
+    case Saved(result: LiveAsyncResult[Nothing, String])
+
   private enum AdmissionMsg:
     case Increment, Patch, Navigate
 
@@ -860,6 +864,104 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
                        .timeout(3.seconds)
           joined  <- root.isJoined
         yield assertTrue(before == "none", after.contains("typed"), joined)
+      }
+    },
+    test("an async task started in the turn that patches the URL delivers its result") {
+      final case class Model(selected: Option[String], status: String)
+      val selected = scalive.live.queryOptional[String]("selected")
+      val task     = AsyncKey[String]("save")
+
+      def view(patchFirst: Boolean, replace: Boolean) =
+        new LiveView.Routed[PatchAsyncMsg, Model, Option[String]]:
+          def mount(params: Option[String], ctx: MountContext) =
+            ZIO.succeed(Model(params, "idle"))
+          def handleMessage(model: Model, ctx: MessageContext) =
+            case PatchAsyncMsg.Save =>
+              val start = ctx.async.start(task)(ZIO.succeed("saved"))(PatchAsyncMsg.Saved(_))
+              val patch = if replace then ctx.nav.replacePatch(None) else ctx.nav.pushPatch(None)
+              (if patchFirst then patch *> start else start *> patch)
+                .as(model.copy(status = "saving"))
+            case PatchAsyncMsg.Saved(LiveAsyncResult.Succeeded(value)) =>
+              ZIO.succeed(model.copy(status = value))
+            case PatchAsyncMsg.Saved(other) =>
+              ZIO.succeed(model.copy(status = other.toString))
+          override def handleParams(
+            model: Model,
+            params: Option[String],
+            url: URL,
+            ctx: ParamsContext
+          ) = ZIO.succeed(model.copy(selected = params))
+          def view(model: Signal[Model]) =
+            div(
+              button(dataAttr("save") := "", on.click(PatchAsyncMsg.Save), "Save"),
+              span(dataAttr("selected") := "", model.map(_.selected.getOrElse("none"))),
+              span(dataAttr("status") := "", model.map(_.status))
+            )
+
+      def saves(patchFirst: Boolean, replace: Boolean) =
+        ZIO.scoped {
+          for
+            root <- ConnectedRender.join(
+                      scalive.Live.router(selected -> view(patchFirst, replace)),
+                      config,
+                      Request.get(URL.decode("/?selected=x").toOption.get)
+                    )
+            _      <- root.click("[data-save]")
+            status <- (ZIO.yieldNow *> root.text("[data-status]"))
+                        .repeatUntil(status => status != "idle" && status != "saving")
+                        .timeout(3.seconds)
+            patched <- root.text("[data-selected]")
+          yield (status, patched)
+        }
+
+      for results <- ZIO.foreach(
+                       Vector((false, true), (true, true), (false, false), (true, false))
+                     )((patchFirst, replace) => saves(patchFirst, replace))
+      yield assertTrue(results.forall(_ == (Some("saved"), "none")))
+    },
+    test("an async task started by handleParams that patches again delivers its result") {
+      final case class Model(step: Option[String], status: String)
+      val step = scalive.live.queryOptional[String]("step")
+      val task = AsyncKey[String]("load")
+
+      val view = new LiveView.Routed[PatchAsyncMsg, Model, Option[String]]:
+        def mount(params: Option[String], ctx: MountContext) = ZIO.succeed(Model(params, "idle"))
+        def handleMessage(model: Model, ctx: MessageContext) =
+          case PatchAsyncMsg.Save =>
+            ctx.nav.pushPatch(Some("first")).as(model)
+          case PatchAsyncMsg.Saved(LiveAsyncResult.Succeeded(value)) =>
+            ZIO.succeed(model.copy(status = value))
+          case PatchAsyncMsg.Saved(other) =>
+            ZIO.succeed(model.copy(status = other.toString))
+        override def handleParams(
+          model: Model,
+          params: Option[String],
+          url: URL,
+          ctx: ParamsContext
+        ) = params match
+          case Some("first") =>
+            ctx.connection match
+              case Connection.Connected(connected) =>
+                connected.async.start(task)(ZIO.succeed("loaded"))(PatchAsyncMsg.Saved(_)) *>
+                  ctx.nav.replacePatch(Some("second")).as(model.copy(status = "loading"))
+              case Connection.Disconnected => ZIO.succeed(model)
+          case other => ZIO.succeed(model.copy(step = other))
+        def view(model: Signal[Model]) =
+          div(
+            button(dataAttr("save") := "", on.click(PatchAsyncMsg.Save), "Save"),
+            span(dataAttr("step") := "", model.map(_.step.getOrElse("none"))),
+            span(dataAttr("status") := "", model.map(_.status))
+          )
+
+      ZIO.scoped {
+        for
+          root   <- ConnectedRender.join(scalive.Live.router(step -> view), config, Request.get(URL.root))
+          _      <- root.click("[data-save]")
+          status <- (ZIO.yieldNow *> root.text("[data-status]"))
+                      .repeatUntil(status => status != "idle" && status != "loading")
+                      .timeout(3.seconds)
+          current <- root.text("[data-step]")
+        yield assertTrue(status.contains("loaded"), current == "second")
       }
     },
     test("a patch to another route's location stops the LiveView") {

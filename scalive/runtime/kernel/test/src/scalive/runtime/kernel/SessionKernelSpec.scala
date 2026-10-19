@@ -1199,14 +1199,15 @@ object SessionKernelSpec extends ZIOSpecDefault:
           pending.isEmpty,
           patched.command == patchId,
           patched.delta == RenderDelta.Empty,
-          staged.contains(0),
+          // The patching turn commits on acknowledgement; the halt only skips handleParams.
+          staged.contains(10),
           guarded == 3,
           params == 0,
           renders.get() == renderCount + 1,
           after == afterCount + 1,
           replayed.command == deferredId,
           replayCount == 1,
-          finalState.model == 2,
+          finalState.model == 12,
           finalState.url == firstUrl,
           finalOutstanding == 0,
           output.flatMap(_.items).flatMap(_.command).takeRight(2) == Vector(patchId, deferredId)

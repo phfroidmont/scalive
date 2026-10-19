@@ -222,6 +222,10 @@ A routed LiveView patches by its own parameters, which its route encodes:
 
 @:sourceRegion(documentation/fixtures/guides/src/routing/Search.scala, routing-patch-params)
 
+The turn that requests a patch commits like any other, with the async tasks,
+subscriptions, and component updates it starts, once the browser acknowledges
+the new URL. `handleParams` then receives that turn's model.
+
 A patch must stay on the current route. When the router would mount another
 LiveView for the patched URL, the patch stops the LiveView, as in Phoenix;
 navigate there instead.

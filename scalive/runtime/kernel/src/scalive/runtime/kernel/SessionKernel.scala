@@ -424,9 +424,8 @@ final private[scalive] class SessionKernel[Msg, Model] private (
   private def releaseInterruptedLoop: UIO[Unit] =
     loopInput.get.flatMap { case (state, work) =>
       val candidate = state match
-        case navigating: SessionState.Navigating[Msg, Model] =>
-          navigating.pending.componentCandidate
-        case _ => None
+        case navigating: SessionState.Navigating[Msg, Model] => Some(navigating.pending.candidate)
+        case _                                               => None
       ZIO
         .foreachDiscard(candidate)(discardCandidate)
         .ensuring(failWork(work, SessionRejection.Terminal("closed")))
@@ -1024,21 +1023,16 @@ final private[scalive] class SessionKernel[Msg, Model] private (
             loop(state, work)
         else acknowledgePatch(state, work, commandId, response)
       case Some(Envelope.DestroyComponents(tokens)) =>
-        if pending.componentCandidate.nonEmpty then
-          // A staged component turn still owns snapshots of dormant instances and resources.
-          // Destroy only after it commits, and only if those instances are still dormant.
-          loop(
-            state.copy(pending =
-              pending.copy(
-                componentDestructions = (pending.componentDestructions ++ tokens).distinct
-              )
-            ),
-            work
-          )
-        else
-          val (committed, removed) = removeDormantComponents(pending.committed, tokens)
-          val next = SessionState.Navigating(state.epoch, pending.copy(committed = committed))
-          finishComponentDestruction(committed, removed)(loop(next, work))
+        // The staged turn still owns snapshots of dormant instances and resources. Destroy only
+        // after it commits, and only if those instances are still dormant.
+        loop(
+          state.copy(pending =
+            pending.copy(
+              componentDestructions = (pending.componentDestructions ++ tokens).distinct
+            )
+          ),
+          work
+        )
     }
   end navigatingLoop
 
@@ -1071,41 +1065,30 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     response: Promise[SessionRejection, TurnResult]
   ): UIO[Unit] =
     val pending = state.pending
-    pending.componentCandidate match
-      case Some(candidate) =>
-        controlled(commit(Some(pending.committed), candidate, work, None, publish = false)).exit
-          .flatMap {
-            case Exit.Success(interim) =>
-              val (committed, removed) =
-                removeDormantComponents(interim.value, pending.componentDestructions)
-              finishComponentDestruction(committed, removed) {
-                continuePatchAcknowledgement(
-                  state,
-                  committed,
-                  interim.work,
-                  commandId,
-                  response
-                )
-              }
-            case Exit.Failure(cause) if cause.isInterruptedOnly =>
-              response.fail(SessionRejection.Terminal("closed")).unit
-            case Exit.Failure(cause) =>
-              val failure = failureFrom(cause, SessionStage.Handler)
-              val reject  = response.fail(SessionRejection.SessionFailed(failure)).unit *>
-                failDeferred(state.pending.deferred, SessionRejection.SessionFailed(failure))
-              failure match
-                case _: SessionFailure.CommitDefect => reject *> crash(failure)
-                case _                              => reject *> navigationCrash(state, failure)
+    controlled(commit(Some(pending.committed), pending.candidate, work, None, publish = false)).exit
+      .flatMap {
+        case Exit.Success(interim) =>
+          val (committed, removed) =
+            removeDormantComponents(interim.value, pending.componentDestructions)
+          finishComponentDestruction(committed, removed) {
+            continuePatchAcknowledgement(
+              state,
+              committed,
+              interim.work,
+              commandId,
+              response
+            )
           }
-      case None =>
-        continuePatchAcknowledgement(
-          state,
-          pending.committed,
-          work,
-          commandId,
-          response
-        )
-    end match
+        case Exit.Failure(cause) if cause.isInterruptedOnly =>
+          response.fail(SessionRejection.Terminal("closed")).unit
+        case Exit.Failure(cause) =>
+          val failure = failureFrom(cause, SessionStage.Handler)
+          val reject  = response.fail(SessionRejection.SessionFailed(failure)).unit *>
+            failDeferred(state.pending.deferred, SessionRejection.SessionFailed(failure))
+          failure match
+            case _: SessionFailure.CommitDefect => reject *> crash(failure)
+            case _                              => reject *> navigationCrash(state, failure)
+      }
   end acknowledgePatch
 
   private def continuePatchAcknowledgement(
@@ -1122,8 +1105,6 @@ final private[scalive] class SessionKernel[Msg, Model] private (
       SessionCommand.ParamsPatch(state.epoch, pending.destination),
       response
     )
-    val stagedModel =
-      if pending.componentCandidate.nonEmpty then base.model else pending.stagedModel
     val active: SessionState.Active[Msg, Model] = SessionState.Active(epoch, base)
     val halted: SessionState.Active[Msg, Model] =
       SessionState.Active(epoch, base.copy(url = pending.destination))
@@ -1134,13 +1115,13 @@ final private[scalive] class SessionKernel[Msg, Model] private (
       reloadUrl = Some(pending.destination),
       deferred = pending.deferred,
       onHalt = Some(
-        ZIO.foreachDiscard(pending.componentCandidate)(_.reservation.release) *>
+        pending.candidate.reservation.release *>
           haltActiveTurn(halted, replay, Some(tracked))
       )
     ) {
       Clock.nanoTime.flatMap { handlerStarted =>
         val paramsDraft = phase(SessionStage.Handler)(
-          logic.handleParams(stagedModel, pending.destination)
+          logic.handleParams(base.model, pending.destination)
         )
         controlled(paramsDraft).exit.flatMap {
           case Exit.Success(draft) if draft.navigation.nonEmpty =>
@@ -3429,11 +3410,15 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     state: SessionState.Active[Msg, Model],
     work: ImmutableQueue[Work[Msg, Model]],
     candidate: TurnCandidate[Msg, Model],
-    response: Option[TrackedCommand]
+    response: Option[TrackedCommand],
+    redirectCount: Int = 0,
+    deferred: Vector[DeferredSessionCommand[Msg, Model]] = Vector.empty
   ): UIO[Unit] =
     val request = candidate.draft.navigation.get
     if request.kind.isPatch || !logic.terminateOnNavigate then
-      controlled(publishCandidatePatch(state.committed, work, candidate, response)).exit.flatMap {
+      val publish =
+        publishCandidatePatch(state.committed, work, candidate, response, redirectCount, deferred)
+      controlled(publish).exit.flatMap {
         case Exit.Success((pending, nextWork, _)) =>
           val complete = response.fold[UIO[Unit]](ZIO.unit) { command =>
             command.response
@@ -3450,12 +3435,14 @@ final private[scalive] class SessionKernel[Msg, Model] private (
           ) *> discardCandidate(candidate) *>
             response.fold[UIO[Unit]](ZIO.unit)(
               _.response.fail(SessionRejection.Terminal("closed")).unit
-            )
+            ) *>
+            failDeferred(deferred, SessionRejection.Terminal("closed"))
         case Exit.Failure(cause) =>
           val failure = failureFrom(cause, SessionStage.OutputReservation)
           observeCandidateTurnFailed(candidate, failure) *>
             discardCandidate(candidate) *>
-            failActiveTurn(state, response, failure)
+            failActiveTurn(state, response, failure) *>
+            failDeferred(deferred, SessionRejection.SessionFailed(failure))
       }
     else
       controlled(publishCandidateTerminal(candidate, response.map(_.id))).exit.flatMap {
@@ -3507,7 +3494,9 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     committed: Committed[Msg, Model],
     work: ImmutableQueue[Work[Msg, Model]],
     candidate: TurnCandidate[Msg, Model],
-    response: Option[TrackedCommand]
+    response: Option[TrackedCommand],
+    redirectCount: Int,
+    deferred: Vector[DeferredSessionCommand[Msg, Model]]
   ): ZIO[
     Any,
     SessionFailure,
@@ -3546,12 +3535,11 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                   request.destination,
                   request.kind,
                   committed,
-                  candidate.draft.model,
                   request.flash,
                   now.plus(config.navigationTimeout),
-                  0,
-                  Vector.empty,
-                  Some(candidate)
+                  redirectCount,
+                  deferred,
+                  candidate
                 )
     yield (pending, nextWork, navigation)
     end for
@@ -3612,6 +3600,8 @@ final private[scalive] class SessionKernel[Msg, Model] private (
       )
     else stageTerminalNavigation(committed, draft, work, response, deferred, startedAtNanos)
 
+  // The whole turn is staged as a candidate, so its resource operations, component updates, and
+  // upload plans commit with its model once the browser acknowledges the navigation.
   private def stagePatchNavigation(
     committed: Committed[Msg, Model],
     draft: TurnDraft[Msg, Model],
@@ -3621,115 +3611,40 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     deferred: Vector[DeferredSessionCommand[Msg, Model]],
     startedAtNanos: Option[Long]
   ): UIO[Unit] =
-    turnStartedAt(startedAtNanos).flatMap { started =>
-      val request = draft.navigation.get
-      val failure =
-        if redirectCount > config.navigationRedirectLimit then
-          Some(SessionFailure.NavigationRedirectOverflow(config.navigationRedirectLimit))
-        else None
-
-      failure match
-        case Some(value) =>
-          val active: SessionState.Active[Msg, Model] = SessionState.Active(epoch, committed)
-          observeNewTurnFailed(
-            response,
-            started,
-            LifecycleError(LifecycleFailure.Stage(LifecycleFailureStage.Navigation), Some(value))
-          ) *> failActiveTurn(active, response, value) *>
-            failDeferred(deferred, SessionRejection.SessionFailed(value))
-        case None =>
-          val effect = ZIO.uninterruptibleMask { restore =>
-            for
-              reservation <- reserveOutput(awaitsOutput(response), restore)
-              result      <- (for
-                          navigationId <- restore(identity(NavigationId.fresh()))
-                          turnId       <- restore(identity(TurnId.fresh()))
-                          _   <- restore(validateContinuations(work.size, draft.continuations.size))
-                          now <- zio.Clock.instant
-                          deadline = now.plus(config.navigationTimeout)
-                          output   = NavigationOutput(
-                                     navigationId,
-                                     request.destination,
-                                     request.kind,
-                                     request.flash
-                                   )
-                          pending = PendingNavigation(
-                                      navigationId,
-                                      committed.url,
-                                      request.destination,
-                                      request.kind,
-                                      committed,
-                                      draft.model,
-                                      request.flash,
-                                      deadline,
-                                      redirectCount,
-                                      deferred
-                                    )
-                          nextWork = work.enqueueAll(
-                                       draft.continuations.map(message =>
-                                         Work.Continuation(
-                                           message,
-                                           RuntimeTraceInitiator.Runtime
-                                         )
-                                       )
-                                     )
-                          correlation = RuntimeCorrelation(
-                                          connection,
-                                          lifecycle,
-                                          epoch,
-                                          command = response.map(_.id),
-                                          turn = Some(turnId),
-                                          revision = Some(committed.revision),
-                                          navigation = Some(navigationId)
-                                        )
-                          sessionOutput = SessionOutput(
-                                            response.map(_.id),
-                                            RenderDelta.Empty,
-                                            Some(output),
-                                            draft.effects,
-                                            draft.reply
-                                          )
-                          _ <- observer.prepareOutput(correlation, sessionOutput)
-                          _ <- reservation.publish(
-                                 OutboundBatch.single(sessionOutput)
-                               )
-                          _ <- observer.emit(RuntimeEvent.OutputPublished(correlation))
-                        yield (turnId, pending, nextWork)).onError(_ => reservation.release)
-            yield result
-          }
-          controlled(effect).exit.flatMap {
-            case Exit.Success((turnId, pending, nextWork)) =>
-              val complete = response.fold[UIO[Unit]](ZIO.unit) { command =>
-                command.response
-                  .succeed(
-                    TurnResult(command.id, turnId, committed.revision, RenderDelta.Empty)
-                  ).unit
-              }
-              complete *> observeTurnSucceeded(turnId, response, started) *>
-                loop(SessionState.Navigating(epoch, pending), nextWork)
-            case Exit.Failure(cause) if cause.isInterruptedOnly =>
-              observeNewTurnFailed(
-                response,
-                started,
-                LifecycleError(LifecycleFailure.Interrupted)
-              ) *> response.fold[UIO[Unit]](ZIO.unit)(
-                _.response.fail(SessionRejection.Terminal("closed")).unit
-              ) *>
-                failDeferred(deferred, SessionRejection.Terminal("closed"))
-            case Exit.Failure(cause) =>
-              val value = failureFrom(cause, SessionStage.OutputReservation)
-              observeNewTurnFailed(
-                response,
-                started,
-                LifecycleError(
-                  LifecycleFailure.Stage(LifecycleFailureStage.OutputReservation),
-                  Some(value)
-                )
-              ) *> failActiveTurn(SessionState.Active(epoch, committed), response, value) *>
-                failDeferred(deferred, SessionRejection.SessionFailed(value))
-          }
-      end match
-    }
+    val active: SessionState.Active[Msg, Model] = SessionState.Active(epoch, committed)
+    if redirectCount > config.navigationRedirectLimit then
+      val failure = SessionFailure.NavigationRedirectOverflow(config.navigationRedirectLimit)
+      turnStartedAt(startedAtNanos).flatMap { started =>
+        observeNewTurnFailed(
+          response,
+          started,
+          LifecycleError(LifecycleFailure.Stage(LifecycleFailureStage.Navigation), Some(failure))
+        ) *> failActiveTurn(active, response, failure) *>
+          failDeferred(deferred, SessionRejection.SessionFailed(failure))
+      }
+    else
+      runTurn(
+        Some(committed),
+        ZIO.succeed(draft),
+        work,
+        response,
+        startedAtNanos = startedAtNanos
+      ).exit.flatMap {
+        case Exit.Success(StagedTurn.Navigation(candidate)) =>
+          stageCandidateNavigation(active, work, candidate, response, redirectCount, deferred)
+        case Exit.Success(committedTurn) =>
+          val replay = work.enqueueAll(deferred.map(Work.Correlated(_)))
+          finishStagedTurn(active, replay, committedTurn, response)
+        case Exit.Failure(cause) if cause.isInterruptedOnly =>
+          response.fold[UIO[Unit]](ZIO.unit)(
+            _.response.fail(SessionRejection.Terminal("closed")).unit
+          ) *> failDeferred(deferred, SessionRejection.Terminal("closed"))
+        case Exit.Failure(cause) =>
+          val failure = failureFrom(cause, SessionStage.Handler)
+          failActiveTurn(active, response, failure) *>
+            failDeferred(deferred, SessionRejection.SessionFailed(failure))
+      }
+    end if
   end stagePatchNavigation
 
   private def stageTerminalNavigation(
@@ -3947,7 +3862,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     val rejection = SessionRejection.SessionFailed(failure)
     ZIO.foreachDiscard(additional)(_.fail(rejection).unit) *>
       failDeferred(state.pending.deferred, rejection) *>
-      ZIO.foreachDiscard(state.pending.componentCandidate)(discardCandidate) *>
+      discardCandidate(state.pending.candidate) *>
       ZIO.uninterruptible(activeOwner.close).exit.flatMap { cleanup =>
         crash(failure) *> restoreCleanup(Vector(cleanup))
       }

@@ -557,13 +557,26 @@ object ManagedComponentSubscriptionsKernelSpec extends ZIOSpecDefault:
             _ <- ZIO.when(navigating)(
                    kernel.submit(SessionCommand.Message(kernel.epoch, RootMessage.Navigate)).unit
                  )
-            _     <- kernel.destroyComponents(Vector(token))
+            _       <- kernel.destroyComponents(Vector(token))
+            staged  <- kernel.inspect
+            // The staged navigation turn owns snapshots of the dormant parent, so destruction
+            // waits for the acknowledgement that commits it.
+            _ <- ZIO.when(navigating)(
+                   kernel
+                     .submit(
+                       SessionCommand.ParamsPatch(
+                         kernel.epoch,
+                         URL.decode("/managed-component-subscriptions").toOption.get
+                       )
+                     ).unit
+                 )
             after <- kernel.inspect
           yield assertTrue(
             hidden.managedResources.values.size == 2,
             hidden.managedResources.values.forall(
               _.isInstanceOf[ManagedResource.SuspendedSubscription]
             ),
+            staged.components.allValues.isEmpty != navigating,
             after.components.allValues.isEmpty,
             after.managedResources.values.isEmpty
           )

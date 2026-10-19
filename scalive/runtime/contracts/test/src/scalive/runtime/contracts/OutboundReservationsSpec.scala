@@ -17,6 +17,50 @@ object OutboundReservationsSpec extends ZIOSpecDefault:
         saturated    <- reservations.reserve.either
       yield assertTrue(saturated == Left(OutboundReservationError.Saturated(1)))
     },
+    test("awaitCapacity waits until the consumer takes a slot") {
+      for
+        reservations <- InMemoryOutboundReservations.make[String](1)
+        first        <- reservations.reserve
+        waiting      <- reservations.awaitCapacity.fork
+        _            <- ZIO.yieldNow
+        beforeTake   <- waiting.poll
+        _            <- first.publish(OutboundBatch.single("first"))
+        _            <- reservations.take
+        _            <- waiting.join
+        second       <- reservations.reserve.either
+      yield assertTrue(beforeTake.isEmpty, second.isRight)
+    },
+    test("awaitCapacity returns at once when a slot is free") {
+      for
+        reservations <- InMemoryOutboundReservations.make[String](2)
+        _            <- reservations.reserve
+        completed    <- reservations.awaitCapacity.timeout(Duration.fromSeconds(1L))
+      yield assertTrue(completed.contains(()))
+    },
+    test("awaitCapacity is interruptible and installs nothing") {
+      for
+        reservations <- InMemoryOutboundReservations.make[String](1)
+        first        <- reservations.reserve
+        waiting      <- reservations.awaitCapacity.fork
+        _            <- waiting.interrupt
+        _            <- first.publish(OutboundBatch.single("first"))
+        observed     <- reservations.take
+        afterTake    <- reservations.reserve.either
+      yield assertTrue(observed == OutboundBatch.single("first"), afterTake.isRight)
+    },
+    test("shutdown releases a pending awaitCapacity") {
+      for
+        reservations <- InMemoryOutboundReservations.make[String](1)
+        _            <- reservations.reserve
+        waiting      <- reservations.awaitCapacity.fork
+        _            <- reservations.shutdown
+        completed    <- waiting.join.timeout(Duration.fromSeconds(1L))
+        result       <- reservations.reserve.either
+      yield assertTrue(
+        completed.contains(()),
+        result == Left(OutboundReservationError.Shutdown)
+      )
+    },
     test("takes batches in reservation order when publication is out of order") {
       val firstBatch  = OutboundBatch.from(List("first-1", "first-2"))
       val secondBatch = OutboundBatch.single("second")

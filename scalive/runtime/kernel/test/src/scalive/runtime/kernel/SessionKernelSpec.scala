@@ -28,8 +28,27 @@ object SessionKernelSpec extends ZIOSpecDefault:
     reserveEffect: ZIO[Any, OutboundReservationError, OutboundReservation[SessionOutput]])
       extends OutboundReservations[SessionOutput]:
     override def reserve  = reserveEffect
+    override def awaitCapacity = ZIO.unit
     override def take     = ZIO.fail(OutboundReservationError.Shutdown)
     override def shutdown = ZIO.unit
+
+  /** Delegates to real reservations and records when a turn waits for a free slot. */
+  final private class CapacityProbe(
+    underlying: OutboundReservations[SessionOutput],
+    waited: Promise[Nothing, Unit])
+      extends OutboundReservations[SessionOutput]:
+    override def reserve       = underlying.reserve
+    override def awaitCapacity = waited.succeed(()) *> underlying.awaitCapacity
+    override def take          = underlying.take
+    override def shutdown      = underlying.shutdown
+
+  /** Ordinary inspection competes with backpressured runtime producers for mailbox slots. */
+  private def retryMailboxSaturated[A](
+    effect: ZIO[Any, SessionRejection, A]
+  ): ZIO[Any, SessionRejection, A] =
+    effect.catchSome { case SessionRejection.MailboxSaturated(_) =>
+      ZIO.yieldNow *> retryMailboxSaturated(effect)
+    }
 
   private def recordingOutbound
     : UIO[(OutboundReservations[SessionOutput], Ref[Vector[OutboundBatch[SessionOutput]]])] =
@@ -368,6 +387,98 @@ object SessionKernelSpec extends ZIOSpecDefault:
           state.model == 4,
           state.managedResources.values.isEmpty,
           resourceState == PreparedResource.State.Closed
+        )
+      }
+    },
+    test("lossless subscription turns wait for an outbound slot instead of failing the session") {
+      ZIO.scoped {
+        val lifecycle = LifecycleId(102L)
+        val owner     = OwnerId.Root(lifecycle)
+        val key       = SubscriptionKey("backpressured-subscription")
+        for
+          reservations <- InMemoryOutboundReservations.make[SessionOutput](2)
+          waited       <- Promise.make[Nothing, Unit]
+          program      <- textProgram
+          logic = SessionLogic[Int, Int](
+                    bootstrap = ZIO.succeed(TurnDraft(0)),
+                    handle = (model, message) =>
+                      if message == 0 then
+                        ZIO.succeed(
+                          TurnDraft(
+                            model,
+                            resourceOperations = Vector(
+                              ResourceOperation.StartSubscription(
+                                owner,
+                                key,
+                                SubscriptionDelivery.Lossless,
+                                ZStream.fromIterable(1 to 8),
+                                replace = false
+                              )
+                            )
+                          )
+                        )
+                      else ZIO.succeed(TurnDraft(model + message))
+                  )
+          kernel <- SessionKernel.start(
+                      config,
+                      logic,
+                      program,
+                      CapacityProbe(reservations, waited),
+                      providedLifecycle = Some(lifecycle)
+                    )
+          // Bootstrap and this turn fill both slots while nothing consumes them.
+          _          <- kernel.submit(SessionCommand.Message(kernel.epoch, 0))
+          _          <- waited.await.raceFirst(kernel.awaitTermination.unit)
+          waitedSlot <- waited.isDone
+          _          <- reservations.take.forever.forkScoped
+          model      <- retryMailboxSaturated(kernel.inspect)
+                     .map(_.model).repeatUntil(_ == (1 to 8).sum).either
+        yield assertTrue(waitedSlot, model == Right((1 to 8).sum))
+      }
+    } @@ TestAspect.timeout(10.seconds),
+    test("browser commands still fail the session when outbound slots are saturated") {
+      ZIO.scoped {
+        val compiled = RenderProgram.compile[Int, Int] { model =>
+          button(on.click((_: Map[String, String]) => 5), model.map(_.toString))
+        }
+        for
+          reservations <- InMemoryOutboundReservations.make[SessionOutput](1)
+          waited       <- Promise.make[Nothing, Unit]
+          program      <- ZIO.fromEither(compiled)
+          kernel       <- SessionKernel.start(
+                      config,
+                      standardLogic(),
+                      program,
+                      CapacityProbe(reservations, waited)
+                    )
+          // Bootstrap fills the only slot while nothing consumes it.
+          binding <- kernel.inspect.map(_.render.bindings.ids.head)
+          result  <- kernel
+                      .submit(
+                        SessionCommand.ClientEvent(
+                          kernel.epoch,
+                          binding,
+                          BindingPayload.Params(Map.empty)
+                        )
+                      ).either
+          terminal   <- kernel.awaitTermination
+          waitedSlot <- waited.isDone
+        yield assertTrue(
+          result match
+            case Left(
+                  SessionRejection.SessionFailed(
+                    SessionFailure.StageFailed(SessionStage.OutputReservation, detail)
+                  )
+                ) =>
+              detail.contains("Saturated(1)")
+            case _ => false
+          ,
+          terminal match
+            case SessionState.Crashed(_, SessionFailure.StageFailed(stage, _)) =>
+              stage == SessionStage.OutputReservation
+            case _ => false
+          ,
+          !waitedSlot
         )
       }
     },

@@ -268,7 +268,10 @@ These bounds are part of lifecycle semantics:
 - A reserved kernel path admits the matching browser patch acknowledgement even
   while ordinary commands are deferred behind navigation.
 - `OutboundReservations` acquires a per-lifecycle publication position before
-  commit, preserving accepted output order within that lifecycle.
+  commit, preserving accepted output order within that lifecycle. When every
+  position is taken, turns from managed subscriptions and async tasks wait for
+  the outbound loop to free one; other turns fail the lifecycle, which bounds
+  the output a slow client can make it hold.
 - `SerialWriter` performs physical writes one at a time and turns writer failure
   into connection shutdown, including when multiple lifecycles share the socket.
 

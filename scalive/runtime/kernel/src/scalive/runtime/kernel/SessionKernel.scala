@@ -288,7 +288,12 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                   )
                 )
               case Some(_) =>
-                publishTerminalNavigation(draft, None, existingContinuations = 0)
+                publishTerminalNavigation(
+                  draft,
+                  None,
+                  existingContinuations = 0,
+                  awaitOutput = false
+                )
                   .tap { case (turnId, _) =>
                     observeTurnSucceededAs(
                       turnId,
@@ -924,7 +929,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
         case Some(command) =>
           val publish = ZIO.uninterruptibleMask { restore =>
             for
-              reservation <- restore(reservationPhase(outbound.reserve))
+              reservation <- reserveOutput(awaitsOutput(response), restore)
               result      <- (for
                           turnId <- restore(identity(TurnId.fresh()))
                           output      = SessionOutput(Some(command.id), RenderDelta.Empty)
@@ -1559,7 +1564,8 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                                         componentAction,
                                         commandId,
                                         started,
-                                        kind
+                                        kind,
+                                        awaitsOutput(command)
                                       )
                                     )
                                   )
@@ -1621,7 +1627,8 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     componentAction: Option[(ComponentInstanceId, ComponentAction)],
     command: Option[CommandId],
     startedAtNanos: Long,
-    observedKind: LifecycleTurnKind
+    observedKind: LifecycleTurnKind,
+    awaitOutput: Boolean
   ): ZIO[Any, SessionFailure, TurnCandidate[Msg, Model]] =
     ZIO.uninterruptibleMask { restore =>
       for
@@ -1712,7 +1719,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                             nestedComponents.forest.components.map(_.id),
                           auxiliaryScope
                         )
-                      reservation <- reserve(auxiliaryScope)
+                      reservation <- reserve(auxiliaryScope, awaitOutput)
                       finalDraft  <- phase(SessionStage.AfterRender)(
                                       logic.afterRender(reconciledDraft)
                                     ).tap(next => uploadRollback.set(next.uploadRollback))
@@ -3065,10 +3072,11 @@ final private[scalive] class SessionKernel[Msg, Model] private (
       )
 
   private def reserve(
-    candidateScope: CandidateScope
+    candidateScope: CandidateScope,
+    awaitOutput: Boolean
   ): ZIO[Any, SessionFailure, OutboundReservation[SessionOutput]] =
-    ZIO.uninterruptible {
-      reservationPhase(outbound.reserve).flatMap { reservation =>
+    ZIO.uninterruptibleMask { restore =>
+      reserveOutput(awaitOutput, restore).flatMap { reservation =>
         candidateScope
           .addFinalizer(reservation.release).onError(_ => reservation.release).as(reservation)
       }
@@ -3599,7 +3607,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
         case None =>
           val effect = ZIO.uninterruptibleMask { restore =>
             for
-              reservation <- restore(reservationPhase(outbound.reserve))
+              reservation <- reserveOutput(awaitsOutput(response), restore)
               result      <- (for
                           navigationId <- restore(identity(NavigationId.fresh()))
                           turnId       <- restore(identity(TurnId.fresh()))
@@ -3704,7 +3712,8 @@ final private[scalive] class SessionKernel[Msg, Model] private (
         publishTerminalNavigation(
           draft,
           response.map(_.id),
-          work.size
+          work.size,
+          awaitsOutput(response)
         )
       ).exit.flatMap {
         case Exit.Success((turnId, navigation)) =>
@@ -3760,12 +3769,13 @@ final private[scalive] class SessionKernel[Msg, Model] private (
   private def publishTerminalNavigation(
     draft: TurnDraft[Msg, Model],
     command: Option[CommandId],
-    existingContinuations: Int
+    existingContinuations: Int,
+    awaitOutput: Boolean
   ): ZIO[Any, SessionFailure, (TurnId, NavigationOutput)] =
     val request = draft.navigation.get
     ZIO.uninterruptibleMask { restore =>
       for
-        reservation <- restore(reservationPhase(outbound.reserve))
+        reservation <- reserveOutput(awaitOutput, restore)
         result      <- (for
                     _ <- restore(
                            validateContinuations(existingContinuations, draft.continuations.size)
@@ -3812,7 +3822,9 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     startedAtNanos: Option[Long]
   ): UIO[Unit] =
     turnStartedAt(startedAtNanos).flatMap { started =>
-      controlled(publishDisconnect(committed, response.map(_.id), reason)).exit.flatMap {
+      controlled(
+        publishDisconnect(committed, response.map(_.id), reason, awaitsOutput(response))
+      ).exit.flatMap {
         case Exit.Success(turnId) =>
           val complete = response.fold[UIO[Unit]](ZIO.unit) { command =>
             command.response
@@ -3866,11 +3878,12 @@ final private[scalive] class SessionKernel[Msg, Model] private (
   private def publishDisconnect(
     committed: Committed[Msg, Model],
     command: Option[CommandId],
-    reason: Option[String]
+    reason: Option[String],
+    awaitOutput: Boolean
   ): ZIO[Any, SessionFailure, TurnId] =
     ZIO.uninterruptibleMask { restore =>
       for
-        reservation <- restore(reservationPhase(outbound.reserve))
+        reservation <- reserveOutput(awaitOutput, restore)
         result      <- (for
                     turnId <- restore(identity(TurnId.fresh()))
                     correlation = RuntimeCorrelation(
@@ -3969,6 +3982,27 @@ final private[scalive] class SessionKernel[Msg, Model] private (
         else ZIO.fail(SessionFailure.StageFailed(SessionStage.Render, cause.prettyPrint)),
       ZIO.succeed(_)
     )
+
+  /** Runtime-owned producers already wait for mailbox capacity, so their turns also wait for an
+    * outbound slot rather than fail the session. Other commands still fail fast on saturation,
+    * which bounds the output a slow client can make the lifecycle hold.
+    */
+  private def awaitsOutput(command: Option[TrackedCommand]): Boolean =
+    command.exists(_.initiator == RuntimeInitiator.ManagedResource)
+
+  /** Must run masked: only the capacity wait is restored, so shutdown can interrupt it while a
+    * reservation, once installed, is handed to the caller without an interruption point.
+    */
+  private def reserveOutput(
+    awaitOutput: Boolean,
+    restore: ZIO.InterruptibilityRestorer
+  ): ZIO[Any, SessionFailure, OutboundReservation[SessionOutput]] =
+    def attempt: ZIO[Any, OutboundReservationError, OutboundReservation[SessionOutput]] =
+      outbound.reserve.catchSome {
+        case OutboundReservationError.Saturated(_) if awaitOutput =>
+          restore(outbound.awaitCapacity) *> attempt
+      }
+    reservationPhase(attempt)
 
   private def reservationPhase[A](
     effect: ZIO[Any, OutboundReservationError, A]

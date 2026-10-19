@@ -22,6 +22,7 @@ object ComponentKernelSpec extends ZIOSpecDefault:
 
   private final class Outbound extends OutboundReservations[SessionOutput]:
     def reserve  = ZIO.succeed(Reservation())
+    def awaitCapacity = ZIO.unit
     def take     = ZIO.fail(OutboundReservationError.Shutdown)
     def shutdown = ZIO.unit
 
@@ -765,6 +766,7 @@ object ComponentKernelSpec extends ZIOSpecDefault:
                   if index == 1 then ZIO.dieMessage("component publication defect") else ZIO.unit
                 def release = ZIO.unit
             }
+            def awaitCapacity = ZIO.unit
             def take     = ZIO.fail(OutboundReservationError.Shutdown)
             def shutdown = ZIO.unit
           program <- ZIO.fromEither(
@@ -957,6 +959,7 @@ object ComponentKernelSpec extends ZIOSpecDefault:
                 def publish(batch: OutboundBatch[SessionOutput]) = publications.update(_ + 1)
                 def release = ZIO.unit
             )
+            def awaitCapacity = ZIO.unit
             def take     = ZIO.fail(OutboundReservationError.Shutdown)
             def shutdown = ZIO.unit
           program <- ZIO.fromEither(

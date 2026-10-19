@@ -37,6 +37,7 @@ object ManagedComponentSubscriptionsKernelSpec extends ZIOSpecDefault:
 
   private final class Outbound extends OutboundReservations[SessionOutput]:
     def reserve  = ZIO.succeed(Reservation())
+    def awaitCapacity = ZIO.unit
     def take     = ZIO.fail(OutboundReservationError.Shutdown)
     def shutdown = ZIO.unit
 

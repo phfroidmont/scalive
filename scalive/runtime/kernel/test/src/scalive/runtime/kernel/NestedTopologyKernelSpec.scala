@@ -55,6 +55,7 @@ object NestedTopologyKernelSpec extends ZIOSpecDefault:
         events.update(_ :+ "publish") *> published.update(_ :+ batch)
       def release = ZIO.unit
     )
+    def awaitCapacity = ZIO.unit
     def take = ZIO.fail(OutboundReservationError.Shutdown)
     def shutdown = ZIO.unit
 

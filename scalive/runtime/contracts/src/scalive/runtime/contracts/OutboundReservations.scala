@@ -29,6 +29,13 @@ trait OutboundReservations[A]:
     */
   def reserve: ZIO[Any, OutboundReservationError, OutboundReservation[A]]
 
+  /** Waits until a consumer frees a slot or the reservations shut down.
+    *
+    * It installs nothing, so a producer that must not drop its output can interrupt it freely and
+    * then retry [[reserve]], which may still report saturation if another producer won the slot.
+    */
+  def awaitCapacity: UIO[Unit]
+
   /** Takes the next published batch, skipping released reservations. */
   def take: ZIO[Any, OutboundReservationError, OutboundBatch[A]]
 
@@ -39,6 +46,7 @@ final class InMemoryOutboundReservations[A] private (
   slots: Queue[Option[Promise[Nothing, Option[OutboundBatch[A]]]]],
   inFlight: Ref[Option[Promise[Nothing, Option[OutboundBatch[A]]]]],
   stopped: Promise[Nothing, Unit],
+  freed: Ref[Promise[Nothing, Unit]],
   gate: Semaphore,
   consumerGate: Semaphore)
     extends OutboundReservations[A]:
@@ -56,6 +64,18 @@ final class InMemoryOutboundReservations[A] private (
           yield reservation
       }
     })
+
+  override def awaitCapacity: UIO[Unit] =
+    // Read the signal before checking capacity: a slot freed after the check completes it.
+    freed.get.flatMap { signal =>
+      stopped.isDone.zipWith(slots.size)((done, size) => done || size < capacity).flatMap {
+        case true  => ZIO.unit
+        case false => signal.await
+      }
+    }
+
+  private def signalFreed: UIO[Unit] =
+    Promise.make[Nothing, Unit].flatMap(next => freed.getAndSet(next)).flatMap(_.succeed(())).unit
 
   override def take: ZIO[Any, OutboundReservationError, OutboundBatch[A]] =
     consumerGate.withPermit {
@@ -75,7 +95,7 @@ final class InMemoryOutboundReservations[A] private (
                 case true  => ZIO.fail(OutboundReservationError.Shutdown)
                 case false =>
                   restore(slots.take).flatMap {
-                    case Some(slot) => inFlight.set(Some(slot)).as(slot)
+                    case Some(slot) => inFlight.set(Some(slot)) *> signalFreed.as(slot)
                     case None       => ZIO.fail(OutboundReservationError.Shutdown)
                   }
               }
@@ -93,7 +113,7 @@ final class InMemoryOutboundReservations[A] private (
     }
 
   override def shutdown: UIO[Unit] =
-    gate.withPermit(stopped.succeed(()) *> slots.offer(None).unit)
+    gate.withPermit(stopped.succeed(()) *> slots.offer(None) *> signalFreed)
 end InMemoryOutboundReservations
 
 final private class PromiseOutboundReservation[A](
@@ -113,6 +133,15 @@ object InMemoryOutboundReservations:
         slots        <- Queue.dropping[Option[Promise[Nothing, Option[OutboundBatch[A]]]]](capacity)
         inFlight     <- Ref.make(Option.empty[Promise[Nothing, Option[OutboundBatch[A]]]])
         stopped      <- Promise.make[Nothing, Unit]
+        freed        <- Promise.make[Nothing, Unit].flatMap(Ref.make(_))
         gate         <- Semaphore.make(1L)
         consumerGate <- Semaphore.make(1L)
-      yield InMemoryOutboundReservations(capacity, slots, inFlight, stopped, gate, consumerGate)
+      yield InMemoryOutboundReservations(
+        capacity,
+        slots,
+        inFlight,
+        stopped,
+        freed,
+        gate,
+        consumerGate
+      )

@@ -42,6 +42,47 @@ object SessionKernelSpec extends ZIOSpecDefault:
     override def take          = underlying.take
     override def shutdown      = underlying.shutdown
 
+  /** Message 0 starts a never-ending async task and 1 cancels it, which queues its completion as
+    * a continuation mapped to 10. Message 2 queues continuations 3 and 4. Others add to the model.
+    */
+  private def followUpLogic(owner: OwnerId): SessionLogic[Int, Int] =
+    val key = AsyncKey[Int]("follow-up-async")
+    SessionLogic[Int, Int](
+      bootstrap = ZIO.succeed(TurnDraft(0)),
+      handle = (model, message) =>
+        message match
+          case 0 =>
+            ZIO.succeed(
+              TurnDraft(
+                model,
+                resourceOperations = Vector(
+                  ResourceOperation.StartAsync(
+                    owner,
+                    key,
+                    ZIO.never,
+                    {
+                      case LiveAsyncResult.Cancelled(_) => 10
+                      case _                            => -1
+                    }
+                  )
+                )
+              )
+            )
+          case 1 =>
+            ZIO.succeed(
+              TurnDraft(
+                model,
+                resourceOperations = Vector(
+                  ResourceOperation.CancelAsync(owner, key.asInstanceOf[AsyncKey[Any]], None)
+                )
+              )
+            )
+          case 2 => ZIO.succeed(TurnDraft(model, Vector(3, 4)))
+          case _ => ZIO.succeed(TurnDraft(model + message))
+      ,
+      handleAsync = Some((model, event) => ZIO.succeed(TurnDraft(model + event.message)))
+    )
+
   /** Ordinary inspection competes with backpressured runtime producers for mailbox slots. */
   private def retryMailboxSaturated[A](
     effect: ZIO[Any, SessionRejection, A]
@@ -434,6 +475,51 @@ object SessionKernelSpec extends ZIOSpecDefault:
           model      <- retryMailboxSaturated(kernel.inspect)
                      .map(_.model).repeatUntil(_ == (1 to 8).sum).either
         yield assertTrue(waitedSlot, model == Right((1 to 8).sum))
+      }
+    } @@ TestAspect.timeout(10.seconds),
+    test("continuation turns wait for an outbound slot instead of failing the session") {
+      ZIO.scoped {
+        for
+          reservations <- InMemoryOutboundReservations.make[SessionOutput](2)
+          waited       <- Promise.make[Nothing, Unit]
+          program      <- textProgram
+          kernel       <- SessionKernel.start(
+                      config,
+                      followUpLogic(OwnerId.Root(LifecycleId(103L))),
+                      program,
+                      CapacityProbe(reservations, waited),
+                      providedLifecycle = Some(LifecycleId(103L))
+                    )
+          // Bootstrap and this turn fill both slots before its continuations run.
+          _          <- kernel.submit(SessionCommand.Message(kernel.epoch, 2))
+          _          <- waited.await.raceFirst(kernel.awaitTermination.unit)
+          waitedSlot <- waited.isDone
+          _          <- reservations.take.forever.forkScoped
+          model      <- kernel.inspect.map(_.model).repeatUntil(_ == 7).either
+        yield assertTrue(waitedSlot, model == Right(7))
+      }
+    } @@ TestAspect.timeout(10.seconds),
+    test("a cancelled async completion waits for an outbound slot instead of failing") {
+      ZIO.scoped {
+        for
+          reservations <- InMemoryOutboundReservations.make[SessionOutput](3)
+          waited       <- Promise.make[Nothing, Unit]
+          program      <- textProgram
+          kernel       <- SessionKernel.start(
+                      config,
+                      followUpLogic(OwnerId.Root(LifecycleId(104L))),
+                      program,
+                      CapacityProbe(reservations, waited),
+                      providedLifecycle = Some(LifecycleId(104L))
+                    )
+          // Bootstrap, start and cancel fill all three slots before the completion runs.
+          _          <- kernel.submit(SessionCommand.Message(kernel.epoch, 0))
+          _          <- kernel.submit(SessionCommand.Message(kernel.epoch, 1))
+          _          <- waited.await.raceFirst(kernel.awaitTermination.unit)
+          waitedSlot <- waited.isDone
+          _          <- reservations.take.forever.forkScoped
+          model      <- kernel.inspect.map(_.model).repeatUntil(_ == 10).either
+        yield assertTrue(waitedSlot, model == Right(10))
       }
     } @@ TestAspect.timeout(10.seconds),
     test("browser commands still fail the session when outbound slots are saturated") {

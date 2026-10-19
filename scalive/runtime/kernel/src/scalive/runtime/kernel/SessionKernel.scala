@@ -3984,11 +3984,13 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     )
 
   /** Runtime-owned producers already wait for mailbox capacity, so their turns also wait for an
-    * outbound slot rather than fail the session. Other commands still fail fast on saturation,
-    * which bounds the output a slow client can make the lifecycle hold.
+    * outbound slot rather than fail the session. So do turns without a command: continuations
+    * queued by an earlier, already admitted turn and bounded by the continuation capacity. Other
+    * commands still fail fast on saturation, which bounds the output a slow client can make the
+    * lifecycle hold.
     */
   private def awaitsOutput(command: Option[TrackedCommand]): Boolean =
-    command.exists(_.initiator == RuntimeInitiator.ManagedResource)
+    command.forall(_.initiator == RuntimeInitiator.ManagedResource)
 
   /** Must run masked: only the capacity wait is restored, so shutdown can interrupt it while a
     * reservation, once installed, is handed to the caller without an interruption point.

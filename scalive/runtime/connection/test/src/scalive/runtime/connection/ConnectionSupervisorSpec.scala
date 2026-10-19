@@ -659,6 +659,46 @@ object ConnectionSupervisorSpec extends ZIOSpecDefault:
         )
       }
     },
+    test("a turn committing while the supervisor closes does not fail") {
+      ZIO.scoped {
+        object Child extends LiveView.Eventless[Unit]:
+          def mount(ctx: MountContext): Task[Unit] = ZIO.unit
+          def view(model: Signal[Unit]): HtmlElement[Nothing] = div("child")
+
+        for
+          entered <- Promise.make[Nothing, Unit]
+          release <- Promise.make[Nothing, Unit]
+          value   <- fixture
+          outputs <- Queue.unbounded[ConnectionOutput]
+          task     = AsyncKey[Unit]("held")
+          // Cancelling the task holds the commit, which waits for its finalizer, before the commit
+          // activates the nested topology: the window in which a closing socket closes the
+          // connection.
+          parent = new LiveView[Int, Int]:
+                     def mount(ctx: MountContext): Task[Int] = ctx.connection match
+                       case Connection.Disconnected         => ZIO.succeed(0)
+                       case Connection.Connected(connected) =>
+                         connected.async
+                           .start(task)(
+                             ZIO.never.onInterrupt(entered.succeed(()) *> release.await)
+                           )(_ => 0).as(0)
+                     def handleMessage(model: Int, ctx: MessageContext): Int => Task[Int] =
+                       message => ctx.async.cancel(task).as(message)
+                     def view(model: Signal[Int]): HtmlElement[Int] =
+                       div(model.map(_.toString), liveView("child", Child))
+          root    <- startRoot(value, parent, outputs)
+          _       <- outputs.take
+          turn    <- root.message(CommandId.fresh().toOption.get, 1).exit.fork
+          _       <- entered.await
+          closing <- value.supervisor.close.fork
+          _       <- zio.test.Live.live(ZIO.sleep(200.millis))
+          _       <- release.succeed(())
+          _       <- closing.join
+          _       <- turn.join
+          logs    <- ZTestLogger.logOutput
+        yield assertTrue(!logs.exists(_.logLevel == LogLevel.Error))
+      }
+    },
     test("child leave closes descendants and supervisor close closes every remaining lifecycle") {
       ZIO.scoped {
         object Grandchild extends LiveView.Eventless[Unit]:

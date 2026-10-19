@@ -694,11 +694,13 @@ final private[scalive] class ConnectionSupervisor private (
       }.flatMap { case (entries, starts, waiters, first) =>
         if !first then ZIO.unit
         else
+          // Lifecycles first: closing one waits for a turn that is committing, and that commit
+          // still activates its nested topology.
           RuntimeCleanup.all(
             Vector(
-              topology.close,
               RuntimeCleanup.all(entries.map(closeEntry)),
               RuntimeCleanup.all(starts.map(_.close(Exit.unit))),
+              topology.close,
               supervisorScope.close(Exit.unit)
             )
           ) *> ZIO.foreachDiscard(waiters)(_.succeed(()))

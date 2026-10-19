@@ -183,7 +183,10 @@ for final-path behavior.
 Each connected LiveView model, along with its tasks, subscriptions, and upload
 state, lives in the serving process. An established WebSocket remains attached
 to that process. After a disconnect, restart, or rollout, the client may reach
-another replica and performs a fresh connected mount.
+another replica and performs a fresh connected mount. Its LiveView renders the
+new markup, but its `<head>` keeps the assets it loaded before the rollout; an
+ordinary layout can [offer a reload](layouts.md#offer-a-reload-after-a-deployment)
+when they changed.
 
 Persist state that must survive reconnects or process loss in an
 application-owned shared service. Make mount effects repeatable, and keep route,

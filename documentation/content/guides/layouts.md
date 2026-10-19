@@ -166,7 +166,8 @@ layout on a session or route.
 Selection uses the context available **where the layout is installed**.
 Appending another mount aspect afterward does not make the layout read the
 final accumulated context. Only the layout's context value is adapted;
-parameters, request, URL, content, and page title are unchanged. Selectors must
+parameters, request, URL, connection, content, and page title are unchanged.
+Selectors must
 be pure and deterministic: a root layout applies its selector separately for
 `key` and `view`. The default root, used when no root layout is installed, stays
 unchanged and does not evaluate the selector.
@@ -176,6 +177,31 @@ keeps a layout through a later aspect, and overrides the root for one route.
 Its fixed context aspects demonstrate composition, not authentication:
 
 @:sourceRegion(documentation/site/src/scalive/docs/examples/LayoutContextExample.scala, shared-document-shell)
+
+## Offer a reload after a deployment {#offer-a-reload-after-a-deployment}
+
+An open page outlives a deployment: it reconnects to the new server and its
+LiveView renders the new markup, but its `<head>` keeps the stylesheets and
+scripts it loaded before. An ordinary layout can tell the visitor and offer a
+reload, for every route it wraps:
+
+@:sourceRegion(documentation/fixtures/guides/src/layouts/UpdateNoticeLayout.scala, layouts-update-notice)
+
+The disconnected HTML and each connected lifecycle render a layout separately.
+@:apiSymbol(val:scalive.LiveLayoutContext.connection)`ctx.connection`@:@ is
+`Connection.Disconnected` for the HTML and `Connection.Connected` once the
+browser has joined, with the
+@:apiSymbol(trait:scalive.ConnectedMetadata)`ConnectedMetadata`@:@ the LiveView
+sees too. Its `staticChanged` is `true` when the running server's root layout
+tracks an asset the page has not loaded; see
+[tracked tags](static-assets-and-client-setup.md#read-connect-metadata). The
+value stays the same for the lifecycle, so the notice appears as the page
+reconnects and disappears with the reload.
+
+The link reloads the current URL with a full page request, and the visitor
+chooses when: an automatic reload would discard form input that LiveView
+otherwise restores after the reconnect. Root layouts cannot show the notice,
+because they render only the first HTTP response.
 
 ## Related tasks {#related-tasks}
 

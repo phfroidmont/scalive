@@ -764,8 +764,8 @@
       "kind" : "class",
       "signatures" : [
         {
-          "id" : "class:scalive.LiveLayoutContext:dbc96b77ad230a0f",
-          "signature" : "class LiveLayoutContext[+A, +Ctx](params: Signal[A], request: Signal[zio.http.Request], currentUrl: Signal[zio.http.URL], context: Ctx)"
+          "id" : "class:scalive.LiveLayoutContext:81c888ab456e3ba5",
+          "signature" : "class LiveLayoutContext[+A, +Ctx](params: Signal[A], request: Signal[zio.http.Request], currentUrl: Signal[zio.http.URL], context: Ctx, connection: Connection[ConnectedMetadata])"
         }
       ]
     },
@@ -23373,6 +23373,18 @@
         {
           "id" : "val:scalive.LiveLayout.identity:dd55dea4b0760a70",
           "signature" : "val identity: LiveLayout[Any, Any]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveLayoutContext.connection",
+      "ownerId" : "class:scalive.LiveLayoutContext",
+      "qualifiedName" : "scalive.LiveLayoutContext.connection",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveLayoutContext.connection:e420eaa8f9906c75",
+          "signature" : "val connection: Connection[ConnectedMetadata]"
         }
       ]
     },

@@ -21,8 +21,14 @@ object LiveLayoutsSpec extends ZIOSpecDefault:
       val currentUrl                     = Signal.source[URL](new Object)
       val content                        = div[Message]()
       val outerContext                   = OuterContext("selected")
-      val rendered: HtmlElement[Message] =
-        adapted.view(content, LiveLayoutContext(params, request, currentUrl, outerContext))
+      val connection                     = Connection.Connected(new ConnectedMetadata:
+        val staticChanged = true
+        val connectParams = Map.empty
+      )
+      val rendered: HtmlElement[Message] = adapted.view(
+        content,
+        LiveLayoutContext(params, request, currentUrl, outerContext, connection)
+      )
       val passedContext = received.get
 
       assertTrue(
@@ -30,7 +36,8 @@ object LiveLayoutsSpec extends ZIOSpecDefault:
         passedContext.params eq params,
         passedContext.request eq request,
         passedContext.currentUrl eq currentUrl,
-        passedContext.context == "selected"
+        passedContext.context == "selected",
+        passedContext.connection eq connection
       )
     },
     test("root context adaptation projects key and render independently and forwards inputs") {
@@ -126,10 +133,13 @@ object LiveLayoutsSpec extends ZIOSpecDefault:
 
       val identityResult = LiveLayout.identity
         .forContext[String](identity)
-        .view(content, LiveLayoutContext(params, request, currentUrl, "unchanged"))
+        .view(
+          content,
+          LiveLayoutContext(params, request, currentUrl, "unchanged", Connection.Disconnected)
+        )
       val composedResult = composed.view(
         content,
-        LiveLayoutContext(params, request, currentUrl, true)
+        LiveLayoutContext(params, request, currentUrl, true, Connection.Disconnected)
       )
 
       assertTrue(identityResult eq content, composedResult eq content, received == "1")

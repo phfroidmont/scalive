@@ -43,7 +43,8 @@ trait ConnectedMetadata:
     * them. Query strings, fragments, and origins are ignored, and tracked tags inside LiveView
     * content are not compared. It stays the same for the whole lifecycle. Missing, malformed, or
     * empty tracking data from the browser yields `false`, and nested LiveViews always see `false`.
-    * Treat it as a hint, for example to trigger a full reload, not as a security signal.
+    * Ordinary layouts read the same value through [[LiveLayoutContext.connection]], so one layout
+    * can offer a reload on every page. Treat it as a hint, not as a security signal.
     */
   def staticChanged: Boolean
 

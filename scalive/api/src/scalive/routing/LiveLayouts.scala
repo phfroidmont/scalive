@@ -14,12 +14,17 @@ import zio.http.{Request, URL}
   * @param context
   *   The context produced by the session's or route's mount aspects, or the part of it selected
   *   with [[LiveLayout.forContext]].
+  * @param connection
+  *   Whether the layout renders the disconnected HTML or a connected lifecycle, and in the latter
+  *   case what the browser reported when it joined, such as
+  *   [[ConnectedMetadata.staticChanged staticChanged]]. It stays the same for the lifecycle.
   */
 final case class LiveLayoutContext[+A, +Ctx](
   params: Signal[A],
   request: Signal[Request],
   currentUrl: Signal[URL],
-  context: Ctx)
+  context: Ctx,
+  connection: Connection[ConnectedMetadata])
 
 /** Value-backed inputs available while rendering a root document.
   *
@@ -52,6 +57,10 @@ final case class LiveRootLayoutContext[+A, +Ctx](
   * rebuilt. Because `view` accepts content of any message type, the layout cannot send messages of
   * its own; use links, nested LiveViews, or browser hooks for interactive chrome.
   *
+  * The disconnected HTML and each connected lifecycle render the layout separately, and
+  * `context.connection` tells them apart. A connected layout can, for example, offer a reload when
+  * a deployment changed the assets the page loaded.
+  *
   * See the [layouts guide](https://scalive.dev/guides/layouts).
   */
 trait LiveLayout[-A, -Ctx]:
@@ -65,20 +74,13 @@ trait LiveLayout[-A, -Ctx]:
   /** Adapts this layout to another context type by selecting the context it needs.
     *
     * The selector must be pure and deterministic. It changes only this layout's input, not the
-    * route or session context; parameters, request, URL, and content are forwarded unchanged.
+    * route or session context; parameters, request, URL, connection, and content are forwarded
+    * unchanged.
     */
   final def forContext[NewContext](select: NewContext => Ctx): LiveLayout[A, NewContext] =
     new LiveLayout[A, NewContext]:
       def view[Msg](content: HtmlElement[Msg], context: LiveLayoutContext[A, NewContext]) =
-        LiveLayout.this.view(
-          content,
-          LiveLayoutContext(
-            context.params,
-            context.request,
-            context.currentUrl,
-            select(context.context)
-          )
-        )
+        LiveLayout.this.view(content, context.copy(context = select(context.context)))
 
 /** Predefined [[LiveLayout]] values. */
 object LiveLayout:
@@ -93,7 +95,8 @@ object LiveLayout:
   * reads; use `Any` for either when the layout does not read it.
   *
   * Scalive calls `view` only for the first HTTP response. Live updates patch the LiveView inside
-  * the document and never re-render the document itself, so its inputs are plain values.
+  * the document and never re-render the document itself, so its inputs are plain values. Render
+  * what depends on the connection, such as a reload offer after a deployment, in a [[LiveLayout]].
   *
   * See the [layouts guide](https://scalive.dev/guides/layouts).
   */

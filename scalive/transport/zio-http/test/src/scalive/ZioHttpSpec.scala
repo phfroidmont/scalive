@@ -2269,6 +2269,14 @@ object ZioHttpSpec extends ZIOSpecDefault:
     test("connected joins compare tracked assets with the running server's root layout") {
       val bundle  = AtomicReference("/assets/app-1.js")
       val changed = AtomicReference(Vector.empty[Boolean])
+      val layouts = AtomicReference(Vector.empty[Connection[ConnectedMetadata]])
+      object Notice extends LiveLayout[Any, Any]:
+        def view[Msg](content: HtmlElement[Msg], context: LiveLayoutContext[Any, Any]) =
+          layouts.updateAndGet(_ :+ context.connection)
+          context.connection match
+            case Connection.Connected(joined) if joined.staticChanged =>
+              div(span(idAttr := "update-notice", "New version"), content)
+            case _ => div(content)
       object Root extends LiveRootLayout[Any, Any]:
         def view[Msg](
           content: HtmlElement[Msg],
@@ -2285,7 +2293,8 @@ object ZioHttpSpec extends ZIOSpecDefault:
           )
         def view(model: Signal[Unit]) =
           div(scriptTag(phx.trackStatic := true, src := "/assets/content.js"))
-      val application = scalive.Live.router.withRootLayout(Root)(scalive.live -> View)
+      val application =
+        scalive.Live.router.withLayout(Notice).withRootLayout(Root)(scalive.live -> View)
 
       // The browser reports the URLs of the page it loaded, even when the server has changed since.
       def joinTracking(port: Int, beforeJoin: UIO[Unit]) =
@@ -2309,7 +2318,13 @@ object ZioHttpSpec extends ZIOSpecDefault:
           unchangedPage.trackedStatics.exists(_.startsWith("/_scalive/")),
           status(unchanged) == "ok",
           status(stale) == "ok",
-          changed.get() == Vector(false, true)
+          changed.get() == Vector(false, true),
+          layouts.get().map {
+            case Connection.Disconnected      => None
+            case Connection.Connected(joined) => Some(joined.staticChanged)
+          } == Vector(None, Some(false), None, Some(true)),
+          !unchanged.payload.toString.contains("update-notice"),
+          stale.payload.toString.contains("update-notice")
         )
       }
     },

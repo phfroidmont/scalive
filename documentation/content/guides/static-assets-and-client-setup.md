@@ -315,8 +315,10 @@ metadata, not an application recovery contract.
 
 Connected capabilities also expose
 @:apiSymbol(def:scalive.ConnectedMetadata.staticChanged)`staticChanged`@:@, the
-result of [tracked tag](#render-tracked-tags) comparison. Use it to replace
-stale connected state or to initiate a full reload. When a routed root LiveView
+result of [tracked tag](#render-tracked-tags) comparison. Ordinary layouts read
+the same value from their context, which makes them the place to
+[offer a reload after a deployment](layouts.md#offer-a-reload-after-a-deployment)
+for every route at once. When a routed root LiveView
 joins, the running server renders its root layout again and the result is `true`
 when one of that document's tracked URLs, including the scripts Scalive adds, is
 missing from the client's non-empty list. A page loaded before a deployment that

@@ -289,7 +289,13 @@ object ZioHttp:
   final private[scalive] case class PreparedConnected[Msg, Model](
     lifecycle: RootLifecycle[Msg, Model],
     admission: Option[PreparedAdmission],
-    trackedStatics: Vector[String])
+    joined: ConnectedMetadata)
+
+  // What the browser reported when a root LiveView joined, as its layouts and lifecycle see it.
+  final private case class JoinedMetadata(
+    staticChanged: Boolean,
+    connectParams: Map[String, Json])
+      extends ConnectedMetadata
 
   /** The one audited existential boundary. All route-specific types remain captured by the
     * implementation created in `erase`; transport/socket code only sees this sealed interface.
@@ -325,19 +331,6 @@ object ZioHttp:
     /** The route's path pattern, such as `/users/{id}`, for log annotations. */
     final def routeLabel: String = pathCodec.render
 
-    final def startConnected(
-      url: URL,
-      request: Request,
-      claims: ZioHttpSecurity.RootClaims,
-      metadata: RootConnectionMetadata,
-      sink: ConnectionOutput => Task[Unit]
-    ): ZIO[R & Scope, Throwable, RootConnection[Msg, Model]] =
-      for
-        path       <- ZIO.fromEither(pathCodec.decode(url.path).left.map(Exception(_)))
-        prepared   <- connectedLifecycle(path, request, url, claims, None)
-        connection <- startPrepared(prepared.lifecycle, metadata, sink)
-      yield connection
-
     final def startPrepared(
       lifecycle: RootLifecycle[Msg, Model],
       metadata: RootConnectionMetadata,
@@ -359,7 +352,9 @@ object ZioHttp:
       request: Request,
       url: URL,
       claims: ZioHttpSecurity.RootClaims,
-      admission: Option[TransportAdmission]
+      admission: Option[TransportAdmission],
+      connectParams: Map[String, Json],
+      browserStatics: Vector[String]
     ): ZIO[R, Throwable, PreparedConnected[Msg, Model]]
 
     final private[scalive] def prepareConnected(
@@ -367,27 +362,38 @@ object ZioHttp:
       request: Request,
       claims: ZioHttpSecurity.RootClaims
     ): ZIO[R, Throwable, RootLifecycle[Msg, Model]] =
-      prepareConnected(path = url, request = request, claims = claims, admission = None)
-        .map(_.lifecycle)
+      prepareConnected(url, request, claims, None, Map.empty, Vector.empty).map(_.lifecycle)
 
     final private def prepareConnected(
-      path: URL,
+      url: URL,
       request: Request,
       claims: ZioHttpSecurity.RootClaims,
-      admission: Option[TransportAdmission]
+      admission: Option[TransportAdmission],
+      connectParams: Map[String, Json],
+      browserStatics: Vector[String]
     ): ZIO[R, Throwable, PreparedConnected[Msg, Model]] =
       ZIO
-        .fromEither(pathCodec.decode(path.path).left.map(Exception(_))).flatMap(decoded =>
-          connectedLifecycle(decoded, request, path, claims, admission)
+        .fromEither(pathCodec.decode(url.path).left.map(Exception(_))).flatMap(decoded =>
+          connectedLifecycle(
+            decoded,
+            request,
+            url,
+            claims,
+            admission,
+            connectParams,
+            browserStatics
+          )
         )
 
     final private[scalive] def prepareConnectedForTransport(
       url: URL,
       request: Request,
       claims: ZioHttpSecurity.RootClaims,
-      admission: TransportAdmission
+      admission: TransportAdmission,
+      connectParams: Map[String, Json],
+      browserStatics: Vector[String]
     ): ZIO[R, Throwable, PreparedConnected[Msg, Model]] =
-      prepareConnected(url, request, claims, Some(admission))
+      prepareConnected(url, request, claims, Some(admission), connectParams, browserStatics)
 
     private def disconnected(
       path: PathParams,
@@ -725,6 +731,7 @@ object ZioHttp:
                 lifecycle,
                 request,
                 context,
+                Connection.Disconnected,
                 definition.layouts,
                 applicationLayouts,
                 decodePath
@@ -738,7 +745,9 @@ object ZioHttp:
         request: Request,
         url: URL,
         claims: ZioHttpSecurity.RootClaims,
-        admission: Option[TransportAdmission]
+        admission: Option[TransportAdmission],
+        connectParams: Map[String, Json],
+        browserStatics: Vector[String]
       ) =
         runConnectedContext(
           definition.context,
@@ -769,6 +778,14 @@ object ZioHttp:
               .flatMap(make(_, context, url))
               .zip(rootLayoutStatics(rootContext))
               .map { (lifecycle, rootStatics) =>
+                val joined = JoinedMetadata(
+                  staticChanged(
+                    clientTrackedStatics(connectParams),
+                    rootStatics ++ browserStatics,
+                    url
+                  ),
+                  connectParams
+                )
                 val initialized = lifecycle.copy(mount =
                   mountContext =>
                     ZIO.suspendSucceed {
@@ -784,12 +801,13 @@ object ZioHttp:
                     initialized,
                     request,
                     context,
+                    Connection.Connected(joined),
                     definition.layouts,
                     applicationLayouts,
                     decodePath
                   ),
                   connected.admission,
-                  rootStatics
+                  joined
                 )
               }).onError(_ => ZIO.foreachDiscard(connected.admission)(_.rollback))
         }
@@ -855,6 +873,7 @@ object ZioHttp:
     lifecycle: RootLifecycle[Msg, Model],
     request: Request,
     context: Ctx,
+    connection: Connection[ConnectedMetadata],
     layouts: Vector[LiveLayout[A, Ctx]],
     applicationLayouts: Vector[LiveLayout[Any, Any]],
     decodePath: URL => A
@@ -865,11 +884,11 @@ object ZioHttp:
       val requestSignal = currentUrl.map(url =>
         request.copy(url = URL(path = url.path, queryParams = url.queryParams))
       )
-      val routeContext = LiveLayoutContext(path, requestSignal, currentUrl, context)
+      val routeContext = LiveLayoutContext(path, requestSignal, currentUrl, context, connection)
       val routed       = layouts.foldRight(lifecycle.view(input))((layout, content) =>
         layout.view(content, routeContext)
       )
-      val applicationContext = LiveLayoutContext(path, requestSignal, currentUrl, ())
+      val applicationContext = LiveLayoutContext(path, requestSignal, currentUrl, (), connection)
       applicationLayouts.foldRight(routed)((layout, content) =>
         layout.view(content, applicationContext)
       ))
@@ -2258,7 +2277,9 @@ object ZioHttp:
                                 admitted.url,
                                 request,
                                 admitted.claims,
-                                transportAdmission
+                                transportAdmission,
+                                join.params,
+                                browserStatics
                               )
                             ).flatMap(value => pendingAdmission.set(value.admission) as value)
                           }
@@ -2271,11 +2292,7 @@ object ZioHttp:
                         currentUrl      <- Ref.make(admitted.url)
                         connectionReady <- Promise.make[Nothing, ConnectedLifecycle]
                         metadata = RootConnectionMetadata(
-                                     staticChanged = staticChanged(
-                                       clientTrackedStatics(join.params),
-                                       prepared.trackedStatics ++ browserStatics,
-                                       admitted.url
-                                     ),
+                                     staticChanged = prepared.joined.staticChanged,
                                      connectParams = join.params,
                                      initialFlash = flash
                                    )

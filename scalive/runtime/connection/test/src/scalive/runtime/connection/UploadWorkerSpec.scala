@@ -261,6 +261,7 @@ object UploadWorkerSpec extends ZIOSpecDefault:
                       client("defective", 1L)
                     )
           worker <- UploadEntryWorker.start(
+                      Set(LogAnnotation("upload", "avatar"), LogAnnotation("upload_entry", "entry")),
                       handle,
                       expectedBytes = 1L,
                       maxChunkBytes = 4,
@@ -279,10 +280,19 @@ object UploadWorkerSpec extends ZIOSpecDefault:
           firstResult  <- first.join.timeout(5.seconds)
           queuedResult <- queued.join.timeout(5.seconds)
           future       <- worker.offer(Chunk.single(3.toByte)).either
+          logs         <- ZTestLogger.logOutput
+          failures      = logs.filter(_.message() == "Upload worker failed")
         yield assertTrue(
           firstResult == Some(Left(UploadChunkError.WriterFailed("writer_error"))),
           queuedResult == Some(Left(UploadChunkError.WriterFailed("writer_error"))),
-          future == Left(UploadChunkError.Closed)
+          future == Left(UploadChunkError.Closed),
+          failures.nonEmpty,
+          failures.forall(entry =>
+            entry.logLevel == LogLevel.Warning && !entry.cause.isEmpty &&
+              entry.annotations.get("upload").contains("avatar") &&
+              entry.annotations.get("upload_entry").contains("entry")
+          ),
+          failures.exists(_.cause.prettyPrint.contains("failure callback defect"))
         )
       }
     },
@@ -311,6 +321,7 @@ object UploadWorkerSpec extends ZIOSpecDefault:
                       client("invalid.pdf", 1L)
                     )
           worker <- UploadEntryWorker.start(
+                      Set(LogAnnotation("upload", "avatar"), LogAnnotation("upload_entry", "entry")),
                       handle,
                       expectedBytes = 1L,
                       maxChunkBytes = 4,
@@ -326,10 +337,18 @@ object UploadWorkerSpec extends ZIOSpecDefault:
           beforeCommit <- zio.test.Live.live(result.join.timeout(100.millis))
           _            <- release.succeed(())
           afterCommit  <- result.join
+          logs         <- ZTestLogger.logOutput
         yield assertTrue(
           beforeCommit.isEmpty,
           afterCommit == Left(UploadChunkError.WriterFailed("invalid_pdf")),
-          reason == "invalid_pdf"
+          reason == "invalid_pdf",
+          logs.exists(entry =>
+            entry.logLevel == LogLevel.Debug &&
+              entry.message() == "Upload writer rejected an entry" &&
+              entry.annotations.get("reason").contains("invalid_pdf") &&
+              entry.annotations.get("operation").contains("write")
+          ),
+          !logs.exists(_.logLevel.ordinal >= LogLevel.Warning.ordinal)
         )
       }
     },

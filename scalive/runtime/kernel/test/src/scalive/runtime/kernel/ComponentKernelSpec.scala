@@ -659,7 +659,7 @@ object ComponentKernelSpec extends ZIOSpecDefault:
           result  <- SessionKernel.start(config, logic(seen), program, Outbound(), environment).either
         yield assertTrue(result.left.exists {
           case SessionFailure.StageFailed(SessionStage.Validation, details) =>
-            details.contains("did not stabilize")
+            details.prettyPrint.contains("did not stabilize")
           case _ => false
         })
       }
@@ -910,16 +910,22 @@ object ComponentKernelSpec extends ZIOSpecDefault:
           _      <- kernel.destroyComponents(tokens)
           state  <- kernel.awaitTermination
           closed <- attempts.get
+          logs   <- ZTestLogger.logOutput
+          errors = logs.filter(_.logLevel == LogLevel.Error)
         yield assertTrue(
           state match
             case SessionState.Crashed(
                   _,
                   SessionFailure.StageFailed(SessionStage.Retirement, details)
                 ) =>
-              details.contains(ids("retire-first").value.toString) &&
-                details.contains(ids("retire-middle").value.toString)
+              details.prettyPrint.contains(ids("retire-first").value.toString) &&
+                details.prettyPrint.contains(ids("retire-middle").value.toString)
             case _ => false,
-          closed == Vector(ids("retire-first"), ids("retire-middle"), ids("retire-last"))
+          closed == Vector(ids("retire-first"), ids("retire-middle"), ids("retire-last")),
+          errors.size == 1,
+          errors.head.message() == "LiveView crashed",
+          errors.head.annotations.get("stage").contains("retirement"),
+          errors.head.cause.prettyPrint.contains("retirement defect")
         )
       }
     },
@@ -1041,7 +1047,7 @@ object ComponentKernelSpec extends ZIOSpecDefault:
                       .start(config, logic(seen), program, Outbound(), FakeEnvironment(events)).either
         yield assertTrue(result.left.exists {
           case SessionFailure.StageFailed(SessionStage.Validation, details) =>
-            details.contains("duplicate component identity")
+            details.prettyPrint.contains("duplicate component identity")
           case _ => false
         })
       }

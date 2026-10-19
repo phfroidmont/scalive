@@ -145,7 +145,11 @@ object ManagedAsyncSpec extends ZIOSpecDefault:
             LiveAsyncResult.Cancelled(None),
             LiveAsyncResult.Succeeded(1)
           ),
-          logs.count(_.message().contains("managed async task 'outcome' died")) == 1
+          logs.count(entry =>
+            entry.logLevel == LogLevel.Warning &&
+              entry.message() == "Managed async task died with a defect" &&
+              entry.annotations.get("async_task").contains("outcome")
+          ) == 1
         )
       }
     },

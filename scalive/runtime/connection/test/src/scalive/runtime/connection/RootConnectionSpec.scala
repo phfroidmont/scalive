@@ -400,7 +400,12 @@ object RootConnectionSpec extends ZIOSpecDefault:
           staleOutput <- outputs.take
           model       <- connection.inspectModel
           logs        <- ZTestLogger.logOutput
-          warnings     = logs.filter(_.logLevel == LogLevel.Warning).map(_.message())
+          ignored      = logs
+                           .filter(entry =>
+                             entry.logLevel == LogLevel.Debug &&
+                               entry.message().startsWith("Ignored a browser event")
+                           )
+                           .flatMap(_.annotations.get("event"))
         yield assertTrue(
           pushedOutput.isInstanceOf[ConnectionOutput.Reply],
           rawOutput.isInstanceOf[ConnectionOutput.Reply],
@@ -409,9 +414,9 @@ object RootConnectionSpec extends ZIOSpecDefault:
             scalive.runtime.kernel.SessionRejection.UnknownBinding(staleBinding)
           ),
           model == 0,
-          warnings.exists(message => message.contains("'copied'") && message.contains("browserEvents")),
-          warnings.exists(_.contains("'save'")),
-          !warnings.exists(_.contains(staleBinding.encoded))
+          ignored.contains("copied"),
+          ignored.contains("save"),
+          !ignored.contains(staleBinding.encoded)
         )
       }
     },
@@ -492,6 +497,7 @@ object RootConnectionSpec extends ZIOSpecDefault:
           renders <- Ref.make(Vector.empty[String])
           outputs <- Queue.unbounded[ConnectionOutput]
           lifecycle = RootLifecycle[Int, Int](
+            "test-view",
             URL.root,
             LiveHooks.empty[Int, Int]
               .onParams((model, _, _) => order.update(_ :+ "params").as(LiveHookResult.cont(model + 1)))
@@ -548,6 +554,7 @@ object RootConnectionSpec extends ZIOSpecDefault:
           order   <- Ref.make(Vector.empty[String])
           outputs <- Queue.unbounded[ConnectionOutput]
           lifecycle = RootLifecycle[String, Int](
+                        viewName = "test-view",
                         initialUrl = URL.root,
                         hooks = LiveHooks.empty[String, Int]
                           .onRawEvent((model, _, _) =>
@@ -752,7 +759,7 @@ object RootConnectionSpec extends ZIOSpecDefault:
                       details
                     )
                   )
-                ) => details.contains("guard defect")
+                ) => details.prettyPrint.contains("guard defect")
             case _ => false,
           update.isEmpty
         )
@@ -1406,9 +1413,16 @@ object RootConnectionSpec extends ZIOSpecDefault:
           terminations = observed.collect {
                            case event: LifecycleEvent.LifecycleTerminated => event.reason
                          }
+          logs <- ZTestLogger.logOutput
         yield assertTrue(
           saturated == Left(ConnectionError.IngressSaturated(1)),
           terminal == ConnectionError.IngressSaturated(1),
+          logs.exists(entry =>
+            entry.logLevel == LogLevel.Warning &&
+              entry.message() == "LiveView stopped because a queue was saturated" &&
+              entry.annotations.contains("lifecycle_id")
+          ),
+          !logs.exists(_.logLevel == LogLevel.Error),
           pressure.exists(event =>
             event.queue == LifecycleQueue.ConnectionPendingCommands &&
               event.status == LifecycleQueueStatus.Saturated &&

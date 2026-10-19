@@ -23,6 +23,7 @@ object E2EApp extends ZIOAppDefault:
       label("level", level.fixed(5)).highlight |-|
       label("thread", fiberId).color(LogColor.WHITE) |-|
       label("message", quoted(line)).highlight |-|
+      allAnnotations |-|
       cause
 
   val logFilter = LogFilter.LogLevelByNameConfig(LogLevel.Debug)

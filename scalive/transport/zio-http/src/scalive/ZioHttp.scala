@@ -14,6 +14,7 @@ import scalive.protocol.phoenix.*
 import scalive.render.*
 import scalive.runtime.connection.*
 import scalive.runtime.contracts.*
+import scalive.runtime.kernel.RuntimeLog
 import scalive.runtime.kernel.RuntimeObserver
 import scalive.runtime.resources.*
 import scalive.upload.*
@@ -297,11 +298,16 @@ object ZioHttp:
       browser: BrowserFiles
     ): Route[R, Nothing] =
       RoutePattern(Method.GET, pathCodec) -> handler { (path: PathParams, request: Request) =>
-        disconnected(path, request, config, observer, browser).catchAllCause { _ =>
-          ZIO.logError("Disconnected LiveView GET failed") *>
-            ZIO.succeed(Response.internalServerError)
+        ZIO.logAnnotate(RuntimeLog.Route, routeLabel) {
+          disconnected(path, request, config, observer, browser).catchAllCause { cause =>
+            ZIO.logErrorCause("Disconnected LiveView request failed", cause) *>
+              ZIO.succeed(Response.internalServerError)
+          }
         }
       }
+
+    /** The route's path pattern, such as `/users/{id}`, for log annotations. */
+    final def routeLabel: String = pathCodec.render
 
     final def startConnected(
       url: URL,
@@ -377,21 +383,30 @@ object ZioHttp:
       disconnectedLifecycle(path, request).foldZIO(
         ZIO.succeed(_),
         (lifecycle, erasedContext, mountClaims, selectedRootLayout) =>
-          renderDisconnected(
-            path,
-            request,
-            config,
-            lifecycle,
-            erasedContext,
-            mountClaims,
-            selectedRootLayout,
-            observer,
-            browser
-          ).catchAllCause { cause =>
-            ZIO.logErrorCause("Disconnected LiveView GET failed", cause) *>
-              ZIO.succeed(
-                Response.text("Internal Server Error").copy(status = Status.InternalServerError)
-              )
+          DisconnectedRootTurn.freshLifecycleId.orDie.flatMap { lifecycleId =>
+            ZIO.logAnnotate(
+              LogAnnotation(RuntimeLog.LifecycleId, lifecycleId.value.toString),
+              LogAnnotation(RuntimeLog.View, lifecycle.viewName)
+            ) {
+              renderDisconnected(
+                path,
+                request,
+                config,
+                lifecycle,
+                lifecycleId,
+                erasedContext,
+                mountClaims,
+                selectedRootLayout,
+                observer,
+                browser
+              ).catchAllCause { cause =>
+                ZIO.logErrorCause("Disconnected LiveView render failed", cause) *>
+                  ZIO.succeed(
+                    Response
+                      .text("Internal Server Error").copy(status = Status.InternalServerError)
+                  )
+              }
+            }
           }
       )
 
@@ -400,6 +415,7 @@ object ZioHttp:
       request: Request,
       config: ZioHttpConfig,
       lifecycle: RootLifecycle[Msg, Model],
+      lifecycleId: LifecycleId,
       erasedContext: Any,
       mountClaims: SessionMountClaims,
       selectedRootLayout: LiveRootLayout[PathParams, Any],
@@ -415,7 +431,12 @@ object ZioHttp:
                   .verifyFlash(config, cookie.content).orElseSucceed(Map.empty)
             )
         typedFlash = initialFlash.view.map((key, value) => FlashKind(key) -> value).toMap
-        turn          <- DisconnectedRootTurn.make(lifecycle.hooks, request.url, typedFlash)
+        turn <- DisconnectedRootTurn.make(
+                  lifecycle.hooks,
+                  request.url,
+                  typedFlash,
+                  Some(lifecycleId)
+                )
         renderStarted <- monotonicNanos
         failureStage  <- Ref.make(LifecycleFailureStage.Mount)
         outcome       <- (for
@@ -669,8 +690,8 @@ object ZioHttp:
           definition.paramsCodec
             .decode(path, url)
             .tapError(error =>
-              ZIO.logWarning(
-                s"Rejecting disconnected route mount path=${url.path.encode}: ${error.getMessage}"
+              ZIO.logAnnotate(RuntimeLog.Reason, error.getMessage)(
+                ZIO.logDebug("Rejected disconnected LiveView route parameters")
               )
             )
             .mapError(_ => Response.badRequest)
@@ -762,6 +783,7 @@ object ZioHttp:
         definition.paramsCodec.encode(params).flatMap(LiveLocation.encode(definition.pathCodec, _))
       def paramsContext(ctx: ParamsContext[Any, Any]) = RoutedContexts.params(ctx, location)
       RootLifecycle(
+        viewName = view.getClass.getName,
         initialUrl = url,
         hooks = view.hooks,
         browserEvents = view.browserEvents,
@@ -1011,8 +1033,8 @@ object ZioHttp:
             case LiveRouteMountFailure.NotFound(reason)     => reason
             case _                                          => None
           ZIO.foreachDiscard(reason)(reason =>
-            ZIO.logWarning(
-              s"Rejecting disconnected route mount path=${request.url.path.encode}: $reason"
+            ZIO.logAnnotate(RuntimeLog.Reason, reason)(
+              ZIO.logDebug("Rejected disconnected LiveView mount")
             )
           )
         )
@@ -1326,14 +1348,27 @@ object ZioHttp:
         val csrfToken       = request.queryParam("_csrf_token")
         val observer = observerFactory.connect(request).withLifecycleObserver(lifecycleObserver)
         val socketHandler = Handler.webSocket { channel =>
-          ZIO
-            .scoped(
-              runSocket(channel, routes, config, request, csrfCookieValue, csrfToken, observer)
-            )
-            .catchAllCause(_ =>
-              ZIO.logError("Root websocket failed") *>
-                channel.send(ChannelEvent.read(WebSocketFrame.close(1002, None))).ignore
-            )
+          ConnectionSupervisor.freshConnectionId.flatMap { connectionId =>
+            ZIO.logAnnotate(RuntimeLog.ConnectionId, connectionId.value.toString) {
+              ZIO
+                .scoped(
+                  runSocket(
+                    channel,
+                    connectionId,
+                    routes,
+                    config,
+                    request,
+                    csrfCookieValue,
+                    csrfToken,
+                    observer
+                  )
+                )
+                .catchAllCause(cause =>
+                  logSocketFailure(cause) *>
+                    channel.send(ChannelEvent.read(WebSocketFrame.close(1002, None))).ignore
+                )
+            }
+          }
         }
         val app = WebSocketApp(
           socketHandler.handler,
@@ -1344,8 +1379,26 @@ object ZioHttp:
           )
         )
         app.toResponse
+      end if
     }
   end websocketRoute
+
+  // A browser that disconnects abruptly or breaks the WebSocket protocol is not a server failure.
+  private def logSocketFailure(cause: Cause[Throwable]): UIO[Unit] =
+    // A failed write wraps the transport's exception without chaining it.
+    val unwrapped = cause.map {
+      case SerialWriter.Error.WriteFailed(error) => error
+      case other                                 => other
+    }
+    val clientCaused = (unwrapped.failures ++ unwrapped.defects).forall(isClientTransportFailure)
+    if clientCaused then
+      ZIO.logDebugCause("LiveView WebSocket closed after a transport failure", unwrapped)
+    else ZIO.logErrorCause("LiveView WebSocket failed", unwrapped)
+
+  private def isClientTransportFailure(error: Throwable): Boolean = error match
+    case _: java.io.IOException                            => true
+    case _: io.netty.handler.codec.CorruptedFrameException => true
+    case _                                                 => false
 
   final private case class JoinedLifecycle(
     topic: NestedTopic,
@@ -1363,6 +1416,29 @@ object ZioHttp:
 
   final private case class ReportedNestedJoinFailure(error: ConnectionError)
       extends Exception(error.toString)
+
+  final private case class LifecycleStartFailed(error: ConnectionSupervisor.StartError)
+      extends Exception(error.toString)
+
+  private def logJoinRejected(topic: String, reason: String): UIO[Unit] =
+    ZIO.logAnnotate(
+      LogAnnotation(RuntimeLog.Topic, topic),
+      LogAnnotation(RuntimeLog.Reason, reason)
+    )(ZIO.logDebug("Rejected LiveView join"))
+
+  // A join is routinely rejected for a stale page or a refused session. Only a failure of the
+  // LiveView itself is an error, and the runtime has logged those that happened inside a lifecycle.
+  private def logJoinFailure(topic: String, error: Throwable): UIO[Unit] =
+    val failure = error match
+      case _: ConnectedMountRejected                                                     => ZIO.unit
+      case LifecycleStartFailed(ConnectionSupervisor.StartError.ConnectionFailed(cause)) =>
+        RootConnection.logFailure(cause)
+      case _: LifecycleStartFailed          => ZIO.unit
+      case ReportedNestedJoinFailure(cause) => RootConnection.logFailure(cause)
+      case other                            =>
+        ZIO.logErrorCause("LiveView failed to start", Cause.fail(other))
+    logJoinRejected(topic, error.getMessage) *>
+      ZIO.logAnnotate(RuntimeLog.Topic, topic)(failure)
 
   final private case class JoinedUpload(
     topic: String,
@@ -1691,6 +1767,7 @@ object ZioHttp:
   end SocketRuntime
 
   private def makeSocketRuntime[R](
+    connectionId: ConnectionId,
     routes: Vector[CompiledRoute[R]],
     config: ZioHttpConfig,
     socketRequest: Request,
@@ -1721,7 +1798,9 @@ object ZioHttp:
                        writer.drain
                          .timeout(DisconnectDrainTimeout)
                          .foldZIO(
-                           error => ZIO.logWarning(s"WebSocket writer drain failed: $error"),
+                           error =>
+                             ZIO
+                               .logWarningCause("WebSocket writer drain failed", Cause.fail(error)),
                            {
                              case Some(_) => ZIO.unit
                              case None    =>
@@ -1736,7 +1815,8 @@ object ZioHttp:
                           ZioHttpSecurity.issueNested(config, claims)
                       ,
                       applicationId => NestedTopic(s"lv:$applicationId"),
-                      observer
+                      observer,
+                      Some(connectionId)
                     )
       joined          <- Ref.make(Map.empty[String, JoinedLifecycle])
       uploads         <- Ref.make(Map.empty[String, JoinedUpload])
@@ -1782,7 +1862,9 @@ object ZioHttp:
       closed   <- Promise.make[Nothing, Unit]
       failure  <- Ref.make(Option.empty[Throwable])
       observer = RuntimeObserver.logging
-      runtime <- makeSocketRuntime(
+      connectionId <- ConnectionSupervisor.freshConnectionId
+      runtime      <- makeSocketRuntime(
+                   connectionId,
                    routes,
                    config,
                    socketRequest,
@@ -1846,6 +1928,7 @@ object ZioHttp:
 
   private def runSocket[R](
     channel: WebSocketChannel,
+    connectionId: ConnectionId,
     routes: Vector[CompiledRoute[R]],
     config: ZioHttpConfig,
     socketRequest: Request,
@@ -1856,6 +1939,7 @@ object ZioHttp:
     for
       channelGate <- Semaphore.make(1L)
       runtime     <- makeSocketRuntime(
+                   connectionId,
                    routes,
                    config,
                    socketRequest,
@@ -2105,7 +2189,7 @@ object ZioHttp:
                       None,
                       outcomeClaimed
                     ) *>
-                      ZIO.logWarning(s"Rejecting root join topic=$topic: $error") *>
+                      logJoinRejected(topic, error) *>
                       writer.offer(PhoenixOutput.error(joinRef, ref, topic, unauthorizedReason)),
                   admitted =>
                     Ref.make(Option.empty[PreparedAdmission]).flatMap { pendingAdmission =>
@@ -2187,7 +2271,7 @@ object ZioHttp:
                                               .mapValues(LifecycleId(_)).toMap,
                                           onLifecycleAssigned =
                                             lifecycle => observedLifecycle.set(Some(lifecycle))
-                                        ).mapError(error => Exception(error.toString))
+                                        ).mapError(LifecycleStartFailed.apply)
                         _        <- connectionReady.succeed(connection)
                         retained <- joined.get
                         _        <- ZIO.foreachDiscard(retained.values)(entry =>
@@ -2245,36 +2329,36 @@ object ZioHttp:
                                outcomeClaimed
                              )
                       yield ()
-                      install
-                        .onExit {
-                          case Exit.Success(_) => ZIO.unit
-                          case Exit.Failure(_) =>
-                            pendingAdmission.get.flatMap(ZIO.foreachDiscard(_)(_.reject))
-                        }
-                        .catchAll { error =>
-                          val clearInitial =
-                            ZIO.when(join.redirect.isEmpty)(registration.set(None))
-                          clearInitial *> observedLifecycle.get.flatMap(lifecycle =>
-                            observeJoinRejected(
-                              observer,
-                              supervisor,
-                              lifecycle,
-                              LifecycleJoinTarget.Root,
-                              attempt,
-                              joinStarted,
-                              Some(error),
-                              outcomeClaimed
-                            ) *>
-                              ZIO.logWarning(
-                                s"Rejecting connected root lifecycle topic=$topic: ${error.getMessage}"
+                      ZIO.logAnnotate(RuntimeLog.Route, admitted.route.routeLabel)(
+                        install
+                          .onExit {
+                            case Exit.Success(_) => ZIO.unit
+                            case Exit.Failure(_) =>
+                              pendingAdmission.get.flatMap(ZIO.foreachDiscard(_)(_.reject))
+                          }
+                          .catchAll { error =>
+                            val clearInitial =
+                              ZIO.when(join.redirect.isEmpty)(registration.set(None))
+                            clearInitial *> observedLifecycle.get.flatMap(lifecycle =>
+                              observeJoinRejected(
+                                observer,
+                                supervisor,
+                                lifecycle,
+                                LifecycleJoinTarget.Root,
+                                attempt,
+                                joinStarted,
+                                Some(error),
+                                outcomeClaimed
                               ) *>
-                              transportAdmission.isDisconnecting.flatMap {
-                                case true  => ZIO.unit
-                                case false =>
-                                  writer.offer(joinFailureEnvelope(joinRef, ref, topic, error))
-                              }
-                          )
-                        }
+                                logJoinFailure(topic, error) *>
+                                transportAdmission.isDisconnecting.flatMap {
+                                  case true  => ZIO.unit
+                                  case false =>
+                                    writer.offer(joinFailureEnvelope(joinRef, ref, topic, error))
+                                }
+                            )
+                          }
+                      )
                     }
                 )
               }
@@ -2328,7 +2412,7 @@ object ZioHttp:
           None,
           outcomeClaimed
         ) *>
-          ZIO.logWarning(s"Rejecting nested join topic=$topic: $error") *>
+          logJoinRejected(topic, error) *>
           writer.offer(PhoenixOutput.error(joinRef, ref, topic, staleReason)),
       (claims, url, reservation) =>
         (for
@@ -2398,7 +2482,7 @@ object ZioHttp:
                           ).mapError {
                             case ConnectionSupervisor.StartError.LinkedConnectionFailed(error) =>
                               ReportedNestedJoinFailure(error)
-                            case error => Exception(error.toString)
+                            case error => LifecycleStartFailed(error)
                           }
           _ <- connectionReady.succeed(connection)
           entry = JoinedLifecycle(
@@ -2443,9 +2527,7 @@ object ZioHttp:
                 joinStarted,
                 Some(error),
                 outcomeClaimed
-              ) *> ZIO.logWarning(
-                s"Rejecting connected linked nested lifecycle topic=$topic: ${error.getMessage}"
-              )
+              ) *> logJoinFailure(topic, error)
             )
           case error =>
             observedLifecycle.get.flatMap(lifecycle =>
@@ -2458,9 +2540,7 @@ object ZioHttp:
                 joinStarted,
                 Some(error),
                 outcomeClaimed
-              ) *> ZIO.logWarning(
-                s"Rejecting connected nested lifecycle topic=$topic: ${error.getMessage}"
-              ) *>
+              ) *> logJoinFailure(topic, error) *>
                 writer.offer(joinFailureEnvelope(joinRef, ref, topic, error))
             )
         }
@@ -2598,7 +2678,10 @@ object ZioHttp:
               .offerAwait(envelope).timeout(DisconnectDrainTimeout).foldZIO(
                 error =>
                   observer.failOutput(envelope) *>
-                    ZIO.logWarning(s"WebSocket disconnect reply enqueue failed: $error"),
+                    ZIO.logWarningCause(
+                      "WebSocket disconnect reply enqueue failed",
+                      Cause.fail(error)
+                    ),
                 {
                   case Some(_) => ZIO.unit
                   case None    =>

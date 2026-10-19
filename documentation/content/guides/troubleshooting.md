@@ -149,6 +149,13 @@ On transport interruption, expect the Phoenix client to attempt reconnection and
 the server to mount a fresh connected lifecycle. When a joined root
 @:apiSymbol(trait:scalive.LiveView)`LiveView`@:@ crashes, Scalive sends the
 client a Phoenix `phx_error`, and the client rejoins with a new lifecycle.
+Scalive logs each crash once at `ERROR` as `LiveView turn failed`, with the
+failure's cause and the lifecycle's `connection_id`, `lifecycle_id`, `view`, and
+`stage` annotations. Filter the server logs by `lifecycle_id` to see what the
+LiveView did before it crashed; see
+[Read Scalive's logs](lifecycle-observability.md#read-scalive-logs) for every
+level and annotation.
+
 Verify that:
 
 - @:apiSymbol(def:scalive.LiveView.mount)`mount`@:@ does not assume that the

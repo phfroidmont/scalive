@@ -242,7 +242,7 @@ object LifecycleMetrics:
       Vector("failure" -> "stage", "stage" -> label(stage))
     case Some(value) => Vector("failure" -> label(value), "stage" -> "none")
 
-  private def label(value: Product): String =
+  private[scalive] def label(value: Product): String =
     value.productPrefix.zipWithIndex.flatMap { case (character, index) =>
       if character.isUpper && index > 0 then s"_${character.toLower}"
       else character.toLower.toString

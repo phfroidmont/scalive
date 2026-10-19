@@ -310,9 +310,14 @@ final private[scalive] class RootConnection[Msg, Model] private (
     claim: HostedJoinClaim
   ): IO[ConnectionError, Either[UploadAdmissionError, HostedWorkerId]] =
     claim.factory.initialize.run.either.flatMap {
-      case Left(_) =>
-        failUploadEntry(claim.entry, "writer_error")
-          .as(Left(UploadAdmissionError.WriterInitializationFailed))
+      case Left(error) =>
+        UploadEntryWorker.logUploadFailure(
+          "initialize",
+          Cause.fail(error),
+          uploadAnnotations(claim)
+        )
+          *> failUploadEntry(claim.entry, "writer_error")
+            .as(Left(UploadAdmissionError.WriterInitializationFailed))
       case Right(handle) =>
         uploadRuntime.reserve(handle).flatMap {
           case false =>
@@ -323,6 +328,15 @@ final private[scalive] class RootConnection[Msg, Model] private (
           case true => installClaimedUpload(claim, handle)
         }
     }
+
+  // Upload workers outlive the fiber that admits them, so their logs carry these explicitly.
+  private def uploadAnnotations(claim: HostedJoinClaim): Set[LogAnnotation] =
+    Set(
+      LogAnnotation(RuntimeLog.ConnectionId, connectionId.value.toString),
+      LogAnnotation(RuntimeLog.LifecycleId, lifecycle.value.toString),
+      LogAnnotation(RuntimeLog.Upload, claim.entry.upload.key.definition.name),
+      LogAnnotation(RuntimeLog.UploadEntry, claim.entry.ref.value)
+    )
 
   private def installClaimedUpload(
     claim: HostedJoinClaim,
@@ -351,6 +365,7 @@ final private[scalive] class RootConnection[Msg, Model] private (
         else
           for
             worker <- uploadRuntime.startEntry(
+                        uploadAnnotations(claim),
                         handle,
                         claim.expectedBytes,
                         math.min(claim.chunkSize, config.maxUploadChunkBytes),
@@ -750,13 +765,28 @@ final private[scalive] class RootConnection[Msg, Model] private (
         failure.succeed(error).flatMap {
           case false => ZIO.succeed(false)
           case true  =>
-            observer.emit(
+            logRuntimeFailure(error) *> observer.emit(
               RuntimeEvent.SessionFailed(
                 RuntimeCorrelation(connectionId, lifecycle, epoch),
                 runtimeFailure(error)
               )
             ) *> closing.succeed(()).as(true)
         }
+    }
+
+  // Before bootstrap completes the failure reaches the joiner, which logs it instead.
+  private def logRuntimeFailure(error: ConnectionError): UIO[Unit] =
+    bootstrapReady.poll.flatMap {
+      case Some(ready) =>
+        ready.foldZIO(
+          _ => ZIO.unit,
+          _ =>
+            ZIO.logAnnotate(
+              LogAnnotation(RuntimeLog.ConnectionId, connectionId.value.toString),
+              LogAnnotation(RuntimeLog.LifecycleId, lifecycle.value.toString)
+            )(RootConnection.logFailure(error))
+        )
+      case None => ZIO.unit
     }
 
   private def finishClose: UIO[Unit] =
@@ -1029,8 +1059,9 @@ final private[scalive] class RootConnection[Msg, Model] private (
     )
 
   private def writerFailure(error: SerialWriter.Error): ConnectionError = error match
-    case SerialWriter.Error.WriteFailed(cause) => ConnectionError.SinkFailed(cause)
-    case other                                 => ConnectionError.OutboundFailed(other.toString)
+    case SerialWriter.Error.WriteFailed(cause)  => ConnectionError.SinkFailed(cause)
+    case SerialWriter.Error.Saturated(capacity) => ConnectionError.WriterSaturated(capacity)
+    case other                                  => ConnectionError.OutboundFailed(other.toString)
 
   private def observeWriterPressure(error: SerialWriter.Error): UIO[Unit] = error match
     case SerialWriter.Error.Saturated(capacity) =>
@@ -1079,6 +1110,20 @@ final private[scalive] class RootConnection[Msg, Model] private (
 end RootConnection
 
 private[scalive] object RootConnection:
+  /** Logs a failure that stops a lifecycle at the level its origin calls for. */
+  def logFailure(error: ConnectionError): UIO[Unit] = error match
+    // The kernel logs its own failures, and a linked child logs its own.
+    case _: ConnectionError.SessionFailed | _: ConnectionError.LinkedChildFailed |
+        _: ConnectionError.LinkedChildJoinFailed | ConnectionError.Closed =>
+      ZIO.unit
+    case _: ConnectionError.SinkFailed =>
+      ZIO.logDebugCause("LiveView stopped because its output could not be sent", Cause.fail(error))
+    case _: ConnectionError.IngressSaturated | _: ConnectionError.WriterSaturated |
+        ConnectionError.KernelRejected(_: SessionRejection.MailboxSaturated) =>
+      ZIO.logWarningCause("LiveView stopped because a queue was saturated", Cause.fail(error))
+    case other =>
+      ZIO.logErrorCause("LiveView failed", Cause.fail(other))
+
   /** @param repliesInAdmissionOrder
     *   Whether the reply waits for every earlier command to complete. A patch does not: while
     *   navigation awaits it, the kernel runs a matching patch ahead of the earlier commands it
@@ -1278,7 +1323,7 @@ private[scalive] object RootConnection:
                                      ZIO.fail(
                                        SessionFailure.StageFailed(
                                          SessionStage.Mount,
-                                         cause.prettyPrint
+                                         cause
                                        )
                                      )
                       mountNavigation <- journal.navigation.get
@@ -1488,19 +1533,27 @@ private[scalive] object RootConnection:
                   closeLifecycle = connectedResources.close,
                   terminateOnNavigate = closeAfterNavigate
                 )
-        kernel <- SessionKernel
-                    .start(
-                      sessionConfig,
-                      logic,
-                      program,
-                      outbound,
-                      componentEnvironment,
-                      Some(lifecycleId),
-                      topologyPreparer,
-                      Some(connectionId),
-                      observer
-                    )
-                    .mapError(ConnectionError.SessionFailed.apply)
+        // Fibers forked below inherit these, so application logs carry them too.
+        annotations = Set(
+                        LogAnnotation(RuntimeLog.ConnectionId, connectionId.value.toString),
+                        LogAnnotation(RuntimeLog.LifecycleId, lifecycleId.value.toString),
+                        LogAnnotation(RuntimeLog.View, lifecycle.viewName)
+                      ) ++ topic.map(value => LogAnnotation(RuntimeLog.Topic, value.value))
+        kernel <- ZIO.logAnnotate(annotations)(
+                    SessionKernel
+                      .start(
+                        sessionConfig,
+                        logic,
+                        program,
+                        outbound,
+                        componentEnvironment,
+                        Some(lifecycleId),
+                        topologyPreparer,
+                        Some(connectionId),
+                        observer
+                      )
+                      .mapError(ConnectionError.SessionFailed.apply)
+                  )
         ingress         <- Queue.dropping[Event](config.ingressCapacity)
         ingressGate     <- Semaphore.make(1L)
         terminationGate <- Semaphore.make(1L)
@@ -1531,9 +1584,11 @@ private[scalive] object RootConnection:
                        closeAfterNavigate,
                        observer
                      )
-        _ <- connection.runOutbound(first = true).interruptible.forkScoped
-        _ <- connection.runIngress.interruptible.forkScoped
-        _ <- connection.monitorKernel.interruptible.forkScoped
+        _ <- ZIO.logAnnotate(annotations)(
+               connection.runOutbound(first = true).interruptible.forkScoped *>
+                 connection.runIngress.interruptible.forkScoped *>
+                 connection.monitorKernel.interruptible.forkScoped
+             )
         _ <- ZIO.addFinalizer(connection.close)
         _ <- restore(bootstrapReady.await).onError(_ => connection.close)
       yield connection
@@ -1578,12 +1633,15 @@ private[scalive] object RootConnection:
                        declared.isEmpty && isNamedBrowserEvent(event)
                      case _ => false
       _ <- ZIO.foreachDiscard(declared.flatMap(_.left.toOption)) { error =>
-             ZIO.logWarning(s"browser event '${event.bindingId}' was malformed: $error")
+             ZIO.logAnnotate(
+               LogAnnotation(RuntimeLog.Event, event.bindingId),
+               LogAnnotation(RuntimeLog.Reason, error)
+             )(ZIO.logDebug("Ignored a browser event with a malformed payload"))
            }
       _ <-
         ZIO.when(undeclared) {
-          ZIO.logWarning(
-            s"browser event '${event.bindingId}' is not declared in browserEvents and was ignored"
+          ZIO.logAnnotate(RuntimeLog.Event, event.bindingId)(
+            ZIO.logDebug("Ignored a browser event that is not declared in browserEvents")
           )
         }
       draft <- rootDraft(

@@ -556,7 +556,7 @@ object SessionKernelSpec extends ZIOSpecDefault:
                     SessionFailure.StageFailed(SessionStage.OutputReservation, detail)
                   )
                 ) =>
-              detail.contains("Saturated(1)")
+              detail.prettyPrint.contains("Saturated(1)")
             case _ => false
           ,
           terminal match

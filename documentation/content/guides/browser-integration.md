@@ -85,8 +85,8 @@ Scalive decodes the payload of each matching event and sends the message to
 
 @:sourceRegion(documentation/site/src/scalive/docs/examples/BrowserInteropExample.scala, browser-integration-result)
 
-A malformed payload is logged and consumed without changing the model, and so
-is an event the LiveView doesn't declare. A view that wraps another must
+A malformed payload is logged at debug level and consumed without changing the
+model, and so is an event the LiveView doesn't declare. A view that wraps another must
 therefore forward the inner view's `browserEvents`, or the inner view never
 receives them. A successful decode proves only the payload's shape. Any browser can send any
 event, so the server must still validate the decoded values and authorize the

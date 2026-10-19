@@ -69,15 +69,17 @@ private[scalive] object DisconnectedRootTurn:
   def make[Msg, Model](
     hooks: LiveHooks[Msg, Model],
     initialUrl: URL,
-    initialFlash: Map[FlashKind, String]
+    initialFlash: Map[FlashKind, String],
+    providedLifecycle: Option[LifecycleId] = None
   ): Task[DisconnectedRootTurn[Msg, Model]] =
     for
-      lifecycle <-
-        ZIO
-          .fromEither(LifecycleId.fresh()).mapError(error => IllegalStateException(error.toString))
-      journal <- RootTurnJournal.make(
+      lifecycle <- providedLifecycle.fold(freshLifecycleId)(ZIO.succeed(_))
+      journal   <- RootTurnJournal.make(
                    OwnerId.Root(lifecycle),
                    RootHookRegistry.fromStatic(hooks),
                    initialFlash
                  )
     yield new DisconnectedRootTurn(lifecycle, journal, initialUrl)
+
+  def freshLifecycleId: Task[LifecycleId] =
+    ZIO.fromEither(LifecycleId.fresh()).mapError(error => IllegalStateException(error.toString))

@@ -1,6 +1,6 @@
 {%
 title = "Lifecycle observability"
-description = "Observe LiveView lifecycle outcomes safely, publish the built-in ZIO metrics, and interpret their fixed low-cardinality contract."
+description = "Observe LiveView lifecycle outcomes safely, publish the built-in ZIO metrics, interpret their fixed low-cardinality contract, and read Scalive's logs."
 order = 72
 section = guides
 group = "Operations"
@@ -194,6 +194,51 @@ Runtime IDs, exception messages, reconnect counters, and disconnect strings are
 excluded from built-in labels. Structured event fields never contain models,
 messages, browser payloads, credentials, or session claims. Application-thrown
 causes may contain application data and require the same redaction policy as
+application logs.
+
+## Read Scalive's logs {#read-scalive-logs}
+
+Scalive logs through ZIO logging, so the application's logger backend decides
+format and destination. Messages are constant text. Identifiers and values are
+log annotations, so configure the backend to print them, for example with
+`LogFormat.allAnnotations` in `zio-logging`.
+
+Each failure is logged once, at the level of its effect:
+
+| Level | Scalive logs | Messages |
+| --- | --- | --- |
+| `ERROR` | A failure that stops a lifecycle or a request, with its cause | `LiveView turn failed`, `LiveView crashed`, `LiveView failed to start`, `LiveView failed`, `Disconnected LiveView render failed`, `Disconnected LiveView request failed`, `LiveView WebSocket failed`, `Could not read static asset` |
+| `WARN` | A contained failure, or a lifecycle stopped by load | `Managed async task died with a defect`, `Managed subscription died with a defect; stopping it`, `Upload worker failed`, upload cleanup failures, `LiveView stopped because a queue was saturated`, WebSocket writer drain failures |
+| `INFO` | An outcome the application requested | `Connected turn guard requested disconnect`, `Connected turn guard requested reload` |
+| `DEBUG` | Anything a browser can trigger | `Rejected LiveView join`, `Rejected disconnected LiveView route parameters`, `Rejected disconnected LiveView mount`, ignored browser events, `Upload writer rejected an entry`, `LiveView WebSocket closed after a transport failure`, `LiveView stopped because its output could not be sent` |
+| `TRACE` | Every runtime step of a connected turn | `Runtime event` |
+
+A turn failure reaches the browser as a crash and the client rejoins, so
+`LiveView turn failed` is the entry to alert on. Rejected joins are routine
+after an idle tab, an expired session, or a deployment.
+
+Logs written while a connected LiveView runs carry its annotations, including
+logs from `mount`, handlers, hooks, and async work. Disconnected renders carry
+`lifecycle_id`, `view`, and `route`.
+
+| Annotation | Meaning |
+| --- | --- |
+| `connection_id` | The WebSocket connection, as `ConnectedLifecycleContext.connectionId` |
+| `lifecycle_id` | The lifecycle, as the `lifecycleId` of lifecycle events |
+| `topic` | The Phoenix topic of the joined LiveView |
+| `view` | The LiveView class name |
+| `route` | The path pattern of the root LiveView's route, such as `/users/{id}` |
+| `stage`, `failure` | The failure classification, with the labels of the built-in metrics |
+| `turn_kind`, `turn_id`, `command_id` | The turn that failed |
+| `reason` | Why Scalive rejected a join, mount, event, or upload entry |
+| `event` | The browser event name |
+| `async_task`, `subscription` | The key of the managed resource |
+| `upload`, `upload_entry`, `operation` | The upload name, its entry reference, and the worker operation |
+| `asset` | The static asset path |
+| `runtime_event`, `epoch` | The runtime step of a `TRACE` entry |
+
+Causes and `reason` values may contain application data, and `event` and
+`upload_entry` come from the browser. Apply the same redaction policy as to
 application logs.
 
 ## Related tasks {#related-tasks}

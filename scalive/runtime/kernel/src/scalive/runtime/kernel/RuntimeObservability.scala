@@ -778,10 +778,12 @@ private[scalive] object RuntimeObserver:
 
   private def logEvent(event: RuntimeEvent): UIO[Unit] =
     val correlation = event.context
-    ZIO.logDebug(
-      s"runtime_event=${event.name} connection=${correlation.connection.value} " +
-        s"lifecycle=${correlation.lifecycle.value} epoch=${correlation.epoch.value}"
-    )
+    ZIO.logAnnotate(
+      LogAnnotation(RuntimeLog.RuntimeEvent, event.name),
+      LogAnnotation(RuntimeLog.ConnectionId, correlation.connection.value.toString),
+      LogAnnotation(RuntimeLog.LifecycleId, correlation.lifecycle.value.toString),
+      LogAnnotation(RuntimeLog.Epoch, correlation.epoch.value.toString)
+    )(ZIO.logTrace("Runtime event"))
 
   def fromFunction(emitEvent: RuntimeEvent => UIO[Unit]): RuntimeObserver =
     withDiagnostic(emitEvent, RuntimeDiagnostic.Disabled)

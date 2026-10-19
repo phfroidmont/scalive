@@ -1,6 +1,7 @@
 package scalive.runtime.kernel
 
 import java.time.Duration as JavaDuration
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import scala.collection.immutable.Queue as ImmutableQueue
 
@@ -8,6 +9,7 @@ import zio.Cause
 import zio.Clock
 import zio.Exit
 import zio.IO
+import zio.LogAnnotation
 import zio.Promise
 import zio.Queue
 import zio.Ref
@@ -58,6 +60,9 @@ final private[scalive] class SessionKernel[Msg, Model] private (
   shutdown: Promise[Nothing, Unit],
   observer: RuntimeObserver):
   import SessionKernel.*
+
+  // Set once a failed turn has logged the failure that crashes this lifecycle.
+  private val turnFailureLogged = AtomicBoolean(false)
 
   def submit(command: SessionCommand[Msg]): ZIO[Any, SessionRejection, TurnResult] =
     for
@@ -889,11 +894,11 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     response: Option[TrackedCommand]
   ): UIO[Unit] =
     ZIO.foreachDiscard(reason)(value =>
-      ZIO.logInfo(
-        s"Connected turn guard requested $action connection=${connection.value} " +
-          s"lifecycle=${lifecycle.value} epoch=${epoch.value} " +
-          s"command=${response.map(_.id.value).getOrElse("internal")}: $value"
-      )
+      val annotations = Set(
+        LogAnnotation(RuntimeLog.Epoch, epoch.value.toString),
+        LogAnnotation(RuntimeLog.Reason, value)
+      ) ++ response.map(command => LogAnnotation(RuntimeLog.CommandId, command.id.value.toString))
+      ZIO.logAnnotate(annotations)(ZIO.logInfo(s"Connected turn guard requested $action"))
     )
 
   private def haltManagedAsync(
@@ -1435,7 +1440,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
           )
         )
       case _ => ZIO.unit
-    handlerFailed *> observer.observeLifecycle(
+    logTurnFailure(turnId, command, kind, error) *> handlerFailed *> observer.observeLifecycle(
       LifecycleEvent.TurnFailed(
         connectedLifecycleContext,
         turnId.value,
@@ -1445,6 +1450,34 @@ final private[scalive] class SessionKernel[Msg, Model] private (
         error
       )
     )
+
+  // Every failed turn crashes its lifecycle, so this is the one log entry for that failure.
+  private def logTurnFailure(
+    turnId: TurnId,
+    command: Option[CommandId],
+    kind: LifecycleTurnKind,
+    error: LifecycleError
+  ): UIO[Unit] =
+    error.failure match
+      case LifecycleFailure.Interrupted => ZIO.unit
+      case failure                      =>
+        val annotations = Set(
+          RuntimeLog.failure(failure),
+          LogAnnotation(RuntimeLog.TurnKind, RuntimeLog.label(kind)),
+          LogAnnotation(RuntimeLog.TurnId, turnId.value.toString)
+        ) ++ command.map(value => LogAnnotation(RuntimeLog.CommandId, value.value.toString))
+        ZIO.succeed(turnFailureLogged.set(true)) *>
+          ZIO.logAnnotate(annotations)(
+            ZIO.logErrorCause("LiveView turn failed", error.cause.fold(Cause.empty)(failureCause))
+          )
+
+  // A crash outside a turn, such as a failed cleanup, has no turn failure to log it.
+  private def logCrash(failure: SessionFailure): UIO[Unit] =
+    val lifecycleFailure = RuntimeObserver.lifecycleFailure(runtimeFailure(failure))
+    ZIO
+      .logAnnotate(RuntimeLog.failure(lifecycleFailure))(
+        ZIO.logErrorCause("LiveView crashed", failureCause(failure))
+      ).unless(turnFailureLogged.get).unit
 
   private def observeNewTurnFailed(
     response: Option[TrackedCommand],
@@ -2875,9 +2908,11 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                      val result    = asyncResult(exit)
                      val logDefect = (result, token.key) match
                        case (LiveAsyncResult.Died(_), ResourceKey.Async(name)) =>
-                         ZIO.logWarningCause(
-                           s"managed async task '$name' died with a defect",
-                           exit.causeOption.getOrElse(Cause.empty)
+                         ZIO.logAnnotate(RuntimeLog.AsyncTask, name)(
+                           ZIO.logWarningCause(
+                             "Managed async task died with a defect",
+                             exit.causeOption.getOrElse(Cause.empty)
+                           )
                          )
                        case _ => ZIO.unit
                      logDefect *>
@@ -2929,10 +2964,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                        cause =>
                          if cause.isInterruptedOnly then ZIO.unit
                          else
-                           observeSubscriptionFailure(token, delivery, cause) *>
-                             ZIO.logWarning(
-                               "managed subscription stream defect; stopping subscription"
-                             ) *>
+                           reportSubscriptionFailure(token, delivery, cause) *>
                              enqueueOwnedCommand(
                                SessionCommand.ManagedSubscriptionEnded(epoch, token)
                              )
@@ -2968,10 +3000,8 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                                       ).unit
                                   )
                                   .catchAllCause(cause =>
-                                    (observeSubscriptionFailure(token, delivery, cause) *>
-                                      ZIO.logWarning(
-                                        "managed subscription stream defect; stopping subscription"
-                                      )).unless(cause.isInterruptedOnly).unit
+                                    reportSubscriptionFailure(token, delivery, cause)
+                                      .unless(cause.isInterruptedOnly).unit
                                   ).ensuring(done.succeed(()).unit *> signal.offer(()).unit)
                             )
                  consumer =
@@ -2986,12 +3016,17 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     end for
   end prepareSubscriptionResource
 
-  private def observeSubscriptionFailure(
+  private def reportSubscriptionFailure(
     token: ResourceToken,
     delivery: SubscriptionDelivery,
     cause: Cause[Nothing]
   ): UIO[Unit] =
-    observer.observeLifecycle(
+    val name = token.key match
+      case ResourceKey.Subscription(value) => value
+      case other                           => other.toString
+    ZIO.logAnnotate(RuntimeLog.Subscription, name)(
+      ZIO.logWarningCause("Managed subscription died with a defect; stopping it", cause)
+    ) *> observer.observeLifecycle(
       LifecycleEvent.SubscriptionFailed(
         ConnectedLifecycleContext(connection.value, lifecycle.value),
         token.identity.value,
@@ -3049,7 +3084,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     ZIO
       .fromEither(CommandId.fresh()).foldZIO(
         error =>
-          ZIO.logError(s"managed resource command identity failed: $error") *>
+          ZIO.logErrorCause("Managed resource command identity failed", Cause.fail(error)) *>
             shutdown.succeed(()).unit,
         commandId =>
           Promise.make[SessionRejection, TurnResult].flatMap { response =>
@@ -3062,7 +3097,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
       .fromEither(CommandId.fresh()).foldZIO(
         error =>
           regularSlots.offer(()).unit *>
-            ZIO.logError(s"managed resource command identity failed: $error") *>
+            ZIO.logErrorCause("Managed resource command identity failed", Cause.fail(error)) *>
             shutdown.succeed(()).unit,
         commandId =>
           Promise.make[SessionRejection, TurnResult].flatMap { response =>
@@ -3124,7 +3159,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
         cleanup.exit.flatMap {
           case Exit.Success(_)     => continue
           case Exit.Failure(cause) =>
-            val failure = SessionFailure.StageFailed(SessionStage.Retirement, cause.prettyPrint)
+            val failure = SessionFailure.StageFailed(SessionStage.Retirement, cause)
             crash(failure)
         }
 
@@ -3282,11 +3317,9 @@ final private[scalive] class SessionKernel[Msg, Model] private (
         ZIO.uninterruptible {
           activeOwner.forget *>
             ZIO.foreach(Vector(candidateCleanup, previousCleanup))(_.exit).flatMap { cleanup =>
-              val cleanupDetails = cleanup.collect { case Exit.Failure(error) =>
-                error.prettyPrint
-              }
-              val details = (cause.prettyPrint +: cleanupDetails).mkString("\n")
-              ZIO.fail(SessionFailure.CommitDefect(details))
+              val cleanupFailures = cleanup.collect { case Exit.Failure(error) => error }
+              val combined        = cleanupFailures.foldLeft[Cause[Any]](cause)(_ ++ _)
+              ZIO.fail(SessionFailure.CommitDefect(combined))
             }
         }
     }
@@ -3325,7 +3358,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
           case None        => ZIO.unit
           case Some(cause) =>
             ZIO.fail(
-              SessionFailure.StageFailed(SessionStage.Retirement, cause.prettyPrint)
+              SessionFailure.StageFailed(SessionStage.Retirement, cause)
             )
       }
     }
@@ -3969,7 +4002,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
         else
           cause.failureOption match
             case Some(failure: SessionFailure) => ZIO.fail(failure)
-            case _ => ZIO.fail(SessionFailure.StageFailed(stage, cause.prettyPrint)),
+            case _ => ZIO.fail(SessionFailure.StageFailed(stage, cause)),
       ZIO.succeed(_)
     )
 
@@ -3979,7 +4012,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     effect.foldCauseZIO(
       cause =>
         if cause.isInterruptedOnly then ZIO.interrupt
-        else ZIO.fail(SessionFailure.StageFailed(SessionStage.Render, cause.prettyPrint)),
+        else ZIO.fail(SessionFailure.StageFailed(SessionStage.Render, cause)),
       ZIO.succeed(_)
     )
 
@@ -4014,7 +4047,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
         if cause.isInterruptedOnly then ZIO.interrupt
         else
           ZIO.fail(
-            SessionFailure.StageFailed(SessionStage.OutputReservation, cause.prettyPrint)
+            SessionFailure.StageFailed(SessionStage.OutputReservation, cause)
           )
       ,
       ZIO.succeed(_)
@@ -4041,7 +4074,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
 
   private def retireUploads(plan: UploadRetirementPlan): UIO[Unit] =
     logic
-      .retireUploads(plan).catchAllCause(_ => ZIO.logWarning("upload retirement hook failed"))
+      .retireUploads(plan).catchAllCause(ZIO.logWarningCause("Upload retirement failed", _))
 
   private def rollbackCandidate(candidate: TurnCandidate[Msg, Model]): UIO[Unit] =
     candidate.uploadRollbackClaim
@@ -4050,7 +4083,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
 
   private def closeUploads(model: Model): UIO[Unit] =
     logic
-      .closeUploads(model).catchAllCause(_ => ZIO.logWarning("upload close hook failed"))
+      .closeUploads(model).catchAllCause(ZIO.logWarningCause("Upload close failed", _))
 
   private def closeManaged(resources: Vector[ManagedResource]): UIO[Unit] =
     PreparedResources(
@@ -4058,7 +4091,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     ).close
 
   private def crash(failure: SessionFailure): UIO[Unit] =
-    observer.emit(
+    logCrash(failure) *> observer.emit(
       RuntimeEvent.SessionTerminated(
         RuntimeCorrelation(connection, lifecycle, epoch),
         RuntimeTerminal.Crashed(runtimeFailure(failure))
@@ -4106,6 +4139,11 @@ end SessionKernel
 
 private[scalive] object SessionKernel:
   /** Stages in which application callbacks run, other than the LiveView's own `mount`. */
+  private def failureCause(failure: Throwable): Cause[Any] = failure match
+    case SessionFailure.StageFailed(_, cause) => cause
+    case SessionFailure.CommitDefect(cause)   => cause
+    case other                                => Cause.fail(other)
+
   private val HandlerStages: Set[LifecycleFailureStage] = Set(
     LifecycleFailureStage.Handler,
     LifecycleFailureStage.AfterRender,
@@ -4257,7 +4295,7 @@ private[scalive] object SessionKernel:
     cause: Cause[SessionFailure],
     fallback: SessionStage
   ): SessionFailure =
-    cause.failureOption.getOrElse(SessionFailure.StageFailed(fallback, cause.prettyPrint))
+    cause.failureOption.getOrElse(SessionFailure.StageFailed(fallback, cause))
 
   private def runtimeFailure(failure: SessionFailure): RuntimeFailure = failure match
     case SessionFailure.StageFailed(stage, _)         => RuntimeFailure.Stage(stage)

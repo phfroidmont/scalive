@@ -174,12 +174,17 @@ final private[connection] class ConnectedComponentEnvironment[RootMsg, RootModel
                     val name = command.event.fold("")(_.bindingId)
                     declared match
                       case Some(Left(error)) =>
-                        ZIO.logWarning(s"component browser event '$name' was malformed: $error") *>
-                          turn.result(next)
+                        ZIO.logAnnotate(
+                          LogAnnotation(RuntimeLog.Event, name),
+                          LogAnnotation(RuntimeLog.Reason, error)
+                        )(
+                          ZIO.logDebug("Ignored a component browser event with a malformed payload")
+                        ) *> turn.result(next)
                       case None if command.event.exists(isNamedBrowserEvent) =>
-                        ZIO.logWarning(
-                          s"component browser event '$name' is not declared in browserEvents " +
-                            "and was ignored"
+                        ZIO.logAnnotate(RuntimeLog.Event, name)(
+                          ZIO.logDebug(
+                            "Ignored a component browser event that is not declared in browserEvents"
+                          )
                         ) *> turn.result(next)
                       case _ =>
                         val resolved = declared.flatMap(_.toOption).fold(message)(ZIO.succeed(_))

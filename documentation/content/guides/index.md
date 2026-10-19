@@ -113,7 +113,7 @@ expects so you can also enter directly from search or the API reference.
 ### Operations {#operations}
 
 - [Lifecycle observability](lifecycle-observability.md): export LiveView
-  metrics to Prometheus and log lifecycle events without leaking application
-  data.
+  metrics to Prometheus, log lifecycle events without leaking application
+  data, and read Scalive's own log levels and annotations.
 - [Deployment](deployment.md): package the application, put it behind HTTPS
   and a reverse proxy, and roll out new versions.

@@ -451,7 +451,9 @@ final private[scalive] class ConnectionSupervisor private (
                     output <- RebindableSink.make(buffer.offer)
                     view   <-
                       ZIO
-                        .attempt(reservation.create()).mapError(ConnectionError.SinkFailed.apply)
+                        .attempt(reservation.create()).mapError(
+                          ConnectionError.ViewCreationFailed.apply
+                        )
                     connection <- childScope.extend(
                                     RootConnection.startLifecycle(
                                       config,
@@ -1302,17 +1304,15 @@ private[scalive] object ConnectionSupervisor:
     config: ConnectionConfig,
     credentialIssuer: NestedCredentialIssuer,
     topicFor: String => NestedTopic,
-    observer: RuntimeObserver = RuntimeObserver.logging
+    observer: RuntimeObserver = RuntimeObserver.logging,
+    providedConnection: Option[ConnectionId] = None
   ): ZIO[Scope, Nothing, ConnectionSupervisor] =
     for
-      connectionId <- ZIO
-                        .fromEither(ConnectionId.fresh()).orDieWith(error =>
-                          IllegalStateException(error.toString)
-                        )
-      scope    <- Scope.make
-      gate     <- Semaphore.make(1L)
-      owner    <- Ref.make(Option.empty[ConnectionSupervisor])
-      topology <- NestedTopologyRuntime.make(
+      connectionId <- providedConnection.fold(freshConnectionId)(ZIO.succeed(_))
+      scope        <- Scope.make
+      gate         <- Semaphore.make(1L)
+      owner        <- Ref.make(Option.empty[ConnectionSupervisor])
+      topology     <- NestedTopologyRuntime.make(
                     credentialIssuer,
                     topicFor,
                     lifecycle => owner.get.flatMap(ZIO.foreachDiscard(_)(_.retireById(lifecycle)))
@@ -1321,5 +1321,8 @@ private[scalive] object ConnectionSupervisor:
       _ <- owner.set(Some(supervisor))
       _ <- ZIO.addFinalizer(supervisor.close)
     yield supervisor
+
+  def freshConnectionId: UIO[ConnectionId] =
+    ZIO.fromEither(ConnectionId.fresh()).orDieWith(error => IllegalStateException(error.toString))
 
 end ConnectionSupervisor

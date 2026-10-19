@@ -436,7 +436,7 @@ object ComponentRuntimeSpec extends ZIOSpecDefault:
           pushed.isRight,
           model.contains(2),
           logs.exists(entry =>
-            entry.logLevel == LogLevel.Warning && entry.message().contains("'copied'") &&
+            entry.logLevel == LogLevel.Debug && entry.annotations.get("event").contains("copied") &&
               entry.message().contains("browserEvents")
           )
         )

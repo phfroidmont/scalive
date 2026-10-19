@@ -163,6 +163,10 @@ object ConnectionError:
       extends ConnectionError(s"outbound reservations failed: $details")
   final case class SinkFailed(cause: Throwable)
       extends ConnectionError(s"connection sink failed: ${cause.getMessage}")
+  final case class WriterSaturated(capacity: Int)
+      extends ConnectionError(s"connection writer capacity $capacity is saturated")
+  final case class ViewCreationFailed(cause: Throwable)
+      extends ConnectionError(s"LiveView creation failed: ${cause.getMessage}")
   final case class UploadFailed(cause: Throwable)
       extends ConnectionError(s"upload operation failed: ${cause.getMessage}")
   final case class LinkedChildFailed(child: LifecycleId, cause: ConnectionError)
@@ -183,3 +187,4 @@ object ConnectionError:
   final case class DuplicateCommand(command: CommandId)
       extends ConnectionError(s"command ${command.value} is already registered")
   case object Closed extends ConnectionError("connection is closed")
+end ConnectionError

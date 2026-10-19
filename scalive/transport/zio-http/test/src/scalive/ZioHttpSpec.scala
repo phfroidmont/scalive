@@ -792,8 +792,9 @@ object ZioHttpSpec extends ZIOSpecDefault:
         response.status == Status.Forbidden,
         !body.contains("account suspended"),
         logs.exists(entry =>
-          entry.logLevel == LogLevel.Warning && entry.message().contains("/account") &&
-            entry.message().contains("account suspended")
+          entry.logLevel == LogLevel.Debug &&
+            entry.annotations.get("route").contains("/account") &&
+            entry.annotations.get("reason").contains("account suspended")
         )
       )
     },
@@ -1222,8 +1223,9 @@ object ZioHttpSpec extends ZIOSpecDefault:
         factories.get() == 0,
         mounts.get() == 0,
         logs.exists(entry =>
-          entry.logLevel == LogLevel.Warning && entry.message().contains("/decoded") &&
-            entry.message().contains("invalid params")
+          entry.logLevel == LogLevel.Debug &&
+            entry.annotations.get("route").contains("/decoded") &&
+            entry.annotations.get("reason").exists(_.contains("invalid params"))
         )
       )
     },
@@ -2222,7 +2224,14 @@ object ZioHttpSpec extends ZIOSpecDefault:
           code    <- socket.closeCode.await.timeout(100.millis)
           cleaned <- ZIO.succeed(cleanup.get()).repeatUntil(_ == 1)
           resourceCleaned <- ZIO.succeed(resourceCleanup.get()).repeatUntil(_ == 1)
+          logs            <- ZTestLogger.logOutput
         yield assertTrue(
+          logs.exists(entry =>
+            entry.logLevel == LogLevel.Info &&
+              entry.message() == "Connected turn guard requested disconnect" &&
+              entry.annotations.get("reason").contains("test") &&
+              entry.annotations.contains("lifecycle_id")
+          ),
           status(joined) == "ok",
           status(reply) == "ok",
           response(reply) == Json.Obj("diff" -> Json.Obj.empty),
@@ -2281,6 +2290,181 @@ object ZioHttpSpec extends ZIOSpecDefault:
         )
       }
       yield result)
+    },
+    test("a websocket protocol violation is logged at debug with its cause and connection") {
+      object View extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        def view(model: Signal[Unit]) = div()
+      val application = scalive.Live.router(scalive.live -> View)
+      val oversized   = "x" * 2_000_000
+      val message     = "LiveView WebSocket closed after a transport failure"
+
+      zio.test.Live.live(withServer(application) { port =>
+        for
+          page   <- bootstrap(port)
+          socket <- connect(port, page)
+          _      <- socket.channel.send(ChannelEvent.read(WebSocketFrame.text(oversized))).ignore
+          logs   <- ZTestLogger.logOutput
+                    .repeatUntil(_.exists(_.message() == message))
+                    .timeoutFail(Exception("websocket failure was not logged"))(5.seconds)
+        yield assertTrue(
+          logs.exists(entry =>
+            entry.logLevel == LogLevel.Debug && entry.message() == message &&
+              !entry.cause.isEmpty && entry.annotations.contains("connection_id")
+          ),
+          // ZIO HTTP warns about the frame itself; Scalive adds no error.
+          !logs.exists(_.logLevel == LogLevel.Error)
+        )
+      })
+    },
+    test("a connected handler failure is logged once as an error with its cause and lifecycle") {
+      val crash = BrowserToServerEvent[Json]("crash")
+      object CrashingView extends LiveView[Unit, Unit]:
+        override val browserEvents = BrowserEvents.on(crash)(_ => ())
+        def mount(ctx: MountContext) = ZIO.unit
+        def handleMessage(model: Unit, ctx: MessageContext): Unit => Task[Unit] =
+          _ => ZIO.logInfo("handling crash") *> ZIO.die(RuntimeException("handler defect"))
+        def view(model: Signal[Unit]) = div()
+      val application = scalive.Live.router(scalive.live -> CrashingView)
+
+      zio.test.Live.live(withServer(application) { port =>
+        for
+          page   <- bootstrap(port)
+          socket <- connect(port, page)
+          _      <- joinRoot(socket, page)
+          _      <- sendEvent(socket, page, "2", crash.value).timeout(5.seconds)
+          logs   <- ZTestLogger.logOutput
+                    .repeatUntil(_.exists(_.message() == "LiveView turn failed"))
+                    .timeoutFail(Exception("turn failure was not logged"))(5.seconds)
+          _ <- socket.close
+        yield
+          val errors        = logs.filter(_.logLevel == LogLevel.Error)
+          val application   = logs.filter(_.message() == "handling crash")
+          val runtimeEvents = logs.filter(_.message() == "Runtime event")
+          val lifecycle   = Set("connection_id", "lifecycle_id", "topic", "view", "route")
+          assertTrue(
+            errors.size == 1,
+            errors.head.message() == "LiveView turn failed",
+            errors.head.cause.prettyPrint.contains("handler defect"),
+            lifecycle.subsetOf(errors.head.annotations.keySet),
+            errors.head.annotations.get("topic").contains(s"lv:${page.rootId}"),
+            errors.head.annotations.get("view").exists(_.contains("CrashingView")),
+            errors.head.annotations.get("stage").contains("handler"),
+            errors.head.annotations.get("turn_kind").contains("browser_event"),
+            application.size == 1,
+            lifecycle.subsetOf(application.head.annotations.keySet),
+            runtimeEvents.nonEmpty,
+            runtimeEvents.forall(_.logLevel == LogLevel.Trace)
+          )
+      })
+    },
+    test("a disconnected render failure is logged as an error with its lifecycle") {
+      object FailingRender extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ZIO.fail(RuntimeException("render failure"))
+        def view(model: Signal[Unit]) = div()
+      val application = scalive.Live.router((scalive.live / "failing") -> FailingRender)
+
+      for
+        response <- run(
+                      ZioHttp.routes(application, config),
+                      Request.get(URL.decode("/failing").toOption.get)
+                    )
+        logs <- ZTestLogger.logOutput
+        errors = logs.filter(_.logLevel == LogLevel.Error)
+      yield assertTrue(
+        response.status == Status.InternalServerError,
+        errors.size == 1,
+        errors.head.message() == "Disconnected LiveView render failed",
+        errors.head.cause.prettyPrint.contains("render failure"),
+        errors.head.annotations.get("route").contains("/failing"),
+        errors.head.annotations.get("view").exists(_.contains("FailingRender")),
+        errors.head.annotations.contains("lifecycle_id")
+      )
+    },
+    test("a connected LiveView factory failure is logged as an error") {
+      val factories = AtomicInteger()
+      object View extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        def view(model: Signal[Unit]) = div()
+      val application = scalive.Live.router(scalive.live -> {
+        if factories.incrementAndGet() > 1 then throw RuntimeException("factory failure")
+        View
+      })
+
+      zio.test.Live.live(withServer(application) { port =>
+        for
+          page   <- bootstrap(port)
+          socket <- connect(port, page)
+          joined <- joinRoot(socket, page)
+          logs   <- ZTestLogger.logOutput
+                    .repeatUntil(_.exists(_.logLevel == LogLevel.Error))
+                    .timeoutFail(Exception("factory failure was not logged"))(5.seconds)
+        yield
+          val errors = logs.filter(_.logLevel == LogLevel.Error)
+          assertTrue(
+            status(joined) == "error",
+            errors.size == 1,
+            errors.head.message() == "LiveView failed to start",
+            errors.head.cause.prettyPrint.contains("factory failure"),
+            errors.head.annotations.get("topic").contains(s"lv:${page.rootId}"),
+            errors.head.annotations.contains("route")
+          )
+      })
+    },
+    test("a connected mount failure is logged once as an error and its join rejection at debug") {
+      object FailingMount extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ctx.connection match
+          case Connection.Disconnected => ZIO.unit
+          case Connection.Connected(_) => ZIO.fail(RuntimeException("mount failure"))
+        def view(model: Signal[Unit]) = div()
+      val application = scalive.Live.router(scalive.live -> FailingMount)
+
+      zio.test.Live.live(withServer(application) { port =>
+        for
+          page   <- bootstrap(port)
+          socket <- connect(port, page)
+          joined <- joinRoot(socket, page)
+          logs   <- ZTestLogger.logOutput
+                    .repeatUntil(_.exists(_.message() == "Rejected LiveView join"))
+                    .timeoutFail(Exception("join rejection was not logged"))(5.seconds)
+        yield
+          val errors = logs.filter(_.logLevel == LogLevel.Error)
+          assertTrue(
+            status(joined) == "error",
+            errors.size == 1,
+            errors.head.message() == "LiveView turn failed",
+            errors.head.cause.prettyPrint.contains("mount failure"),
+            errors.head.annotations.get("stage").contains("mount"),
+            errors.head.annotations.get("turn_kind").contains("bootstrap"),
+            logs.exists(entry =>
+              entry.logLevel == LogLevel.Debug && entry.message() == "Rejected LiveView join"
+            ),
+            !logs.exists(_.logLevel == LogLevel.Warning)
+          )
+      })
+    },
+    test("a join with an invalid session is rejected at debug") {
+      object View extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        def view(model: Signal[Unit]) = div()
+      val application = scalive.Live.router(scalive.live -> View)
+
+      zio.test.Live.live(withServer(application) { port =>
+        for
+          page   <- bootstrap(port)
+          socket <- connect(port, page)
+          joined <- joinRoot(socket, page.copy(session = page.session + "tampered"))
+          logs   <- ZTestLogger.logOutput
+        yield assertTrue(
+          status(joined) == "error",
+          logs.exists(entry =>
+            entry.logLevel == LogLevel.Debug && entry.message() == "Rejected LiveView join" &&
+              entry.annotations.get("topic").contains(s"lv:${page.rootId}") &&
+              entry.annotations.contains("reason")
+          ),
+          !logs.exists(_.logLevel.ordinal >= LogLevel.Warning.ordinal)
+        )
+      })
     }
   )
 

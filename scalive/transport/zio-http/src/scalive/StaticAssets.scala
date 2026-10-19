@@ -13,6 +13,8 @@ import zio.http.codec.PathCodec
 import zio.json.*
 import zio.json.ast.Json
 
+import scalive.runtime.kernel.RuntimeLog
+
 /** Configuration used to load and serve an ordinary asset tree or deployment manifest.
   *
   * @param source
@@ -302,9 +304,9 @@ final class StaticAssets private (
           .read(config.source, entry.sourcePath).foldCauseZIO(
             cause =>
               ZIO
-                .logErrorCause(s"Could not read static asset ${entry.sourcePath}", cause).as(
-                  Response.notFound
-                ),
+                .logAnnotate(RuntimeLog.Asset, entry.sourcePath)(
+                  ZIO.logErrorCause("Could not read static asset", cause)
+                ).as(Response.notFound),
             {
               case None        => ZIO.succeed(Response.notFound)
               case Some(bytes) =>
@@ -313,8 +315,9 @@ final class StaticAssets private (
                   currentDigest != entry.digest
                 then
                   ZIO
-                    .logError(
-                      s"Immutable static asset ${entry.sourcePath} changed after its asset description was loaded"
+                    .logAnnotate(RuntimeLog.Asset, entry.sourcePath)(
+                      ZIO
+                        .logError("Immutable static asset changed after its description was loaded")
                     ).as(Response.notFound)
                 else
                   val currentEntry =

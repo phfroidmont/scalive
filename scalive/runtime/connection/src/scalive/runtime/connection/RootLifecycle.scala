@@ -8,6 +8,7 @@ import scalive.*
 
 /** Typed root callbacks after route, session, and layout assembly. */
 final private[scalive] case class RootLifecycle[Msg, Model](
+  viewName: String,
   initialUrl: URL,
   hooks: LiveHooks[Msg, Model],
   pageTitle: Model => Option[String],
@@ -30,6 +31,7 @@ private[scalive] object RootLifecycle:
     connectedTurnGuard: LiveConnectedTurnGuard[Unit] = LiveConnectedTurnGuard.empty
   ): RootLifecycle[Msg, Model] =
     RootLifecycle(
+      viewName = liveView.getClass.getName,
       initialUrl = initialUrl,
       hooks = liveView.hooks,
       browserEvents = liveView.browserEvents,

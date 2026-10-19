@@ -72,8 +72,8 @@ canonicalize a successfully decoded URL only when the canonicalization cannot
 loop.
 
 A URL whose parameters don't decode never mounts the view. A page request for it
-gets `400 Bad Request`, and Scalive logs a warning with the path and the decode
-error; live navigation to it falls back to that page request. A live patch to it
+gets `400 Bad Request`, and Scalive logs the route and the decode error at debug
+level; live navigation to it falls back to that page request. A live patch to it
 calls
 @:apiSymbol(def:scalive.LiveView.Routed.handleParamsDecodeError)`handleParamsDecodeError`@:@
 instead, which crashes the LiveView unless you override it. `queryOptional`

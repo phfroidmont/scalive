@@ -220,12 +220,20 @@ object ManagedSubscriptionsSpec extends ZIOSpecDefault:
           model  <- awaitModel(connection)(_.contains(3))
           values <- events.get
           failures = values.collect { case event: LifecycleEvent.SubscriptionFailed => event }
+          logs <- ZTestLogger.logOutput
+          logged = logs.filter(_.message() == "Managed subscription died with a defect; stopping it")
         yield assertTrue(
           restarted.isRight,
           model == Vector(3),
           failures.size == 1,
           failures.head.delivery == SubscriptionDelivery.Lossless,
-          failures.head.error.failure == LifecycleFailure.SubscriptionDefect
+          failures.head.error.failure == LifecycleFailure.SubscriptionDefect,
+          logged.size == 1,
+          logged.head.logLevel == LogLevel.Warning,
+          logged.head.annotations.get("subscription").contains("defect"),
+          logged.head.annotations.contains("lifecycle_id"),
+          logged.head.cause.prettyPrint.contains("broken"),
+          !logs.exists(_.logLevel == LogLevel.Error)
         )
       }
     }

@@ -3,6 +3,7 @@ package scalive.runtime.kernel
 import java.time.Duration
 import java.time.Instant
 
+import zio.Cause
 import zio.IO
 import zio.Promise
 import zio.Ref
@@ -302,7 +303,7 @@ final private[scalive] case class SessionLogic[Msg, Model](
   retireUploads: UploadRetirementPlan => UIO[Unit] = (plan: UploadRetirementPlan) =>
     ZIO.foreachDiscard(plan.instructions) {
       case UploadRetirementInstruction.Cleanup(operation) =>
-        operation.run.catchAllCause(_ => ZIO.logWarning("upload cleanup failed"))
+        operation.run.catchAllCause(ZIO.logWarningCause("Upload cleanup failed", _))
       case UploadRetirementInstruction.Hosted(_, _) => ZIO.unit
     },
   closeUploads: Model => UIO[Unit] = (_: Model) => ZIO.unit,
@@ -692,14 +693,28 @@ enum SessionStage:
   case ComponentAsync
   case ComponentAfterRender
 
-sealed abstract class SessionFailure(message: String) extends Exception(message)
+sealed abstract class SessionFailure(message: String, cause: Throwable = null)
+    extends Exception(message, cause)
 
 object SessionFailure:
-  final case class StageFailed(stage: SessionStage, details: String)
-      extends SessionFailure(s"session stage $stage failed: $details")
+  /** A stage failed with `cause`, which keeps application failures and their traces for logging. */
+  final case class StageFailed(stage: SessionStage, cause: Cause[Any])
+      extends SessionFailure(
+        s"session stage $stage failed: ${summary(cause)}",
+        firstThrowable(cause)
+      )
 
-  final case class CommitDefect(details: String)
-      extends SessionFailure(s"session commit tail defected: $details")
+  object StageFailed:
+    /** A stage failed because Scalive rejected its result, as described by `details`. */
+    def apply(stage: SessionStage, details: String): StageFailed =
+      StageFailed(stage, Cause.fail(details))
+
+  /** A commit tail failed with `cause`, which also holds any failures of its rollback. */
+  final case class CommitDefect(cause: Cause[Any])
+      extends SessionFailure(
+        s"session commit tail defected: ${summary(cause)}",
+        firstThrowable(cause)
+      )
 
   final case class Interrupted() extends SessionFailure("session initialization was interrupted")
   final case class NavigationTimedOut(id: NavigationId, destination: URL)
@@ -710,6 +725,15 @@ object SessionFailure:
       extends SessionFailure(s"navigation redirect limit $limit exceeded")
   final case class NavigationDeferredOverflow(capacity: Int)
       extends SessionFailure(s"navigation deferred-command capacity $capacity exceeded")
+
+  private def summary(cause: Cause[Any]): String =
+    (cause.failures ++ cause.defects).headOption.fold("interrupted")(_.toString)
+
+  private def firstThrowable(cause: Cause[Any]): Throwable =
+    cause.failures
+      .collectFirst { case error: Throwable => error }
+      .orElse(cause.defects.headOption).orNull
+end SessionFailure
 
 enum SessionRejection:
   case MailboxSaturated(capacity: Int)

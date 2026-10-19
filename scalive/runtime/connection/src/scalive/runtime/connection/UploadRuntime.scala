@@ -7,6 +7,7 @@ import zio.*
 
 import scalive.runtime.contracts.LifecycleId
 import scalive.runtime.contracts.RuntimeCleanup
+import scalive.runtime.kernel.RuntimeLog
 import scalive.runtime.resources.*
 import scalive.upload.*
 
@@ -30,6 +31,7 @@ final private[connection] case class UploadWorkerCallbacks(
 /** One admitted hosted entry. Bulk chunks stop here and never enter lifecycle ingress. */
 final private[connection] class UploadEntryWorker private (
   val id: HostedWorkerId,
+  logAnnotations: Set[LogAnnotation],
   handle: HostedUploadWorker,
   expectedBytes: Long,
   maxChunkBytes: Int,
@@ -67,7 +69,7 @@ final private[connection] class UploadEntryWorker private (
             interruptLoop *>
               failQueued(UploadChunkError.Closed) *>
               queue.shutdown *>
-              handle.abort(reason).catchAllCause(_ => logFailure("retire"))
+              handle.abort(reason).catchAllCause(logFailure("abort", _))
           ).unit
       }
 
@@ -77,7 +79,7 @@ final private[connection] class UploadEntryWorker private (
         process(request).catchAllCause { cause =>
           if cause.isInterruptedOnly then ZIO.interrupt
           else
-            logFailure("process") *>
+            logFailure("process", cause) *>
               fail(
                 "worker_error",
                 UploadChunkError.WriterFailed("worker_error"),
@@ -87,7 +89,7 @@ final private[connection] class UploadEntryWorker private (
       }.forever.catchAllCause { cause =>
         if cause.isInterruptedOnly then ZIO.unit
         else
-          logFailure("loop") *>
+          logFailure("loop", cause) *>
             fail("worker_error", UploadChunkError.WriterFailed("worker_error"), None)
       }
 
@@ -105,7 +107,7 @@ final private[connection] class UploadEntryWorker private (
           .write(request.data).foldCauseZIO(
             cause =>
               val reason = writerFailureReason(cause)
-              logFailure("write") *>
+              logFailure("write", cause) *>
                 fail(
                   reason,
                   UploadChunkError.WriterFailed(reason),
@@ -123,7 +125,7 @@ final private[connection] class UploadEntryWorker private (
     handle.complete.foldCauseZIO(
       cause =>
         val reason = writerFailureReason(cause)
-        logFailure("complete") *>
+        logFailure("complete", cause) *>
           fail(
             reason,
             UploadChunkError.WriterFailed(reason),
@@ -133,8 +135,8 @@ final private[connection] class UploadEntryWorker private (
       completion =>
         callbacks
           .complete(completion).foldCauseZIO(
-            _ =>
-              logFailure("completion transition") *>
+            cause =>
+              logFailure("completion transition", cause) *>
                 handle.abort(LiveUploadAbortReason.Failed("completion_transition")).ignore *>
                 response.fail(UploadChunkError.WriterFailed("completion_transition")).unit,
             _ =>
@@ -158,8 +160,8 @@ final private[connection] class UploadEntryWorker private (
         val completeResponse = ZIO.foreachDiscard(response)(_.fail(error).unit)
         if claimed then
           handle
-            .abort(LiveUploadAbortReason.Failed(reason)).catchAllCause(_ => logFailure("abort")) *>
-            callbacks.fail(reason).catchAllCause(_ => logFailure("failure callback")) *>
+            .abort(LiveUploadAbortReason.Failed(reason)).catchAllCause(logFailure("abort", _)) *>
+            callbacks.fail(reason).catchAllCause(logFailure("failure callback", _)) *>
             failQueued(error) *>
             queue.shutdown *>
             completeResponse
@@ -181,16 +183,33 @@ final private[connection] class UploadEntryWorker private (
   private def interruptLoop: UIO[Unit] =
     fiber.get.flatMap(ZIO.foreachDiscard(_)(_.interrupt.unit))
 
-  private def logFailure(stage: String): UIO[Unit] =
-    ZIO.logWarning(s"upload worker $stage failed")
+  private def logFailure(operation: String, cause: Cause[Any]): UIO[Unit] =
+    UploadEntryWorker.logUploadFailure(operation, cause, logAnnotations)
 end UploadEntryWorker
 
-private object UploadEntryWorker:
+private[connection] object UploadEntryWorker:
+  // A writer that rejects an entry with a reason chose that outcome; anything else is a contained
+  // failure: the entry fails and the lifecycle keeps running.
+  def logUploadFailure(
+    operation: String,
+    cause: Cause[Any],
+    annotations: Set[LogAnnotation]
+  ): UIO[Unit] =
+    val withOperation = annotations + LogAnnotation(RuntimeLog.Operation, operation)
+    cause.failureOption match
+      case Some(error: LiveUploadWriterError) =>
+        ZIO.logAnnotate(withOperation + LogAnnotation(RuntimeLog.Reason, error.reason))(
+          ZIO.logDebug("Upload writer rejected an entry")
+        )
+      case _ =>
+        ZIO.logAnnotate(withOperation)(ZIO.logWarningCause("Upload worker failed", cause))
+
   final private case class Request(
     data: Chunk[Byte],
     response: Promise[UploadChunkError, Int])
 
   def start(
+    logAnnotations: Set[LogAnnotation],
     handle: HostedUploadWorker,
     expectedBytes: Long,
     maxChunkBytes: Int,
@@ -206,6 +225,7 @@ private object UploadEntryWorker:
         fiberRef <- Ref.make(Option.empty[Fiber.Runtime[Nothing, Unit]])
         worker = new UploadEntryWorker(
                    handle.id,
+                   logAnnotations,
                    handle,
                    expectedBytes,
                    maxChunkBytes,
@@ -257,6 +277,7 @@ final private[connection] class UploadRuntime private (
     )
 
   def startEntry(
+    logAnnotations: Set[LogAnnotation],
     handle: HostedUploadWorker,
     expectedBytes: Long,
     maxChunkBytes: Int,
@@ -264,6 +285,7 @@ final private[connection] class UploadRuntime private (
     callbacks: UploadWorkerCallbacks
   ): UIO[UploadEntryWorker] =
     UploadEntryWorker.start(
+      logAnnotations,
       handle,
       expectedBytes,
       maxChunkBytes,
@@ -283,7 +305,7 @@ final private[connection] class UploadRuntime private (
       case UploadRetirementInstruction.Hosted(id, reason) =>
         removeAndRetire(id, reason)
       case UploadRetirementInstruction.Cleanup(operation) =>
-        operation.run.catchAllCause(_ => ZIO.logWarning("upload destination cleanup failed"))
+        operation.run.catchAllCause(ZIO.logWarningCause("Upload destination cleanup failed", _))
     })
 
   def close(registry: UploadRegistry, lifecycle: LifecycleId): UIO[Unit] =
@@ -312,7 +334,13 @@ private[connection] object UploadRuntime:
   private object WorkerSlot:
     final case class Pending(worker: HostedUploadWorker) extends WorkerSlot:
       def retire(reason: LiveUploadAbortReason): UIO[Unit] = worker
-        .abort(reason).catchAllCause(_ => ZIO.logWarning("pending upload worker cleanup failed"))
+        .abort(reason).catchAllCause(cause =>
+          UploadEntryWorker.logUploadFailure(
+            "abort",
+            cause,
+            Set(LogAnnotation(RuntimeLog.UploadEntry, worker.id.entryRef.value))
+          )
+        )
     final case class Active(worker: UploadEntryWorker) extends WorkerSlot:
       def retire(reason: LiveUploadAbortReason): UIO[Unit] = worker.retire(reason)
 
@@ -330,3 +358,4 @@ private[connection] object UploadRuntime:
     random.nextBytes(bytes)
     UploadRef(Base64.getUrlEncoder.withoutPadding.encodeToString(bytes))
   }
+end UploadRuntime

@@ -454,26 +454,25 @@ final private[scalive] class RootConnection[Msg, Model] private (
         case Right(token) =>
           registry.progress(token.asInstanceOf[UploadEntryToken[Any]], progress).isRight
 
+    // As in Phoenix, progress for an entry that was consumed or cancelled meanwhile is a no-op.
+    def rejected(registry: UploadRegistry, error: UploadRegistryError) =
+      val reply = error match
+        case _: UploadRegistryError.EntryInactive => None
+        case other                                => Some(UploadControlError(other.toString))
+      ZIO.succeed(
+        UploadMutationResult(
+          registry,
+          Left(error): Either[UploadRegistryError, Unit],
+          reply = reply
+        )
+      )
+
     UploadMutation.guardedWhen(Right(()): Either[UploadRegistryError, Unit])(accepted) { registry =>
       registry.resolveEntry(owner, epoch, uploadRef, entryRef) match
-        case Left(error) =>
-          ZIO.succeed(
-            UploadMutationResult(
-              registry,
-              Left(error): Either[UploadRegistryError, Unit],
-              reply = Some(UploadControlError(error.toString))
-            )
-          )
+        case Left(error)  => rejected(registry, error)
         case Right(token) =>
           registry.progress(token.asInstanceOf[UploadEntryToken[Any]], progress) match
-            case Left(error) =>
-              ZIO.succeed(
-                UploadMutationResult(
-                  registry,
-                  Left(error): Either[UploadRegistryError, Unit],
-                  reply = Some(UploadControlError(error.toString))
-                )
-              )
+            case Left(error) => rejected(registry, error)
             case Right(next) =>
               val definition = token.upload.key.definition.asInstanceOf[LiveUploadDef[Any]]
               val callback   = next

@@ -226,6 +226,7 @@ object UploadWorkerSpec extends ZIOSpecDefault:
           first   <- running.connection.uploadChunk(worker, Chunk[Byte](1, 2))
           second  <- running.connection.uploadChunk(worker, Chunk[Byte](3, 4))
           closed  <- running.connection.uploadChunk(worker, Chunk.single(5.toByte)).either
+          _       <- running.connection.syncUploadProgress(None, running.uploadRef, entry, 100)
           _       <- running.connection.submitInfo(Message.Consume)
           model   <- running.connection.inspectModel
           writes  <- fixture.writes.get
@@ -376,6 +377,7 @@ object UploadWorkerSpec extends ZIOSpecDefault:
           _             <- fixture.release.succeed(())
           overflowResult <- overflow.await
           _              <- first.await *> queued.interrupt
+          _              <- running.connection.syncUploadProgress(None, running.uploadRef, other, 100)
           _              <- running.connection.submitInfo(Message.Refresh)
           model          <- running.connection.inspectModel
           aborts         <- fixture.aborts.get

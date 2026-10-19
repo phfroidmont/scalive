@@ -264,7 +264,9 @@ enum LiveUploadEntryStatus:
 
   /** The protocol reached 100 percent and produced a destination result.
     *
-    * For external uploads, completion is reported by the browser and must be verified against the
+    * A hosted entry completes once its writer has received every byte and the browser has reported
+    * 100 percent progress, so a handler for an earlier progress report still sees it uploading. For
+    * external uploads, completion is reported by the browser and must be verified against the
     * external service before the result is trusted.
     */
   case Completed

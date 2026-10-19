@@ -498,8 +498,15 @@ final class ConnectedView[-Msg] private[testing] (
   ): Task[Unit] =
     for
       current <- html
-      ref     <- ZIO.attempt(ConnectedDom.uploadRef(current, definition.name))
-      _       <- session.upload(state, ref, fileName, mediaType, bytes)
+      input   <- ZIO.attempt(ConnectedDom.uploadInput(current, definition.name))
+      _       <- session.upload(
+             state,
+             input.attr("data-phx-upload-ref"),
+             Option(input.attr("phx-progress")).filter(_.nonEmpty),
+             fileName,
+             mediaType,
+             bytes
+           )
     yield ()
 
   /** Returns the route URL currently owned by this exact joined generation. */
@@ -717,12 +724,12 @@ private object ConnectedDom:
       else "_unused_" + base
     if array then marked + "[]" else marked
 
-  def uploadRef(html: String, name: String): String =
+  def uploadInput(html: String, name: String): Element =
     val inputs = Jsoup
       .parseBodyFragment(html)
       .select("input[type=file][data-phx-upload-ref]").asScala.toVector
       .filter(_.attr("name") == name)
-    exactlyOne(inputs, s"file input for the '$name' upload").attr("data-phx-upload-ref")
+    exactlyOne(inputs, s"file input for the '$name' upload")
 
   /** Like the browser, a disabled fieldset disables every descendant except those inside its first
     * `legend` child, whether or not the fieldset is inside the control's form.
@@ -833,6 +840,7 @@ final private class ConnectedSession(
   def upload(
     state: ConnectedViewState,
     uploadRef: String,
+    progressEvent: Option[String],
     fileName: String,
     mediaType: String,
     bytes: Chunk[Byte]
@@ -878,8 +886,9 @@ final private class ConnectedSession(
                              "phx_join",
                              Json.Obj("token" -> Json.Str(token))
                            )
-             _ <- successfulResponse(uploadJoin)
-             _ <- ZIO.foreachDiscard(uploadChunks(bytes, chunkSize)) { chunk =>
+             _    <- successfulResponse(uploadJoin)
+             sent <- Ref.make(0)
+             _    <- ZIO.foreachDiscard(uploadChunks(bytes, chunkSize)) { chunk =>
                     for
                       chunkRef <- freshReference
                       frame    <- ZIO.fromEither(
@@ -896,6 +905,15 @@ final private class ConnectedSession(
                                )
                       chunkReply <- awaitReply(chunkRef)(transport.sendBinary(frame))
                       _          <- successfulResponse(chunkReply)
+                      offset     <- sent.updateAndGet(_ + chunk.length)
+                      _          <- reportUploadProgress(
+                             state,
+                             uploadRef,
+                             entryRef,
+                             progressEvent,
+                             offset,
+                             bytes.length
+                           )
                     yield ()
                   }
              _ <- request(uploadJoinRef, uploadTopic, "phx_leave", Json.Obj.empty)
@@ -906,6 +924,33 @@ final private class ConnectedSession(
              )
            )
     yield ()
+
+  // Like the browser, reports progress after each chunk reply, and the entry completes only once
+  // it reports 100%.
+  private def reportUploadProgress(
+    state: ConnectedViewState,
+    uploadRef: String,
+    entryRef: String,
+    progressEvent: Option[String],
+    offset: Int,
+    size: Int
+  ): Task[Unit] =
+    val progress = if size == 0 then 100 else (offset.toLong * 100L / size).toInt
+    ZIO
+      .when(progress > 0)(
+        request(
+          state.joinRef,
+          state.topic,
+          "progress",
+          Json.Obj(
+            "event"     -> progressEvent.fold[Json](Json.Null)(Json.Str.apply),
+            "ref"       -> Json.Str(uploadRef),
+            "entry_ref" -> Json.Str(entryRef),
+            "progress"  -> Json.Num(BigDecimal(progress)),
+            "cid"       -> Json.Null
+          )
+        ).flatMap(successfulResponse)
+      ).unit
 
   def leave(state: ConnectedViewState): Task[Unit] =
     request(state.joinRef, state.topic, "phx_leave", Json.Obj.empty).unit

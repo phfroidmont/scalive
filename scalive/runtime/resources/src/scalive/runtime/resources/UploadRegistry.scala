@@ -475,6 +475,10 @@ final private[scalive] case class UploadRegistry private (
         entry.state match
           case EntryState.HostedJoined(id, _) =>
             Right(update(allowed, entry.copy(state = EntryState.HostedJoined(id, requested))))
+          case EntryState.HostedWritten(result, _) if requested == 100 =>
+            Right(update(allowed, entry.copy(state = EntryState.Completed(result))))
+          case EntryState.HostedWritten(result, _) =>
+            Right(update(allowed, entry.copy(state = EntryState.HostedWritten(result, requested))))
           case EntryState.ExternalPrepared(result, _) if requested == 100 =>
             Right(update(allowed, entry.copy(state = EntryState.Completed(result))))
           case EntryState.ExternalPrepared(result, _) =>
@@ -485,21 +489,30 @@ final private[scalive] case class UploadRegistry private (
           case _ => Left(UploadRegistryError.InvalidEntryState(token.ref))
   }
 
+  /** Installs the result of a hosted writer that received every byte.
+    *
+    * As in Phoenix, the entry completes only once the browser has also reported 100% progress, so a
+    * handler for an earlier progress report never sees it completed.
+    */
   def installHostedCompletion[Result](
     token: UploadEntryToken[Result],
     completion: HostedUploadCompletion
   ): UploadInstallation =
     currentEntry(token).toOption match
-      case Some((allowed, entry)) if entry.state match
-            case EntryState.HostedJoined(id, _) => id == completion.workerId
-            case _                              => false
-          =>
+      case Some((allowed, entry @ Entry(_, _, EntryState.HostedJoined(id, progress))))
+          if id == completion.workerId =>
+        val written =
+          if progress == 100 then EntryState.Completed(completion)
+          else EntryState.HostedWritten(completion, progress)
         UploadInstallation(
-          update(allowed, entry.copy(state = EntryState.Completed(completion))),
+          update(allowed, entry.copy(state = written)),
           accepted = true,
           UploadRetirementPlan.empty
         )
       case Some((_, Entry(_, _, EntryState.Completed(result))))
+          if result.asInstanceOf[AnyRef] eq completion.asInstanceOf[AnyRef] =>
+        UploadInstallation(this, accepted = false, UploadRetirementPlan.empty)
+      case Some((_, Entry(_, _, EntryState.HostedWritten(result, _))))
           if result.asInstanceOf[AnyRef] eq completion.asInstanceOf[AnyRef] =>
         UploadInstallation(this, accepted = false, UploadRetirementPlan.empty)
       case _ => lateCleanup(completion.cleanup.run)
@@ -510,7 +523,7 @@ final private[scalive] case class UploadRegistry private (
   ): Either[UploadRegistryError, UploadRemoval] = currentEntry(token).flatMap {
     case (allowed, entry) =>
       entry.state match
-        case EntryState.Invalid(_, _) | EntryState.Completed(_) =>
+        case EntryState.Invalid(_, _) | EntryState.HostedWritten(_, _) | EntryState.Completed(_) =>
           Left(UploadRegistryError.InvalidEntryState(token.ref))
         case _ =>
           val plan    = entry.retirement(LiveUploadAbortReason.Failed(reason))
@@ -888,6 +901,8 @@ private[scalive] object UploadRegistry:
     case HostedReady
     case HostedClaimed(worker: HostedWorkerId)
     case HostedJoined(worker: HostedWorkerId, progress: Int)
+    // The writer received every byte; the browser has not yet reported 100% progress.
+    case HostedWritten(result: OwnedUploadResult, progress: Int)
     case ExternalPreparing
     case ExternalPrepared(result: OwnedUploadResult, progress: Int)
     case Completed(result: OwnedUploadResult)
@@ -907,6 +922,7 @@ private[scalive] object UploadRegistry:
     state: EntryState):
     def progress: Int = state match
       case EntryState.HostedJoined(_, value)     => value
+      case EntryState.HostedWritten(_, value)    => value
       case EntryState.ExternalPrepared(_, value) => value
       case EntryState.Completed(_)               => 100
       case _                                     => 0
@@ -915,6 +931,8 @@ private[scalive] object UploadRegistry:
       val (status, metadata) = state match
         case EntryState.Selected => LiveUploadEntryStatus.Selected -> None
         case EntryState.HostedJoined(_, value) if value > 0 =>
+          LiveUploadEntryStatus.Uploading(value) -> None
+        case EntryState.HostedWritten(_, value) if value > 0 =>
           LiveUploadEntryStatus.Uploading(value) -> None
         case EntryState.ExternalPrepared(result, value) if value > 0 =>
           LiveUploadEntryStatus.Uploading(value) -> Some(result.metadata)
@@ -929,6 +947,8 @@ private[scalive] object UploadRegistry:
     def retirement(reason: LiveUploadAbortReason): UploadRetirementPlan = state match
       case EntryState.HostedJoined(worker, _) =>
         UploadRetirementPlan(Vector(UploadRetirementInstruction.Hosted(worker, reason)))
+      case EntryState.HostedWritten(result, _) =>
+        UploadRetirementPlan(Vector(UploadRetirementInstruction.Cleanup(result.cleanup)))
       case EntryState.ExternalPrepared(result, _) =>
         UploadRetirementPlan(Vector(UploadRetirementInstruction.Cleanup(result.cleanup)))
       case EntryState.Completed(result) =>

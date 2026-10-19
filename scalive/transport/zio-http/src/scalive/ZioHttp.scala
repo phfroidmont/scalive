@@ -3248,18 +3248,20 @@ object ZioHttp:
             resolveUploadComponent(joined, progress.cid).flatMap {
               case Left(_) => writer.offer(PhoenixOutput.error(joinRef, ref, topic, staleReason))
               case Right(component) =>
+                // Replies in order with earlier events; a no-op for an inactive entry.
+                val updateProgress =
+                  enqueueCorrelated(joined, eventRefs) { command =>
+                    joined.connection
+                      .progressUpload(
+                        command,
+                        component,
+                        UploadRef(progress.uploadRef),
+                        UploadEntryRef(progress.entryRef),
+                        progress.progress
+                      ).unit
+                  }
                 progress.event match
-                  case None =>
-                    enqueueCorrelated(joined, eventRefs) { command =>
-                      joined.connection
-                        .progressUpload(
-                          command,
-                          component,
-                          UploadRef(progress.uploadRef),
-                          UploadEntryRef(progress.entryRef),
-                          progress.progress
-                        ).unit
-                    }
+                  case None        => updateProgress
                   case Some(event) =>
                     joined.connection
                       .syncUploadProgress(
@@ -3268,7 +3270,9 @@ object ZioHttp:
                         UploadEntryRef(progress.entryRef),
                         progress.progress
                       ).flatMap {
-                        case Left(_) =>
+                        // Phoenix runs no progress event for an entry that no longer exists.
+                        case Left(_: UploadRegistryError.EntryInactive) => updateProgress
+                        case Left(_)                                    =>
                           writer.offer(PhoenixOutput.error(joinRef, ref, topic, staleReason))
                         case Right(_) =>
                           rememberUploadProgress(uploads, joined, component, progress) *>

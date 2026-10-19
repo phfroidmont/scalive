@@ -1719,6 +1719,79 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
                     yield assertTrue(aborts == Vector(LiveUploadAbortReason.SocketShutdown))
                   }
       yield result
+    },
+    // The browser reports progress for a chunk while it sends the next one, so the server can
+    // finish writing before an earlier progress report arrives.
+    test("a hosted entry completes on the browser's final progress, and later progress is a no-op") {
+      val progressEvent = BrowserToServerEvent[Json]("upload-progress")
+      val upload        = LiveUploadDef.inMemory("avatar", LiveUploadAccept.only(".txt"))
+      for
+        uploadRef <- Promise.make[Nothing, UploadRef]
+        observed  <- Ref.make(Vector.empty[LiveUploadEntryStatus])
+        consumed  <- Ref.make(Vector.empty[String])
+        view = new LiveView[Json, Unit]:
+                 override val browserEvents = BrowserEvents.on(progressEvent)(identity)
+                 def mount(ctx: MountContext) =
+                   allowed(ctx.uploads, upload).flatMap(allowed =>
+                     uploadRef.succeed(allowed.ref).unit.when(ctx.connection != Connection.Disconnected)
+                   ).unit
+                 def handleMessage(model: Unit, ctx: MessageContext): Json => Task[Unit] = _ =>
+                   ctx.uploads.get(upload).flatMap { current =>
+                     ZIO.foreachDiscard(current.toList.flatMap(_.entries)) { entry =>
+                       observed.update(_ :+ entry.status) *>
+                         ZIO.when(entry.status == LiveUploadEntryStatus.Completed)(
+                           ctx.uploads
+                             .consume(entry)(completed =>
+                               ZIO.succeed(ConsumeDecision.Consume(completed.client.fileName))
+                             ).flatMap(name => consumed.update(_ :+ name))
+                         )
+                     }
+                   }
+                 def view(model: Signal[Unit]) = div()
+        result <- withServer(scalive.Live.router(scalive.live -> view)) { port =>
+                    for
+                      page   <- bootstrap(port)
+                      socket <- connect(port, page)
+                      _      <- joinRoot(socket, page)
+                      ref    <- uploadRef.await
+                      topic   = s"lv:${page.rootId}"
+                      hosted <- preflight(socket, topic, "2", ref, Vector(entry("e", "e.txt", 3L)))
+                      token   = hostedToken(hosted, "e")
+                      _      <- uploadJoin(socket, "e-join", "3", "lvu:e", token)
+                      _      <- socket.sendBinary(
+                             binary("e-join", "4", "lvu:e", Chunk[Byte](1, 2, 3))
+                           )
+                      chunk <- socket.receiveReply("4", "lvu:e")
+                      send = (pushRef: String, progress: Int) =>
+                               sendProgress(
+                                 socket,
+                                 topic,
+                                 pushRef,
+                                 ref.value,
+                                 "e",
+                                 progress,
+                                 None,
+                                 Some(progressEvent.value)
+                               )
+                      earlier  <- send("5", 50)
+                      final_   <- send("6", 100)
+                      repeated <- send("7", 100)
+                      statuses <- observed.get
+                      names    <- consumed.get
+                      _        <- socket.close
+                    yield assertTrue(
+                      status(chunk) == "ok",
+                      status(earlier) == "ok",
+                      status(final_) == "ok",
+                      status(repeated) == "ok",
+                      statuses == Vector(
+                        LiveUploadEntryStatus.Uploading(50),
+                        LiveUploadEntryStatus.Completed
+                      ),
+                      names == Vector("e.txt")
+                    )
+                  }
+      yield result
     }
   ) @@ TestAspect.sequential @@ TestAspect.withLiveClock
 

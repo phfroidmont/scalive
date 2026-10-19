@@ -471,7 +471,7 @@ object UploadRegistrySpec extends ZIOSpecDefault:
         count == 1
       )
     },
-    test("hosted worker serializes and threads state independently of registry") {
+    test("a written hosted entry completes only when the browser reports 100% progress") {
       for
         fixture <- writerFixture
         key       = UploadKey(LiveUploadDef.hosted("files", LiveUploadAccept.Any, fixture.writer))
@@ -485,8 +485,17 @@ object UploadRegistrySpec extends ZIOSpecDefault:
         maximum    <- fixture.maximumWrites.get
         joined      = claim.registry.installHostedWorker(token, worker).registry
         installed   = joined.installHostedCompletion(token, completion)
-        completed   = snapshot(installed.registry, root, key).entries.head
-      yield assertTrue(maximum == 1, installed.accepted, completed.status == LiveUploadEntryStatus.Completed)
+        written     = snapshot(installed.registry, root, key).entries.head
+        halfway     = installed.registry.progress(token, 50).toOption.get
+        reported    = snapshot(halfway, root, key).entries.head
+        completed   = snapshot(halfway.progress(token, 100).toOption.get, root, key).entries.head
+      yield assertTrue(
+        maximum == 1,
+        installed.accepted,
+        written.status == LiveUploadEntryStatus.Preflighted,
+        reported.status == LiveUploadEntryStatus.Uploading(50),
+        completed.status == LiveUploadEntryStatus.Completed
+      )
     },
     test("hosted progress and worker completion are separate one-shot transitions") {
       for

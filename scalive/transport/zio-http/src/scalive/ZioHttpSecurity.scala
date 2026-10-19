@@ -148,7 +148,6 @@ private[scalive] object ZioHttpSecurity:
     rootLayoutKey: String = "scalive:default-root",
     sessionMountClaims: Vector[String] = Vector.empty,
     issuedAtEpochSecond: Long,
-    trackedStatics: Vector[String] = Vector.empty,
     initialFlash: Map[String, String] = Map.empty,
     nestedLifecycles: Map[String, Long] = Map.empty)
       derives JsonCodec
@@ -213,7 +212,6 @@ private[scalive] object ZioHttpSecurity:
     sessionIdentity: Option[String] = None,
     rootLayoutKey: String = "scalive:default-root",
     sessionMountClaims: Vector[String] = Vector.empty,
-    trackedStatics: Vector[String] = Vector.empty,
     initialFlash: Map[String, String] = Map.empty,
     nestedLifecycles: Map[String, Long] = Map.empty
   ): UIO[String] =
@@ -228,7 +226,6 @@ private[scalive] object ZioHttpSecurity:
       sessionIdentity,
       rootLayoutKey,
       sessionMountClaims,
-      trackedStatics,
       initialFlash,
       nestedLifecycles
     )
@@ -251,7 +248,6 @@ private[scalive] object ZioHttpSecurity:
     sessionIdentity: Option[String] = None,
     rootLayoutKey: String = "scalive:default-root",
     sessionMountClaims: Vector[String] = Vector.empty,
-    trackedStatics: Vector[String] = Vector.empty,
     initialFlash: Map[String, String] = Map.empty,
     nestedLifecycles: Map[String, Long] = Map.empty
   ): UIO[String] =
@@ -266,7 +262,6 @@ private[scalive] object ZioHttpSecurity:
       sessionIdentity,
       rootLayoutKey,
       sessionMountClaims,
-      trackedStatics,
       initialFlash,
       nestedLifecycles
     )
@@ -476,7 +471,6 @@ private[scalive] object ZioHttpSecurity:
     sessionIdentity: Option[String],
     rootLayoutKey: String,
     sessionMountClaims: Vector[String],
-    trackedStatics: Vector[String],
     initialFlash: Map[String, String],
     nestedLifecycles: Map[String, Long]
   ): UIO[String] =
@@ -494,7 +488,6 @@ private[scalive] object ZioHttpSecurity:
           rootLayoutKey,
           sessionMountClaims,
           issuedAt,
-          trackedStatics,
           initialFlash,
           nestedLifecycles
         )

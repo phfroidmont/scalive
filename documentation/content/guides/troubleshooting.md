@@ -171,8 +171,9 @@ Verify that:
 Write a browser test for the concrete recovery behavior your application
 promises.
 
-`ConnectedMetadata.staticChanged` reports whether the browser's tracked asset
-URLs differ from the ones the server rendered, usually after a deployment.
+`ConnectedMetadata.staticChanged` reports whether the running server's root
+layout tracks an asset URL the browser has not loaded, usually after a
+deployment.
 `ConnectedMetadata.connectParams` exposes all browser join parameters as
 untrusted JSON, while typed server-derived connect info remains partial. Decode
 application-owned parameters when needed, but never base recovery on

@@ -1,7 +1,7 @@
 package scalive
 
 import java.time.Duration
-import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.{AtomicInteger, AtomicReference}
 
 import zio.*
 import zio.http.*
@@ -392,11 +392,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
           div(
             flash(oldKind)(message => span(idAttr := "old-flash", message)),
             flash(newKind)(message =>
-              sectionTag(
-                idAttr := "new-flash",
-                message,
-                scriptTag(phx.trackStatic := true, src := "/assets/final-flash.js")
-              )
+              sectionTag(idAttr := "new-flash", message)
             ),
             instance.render(())
           )
@@ -419,54 +415,25 @@ object ZioHttpSpec extends ZIOSpecDefault:
         !body.contains("remove-me"),
         body.contains("id=\"new-flash\""),
         body.contains("component-final"),
-        claims.initialFlash == Map(newKind.value -> "component-final"),
-        claims.trackedStatics.filterNot(_.startsWith("/_scalive/")) == Vector("/assets/final-flash.js")
+        claims.initialFlash == Map(newKind.value -> "component-final")
       )
     },
-    test("signed bootstrap captures and compares tracked static assets") {
-      object View extends LiveView.Eventless[Unit]:
-        def mount(ctx: MountContext) = ZIO.unit
-        def view(model: Signal[Unit]) =
-          div(
-            scriptTag(phx.trackStatic := true, src := "/assets/app-123.js?vsn=d"),
-            linkTag(phx.trackStatic := true, href := "/assets/app-123.css")
+    test("tracked static comparison looks for server URLs the browser has not loaded") {
+      val server = Vector("/assets/app-123.js?vsn=d", "/assets/app-123.css")
+      val loaded = ZioHttp.clientTrackedStatics(
+        Map(
+          "_track_static" -> Json.Arr(
+            Json.Str("/assets/app-123.css?cache=1"),
+            Json.Str("https://example.test/assets/app-123.js"),
+            Json.Str("/assets/component.js")
           )
-
-      for
-        response <- run(
-                      ZioHttp.routes(scalive.Live.router(scalive.live -> View), config),
-                      Request.get(URL.root)
-                    )
-        body   <- response.body.asString.orDie
-        claims <- ZioHttpSecurity.verifySession(
-                    config,
-                    attribute(body, "data-phx-session").get
-                  )
-        staticClaims <- ZioHttpSecurity.verifyStatic(
-                          config,
-                          attribute(body, "data-phx-static").get
-                        )
-        scaliveStatics = claims.trackedStatics.filter(_.startsWith("/_scalive/"))
-        matching       = ZioHttp.clientTrackedStatics(
-                     Map(
-                       "_track_static" -> Json.Arr(
-                         (scaliveStatics.map(Json.Str(_)) ++ Vector(
-                           Json.Str("https://example.test/assets/app-123.js"),
-                           Json.Str("/assets/app-123.css?cache=1")
-                         ))*
-                       )
-                     )
-                   )
-      yield assertTrue(
-        claims == staticClaims,
-        claims.trackedStatics.filterNot(_.startsWith("/_scalive/")) == Vector(
-          "/assets/app-123.js?vsn=d",
-          "/assets/app-123.css"
-        ),
-        !ZioHttp.staticChanged(matching, claims.trackedStatics, URL.root),
-        ZioHttp.staticChanged(Some(Vector("/assets/other.js")), claims.trackedStatics, URL.root),
-        !ZioHttp.staticChanged(None, claims.trackedStatics, URL.root),
-        !ZioHttp.staticChanged(Some(Vector.empty), claims.trackedStatics, URL.root),
+        )
+      )
+      assertTrue(
+        !ZioHttp.staticChanged(loaded, server, URL.root),
+        ZioHttp.staticChanged(Some(Vector("/assets/app-122.js", "/assets/app-123.css")), server, URL.root),
+        !ZioHttp.staticChanged(None, server, URL.root),
+        !ZioHttp.staticChanged(Some(Vector.empty), server, URL.root),
         !ZioHttp.staticChanged(
           Some(Vector("https://example.test/pages/assets/app%20name.js")),
           Vector("assets/app name.js"),
@@ -491,10 +458,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
           props: Signal[String],
           model: Signal[String],
         ) =
-          sectionTag(
-            button(on.click(JS.hide()), model),
-            scriptTag(phx.trackStatic := true, src := "/assets/component.js")
-          )
+          sectionTag(button(on.click(JS.hide()), model))
       val instance = component(definition, "disconnected-component")
       object View extends LiveView.Eventless[Unit]:
         def mount(ctx: MountContext) = ZIO.unit
@@ -505,18 +469,13 @@ object ZioHttpSpec extends ZIOSpecDefault:
                       ZioHttp.routes(scalive.Live.router(scalive.live -> View), config),
                       Request.get(URL.root)
                     )
-        body   <- response.body.asString.orDie
-        claims <- ZioHttpSecurity.verifySession(
-                    config,
-                    attribute(body, "data-phx-session").get
-                  )
+        body <- response.body.asString.orDie
       yield assertTrue(
         response.status == Status.Ok,
         mounts.get() == 1,
         body.contains("<section data-phx-component=\"1\">"),
         body.contains("phx-target=\"1\""),
-        body.contains("component model"),
-        claims.trackedStatics.filterNot(_.startsWith("/_scalive/")) == Vector("/assets/component.js")
+        body.contains("component model")
       )
     },
     test("connected CID ingress releases the projection gate before exact component inspection") {
@@ -2230,6 +2189,53 @@ object ZioHttpSpec extends ZIOSpecDefault:
         connected.headOption.map(_.lifecycleId) == disconnected.headOption
       ))
     },
+    test("connected joins compare tracked assets with the running server's root layout") {
+      val bundle  = AtomicReference("/assets/app-1.js")
+      val changed = AtomicReference(Vector.empty[Boolean])
+      object Root extends LiveRootLayout[Any, Any]:
+        def view[Msg](
+          content: HtmlElement[Msg],
+          title: Option[String],
+          context: LiveRootLayoutContext[Any, Any]
+        ) = htmlRootTag(
+          headTag(scriptTag(phx.trackStatic := true, src := bundle.get())),
+          bodyTag(content)
+        )
+      object View extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) =
+          ctx.connection.whenConnected(connected =>
+            ZIO.succeed(changed.updateAndGet(_ :+ connected.staticChanged))
+          )
+        def view(model: Signal[Unit]) =
+          div(scriptTag(phx.trackStatic := true, src := "/assets/content.js"))
+      val application = scalive.Live.router.withRootLayout(Root)(scalive.live -> View)
+
+      // The browser reports the URLs of the page it loaded, even when the server has changed since.
+      def joinTracking(port: Int, beforeJoin: UIO[Unit]) =
+        for
+          page   <- bootstrap(port)
+          _      <- beforeJoin
+          socket <- connect(port, page)
+          params  = Json.Obj("_track_static" -> Json.Arr(page.trackedStatics.map(Json.Str(_))*))
+          joined <- joinRoot(socket, page, params)
+          _      <- socket.close
+        yield (page, joined)
+
+      withServer(application) { port =>
+        for
+          current <- joinTracking(port, ZIO.unit)
+          (unchangedPage, unchanged) = current
+          stale <- joinTracking(port, ZIO.succeed(bundle.set("/assets/app-2.js"))).map(_._2)
+        yield assertTrue(
+          unchangedPage.trackedStatics.contains("/assets/app-1.js"),
+          unchangedPage.trackedStatics.contains("/assets/content.js"),
+          unchangedPage.trackedStatics.exists(_.startsWith("/_scalive/")),
+          status(unchanged) == "ok",
+          status(stale) == "ok",
+          changed.get() == Vector(false, true)
+        )
+      }
+    },
     test("disconnect guard settles the event, closes the socket, and cleans up the lifecycle") {
       val event    = BrowserToServerEvent[Json]("disconnect-event")
       val cleanup  = AtomicInteger()
@@ -2519,7 +2525,8 @@ object ZioHttpSpec extends ZIOSpecDefault:
     static: String,
     csrf: String,
     cookie: Cookie.Request,
-    url: String)
+    url: String,
+    trackedStatics: Vector[String] = Vector.empty)
 
   private final case class SocketClient(
     channel: WebSocketChannel,
@@ -2578,7 +2585,15 @@ object ZioHttpSpec extends ZIOSpecDefault:
                     response.headers(Header.SetCookie).map(_.value)
                       .find(_.name == "_scalive_csrf")
                   ).orElseFail(AssertionError("missing CSRF cookie"))
-    yield Bootstrap(rootId, session, static, csrf, Cookie.Request(cookie.name, cookie.content), path)
+    yield Bootstrap(
+      rootId,
+      session,
+      static,
+      csrf,
+      Cookie.Request(cookie.name, cookie.content),
+      path,
+      trackedUrls(body)
+    )
 
   private def connect(port: Int, bootstrap: Bootstrap): ZIO[Client & Scope, Throwable, SocketClient] =
     for
@@ -2616,7 +2631,11 @@ object ZioHttpSpec extends ZIOSpecDefault:
       channel <- registered.await
     yield SocketClient(channel, incoming, closed, closeCode)
 
-  private def joinRoot(socket: SocketClient, bootstrap: Bootstrap): Task[PhoenixEnvelope] =
+  private def joinRoot(
+    socket: SocketClient,
+    bootstrap: Bootstrap,
+    params: Json.Obj = Json.Obj.empty
+  ): Task[PhoenixEnvelope] =
     val topic = s"lv:${bootstrap.rootId}"
     socket.send(
       PhoenixEnvelope(
@@ -2630,7 +2649,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
           "flash"    -> Json.Null,
           "session"  -> Json.Str(bootstrap.session),
           "static"   -> Json.Str(bootstrap.static),
-          "params"   -> Json.Obj.empty,
+          "params"   -> params,
           "sticky"   -> Json.Bool(false)
         )
       )
@@ -2693,6 +2712,12 @@ object ZioHttpSpec extends ZIOSpecDefault:
 
   private def requiredAttribute(html: String, name: String): Task[String] =
     ZIO.fromOption(attribute(html, name)).orElseFail(AssertionError(s"missing $name attribute"))
+
+  // Like the Phoenix client, in document order.
+  private def trackedUrls(html: String): Vector[String] =
+    "<[^>]*phx-track-static[^>]*>".r.findAllIn(html).toVector.flatMap(tag =>
+      attribute(tag, "src").orElse(attribute(tag, "href"))
+    )
 
   private def csrfToken(html: String): Option[String] =
     "<meta name=\"csrf-token\" content=\"([^\"]+)\"".r.findFirstMatchIn(html).map(_.group(1))

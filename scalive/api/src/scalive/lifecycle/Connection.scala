@@ -36,13 +36,14 @@ enum Connection[+Connected]:
 
 /** Metadata supplied by a connected client. Values in `connectParams` are untrusted. */
 trait ConnectedMetadata:
-  /** Whether the browser's tracked static assets differ from the ones the server rendered.
+  /** Whether the running server's document tracks an asset the browser has not loaded.
     *
-    * It compares the URLs of `phx-track-static` tags, ignoring query strings, fragments, and
-    * origins, and stays the same for the whole lifecycle. Missing, malformed, or empty tracking
-    * data from the browser yields `false`, and nested LiveViews always see `false`. Treat it as a
-    * hint that a deployment changed, for example to trigger a full reload, not as a security
-    * signal.
+    * It is `true` when a `phx-track-static` URL of the root layout, or of the scripts Scalive adds
+    * to it, is missing from the URLs the browser reports, usually because a deployment changed
+    * them. Query strings, fragments, and origins are ignored, and tracked tags inside LiveView
+    * content are not compared. It stays the same for the whole lifecycle. Missing, malformed, or
+    * empty tracking data from the browser yields `false`, and nested LiveViews always see `false`.
+    * Treat it as a hint, for example to trigger a full reload, not as a security signal.
     */
   def staticChanged: Boolean
 

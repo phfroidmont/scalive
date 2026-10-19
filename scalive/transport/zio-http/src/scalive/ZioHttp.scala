@@ -70,15 +70,19 @@ object ZioHttp:
         values.collect { case Json.Str(value) => value }.toVector
     }
 
+  /** Whether the running server's document tracks a URL that the browser has not loaded.
+    *
+    * The browser also reports tracked tags inside LiveView content, so its extra URLs do not count.
+    */
   private[scalive] def staticChanged(
     client: Option[Vector[String]],
     server: Vector[String],
     pageUrl: URL
   ): Boolean =
-    client.exists(values =>
-      values.nonEmpty &&
-        values.map(normalizeStaticUrl(_, pageUrl)) != server.map(normalizeStaticUrl(_, pageUrl))
-    )
+    client.exists { values =>
+      val loaded = values.map(normalizeStaticUrl(_, pageUrl)).toSet
+      values.nonEmpty && server.exists(url => !loaded.contains(normalizeStaticUrl(url, pageUrl)))
+    }
 
   private def normalizeStaticUrl(value: String, pageUrl: URL): String =
     val withoutQuery = value.takeWhile(character => character != '?' && character != '#')
@@ -163,14 +167,19 @@ object ZioHttp:
       clientPath <- ZIO
                       .fromEither(application.clientPath.format(()))
                       .mapError(error => AssemblyException(s"invalid client path: $error"))
-      browser <- BrowserFiles.load(client, socketPath.encode, clientPath)
-      _       <- ZIO.fromEither(rejectBrowserFileRoutes(catalog, browser, clientPath))
+      browser        <- BrowserFiles.load(client, socketPath.encode, clientPath)
+      _              <- ZIO.fromEither(rejectBrowserFileRoutes(catalog, browser, clientPath))
+      browserStatics <- ZIO
+                          .foreach(browser.leading ++ browser.trailing)(trackedStatics)
+                          .map(_.flatten)
+                          .mapError(error => AssemblyException(s"invalid browser files: $error"))
     yield
       val getRoutes   = catalog.map(_.getRoute(config, lifecycleObserver, browser))
       val socketRoute = websocketRoute(
         application.socketPath,
         catalog,
         config,
+        browserStatics,
         lifecycleObserver,
         observerFactory
       )
@@ -273,7 +282,8 @@ object ZioHttp:
 
   final private[scalive] case class PreparedConnected[Msg, Model](
     lifecycle: RootLifecycle[Msg, Model],
-    admission: Option[PreparedAdmission])
+    admission: Option[PreparedAdmission],
+    trackedStatics: Vector[String])
 
   /** The one audited existential boundary. All route-specific types remain captured by the
     * implementation created in `erase`; transport/socket code only sees this sealed interface.
@@ -580,7 +590,6 @@ object ZioHttp:
                     sessionName,
                     rootKey,
                     mountClaims,
-                    rendered.trackedStatics,
                     rendered.finalFlash.view.map((key, value) => key.value -> value).toMap,
                     childLifecycles
                   )
@@ -650,6 +659,11 @@ object ZioHttp:
 
       private def selectedRoot: LiveRootLayout[A, Ctx] =
         definition.rootLayout.getOrElse(applicationRoot.asInstanceOf[LiveRootLayout[A, Ctx]])
+
+      // Renders the document the running server would serve around empty content, so a join can
+      // compare its tracked assets with the ones the browser loaded.
+      private def rootLayoutStatics(context: LiveRootLayoutContext[A, Ctx]): Task[Vector[String]] =
+        ZIO.suspend(trackedStatics(selectedRoot.view[Nothing](div(), None, context)))
 
       def rootLayoutKey(path: A, request: Request, erasedContext: Any): String =
         selectedRoot.key(
@@ -746,7 +760,9 @@ object ZioHttp:
                     .unauthorized(s"invalid route parameters: ${error.message}")
                 )
               )
-              .flatMap(make(_, context, url)).map { lifecycle =>
+              .flatMap(make(_, context, url))
+              .zip(rootLayoutStatics(rootContext))
+              .map { (lifecycle, rootStatics) =>
                 val initialized = lifecycle.copy(mount =
                   mountContext =>
                     ZIO.suspendSucceed {
@@ -766,7 +782,8 @@ object ZioHttp:
                     applicationLayouts,
                     decodePath
                   ),
-                  connected.admission
+                  connected.admission,
+                  rootStatics
                 )
               }).onError(_ => ZIO.foreachDiscard(connected.admission)(_.rollback))
         }
@@ -1145,10 +1162,7 @@ object ZioHttp:
         case None => response
     }
 
-  final private case class RenderedElement(
-    html: String,
-    trackedStatics: Vector[String],
-    finalFlash: Map[FlashKind, String])
+  final private case class RenderedElement(html: String, finalFlash: Map[FlashKind, String])
 
   private def renderElement[A, Msg](
     view: Signal[A] => HtmlElement[Msg],
@@ -1167,7 +1181,6 @@ object ZioHttp:
           ).map { case (_, html) =>
             RenderedElement(
               if includeDoctype then s"<!doctype html>$html" else html,
-              collectTrackedStatics(tree.root),
               finalFlash
             )
           }
@@ -1254,6 +1267,16 @@ object ZioHttp:
       end for
     end resolve
 
+  // Evaluates `element` without a lifecycle, only to read the URLs of its tracked tags.
+  private def trackedStatics(element: HtmlElement[Nothing]): Task[Vector[String]] =
+    ZIO.acquireReleaseWith(ZIO.fromEither(RenderProgram.compile[Unit, Nothing](_ => element)))(
+      _.close
+    ) { program =>
+      ZIO.acquireReleaseWith(program.evaluate(()))(_.discard)(candidate =>
+        ZIO.succeed(collectTrackedStatics(candidate.tree.root))
+      )
+    }
+
   private def collectTrackedStatics(node: EvaluatedNode): Vector[String] = node match
     case element: EvaluatedNode.Element =>
       val tracked = element.attributes.exists(attribute =>
@@ -1332,6 +1355,7 @@ object ZioHttp:
     socketPath: PathCodec[Unit],
     routes: Vector[CompiledRoute[R]],
     config: ZioHttpConfig,
+    browserStatics: Vector[String],
     lifecycleObserver: LifecycleObserver,
     observerFactory: RuntimeObserverFactory
   ): Route[R, Nothing] =
@@ -1357,6 +1381,7 @@ object ZioHttp:
                     connectionId,
                     routes,
                     config,
+                    browserStatics,
                     request,
                     csrfCookieValue,
                     csrfToken,
@@ -1574,6 +1599,7 @@ object ZioHttp:
   final private class SocketRuntime[R](
     routes: Vector[CompiledRoute[R]],
     config: ZioHttpConfig,
+    browserStatics: Vector[String],
     csrfCookie: Option[String],
     csrfToken: Option[String],
     socketRequest: Request,
@@ -1636,6 +1662,7 @@ object ZioHttp:
                      joinLifecycle(
                        routes,
                        config,
+                       browserStatics,
                        csrfCookie,
                        csrfToken,
                        socketRequest,
@@ -1786,6 +1813,7 @@ object ZioHttp:
     connectionId: ConnectionId,
     routes: Vector[CompiledRoute[R]],
     config: ZioHttpConfig,
+    browserStatics: Vector[String],
     socketRequest: Request,
     csrfCookie: Option[String],
     csrfToken: Option[String],
@@ -1848,6 +1876,7 @@ object ZioHttp:
     yield SocketRuntime(
       routes,
       config,
+      browserStatics,
       csrfCookie,
       csrfToken,
       socketRequest,
@@ -1883,6 +1912,8 @@ object ZioHttp:
                    connectionId,
                    routes,
                    config,
+                   // In-process clients load no browser files, so only root layouts track assets.
+                   Vector.empty,
                    socketRequest,
                    csrfCookie,
                    csrfToken,
@@ -1947,6 +1978,7 @@ object ZioHttp:
     connectionId: ConnectionId,
     routes: Vector[CompiledRoute[R]],
     config: ZioHttpConfig,
+    browserStatics: Vector[String],
     socketRequest: Request,
     csrfCookie: Option[String],
     csrfToken: Option[String],
@@ -1958,6 +1990,7 @@ object ZioHttp:
                    connectionId,
                    routes,
                    config,
+                   browserStatics,
                    socketRequest,
                    csrfCookie,
                    csrfToken,
@@ -2108,6 +2141,7 @@ object ZioHttp:
   private def joinLifecycle[R](
     routes: Vector[CompiledRoute[R]],
     config: ZioHttpConfig,
+    browserStatics: Vector[String],
     csrfCookie: Option[String],
     csrfToken: Option[String],
     socketRequest: Request,
@@ -2233,7 +2267,7 @@ object ZioHttp:
                         metadata = RootConnectionMetadata(
                                      staticChanged = staticChanged(
                                        clientTrackedStatics(join.params),
-                                       admitted.claims.trackedStatics,
+                                       prepared.trackedStatics ++ browserStatics,
                                        admitted.url
                                      ),
                                      connectParams = join.params,
@@ -3886,7 +3920,6 @@ object ZioHttp:
     sessionName: Option[String],
     rootLayoutKey: String,
     mountClaims: SessionMountClaims,
-    trackedStatics: Vector[String],
     initialFlash: Map[String, String] = Map.empty,
     nestedLifecycles: Map[String, Long] = Map.empty
   ): UIO[(String, String)] =
@@ -3901,7 +3934,6 @@ object ZioHttp:
         sessionName,
         rootLayoutKey,
         mountClaims.values,
-        trackedStatics,
         initialFlash,
         nestedLifecycles
       ).zipPar(
@@ -3915,7 +3947,6 @@ object ZioHttp:
           sessionName,
           rootLayoutKey,
           mountClaims.values,
-          trackedStatics,
           initialFlash,
           nestedLifecycles
         )
@@ -3933,7 +3964,6 @@ object ZioHttp:
                 sessionName,
                 rootLayoutKey,
                 mountClaims,
-                trackedStatics,
                 initialFlash,
                 nestedLifecycles
               ),
@@ -3950,7 +3980,6 @@ object ZioHttp:
                   sessionName,
                   rootLayoutKey,
                   mountClaims,
-                  trackedStatics,
                   initialFlash,
                   nestedLifecycles
                 )

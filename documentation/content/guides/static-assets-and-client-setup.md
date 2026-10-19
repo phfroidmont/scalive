@@ -188,8 +188,9 @@ URLs but omit that Phoenix marker.
 
 Keep the top-level script and stylesheet selection explicit in the root layout;
 inventory entries do not automatically become tags. Use tracked helpers for
-application bundles whose change should be visible to the LiveView client. A
-connected view reads the tracking result through
+application bundles whose change should be visible to the LiveView client, and
+render them in the root layout: only the root layout's tracked tags are compared.
+A connected view reads the tracking result through
 [`staticChanged`](#read-connect-metadata).
 
 ## Build a custom client bundle {#build-the-client-bundle}
@@ -316,10 +317,14 @@ Connected capabilities also expose
 @:apiSymbol(def:scalive.ConnectedMetadata.staticChanged)`staticChanged`@:@, the
 result of [tracked tag](#render-tracked-tags) comparison. Use it to replace
 stale connected state or to initiate a full reload. When a routed root LiveView
-joins, it is `true` when the client's non-empty list of tracked URLs differs from
-the server-rendered list; query strings, fragments, and URL origins are ignored
-during comparison. Missing, malformed, or empty client tracking metadata yields
-`false`, and the result remains stable for that lifecycle. Therefore use
+joins, the running server renders its root layout again and the result is `true`
+when one of that document's tracked URLs, including the scripts Scalive adds, is
+missing from the client's non-empty list. A page loaded before a deployment that
+changed an asset URL therefore reports `true` when it reconnects. Query strings,
+fragments, and URL origins are ignored during comparison, and tracked tags
+inside LiveView content are not compared. Missing, malformed, or empty client
+tracking metadata yields `false`, and the result remains stable for that
+lifecycle. Therefore use
 it as a deployment-change hint, not proof that assets loaded successfully or as
 a security signal.
 

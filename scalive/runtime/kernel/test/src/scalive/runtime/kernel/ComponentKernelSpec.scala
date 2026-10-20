@@ -637,6 +637,41 @@ object ComponentKernelSpec extends ZIOSpecDefault:
         )
       }
     },
+    test("a browser event for a destroyed component gets an empty reply and changes nothing") {
+      ZIO.scoped {
+        for
+          events <- ZIO.succeed(ConcurrentLinkedQueue[String]())
+          seen   <- Ref.make(Vector.empty[Int])
+          definition = componentDefinition(events)
+          instance   = component(definition, "removed")
+          program <- ZIO.fromEither(
+                       RenderProgram.compile[Int, Int](model =>
+                         div(model.map(_ % 2 == 0).when(div(instance.render(1))))
+                       )
+                     )
+          kernel <- SessionKernel.start(config, logic(seen), program, Outbound(), FakeEnvironment(events))
+          before <- kernel.inspect
+          mounted = before.components.values.head
+          binding = mounted.render.bindings.ids.head
+          click   = SessionCommand.ComponentClientEvent(
+                    kernel.epoch,
+                    mounted.id,
+                    binding,
+                    BindingPayload.Params(Map.empty)
+                  )
+          _         <- kernel.submit(SessionCommand.Message(kernel.epoch, 1))
+          dormant   <- kernel.inspect
+          _         <- kernel.destroyComponents(Vector(mounted.ref.asInstanceOf[Object]))
+          ignored   <- kernel.submit(click).either
+          destroyed <- kernel.inspect
+        yield assertTrue(
+          ignored.exists(_.delta == RenderDelta.Empty),
+          destroyed.components.allValues.isEmpty,
+          destroyed.model == dormant.model,
+          destroyed.revision == dormant.revision
+        )
+      }
+    },
     test("non-stabilizing component update journals fail validation") {
       ZIO.scoped {
         val events     = ConcurrentLinkedQueue[String]()

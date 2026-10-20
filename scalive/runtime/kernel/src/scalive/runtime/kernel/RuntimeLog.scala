@@ -37,9 +37,12 @@ private[scalive] object RuntimeLog:
   val Asset        = "asset"
   val RuntimeEvent = "runtime_event"
   val Epoch        = "epoch"
+  val Component    = "component_id"
+  val Cid          = "cid"
 
   def label(value: Product): String = LifecycleMetrics.label(value)
 
   def failure(value: LifecycleFailure): LogAnnotation = value match
     case LifecycleFailure.Stage(stage) => LogAnnotation(Stage, label(stage))
     case other                         => LogAnnotation(Failure, label(other))
+end RuntimeLog

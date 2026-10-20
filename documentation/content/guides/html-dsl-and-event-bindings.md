@@ -313,7 +313,8 @@ keep permission checks in the handler or the service it calls rather than
 relying on a button being hidden. Connected-turn guards run first, as for any
 other event. After 10 seconds, an event from a removed element is ignored: the
 browser gets an empty reply, which releases the element it disabled while
-waiting.
+waiting. An event addressed to a component that has left the page is ignored
+the same way, as in Phoenix LiveView.
 
 ## Show conditional and repeated content {#show-conditional-and-repeated-content}
 

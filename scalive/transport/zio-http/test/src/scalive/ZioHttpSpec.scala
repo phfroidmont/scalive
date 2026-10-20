@@ -2188,6 +2188,58 @@ object ZioHttpSpec extends ZIOSpecDefault:
         )
       }
     },
+    test("an event for a destroyed component gets an empty reply, like Phoenix") {
+      val hide = BrowserToServerEvent[Json]("hide")
+      val panel = new LiveComponent.Eventless[Unit, Unit]:
+        def mount(props: Unit, ctx: MountContext)          = ZIO.unit
+        def view(props: Signal[Unit], model: Signal[Unit]) = div("panel")
+      val instance = component(panel, "panel")
+      val view = new LiveView[Unit, Boolean]:
+        override val browserEvents = BrowserEvents.on(hide)(_ => ())
+        def mount(ctx: MountContext) = ZIO.succeed(true)
+        def handleMessage(model: Boolean, ctx: MessageContext): Unit => Task[Boolean] =
+          _ => ZIO.succeed(false)
+        def view(model: Signal[Boolean]) = div(model.when(instance.render(())))
+
+      def send(socket: SocketClient, topic: String, ref: String, event: String, payload: Json.Obj) =
+        socket.send(
+          PhoenixEnvelope(PhoenixRef.Value("root-join"), PhoenixRef.Value(ref), topic, event, payload)
+        ) *> socket.receiveReply(ref, topic)
+
+      withServer(scalive.Live.router(scalive.live -> view)) { port =>
+        for
+          page   <- bootstrap(port)
+          socket <- connect(port, page)
+          topic = s"lv:${page.rootId}"
+          _      <- joinRoot(socket, page)
+          hidden <- sendEvent(socket, page, "2", hide.value)
+          cids = Json.Obj("cids" -> Json.Arr(Json.Num(1)))
+          _ <- send(socket, topic, "3", "cids_will_destroy", cids)
+          _ <- send(socket, topic, "4", "cids_destroyed", cids)
+          ignored <- send(
+                       socket,
+                       topic,
+                       "5",
+                       "event",
+                       Json.Obj(
+                         "type"  -> Json.Str("click"),
+                         "event" -> Json.Str("b1:0"),
+                         "value" -> Json.Obj.empty,
+                         "cid"   -> Json.Num(1)
+                       )
+                     )
+          after <- sendEvent(socket, page, "6", hide.value)
+          logs  <- ZTestLogger.logOutput
+          _     <- socket.close
+        yield assertTrue(
+          status(hidden) == "ok",
+          status(ignored) == "ok",
+          response(ignored) == Json.Obj.empty,
+          status(after) == "ok",
+          !logs.exists(_.logLevel == LogLevel.Error)
+        )
+      }
+    },
     test("an event racing a push navigation is answered as stale without failing the socket") {
       val go   = BrowserToServerEvent[Json]("go")
       val next = scalive.live / "next"

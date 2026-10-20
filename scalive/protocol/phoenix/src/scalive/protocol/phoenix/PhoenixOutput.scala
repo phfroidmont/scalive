@@ -95,6 +95,10 @@ private[scalive] object PhoenixOutput:
   def leave(joinRef: PhoenixRef, ref: PhoenixRef, topic: String): PhoenixEnvelope =
     PhoenixEnvelope(joinRef, ref, topic, "phx_reply", ok(Json.Obj.empty))
 
+  /** An empty ok reply, which acknowledges an event that changed nothing. */
+  def noop(joinRef: PhoenixRef, ref: PhoenixRef, topic: String): PhoenixEnvelope =
+    PhoenixEnvelope(joinRef, ref, topic, "phx_reply", ok(Json.Obj.empty))
+
   def componentsWillDestroy(
     joinRef: PhoenixRef,
     ref: PhoenixRef,

@@ -3187,7 +3187,12 @@ object ZioHttp:
                     offerComponentEvent(joined, writer, eventRefs, event, cid).flatMap {
                       case true  => ZIO.unit
                       case false =>
-                        writer.offer(PhoenixOutput.error(joinRef, ref, topic, staleReason))
+                        // The browser destroyed this component; Phoenix answers such an event with
+                        // an empty reply, which releases the element it locked for the event.
+                        ZIO.logAnnotate(RuntimeLog.Cid, cid.toString)(
+                          ZIO
+                            .logDebug("Ignored an event for a component the page no longer renders")
+                        ) *> writer.offer(PhoenixOutput.noop(joinRef, ref, topic))
                     }
               }
             }

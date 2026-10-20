@@ -725,6 +725,9 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                           if state.committed.components
                             .get(client.component).exists(_.render.generates(binding)) =>
                         ignoreRemovedBinding(binding) *> haltActiveTurn(state, work, Some(tracked))
+                      case Left(SessionRejection.StaleComponent(component)) =>
+                        ignoreDestroyedComponent(component) *>
+                          haltActiveTurn(state, work, Some(tracked))
                       case Left(rejection) => response.fail(rejection).unit *> loop(state, work)
                       case Right((component, action)) =>
                         executeComponentTurn(
@@ -3368,6 +3371,14 @@ final private[scalive] class SessionKernel[Msg, Model] private (
   private def ignoreRemovedBinding(id: BindingId): UIO[Unit] =
     ZIO.logAnnotate(RuntimeLog.Event, id.encoded)(
       ZIO.logDebug("Ignored an event from a binding the page no longer renders")
+    )
+
+  /** An event for a component the browser has destroyed changes nothing. Like an event from a
+    * long-removed binding, it is answered with an empty reply, as Phoenix does.
+    */
+  private def ignoreDestroyedComponent(id: ComponentInstanceId): UIO[Unit] =
+    ZIO.logAnnotate(RuntimeLog.Component, id.value.toString)(
+      ZIO.logDebug("Ignored an event for a component the page no longer renders")
     )
 
   /** Resolves `id` against the committed bindings, then against those a recent render dropped. */

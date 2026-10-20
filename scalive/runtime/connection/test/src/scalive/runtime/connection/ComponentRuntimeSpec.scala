@@ -11,6 +11,7 @@ import scalive.render.AttributeValue
 import scalive.render.BindingId
 import scalive.render.BindingTable
 import scalive.render.EvaluatedNode
+import scalive.render.RenderDelta
 import scalive.runtime.contracts.*
 import scalive.runtime.kernel.*
 import scalive.runtime.resources.OwnerId
@@ -551,7 +552,7 @@ object ComponentRuntimeSpec extends ZIOSpecDefault:
         )
       }
     },
-    test("stale component clear-flash events leave root flash unchanged") {
+    test("clear-flash events for a destroyed component get an empty reply and keep the root flash") {
       ZIO.scoped {
         val kind      = FlashKind("info")
         val component = ComponentInstanceId(Long.MaxValue)
@@ -585,11 +586,8 @@ object ComponentRuntimeSpec extends ZIOSpecDefault:
         yield assertTrue(
           flash == Map(kind -> "retained"),
           output match
-            case ConnectionOutput.Rejected(
-                  `command`,
-                  SessionRejection.StaleComponent(`component`)
-                ) => true
-            case _ => false
+            case ConnectionOutput.Reply(`command`, RenderDelta.Empty, _) => true
+            case _                                                     => false
         )
       }
     },

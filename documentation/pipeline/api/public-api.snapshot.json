@@ -764,8 +764,8 @@
       "kind" : "class",
       "signatures" : [
         {
-          "id" : "class:scalive.LiveLayoutContext:81c888ab456e3ba5",
-          "signature" : "class LiveLayoutContext[+A, +Ctx](params: Signal[A], request: Signal[zio.http.Request], currentUrl: Signal[zio.http.URL], context: Ctx, connection: Connection[ConnectedMetadata])"
+          "id" : "class:scalive.LiveLayoutContext:6746c96336c5c745",
+          "signature" : "class LiveLayoutContext[+A, +Ctx](params: Signal[A], request: Signal[zio.http.Request], currentUrl: Signal[zio.http.URL], pageTitle: Signal[Option[String]], context: Ctx, connection: Connection[ConnectedMetadata])"
         }
       ]
     },
@@ -23593,6 +23593,18 @@
         {
           "id" : "val:scalive.LiveLayoutContext.currentUrl:16839ed759dbed73",
           "signature" : "val currentUrl: Signal[zio.http.URL]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveLayoutContext.pageTitle",
+      "ownerId" : "class:scalive.LiveLayoutContext",
+      "qualifiedName" : "scalive.LiveLayoutContext.pageTitle",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveLayoutContext.pageTitle:cedf66e7bafb8a94",
+          "signature" : "val pageTitle: Signal[Option[String]]"
         }
       ]
     },

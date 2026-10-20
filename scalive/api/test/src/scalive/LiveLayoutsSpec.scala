@@ -19,6 +19,7 @@ object LiveLayoutsSpec extends ZIOSpecDefault:
       val params                         = Signal.source[Int](new Object)
       val request                        = Signal.source[Request](new Object)
       val currentUrl                     = Signal.source[URL](new Object)
+      val pageTitle                      = Signal.source[Option[String]](new Object)
       val content                        = div[Message]()
       val outerContext                   = OuterContext("selected")
       val connection                     = Connection.Connected(new ConnectedMetadata:
@@ -27,7 +28,7 @@ object LiveLayoutsSpec extends ZIOSpecDefault:
       )
       val rendered: HtmlElement[Message] = adapted.view(
         content,
-        LiveLayoutContext(params, request, currentUrl, outerContext, connection)
+        LiveLayoutContext(params, request, currentUrl, pageTitle, outerContext, connection)
       )
       val passedContext = received.get
 
@@ -36,6 +37,7 @@ object LiveLayoutsSpec extends ZIOSpecDefault:
         passedContext.params eq params,
         passedContext.request eq request,
         passedContext.currentUrl eq currentUrl,
+        passedContext.pageTitle eq pageTitle,
         passedContext.context == "selected",
         passedContext.connection eq connection
       )
@@ -129,17 +131,25 @@ object LiveLayoutsSpec extends ZIOSpecDefault:
       val params     = Signal.source[Any](new Object)
       val request    = Signal.source[Request](new Object)
       val currentUrl = Signal.source[URL](new Object)
+      val pageTitle  = Signal.source[Option[String]](new Object)
       val content    = div()
 
       val identityResult = LiveLayout.identity
         .forContext[String](identity)
         .view(
           content,
-          LiveLayoutContext(params, request, currentUrl, "unchanged", Connection.Disconnected)
+          LiveLayoutContext(
+            params,
+            request,
+            currentUrl,
+            pageTitle,
+            "unchanged",
+            Connection.Disconnected
+          )
         )
       val composedResult = composed.view(
         content,
-        LiveLayoutContext(params, request, currentUrl, true, Connection.Disconnected)
+        LiveLayoutContext(params, request, currentUrl, pageTitle, true, Connection.Disconnected)
       )
 
       assertTrue(identityResult eq content, composedResult eq content, received == "1")

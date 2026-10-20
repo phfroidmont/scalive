@@ -1587,6 +1587,101 @@ object ZioHttpSpec extends ZIOSpecDefault:
         )
       )
     },
+    test("a layout renders the page title and follows its changes") {
+      val rename = BrowserToServerEvent[Json]("rename")
+      val view = new LiveView[Unit, Int]:
+        override val browserEvents = BrowserEvents.on(rename)(_ => ())
+        override def pageTitle(model: Int) = Option.when(model > 0)(s"Page $model")
+        def mount(ctx: MountContext) = ZIO.succeed(0)
+        def handleMessage(model: Int, ctx: MessageContext): Unit => Task[Int] =
+          _ => ZIO.succeed(model + 1)
+        def view(model: Signal[Int]) = div(idAttr := "view")
+      object Header extends LiveLayout[Any, Any]:
+        def view[Msg](content: HtmlElement[Msg], context: LiveLayoutContext[Any, Any]) =
+          div(h1(idAttr := "heading", context.pageTitle.map(_.getOrElse("Untitled"))), content)
+      val application = scalive.Live.router.withLayout(Header)(scalive.live -> view)
+
+      withServer(application) { port =>
+        for
+          disconnected <- Client.batched(
+                            Request.get(URL.decode(s"http://127.0.0.1:$port/").toOption.get)
+                          )
+          body    <- disconnected.body.asString
+          page    <- bootstrap(port)
+          socket  <- connect(port, page)
+          joined  <- joinRoot(socket, page)
+          renamed <- sendEvent(socket, page, "2", rename.value)
+          _       <- socket.close
+        yield assertTrue(
+          body.contains("<h1 id=\"heading\">Untitled</h1>"),
+          joined.payload.toString.contains("Untitled"),
+          status(renamed) == "ok",
+          response(renamed).toString.contains("Page 1")
+        )
+      }
+    },
+    test("a component in a layout handles its own events while the page re-renders") {
+      val rename = BrowserToServerEvent[Json]("rename")
+      val counter = new LiveComponent[Unit, Unit, Int]:
+        def mount(props: Unit, ctx: MountContext) = ZIO.succeed(0)
+        def handleMessage(props: Unit, model: Int, ctx: MessageContext) =
+          _ => ZIO.succeed(model + 1)
+        def view(props: Signal[Unit], model: Signal[Int]) =
+          button(on.click(()), model.map(count => s"clicked $count"))
+      val instance = component(counter, "layout-counter")
+      val view = new LiveView[Unit, Int]:
+        override val browserEvents = BrowserEvents.on(rename)(_ => ())
+        def mount(ctx: MountContext) = ZIO.succeed(0)
+        def handleMessage(model: Int, ctx: MessageContext): Unit => Task[Int] =
+          _ => ZIO.succeed(model + 1)
+        def view(model: Signal[Int]) = div(model.map(count => s"page $count"))
+      object Chrome extends LiveLayout[Any, Any]:
+        def view[Msg](content: HtmlElement[Msg], context: LiveLayoutContext[Any, Any]) =
+          div(navTag(instance.render(())), content)
+      val application = scalive.Live.router.withLayout(Chrome)(scalive.live -> view)
+
+      def click(socket: SocketClient, topic: String, ref: String, binding: String) =
+        socket.send(
+          PhoenixEnvelope(
+            PhoenixRef.Value("root-join"),
+            PhoenixRef.Value(ref),
+            topic,
+            "event",
+            Json.Obj(
+              "type"  -> Json.Str("click"),
+              "event" -> Json.Str(binding),
+              "value" -> Json.Obj.empty,
+              "cid"   -> Json.Num(1)
+            )
+          )
+        ) *> socket.receiveReply(ref, topic)
+
+      withServer(application) { port =>
+        for
+          page    <- bootstrap(port)
+          socket  <- connect(port, page)
+          topic    = s"lv:${page.rootId}"
+          joined  <- joinRoot(socket, page)
+          binding <- ZIO
+                       .fromOption("b\\d+:\\d+".r.findFirstIn(joined.payload.toString))
+                       .orElseFail(AssertionError("missing component binding"))
+          first   <- click(socket, topic, "2", binding)
+          renamed <- sendEvent(socket, page, "3", rename.value)
+          second  <- click(socket, topic, "4", binding)
+          logs    <- ZTestLogger.logOutput
+          _       <- socket.close
+        yield assertTrue(
+          joined.payload.toString.contains("clicked 0"),
+          status(first) == "ok",
+          response(first).toString.contains("clicked 1"),
+          status(renamed) == "ok",
+          response(renamed).toString.contains("page 1"),
+          status(second) == "ok",
+          response(second).toString.contains("clicked 2"),
+          !logs.exists(_.logLevel == LogLevel.Error)
+        )
+      }
+    },
     test("nested join admission authenticates join claims and independently verifies static tokens") {
       val claims = NestedCredentialClaims(
         NestedRegistrationId(11L),

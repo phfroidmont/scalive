@@ -884,11 +884,14 @@ object ZioHttp:
       val requestSignal = currentUrl.map(url =>
         request.copy(url = URL(path = url.path, queryParams = url.queryParams))
       )
-      val routeContext = LiveLayoutContext(path, requestSignal, currentUrl, context, connection)
-      val routed       = layouts.foldRight(lifecycle.view(input))((layout, content) =>
+      val pageTitle    = input.map((model, _) => lifecycle.pageTitle(model))
+      val routeContext =
+        LiveLayoutContext(path, requestSignal, currentUrl, pageTitle, context, connection)
+      val routed = layouts.foldRight(lifecycle.view(input))((layout, content) =>
         layout.view(content, routeContext)
       )
-      val applicationContext = LiveLayoutContext(path, requestSignal, currentUrl, (), connection)
+      val applicationContext =
+        LiveLayoutContext(path, requestSignal, currentUrl, pageTitle, (), connection)
       applicationLayouts.foldRight(routed)((layout, content) =>
         layout.view(content, applicationContext)
       ))

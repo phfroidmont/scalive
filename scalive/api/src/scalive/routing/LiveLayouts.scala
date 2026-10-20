@@ -11,6 +11,9 @@ import zio.http.{Request, URL}
   *   is a GET request without the browser's headers or cookies.
   * @param currentUrl
   *   The page's current URL, as a signal that follows live patches.
+  * @param pageTitle
+  *   The page LiveView's [[LiveView.pageTitle pageTitle]], the document title, as a signal that
+  *   follows its model.
   * @param context
   *   The context produced by the session's or route's mount aspects, or the part of it selected
   *   with [[LiveLayout.forContext]].
@@ -23,6 +26,7 @@ final case class LiveLayoutContext[+A, +Ctx](
   params: Signal[A],
   request: Signal[Request],
   currentUrl: Signal[URL],
+  pageTitle: Signal[Option[String]],
   context: Ctx,
   connection: Connection[ConnectedMetadata])
 

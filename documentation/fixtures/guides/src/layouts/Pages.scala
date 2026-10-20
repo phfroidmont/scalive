@@ -23,5 +23,7 @@ final class ProjectsLiveView extends LiveView.Eventless[Vector[String]]:
 final class ProjectLiveView extends LiveView.Routed.Eventless[String, String]:
   def mount(project: String, ctx: MountContext): Task[String] = ZIO.succeed(project)
 
+  override def pageTitle(project: String): Option[String] = Some(s"Project $project")
+
   def view(model: Signal[String]): HtmlElement[Nothing] =
     p(model.map(project => s"Open issues for $project."))

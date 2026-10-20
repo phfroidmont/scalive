@@ -28,7 +28,8 @@ object LayoutsSpec extends ZIOSpecDefault:
     test("nests the route layout inside the application layout and the root layout") {
       for html <- render("/projects/scalive")
       yield assertTrue(
-        html.selectOne("html > head > title").map(_.text) == Right("Projects · Scalive"),
+        html.selectOne("html > head > title").map(_.text) == Right("Project scalive · Scalive"),
+        html.selectOne("header p").map(_.text) == Right("Project scalive"),
         html.selectOne("header nav a[aria-current=page]").map(_.text) == Right("Projects"),
         html.selectOne("main section h1").map(_.text) == Right("Project scalive"),
         html.text.contains("Open issues for scalive.")
@@ -37,6 +38,7 @@ object LayoutsSpec extends ZIOSpecDefault:
     test("marks the current page in the navigation") {
       for html <- render("/")
       yield assertTrue(
+        html.selectOne("header p").map(_.text) == Right("Projects"),
         html.selectOne("header nav a[aria-current=page]").map(_.text) == Right("Home")
       )
     }

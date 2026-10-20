@@ -8,6 +8,7 @@ final class AppLayout extends LiveLayout[Any, Any]:
     val path = ctx.currentUrl.map(_.path.encode)
     div(
       headerTag(
+        p(ctx.pageTitle.map(_.getOrElse("Projects"))),
         navTag(
           aria.label := "Main",
           navLink(Routes.home.location, "Home", path.map(_ == "/")),

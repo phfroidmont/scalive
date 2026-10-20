@@ -60,7 +60,8 @@ section's application does.
 ## Wrap every page in shared navigation {#wrap-pages-in-shared-navigation}
 
 An ordinary layout renders the markup that pages share inside `<body>`. This
-one adds a navigation bar and marks the link to the current section:
+one shows the page title above a navigation bar and marks the link to the
+current section:
 
 @:sourceRegion(documentation/fixtures/guides/src/layouts/AppLayout.scala, layouts-app-layout)
 
@@ -74,10 +75,23 @@ signals, so the layout follows live navigation and patches without being
 rebuilt. Here `aria-current` moves to **Projects** when the visitor opens a
 project, while the navigation bar itself stays in place.
 
+`ctx.pageTitle` is the page's
+@:apiSymbol(def:scalive.LiveView.pageTitle)`pageTitle`@:@, the text of the
+document title, and follows the page's model. The project page returns
+`Some(s"Project $project")`, so the header shows it without the route passing
+the title to the layout; pages without a title show the default.
+
 A layout cannot send messages of its own: its `view` must accept content of any
-message type, so it has no message type to send. Use links, as above,
-[nested LiveViews](nested-liveviews.md#prerequisites), or
-[browser hooks](browser-integration.md#prerequisites) for interactive chrome.
+message type, so it has no message type to send. For interactive chrome, such
+as a notification bell or a search box, render a
+[stateful component](components-and-communication.md#prerequisites) in the
+layout with `instance.render(props)`. The component handles its own events,
+async work, and subscriptions in the page's lifecycle, and it is mounted again
+with the page on live navigation. It cannot send outputs to the layout. When
+the chrome must keep its state across navigation, use a sticky
+[nested LiveView](nested-liveviews.md#choose-sticky-navigation) instead. Links,
+as above, and [browser hooks](browser-integration.md#prerequisites) cover the
+rest.
 
 ## Give one route its own layout {#give-one-route-its-own-layout}
 

@@ -2064,6 +2064,66 @@ object ZioHttpSpec extends ZIOSpecDefault:
           )
         }.map(_.reduce(_ && _))
     } @@ TestAspect.withLiveClock,
+    test("named contexts from session and route aspects are read by name") {
+      final case class User(name: String)
+      final case class Org(id: String)
+      val user = LiveSessionMountAspect.fromRequest[Any, String, (user: User)](
+        _ => ZIO.succeed("ada" -> (user = User("ada"))),
+        (claim, _) => ZIO.succeed((user = User(claim)))
+      )
+      val org = LiveRouteMountAspect.make[Any, Unit, (user: User), (org: Org)]((_, context) =>
+        ZIO.succeed((org = Org(s"${context.user.name}-org")))
+      )
+      val locale = LiveRouteMountAspect.make[Any, Unit, (user: User, org: Org), (locale: String)](
+        (_, _) => ZIO.succeed((locale = "fr"))
+      )
+      object OrgLayout extends LiveLayout[Any, (user: User, org: Org)]:
+        def view[Msg](
+          content: HtmlElement[Msg],
+          context: LiveLayoutContext[Any, (user: User, org: Org)]
+        ) =
+          div(span(idAttr := "layout-org", context.context.org.id), content)
+      val application = scalive.Live.router(
+        scalive.Live
+          .session("named")
+          .withMountAspect(user)
+          .guardConnectedTurns(context =>
+            ZIO.fail(LiveConnectedTurnFailure.halt).when(context.user.name.isEmpty).unit
+          )(
+            scalive.live
+              .withMountAspect(org)
+              .withLayout(OrgLayout)
+              .withMountAspect(locale)
+              .guardConnectedTurns(context =>
+                ZIO.fail(LiveConnectedTurnFailure.halt).when(context.org.id.isEmpty).unit
+              )
+              .context(context =>
+                new LiveView.Eventless[Unit]:
+                  def mount(ctx: MountContext)  = ZIO.unit
+                  def view(model: Signal[Unit]) =
+                    div(idAttr := "page", s"${context.user.name} in ${context.org.id} (${context.locale})")
+              )
+          )
+      )
+
+      withServer(application) { port =>
+        for
+          disconnected <- Client.batched(
+                            Request.get(URL.decode(s"http://127.0.0.1:$port/").toOption.get)
+                          )
+          body   <- disconnected.body.asString
+          page   <- bootstrap(port)
+          socket <- connect(port, page)
+          joined <- joinRoot(socket, page)
+          _      <- socket.close
+        yield assertTrue(
+          body.contains("<span id=\"layout-org\">ada-org</span>"),
+          body.contains("<div id=\"page\">ada in ada-org (fr)</div>"),
+          status(joined) == "ok",
+          joined.payload.toString.contains("ada in ada-org (fr)")
+        )
+      }
+    },
     test("routes without resource initializers do not evaluate unused context projections") {
       final case class Combined(name: String, length: Int)
       val projections = AtomicInteger()

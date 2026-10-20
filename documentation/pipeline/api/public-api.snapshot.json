@@ -13230,6 +13230,18 @@
       ]
     },
     {
+      "id" : "given:scalive.ContextAppend.named",
+      "ownerId" : "object:scalive.ContextAppend",
+      "qualifiedName" : "scalive.ContextAppend.named",
+      "kind" : "given",
+      "signatures" : [
+        {
+          "id" : "given:scalive.ContextAppend.named:86f52ab43b6b36b4",
+          "signature" : "given named[Names <: Tuple, Values <: Tuple, OutNames <: Tuple, OutValues <: Tuple]: ContextAppend.Aux[NamedTuple.NamedTuple[Names, Values], NamedTuple.NamedTuple[OutNames, OutValues], NamedTuple.NamedTuple[Tuple.Concat[Names, OutNames], Tuple.Concat[Values, OutValues]]]"
+        }
+      ]
+    },
+    {
       "id" : "given:scalive.FormProductNames.matching",
       "ownerId" : "object:scalive.FormProductNames",
       "qualifiedName" : "scalive.FormProductNames.matching",

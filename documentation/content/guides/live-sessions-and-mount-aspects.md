@@ -141,10 +141,25 @@ the workspace route's factory receives `(CurrentUser, WorkspaceAccess)` as two
 parameters. One more aspect would produce
 `(CurrentUser, WorkspaceAccess, NextContext)`.
 
-The default `ContextAppend` discards only the initial `Any` identity context and
-appends each later output to one flat tuple. Define a custom
-`ContextAppend` only when a domain-specific accumulated type is clearer and its
-`left` projection can recover the preceding context.
+Positions are fine for one or two parts, but adding an aspect changes every
+consumer's tuple. Once an area has several aspects, name each part instead:
+when every aspect produces a named tuple, the context is one named tuple, read
+by name:
+
+@:sourceRegion(documentation/fixtures/guides/src/sessions/NamedContexts.scala, sessions-named-contexts)
+
+`map` names the output of an existing aspect. The workspace route's context is
+`(user: CurrentUser, access: WorkspaceAccess)`, so its factory reads
+`context.access`, and a later aspect adds a field without changing code that
+doesn't read it. Two aspects producing the same name fail to compile. A route
+without its own aspects is built before the session sees it, so its factory
+annotates the session's context type, here the `Account` alias. Name every part
+or none: an unnamed part and a named one combine into an ordinary pair.
+
+The default `ContextAppend` discards only the initial `Any` identity context,
+merges named tuples, and appends other outputs to one flat tuple. Define a
+custom `ContextAppend` only when a domain-specific accumulated type is clearer
+and its `left` projection can recover the preceding context.
 
 Mount admission does not rerun merely because another application turn arrives
 while a view remains mounted. Append a route

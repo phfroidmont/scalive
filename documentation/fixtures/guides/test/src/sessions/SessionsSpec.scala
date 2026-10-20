@@ -42,6 +42,19 @@ object SessionsSpec extends ZIOSpecDefault:
     if signedIn then request.addCookie(Cookie.Request("session", "ada-session")) else request
 
   def spec = suite("Live sessions")(
+    test("named session and route contexts reach the page by name") {
+      ZIO.scoped {
+        for
+          client <- ConnectedRender.open(
+                      NamedContexts.application,
+                      config,
+                      request("/workspaces/docs")
+                    )
+          view    <- client.join
+          heading <- view.text("h1")
+        yield assertTrue(heading == "Ada: docs")
+      }
+    },
     test("session and route context reach the connected page and the session layout") {
       ZIO.scoped {
         for

@@ -251,7 +251,7 @@ object FormWorkflowSpec extends ZIOSpecDefault:
       val started  = workflow.beginSave match
         case value: FormSaveStart.Started[?, ?] => value
         case _                                  => throw new AssertionError("save did not start")
-      val saving     = started.next.asInstanceOf[Definition.Workflow[String]]
+      val saving     = started.workflow.asInstanceOf[Definition.Workflow[String]]
       val submission = started.submission.asInstanceOf[FormSubmission[
         Root.type,
         Definition.type,
@@ -364,6 +364,121 @@ object FormWorkflowSpec extends ZIOSpecDefault:
         !reset.isDirty,
         reset.revision.value == 2L
       )
+    },
+    test("every start, transition and reset result exposes the workflow to store") {
+      val workflow = Definition.workflow[String](Definition.initial(Name.initial("Ada")))
+      val invalid  = Definition.workflow[String](Definition.initial(Name.initial(""))).beginSave
+      val started  = workflow.beginSave
+      val saving   = started.workflow
+      val again    = saving.beginSave
+      val blocked  = saving.reset
+      val token    = started match
+        case FormSaveStart.Started(_, submission) => submission.token
+        case _                                    => throw new AssertionError("save did not start")
+      val applied = saving.saveCancelled(token)
+      val stale   = applied.workflow.saveCancelled(token)
+
+      assertTrue(
+        invalid.isInstanceOf[FormSaveStart.Invalid[?, ?]],
+        invalid.workflow.current.interaction.visibility == ErrorVisibility.All,
+        saving.isSaving,
+        again.workflow eq saving,
+        blocked.workflow eq saving,
+        !applied.workflow.isSaving,
+        stale.workflow eq applied.workflow,
+        applied.workflow.reset.workflow.revision == applied.workflow.revision
+      )
+    },
+    test("complete applies each async result to the save in flight") {
+      val workflow = Definition.workflow[String](
+        Definition.initial(Name.initial("Ada"))
+      ).updated(Definition.initial(Name.initial("Grace")))
+      val (saving, submission) = workflow.beginSave match
+        case FormSaveStart.Started(next, value) => next -> value
+        case _                                  => throw new AssertionError("save did not start")
+      val token = submission.token
+      val failure: LiveAsyncResult.Failed[String] | LiveAsyncResult.Died => String =
+        case LiveAsyncResult.Failed(error) => s"failed: $error"
+        case LiveAsyncResult.Died(defect)  => s"died: ${defect.getMessage}"
+      val saved     = saving.complete(token, LiveAsyncResult.Succeeded(42))(failure)
+      val failed    = saving.complete(token, LiveAsyncResult.Failed("offline"))(failure)
+      val died      = saving.complete(token, LiveAsyncResult.Died(RuntimeException("boom")))(failure)
+      val cancelled = saving.complete(token, LiveAsyncResult.Cancelled(None))(failure)
+      val stale     = saved.workflow.complete(token, LiveAsyncResult.Succeeded(43))(failure)
+
+      assertTrue(
+        saved match
+          case FormSaveCompletion.Saved(next, value) =>
+            value == 42 && next.baseline == submission.values && !next.isDirty
+          case _ => false,
+        failed match
+          case FormSaveCompletion.Failed(next) =>
+            next.failureForCurrentRevision.contains("failed: offline")
+          case _ => false,
+        died match
+          case FormSaveCompletion.Failed(next) =>
+            next.failureForCurrentRevision.contains("died: boom")
+          case _ => false,
+        cancelled match
+          case FormSaveCompletion.Cancelled(next) => next.save == FormSaveState.Idle
+          case _                                  => false,
+        stale match
+          case FormSaveCompletion.Stale(next) => next eq saved.workflow
+          case _                              => false
+      )
+    },
+    test("complete makes the saved value the baseline, and fails an invalid one") {
+      val workflow = Definition.workflow[String](Definition.initial(Name.initial("Ada")))
+      val (saving, submission) = workflow.beginSave match
+        case FormSaveStart.Started(next, value) => next -> value
+        case _                                  => throw new AssertionError("save did not start")
+      val failure: LiveAsyncResult.Failed[Nothing] | LiveAsyncResult.Died => String =
+        case LiveAsyncResult.Failed(_)     => "failed"
+        case LiveAsyncResult.Died(defect)  => defect.getClass.getSimpleName
+      val canonical = saving.complete(
+        submission.token,
+        LiveAsyncResult.Succeeded(Draft("Grace")),
+        (saved: Draft) => Definition.initial(Name.initial(saved.name))
+      )(failure)
+      val invalid = saving.complete(
+        submission.token,
+        LiveAsyncResult.Succeeded(Draft("")),
+        (saved: Draft) => Definition.initial(Name.initial(saved.name))
+      )(failure)
+
+      assertTrue(
+        canonical match
+          case FormSaveCompletion.Saved(next, value) =>
+            value == Draft("Grace") && next.current.valueOption.contains(Draft("Grace")) &&
+            !next.isDirty
+          case _ => false,
+        invalid match
+          case FormSaveCompletion.Failed(next) =>
+            next.failureForCurrentRevision.contains("IllegalStateException") &&
+            next.baseline == workflow.baseline
+          case _ => false
+      )
+    },
+    test("rejects a saved form from another definition at compile time") {
+      val errors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        final case class Draft(name: String)
+        val root = FormRoot("draft")
+        val name = root.text("name")
+        val first = root.product[Draft]((name = name))
+        val second = root.product[Draft]((name = name))
+        val workflow = first.workflow[Unit](first.initial(name.initial("Ada")))
+        workflow.beginSave match
+          case FormSaveStart.Started(saving, submission) =>
+            saving.complete(
+              submission.token,
+              LiveAsyncResult.Succeeded(Draft("Grace")),
+              (saved: Draft) => second.initial(name.initial(saved.name))
+            )(_ => ())
+          case _ => ()
+      """)
+
+      assertTrue(errors.nonEmpty)
     },
     test("rejects canonical snapshots from another definition at compile time") {
       val errors = scala.compiletime.testing.typeCheckErrors("""

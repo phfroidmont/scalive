@@ -21,27 +21,19 @@ final class ProfileSaveLiveView(profiles: Profiles)
     // docs:start forms-workflow-start
     case Msg.Save(event) =>
       model.workflow.updated(event.form).beginSave match
-        case FormSaveStart.Invalid(next) =>
-          ZIO.succeed(model.copy(workflow = next))
-        case FormSaveStart.AlreadySaving(current, _) =>
-          ZIO.succeed(model.copy(workflow = current))
         case FormSaveStart.Started(next, submission) =>
           val token = submission.token
           ctx.async
             .start(SaveKey)(profiles.save(submission.value))(Msg.Saved(token, _))
             .as(model.copy(workflow = next))
+        case other => ZIO.succeed(model.copy(workflow = other.workflow))
     // docs:end forms-workflow-start
 
     // docs:start forms-workflow-complete
     case Msg.Saved(token, result) =>
-      val transition = result match
-        case LiveAsyncResult.Succeeded(_) => model.workflow.saveSucceeded(token)
-        case LiveAsyncResult.Failed(_) | LiveAsyncResult.Died(_) =>
-          model.workflow.saveFailed(token, SaveError("The profile could not be saved."))
-        case LiveAsyncResult.Cancelled(_) => model.workflow.saveCancelled(token)
-      transition match
-        case FormWorkflowTransition.Applied(next) => ZIO.succeed(model.copy(workflow = next))
-        case FormWorkflowTransition.Stale(_)      => ZIO.succeed(model)
+      val completion =
+        model.workflow.complete(token, result)(_ => SaveError("The profile could not be saved."))
+      ZIO.succeed(model.copy(workflow = completion.workflow))
     // docs:end forms-workflow-complete
 
     // docs:start forms-workflow-failure
@@ -51,9 +43,7 @@ final class ProfileSaveLiveView(profiles: Profiles)
 
     // docs:start forms-workflow-reset
     case Msg.Reset =>
-      model.workflow.reset match
-        case FormWorkflowReset.Reset(next)         => ZIO.succeed(model.copy(workflow = next))
-        case FormWorkflowReset.AlreadySaving(_, _) => ZIO.succeed(model)
+      ZIO.succeed(model.copy(workflow = model.workflow.reset.workflow))
     // docs:end forms-workflow-reset
   end handleMessage
 

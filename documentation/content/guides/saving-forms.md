@@ -28,9 +28,10 @@ one save. Submit starts the save:
 the valid value. The handler starts persistence with `ctx.async.start` and
 returns the `Saving` workflow in the same turn. The completion arrives as a
 later message, so it always finds the matching `Saving` state, even when the
-save finishes immediately. The invalid branch renders `next.current` with all
-errors visible, and `AlreadySaving` rejects a second submit while one is in
-flight.
+save finishes immediately. Every result carries the workflow to store, so the
+other branch stores `other.workflow`: for `Invalid`, the form with all errors
+visible; for `AlreadySaving`, the unchanged workflow, which rejects a second
+submit while one is in flight.
 
 The view reads the current form from `workflow.map(_.current)`. `isDirty`
 compares the current values with the baseline, and `isSaving` reports whether a
@@ -41,17 +42,34 @@ show "You have unsaved changes."
 
 Each save captures a valid value, its editable values, a token, and a revision.
 The completion message carries the captured `FormSubmissionToken` unchanged.
-Apply exactly one completion transition for it:
+Pass it to `complete` together with the task's `LiveAsyncResult`:
 
 @:sourceRegion(documentation/fixtures/guides/src/forms/ProfileSaveLiveView.scala, forms-workflow-complete)
 
-A completion carrying a token from another save attempt is `Stale` and leaves
-the model unchanged.
+`complete` returns a
+@:apiSymbol(enum:scalive.FormSaveCompletion)`FormSaveCompletion`@:@ whose
+`workflow` is the one to store. A successful save is `Saved` and advances the
+baseline. It replaces the current form only when no newer revision exists;
+edits made while saving stay current and remain dirty. A failure or a defect is
+`Failed`: the workflow stores the value your function builds from the
+`LiveAsyncResult.Failed` or `LiveAsyncResult.Died` case, and keeps the failed
+submission for retry diagnostics. A cancellation is `Cancelled` and returns to
+idle without advancing the baseline. A completion carrying a token from another
+save attempt is `Stale` and leaves the workflow unchanged.
 
-A successful save advances the baseline and replaces the current form only
-when no newer revision exists; edits made while saving stay current and remain
-dirty. Use `saveFailed` to retain the failed submission for retry diagnostics
-and `saveCancelled` to return to idle without advancing the baseline.
+When persistence returns the stored value, for example normalized, pass a
+function that builds the form from it. That form becomes the baseline. Match
+`Saved` to act only on a successful save:
+
+@:sourceRegion(documentation/fixtures/guides/src/forms/StoredProfileSave.scala, forms-workflow-complete-saved)
+
+A stored value whose form does not validate is a bug in persistence, so the
+save fails: your function receives a `LiveAsyncResult.Died` carrying an
+`IllegalStateException`.
+
+For a completion that does not come from `ctx.async`, call `saveSucceeded`,
+`saveFailed`, or `saveCancelled` with the token directly. Each returns
+`Applied` or `Stale`, and also has a `workflow`.
 
 ## Show a failure for the submitted draft {#show-a-failure-for-the-submitted-draft}
 
@@ -80,14 +98,14 @@ the form. Failure storage is the last retained failed attempt, not an audit log.
 
 ## Reset to the baseline {#reset-to-the-baseline}
 
-Call `workflow.reset` to return to the baseline, and handle
-`FormWorkflowReset.AlreadySaving` explicitly:
+Call `workflow.reset` to return to the baseline:
 
 @:sourceRegion(documentation/fixtures/guides/src/forms/ProfileSaveLiveView.scala, forms-workflow-reset)
 
-`reset` returns `FormWorkflowReset.AlreadySaving(current, submission)` instead of
-discarding an in-flight save, so cancellation policy remains an application
-decision. Do not replace an active workflow with a fresh one: that discards its
+`reset` returns `FormWorkflowReset.AlreadySaving(workflow, submission)` instead
+of discarding an in-flight save, so cancellation policy remains an application
+decision. Storing `workflow` keeps the save running; match `AlreadySaving` to
+tell the visitor or cancel the save. Do not replace an active workflow with a fresh one: that discards its
 in-flight correlation state and restarts submission token generation.
 
 ## Study the complete recipe {#study-the-complete-recipe}

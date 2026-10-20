@@ -85,33 +85,39 @@ enum FormSaveState[+Submission, +Failure]:
 
 /** Exhaustive result of attempting to begin a save. */
 enum FormSaveStart[+Workflow, +Submission]:
+  /** The workflow to store, whatever the result. */
+  def workflow: Workflow
+
   /** The current form is invalid, so no save started.
     *
-    * @param next
+    * @param workflow
     *   The workflow with every error of the current form visible. Store it so the errors render.
     */
-  case Invalid(next: Workflow)
+  case Invalid(workflow: Workflow)
 
   /** A save is already in flight, so no new save started.
     *
-    * @param current
+    * @param workflow
     *   The unchanged workflow.
     * @param submission
     *   The submission already in flight.
     */
-  case AlreadySaving(current: Workflow, submission: Submission)
+  case AlreadySaving(workflow: Workflow, submission: Submission)
 
   /** A save started.
     *
-    * @param next
+    * @param workflow
     *   The workflow in the saving state. Store it in the same turn that starts persistence.
     * @param submission
     *   The new submission. Persist its value and return its token when persistence ends.
     */
-  case Started(next: Workflow, submission: Submission)
+  case Started(workflow: Workflow, submission: Submission)
 
 /** Result of applying a token-correlated asynchronous completion. */
 enum FormWorkflowTransition[+Workflow]:
+  /** The workflow to store, whatever the result. */
+  def workflow: Workflow
+
   /** The token matched the save in flight, and the completion was applied.
     *
     * @param workflow
@@ -130,6 +136,9 @@ enum FormWorkflowTransition[+Workflow]:
 
 /** Result of requesting reset; an in-flight save blocks reset. */
 enum FormWorkflowReset[+Workflow, +Submission]:
+  /** The workflow to store, whatever the result. */
+  def workflow: Workflow
+
   /** The form was restored to the baseline.
     *
     * @param workflow
@@ -139,12 +148,52 @@ enum FormWorkflowReset[+Workflow, +Submission]:
 
   /** A save is in flight, so nothing was reset.
     *
-    * @param current
+    * @param workflow
     *   The unchanged workflow.
     * @param submission
     *   The in-flight submission that blocked the reset.
     */
-  case AlreadySaving(current: Workflow, submission: Submission)
+  case AlreadySaving(workflow: Workflow, submission: Submission)
+
+/** Result of applying a save task's [[LiveAsyncResult]] with [[FormWorkflow.complete]].
+  *
+  * @tparam A
+  *   the value the save task produces
+  */
+enum FormSaveCompletion[+Workflow, +A]:
+  /** The workflow to store, whatever the result. */
+  def workflow: Workflow
+
+  /** The save in flight succeeded.
+    *
+    * @param workflow
+    *   The workflow with the saved values as its baseline.
+    * @param value
+    *   The value the save task produced.
+    */
+  case Saved(workflow: Workflow, value: A)
+
+  /** The save in flight failed or died, and the workflow stores the failure.
+    *
+    * @param workflow
+    *   The workflow in the failed state.
+    */
+  case Failed(workflow: Workflow)
+
+  /** The save in flight was cancelled, and the workflow is idle again.
+    *
+    * @param workflow
+    *   The idle workflow.
+    */
+  case Cancelled(workflow: Workflow)
+
+  /** The token does not match the save in flight, so nothing changed.
+    *
+    * @param workflow
+    *   The unchanged workflow.
+    */
+  case Stale(workflow: Workflow)
+end FormSaveCompletion
 
 /** Pure baseline, revision, reset, and one-in-flight-save state.
   *
@@ -301,6 +350,66 @@ final class FormWorkflow[Owner, Schema, Domain, Failure] private[scalive] (
     case FormSaveState.Saving(submission) if submission.token == token =>
       FormWorkflowTransition.Applied(recreate(save = FormSaveState.Idle))
     case _ => FormWorkflowTransition.Stale(this)
+
+  /** Applies how the save task ended, when `token` belongs to the save in flight.
+    *
+    * This form keeps the submitted values as the new baseline on success, like
+    * `saveSucceeded(token)`. A failure or a defect is stored as `failure(...)`, like `saveFailed`,
+    * and a cancellation returns to idle, like `saveCancelled`. Any other token returns
+    * [[FormSaveCompletion.Stale]].
+    */
+  def complete[E, A](
+    token: FormSubmissionToken,
+    result: LiveAsyncResult[E, A]
+  )(
+    failure: LiveAsyncResult.Failed[E] | LiveAsyncResult.Died => Failure
+  ): FormSaveCompletion[FormWorkflow[Owner, Schema, Domain, Failure], A] =
+    result match
+      case LiveAsyncResult.Succeeded(value) =>
+        completion(saveSucceeded(token), FormSaveCompletion.Saved(_, value))
+      case failed: LiveAsyncResult.Failed[E] =>
+        completion(saveFailed(token, failure(failed)), FormSaveCompletion.Failed(_))
+      case died: LiveAsyncResult.Died =>
+        completion(saveFailed(token, failure(died)), FormSaveCompletion.Failed(_))
+      case LiveAsyncResult.Cancelled(_) =>
+        completion(saveCancelled(token), FormSaveCompletion.Cancelled(_))
+
+  /** Applies how the save task ended, when `token` belongs to the save in flight.
+    *
+    * This form makes `saved(value)` the new baseline on success. Use it when persistence returns
+    * the stored value, for example normalized. As with `saveSucceeded(token, canonical)`, unchanged
+    * edits are replaced by a pristine form of it. A saved form that does not validate is a
+    * persistence bug: it is stored as `failure` of a [[LiveAsyncResult.Died]] carrying an
+    * `IllegalStateException`. Otherwise this behaves like the other `complete`.
+    */
+  def complete[E, A](
+    token: FormSubmissionToken,
+    result: LiveAsyncResult[E, A],
+    saved: A => Form[Owner, Schema, Domain]
+  )(
+    failure: LiveAsyncResult.Failed[E] | LiveAsyncResult.Died => Failure
+  ): FormSaveCompletion[FormWorkflow[Owner, Schema, Domain, Failure], A] =
+    result match
+      case LiveAsyncResult.Succeeded(value) =>
+        saved(value).validSnapshot match
+          case Some(canonical) =>
+            completion(saveSucceeded(token, canonical), FormSaveCompletion.Saved(_, value))
+          case None =>
+            val defect: LiveAsyncResult.Died = LiveAsyncResult.Died(
+              IllegalStateException("the saved value does not validate against its form")
+            )
+            completion(saveFailed(token, failure(defect)), FormSaveCompletion.Failed(_))
+      case other => complete(token, other)(failure)
+
+  private def completion[A](
+    transition: FormWorkflowTransition[FormWorkflow[Owner, Schema, Domain, Failure]],
+    applied: FormWorkflow[Owner, Schema, Domain, Failure] => FormSaveCompletion[
+      FormWorkflow[Owner, Schema, Domain, Failure],
+      A
+    ]
+  ): FormSaveCompletion[FormWorkflow[Owner, Schema, Domain, Failure], A] = transition match
+    case FormWorkflowTransition.Applied(next) => applied(next)
+    case FormWorkflowTransition.Stale(next)   => FormSaveCompletion.Stale(next)
 
   private def succeed(
     submission: Submission,

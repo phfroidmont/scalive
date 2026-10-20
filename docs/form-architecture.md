@@ -1147,7 +1147,13 @@ workflow.saveSucceeded(token)
 workflow.saveSucceeded(token, canonicalSnapshot)
 workflow.saveFailed(token, failure)
 workflow.saveCancelled(token)
+workflow.complete(token, asyncResult)(failure)
+workflow.complete(token, asyncResult, savedForm)(failure)
 ```
+
+`complete` applies a `LiveAsyncResult` through the three transitions above and returns a
+`FormSaveCompletion` (`Saved`, `Failed`, `Cancelled`, `Stale`). Every result type of these
+operations exposes the `workflow` to store.
 
 `beginSave` succeeds only when the current form is valid. An invalid attempt returns a workflow whose
 current form has all errors visible, but does not create a persistence submission.

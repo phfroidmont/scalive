@@ -4822,6 +4822,30 @@
       ]
     },
     {
+      "id" : "def:scalive.FormSaveCompletion.workflow",
+      "ownerId" : "enum:scalive.FormSaveCompletion",
+      "qualifiedName" : "scalive.FormSaveCompletion.workflow",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FormSaveCompletion.workflow:48bfa00b9408b4e2",
+          "signature" : "def workflow: Workflow"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.FormSaveStart.workflow",
+      "ownerId" : "enum:scalive.FormSaveStart",
+      "qualifiedName" : "scalive.FormSaveStart.workflow",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FormSaveStart.workflow:31fa570ee733abfd",
+          "signature" : "def workflow: Workflow"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.FormSubmission.value",
       "ownerId" : "class:scalive.FormSubmission",
       "qualifiedName" : "scalive.FormSubmission.value",
@@ -4926,6 +4950,22 @@
         {
           "id" : "def:scalive.FormWorkflow.beginSave:abdfaee7064fa9c8",
           "signature" : "def beginSave: FormSaveStart[FormWorkflow[Owner, Schema, Domain, Failure], Submission]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.FormWorkflow.complete",
+      "ownerId" : "class:scalive.FormWorkflow",
+      "qualifiedName" : "scalive.FormWorkflow.complete",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FormWorkflow.complete:c1c9b169a5146ffb",
+          "signature" : "def complete[E, A](token: FormSubmissionToken, result: LiveAsyncResult[E, A], saved: A => Form[Owner, Schema, Domain])(failure: |[LiveAsyncResult.Failed[E], LiveAsyncResult.Died] => Failure): FormSaveCompletion[FormWorkflow[Owner, Schema, Domain, Failure], A]"
+        },
+        {
+          "id" : "def:scalive.FormWorkflow.complete:f5664baa07c8adf5",
+          "signature" : "def complete[E, A](token: FormSubmissionToken, result: LiveAsyncResult[E, A])(failure: |[LiveAsyncResult.Failed[E], LiveAsyncResult.Died] => Failure): FormSaveCompletion[FormWorkflow[Owner, Schema, Domain, Failure], A]"
         }
       ]
     },
@@ -5038,6 +5078,30 @@
         {
           "id" : "def:scalive.FormWorkflow.updated:2735da32e013a5af",
           "signature" : "def updated(next: Form[Owner, Schema, Domain]): FormWorkflow[Owner, Schema, Domain, Failure]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.FormWorkflowReset.workflow",
+      "ownerId" : "enum:scalive.FormWorkflowReset",
+      "qualifiedName" : "scalive.FormWorkflowReset.workflow",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FormWorkflowReset.workflow:be7d93e14f3c48de",
+          "signature" : "def workflow: Workflow"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.FormWorkflowTransition.workflow",
+      "ownerId" : "enum:scalive.FormWorkflowTransition",
+      "qualifiedName" : "scalive.FormWorkflowTransition.workflow",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FormWorkflowTransition.workflow:b1404be86692681f",
+          "signature" : "def workflow: Workflow"
         }
       ]
     },
@@ -10778,6 +10842,66 @@
       ]
     },
     {
+      "id" : "enum:scalive.FormSaveCompletion",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.FormSaveCompletion",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.FormSaveCompletion:c3d4b49ecbaa7ee3",
+          "signature" : "enum FormSaveCompletion[+Workflow, +A]"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.FormSaveCompletion.Cancelled",
+      "ownerId" : "enum:scalive.FormSaveCompletion",
+      "qualifiedName" : "scalive.FormSaveCompletion.Cancelled",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.FormSaveCompletion.Cancelled:4d1bc520233d70df",
+          "signature" : "enum Cancelled[+Workflow, +A](workflow: Workflow) extends FormSaveCompletion[Workflow, A]"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.FormSaveCompletion.Failed",
+      "ownerId" : "enum:scalive.FormSaveCompletion",
+      "qualifiedName" : "scalive.FormSaveCompletion.Failed",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.FormSaveCompletion.Failed:5a20194c48a50079",
+          "signature" : "enum Failed[+Workflow, +A](workflow: Workflow) extends FormSaveCompletion[Workflow, A]"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.FormSaveCompletion.Saved",
+      "ownerId" : "enum:scalive.FormSaveCompletion",
+      "qualifiedName" : "scalive.FormSaveCompletion.Saved",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.FormSaveCompletion.Saved:ef9873f26baa752e",
+          "signature" : "enum Saved[+Workflow, +A](workflow: Workflow, value: A) extends FormSaveCompletion[Workflow, A]"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.FormSaveCompletion.Stale",
+      "ownerId" : "enum:scalive.FormSaveCompletion",
+      "qualifiedName" : "scalive.FormSaveCompletion.Stale",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.FormSaveCompletion.Stale:efd7e1a42c0b46ed",
+          "signature" : "enum Stale[+Workflow, +A](workflow: Workflow) extends FormSaveCompletion[Workflow, A]"
+        }
+      ]
+    },
+    {
       "id" : "enum:scalive.FormSaveStart",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.FormSaveStart",
@@ -10796,8 +10920,8 @@
       "kind" : "enum",
       "signatures" : [
         {
-          "id" : "enum:scalive.FormSaveStart.AlreadySaving:a5d4802925f947b7",
-          "signature" : "enum AlreadySaving[+Workflow, +Submission](current: Workflow, submission: Submission) extends FormSaveStart[Workflow, Submission]"
+          "id" : "enum:scalive.FormSaveStart.AlreadySaving:c283e2788c566cb0",
+          "signature" : "enum AlreadySaving[+Workflow, +Submission](workflow: Workflow, submission: Submission) extends FormSaveStart[Workflow, Submission]"
         }
       ]
     },
@@ -10808,8 +10932,8 @@
       "kind" : "enum",
       "signatures" : [
         {
-          "id" : "enum:scalive.FormSaveStart.Invalid:0d8cddb9ce4821c0",
-          "signature" : "enum Invalid[+Workflow, +Submission](next: Workflow) extends FormSaveStart[Workflow, Submission]"
+          "id" : "enum:scalive.FormSaveStart.Invalid:57e4bccb75ab0fe2",
+          "signature" : "enum Invalid[+Workflow, +Submission](workflow: Workflow) extends FormSaveStart[Workflow, Submission]"
         }
       ]
     },
@@ -10820,8 +10944,8 @@
       "kind" : "enum",
       "signatures" : [
         {
-          "id" : "enum:scalive.FormSaveStart.Started:12486f161d766a29",
-          "signature" : "enum Started[+Workflow, +Submission](next: Workflow, submission: Submission) extends FormSaveStart[Workflow, Submission]"
+          "id" : "enum:scalive.FormSaveStart.Started:d0a69cafc7f67296",
+          "signature" : "enum Started[+Workflow, +Submission](workflow: Workflow, submission: Submission) extends FormSaveStart[Workflow, Submission]"
         }
       ]
     },
@@ -10940,8 +11064,8 @@
       "kind" : "enum",
       "signatures" : [
         {
-          "id" : "enum:scalive.FormWorkflowReset.AlreadySaving:40817506475f7eb6",
-          "signature" : "enum AlreadySaving[+Workflow, +Submission](current: Workflow, submission: Submission) extends FormWorkflowReset[Workflow, Submission]"
+          "id" : "enum:scalive.FormWorkflowReset.AlreadySaving:257172ce66842c60",
+          "signature" : "enum AlreadySaving[+Workflow, +Submission](workflow: Workflow, submission: Submission) extends FormWorkflowReset[Workflow, Submission]"
         }
       ]
     },
@@ -20989,14 +21113,62 @@
       ]
     },
     {
-      "id" : "val:scalive.FormSaveStart.AlreadySaving.current",
-      "ownerId" : "enum:scalive.FormSaveStart.AlreadySaving",
-      "qualifiedName" : "scalive.FormSaveStart.AlreadySaving.current",
+      "id" : "val:scalive.FormSaveCompletion.Cancelled.workflow",
+      "ownerId" : "enum:scalive.FormSaveCompletion.Cancelled",
+      "qualifiedName" : "scalive.FormSaveCompletion.Cancelled.workflow",
       "kind" : "val",
       "signatures" : [
         {
-          "id" : "val:scalive.FormSaveStart.AlreadySaving.current:ec4517e124f7d81d",
-          "signature" : "val current: Workflow"
+          "id" : "val:scalive.FormSaveCompletion.Cancelled.workflow:282853bc8139ef04",
+          "signature" : "val workflow: Workflow"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.FormSaveCompletion.Failed.workflow",
+      "ownerId" : "enum:scalive.FormSaveCompletion.Failed",
+      "qualifiedName" : "scalive.FormSaveCompletion.Failed.workflow",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.FormSaveCompletion.Failed.workflow:86e984d5083cf794",
+          "signature" : "val workflow: Workflow"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.FormSaveCompletion.Saved.value",
+      "ownerId" : "enum:scalive.FormSaveCompletion.Saved",
+      "qualifiedName" : "scalive.FormSaveCompletion.Saved.value",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.FormSaveCompletion.Saved.value:def2f09beea8bdb0",
+          "signature" : "val value: A"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.FormSaveCompletion.Saved.workflow",
+      "ownerId" : "enum:scalive.FormSaveCompletion.Saved",
+      "qualifiedName" : "scalive.FormSaveCompletion.Saved.workflow",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.FormSaveCompletion.Saved.workflow:f5805e640c9791e3",
+          "signature" : "val workflow: Workflow"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.FormSaveCompletion.Stale.workflow",
+      "ownerId" : "enum:scalive.FormSaveCompletion.Stale",
+      "qualifiedName" : "scalive.FormSaveCompletion.Stale.workflow",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.FormSaveCompletion.Stale.workflow:6a580b45ec291b48",
+          "signature" : "val workflow: Workflow"
         }
       ]
     },
@@ -21013,26 +21185,26 @@
       ]
     },
     {
-      "id" : "val:scalive.FormSaveStart.Invalid.next",
-      "ownerId" : "enum:scalive.FormSaveStart.Invalid",
-      "qualifiedName" : "scalive.FormSaveStart.Invalid.next",
+      "id" : "val:scalive.FormSaveStart.AlreadySaving.workflow",
+      "ownerId" : "enum:scalive.FormSaveStart.AlreadySaving",
+      "qualifiedName" : "scalive.FormSaveStart.AlreadySaving.workflow",
       "kind" : "val",
       "signatures" : [
         {
-          "id" : "val:scalive.FormSaveStart.Invalid.next:2ea116c33663e9b5",
-          "signature" : "val next: Workflow"
+          "id" : "val:scalive.FormSaveStart.AlreadySaving.workflow:129b93fba936f527",
+          "signature" : "val workflow: Workflow"
         }
       ]
     },
     {
-      "id" : "val:scalive.FormSaveStart.Started.next",
-      "ownerId" : "enum:scalive.FormSaveStart.Started",
-      "qualifiedName" : "scalive.FormSaveStart.Started.next",
+      "id" : "val:scalive.FormSaveStart.Invalid.workflow",
+      "ownerId" : "enum:scalive.FormSaveStart.Invalid",
+      "qualifiedName" : "scalive.FormSaveStart.Invalid.workflow",
       "kind" : "val",
       "signatures" : [
         {
-          "id" : "val:scalive.FormSaveStart.Started.next:1a8a7854e0e7143d",
-          "signature" : "val next: Workflow"
+          "id" : "val:scalive.FormSaveStart.Invalid.workflow:280c1d7b3f504c62",
+          "signature" : "val workflow: Workflow"
         }
       ]
     },
@@ -21045,6 +21217,18 @@
         {
           "id" : "val:scalive.FormSaveStart.Started.submission:606528f10748d68b",
           "signature" : "val submission: Submission"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.FormSaveStart.Started.workflow",
+      "ownerId" : "enum:scalive.FormSaveStart.Started",
+      "qualifiedName" : "scalive.FormSaveStart.Started.workflow",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.FormSaveStart.Started.workflow:5d683139b2124dda",
+          "signature" : "val workflow: Workflow"
         }
       ]
     },
@@ -21301,18 +21485,6 @@
       ]
     },
     {
-      "id" : "val:scalive.FormWorkflowReset.AlreadySaving.current",
-      "ownerId" : "enum:scalive.FormWorkflowReset.AlreadySaving",
-      "qualifiedName" : "scalive.FormWorkflowReset.AlreadySaving.current",
-      "kind" : "val",
-      "signatures" : [
-        {
-          "id" : "val:scalive.FormWorkflowReset.AlreadySaving.current:ec4517e124f7d81d",
-          "signature" : "val current: Workflow"
-        }
-      ]
-    },
-    {
       "id" : "val:scalive.FormWorkflowReset.AlreadySaving.submission",
       "ownerId" : "enum:scalive.FormWorkflowReset.AlreadySaving",
       "qualifiedName" : "scalive.FormWorkflowReset.AlreadySaving.submission",
@@ -21321,6 +21493,18 @@
         {
           "id" : "val:scalive.FormWorkflowReset.AlreadySaving.submission:6862502a000f42d5",
           "signature" : "val submission: Submission"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.FormWorkflowReset.AlreadySaving.workflow",
+      "ownerId" : "enum:scalive.FormWorkflowReset.AlreadySaving",
+      "qualifiedName" : "scalive.FormWorkflowReset.AlreadySaving.workflow",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.FormWorkflowReset.AlreadySaving.workflow:129b93fba936f527",
+          "signature" : "val workflow: Workflow"
         }
       ]
     },

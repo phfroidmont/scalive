@@ -1435,7 +1435,7 @@ object ZioHttp:
 
   // A browser that disconnects abruptly or breaks the WebSocket protocol is not a server failure.
   private def logSocketFailure(cause: Cause[Throwable]): UIO[Unit] =
-    // A failed write wraps the transport's exception without chaining it.
+    // Classify and log the transport's exception, not the writer's wrapper.
     val unwrapped = cause.map {
       case SerialWriter.Error.WriteFailed(error) => error
       case other                                 => other
@@ -1449,6 +1449,18 @@ object ZioHttp:
     case _: java.io.IOException                            => true
     case _: io.netty.handler.codec.CorruptedFrameException => true
     case _                                                 => false
+
+  // A server-started disconnect races the browser closing the socket. Losing that race drops
+  // nothing the browser could still receive: the socket's own shutdown closed the writer, or the
+  // closed channel refused the write.
+  private def logDisconnectWriteFailure(message: String, error: SerialWriter.Error): UIO[Unit] =
+    error match
+      case SerialWriter.Error.Shutdown =>
+        ZIO.logAnnotate(RuntimeLog.Reason, "socket already closed")(ZIO.logDebug(message))
+      case SerialWriter.Error.WriteFailed(cause) if isClientTransportFailure(cause) =>
+        ZIO.logDebugCause(message, Cause.fail(cause))
+      case SerialWriter.Error.WriteFailed(cause) => ZIO.logWarningCause(message, Cause.fail(cause))
+      case other                                 => ZIO.logWarningCause(message, Cause.fail(other))
 
   final private case class JoinedLifecycle(
     topic: NestedTopic,
@@ -1499,7 +1511,8 @@ object ZioHttp:
     claims: UploadCredentialClaims,
     progressEvent: Ref[Option[PhoenixUploadProgress]])
 
-  final private class TransportTermination private (
+  final private[scalive] class TransportTermination private (
+    connectionId: ConnectionId,
     disconnecting: Ref[Boolean],
     stopped: Promise[Nothing, Unit],
     closeSocket: UIO[Unit]):
@@ -1530,17 +1543,34 @@ object ZioHttp:
         disconnecting.modify(current => !current -> true).flatMap {
           case false => ZIO.unit
           case true  =>
-            close.interruptible.ensuring(stopped.succeed(()).unit).forkDaemon.unit
+            // A revoked session disconnects from its own fiber, not the socket's.
+            ZIO
+              .logAnnotate(RuntimeLog.ConnectionId, connectionId.value.toString)(close)
+              .interruptible.ensuring(stopped.succeed(()).unit).forkDaemon.unit
         }
       }
   end TransportTermination
 
-  private object TransportTermination:
-    def make(closeSocket: UIO[Unit]): UIO[TransportTermination] =
+  private[scalive] object TransportTermination:
+    def make(
+      connectionId: ConnectionId,
+      writer: SerialWriter[?],
+      closeSocket: UIO[Unit]
+    ): UIO[TransportTermination] =
+      val drain = writer.drain
+        .timeout(DisconnectDrainTimeout)
+        .foldZIO(
+          error => logDisconnectWriteFailure("WebSocket writer drain failed", error),
+          {
+            case Some(_) => ZIO.unit
+            case None    => ZIO.logWarning("WebSocket writer drain timed out before disconnect")
+          }
+        )
+      val drainAndClose = drain *> writer.close *> closeSocket
       for
         disconnecting <- Ref.make(false)
         stopped       <- Promise.make[Nothing, Unit]
-      yield new TransportTermination(disconnecting, stopped, closeSocket)
+      yield new TransportTermination(connectionId, disconnecting, stopped, drainAndClose)
 
   final private[scalive] class InProcessTransportClosed private[ZioHttp] ()
       extends Exception("in-process LiveView transport is closed")
@@ -1863,21 +1893,8 @@ object ZioHttp:
                           )
                       )
                 }
-      termination <- TransportTermination.make(
-                       writer.drain
-                         .timeout(DisconnectDrainTimeout)
-                         .foldZIO(
-                           error =>
-                             ZIO
-                               .logWarningCause("WebSocket writer drain failed", Cause.fail(error)),
-                           {
-                             case Some(_) => ZIO.unit
-                             case None    =>
-                               ZIO.logWarning("WebSocket writer drain timed out before disconnect")
-                           }
-                         ) *> writer.close *> closeSocket
-                     )
-      supervisor <- ConnectionSupervisor.make(
+      termination <- TransportTermination.make(connectionId, writer, closeSocket)
+      supervisor  <- ConnectionSupervisor.make(
                       connectionConfig,
                       new NestedCredentialIssuer:
                         def issue(claims: NestedCredentialClaims) =
@@ -2751,10 +2768,7 @@ object ZioHttp:
               .offerAwait(envelope).timeout(DisconnectDrainTimeout).foldZIO(
                 error =>
                   observer.failOutput(envelope) *>
-                    ZIO.logWarningCause(
-                      "WebSocket disconnect reply enqueue failed",
-                      Cause.fail(error)
-                    ),
+                    logDisconnectWriteFailure("WebSocket disconnect reply enqueue failed", error),
                 {
                   case Some(_) => ZIO.unit
                   case None    =>

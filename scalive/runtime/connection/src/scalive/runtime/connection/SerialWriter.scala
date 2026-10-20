@@ -128,11 +128,12 @@ final private[scalive] class SerialWriter[A] private (
 end SerialWriter
 
 private[scalive] object SerialWriter:
-  enum Error extends Exception:
-    case InvalidCapacity(capacity: Int)
-    case Saturated(capacity: Int)
-    case Shutdown
-    case WriteFailed(cause: Throwable)
+  enum Error(message: String, underlying: Throwable | Null = null)
+      extends Exception(message, underlying):
+    case InvalidCapacity(capacity: Int) extends Error(s"invalid writer capacity $capacity")
+    case Saturated(capacity: Int)       extends Error(s"writer queue is full at capacity $capacity")
+    case Shutdown                       extends Error("writer is closed")
+    case WriteFailed(cause: Throwable)  extends Error("write failed", cause)
 
   final private case class Entry[A](value: Option[A], result: Promise[Error, Unit])
 

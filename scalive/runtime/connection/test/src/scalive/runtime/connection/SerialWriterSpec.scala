@@ -26,7 +26,8 @@ object SerialWriterSpec extends ZIOSpecDefault:
           future <- writer.send(2).either
         yield assertTrue(
           first == Left(SerialWriter.Error.WriteFailed(boom)),
-          future == Left(SerialWriter.Error.WriteFailed(boom))
+          future == Left(SerialWriter.Error.WriteFailed(boom)),
+          first.left.toOption.flatMap(error => Option(error.getCause)).contains(boom)
         )
       }
     },

@@ -301,5 +301,32 @@ object RuntimeIdentifierTypesSpec extends ZIOSpecDefault:
 
       assertTrue(rawContextErrors.nonEmpty, rawRenderErrors.nonEmpty)
     }
+    ,
+    test("a typed flash kind accepts and renders only its own type") {
+      val putErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        val count = FlashKind.json[Int]("count")
+        def put(ctx: MessageContext[Unit, Unit]) = ctx.flash.put(count, "two")
+      """)
+      val renderErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        val count = FlashKind.json[Int]("count")
+        val content = flash(count)((message: String) => div(message))
+      """)
+      val entryErrors = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        val count = FlashKind.json[Int]("count")
+        val entry = count.message("two")
+      """)
+      val valid = scala.compiletime.testing.typeCheckErrors("""
+        import scalive.*
+        val count = FlashKind.json[Int]("count")
+        def put(ctx: MessageContext[Unit, Unit]) = ctx.flash.put(count, 2)
+        val content = flash(count)(value => div(value.toString))
+        val entry = count.message(2)
+      """)
+
+      assertTrue(putErrors.nonEmpty, renderErrors.nonEmpty, entryErrors.nonEmpty, valid.isEmpty)
+    }
   )
 end RuntimeIdentifierTypesSpec

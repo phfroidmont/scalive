@@ -133,12 +133,13 @@ end CsrfProtection
 final class HttpFlash private (config: ZioHttpConfig, cookies: CookiePolicy):
   /** Returns a 303 redirect to `to` that carries `values` as flash messages.
     *
-    * The messages travel in a signed cookie that expires after 60 seconds. The next successful
+    * Build each message with its kind, as in `seeOther(to, Saved.message("Profile saved"))`. The
+    * messages travel in a signed cookie that expires after 60 seconds. The next successful
     * disconnected render of a Live route moves them into that LiveView's flash and expires the
     * cookie. When a kind appears more than once, its last message wins; with no values, the
     * response sets no cookie. Flash values are signed, not encrypted, so never put secrets in them.
     */
-  def seeOther(to: LiveLocation, values: (FlashKind, String)*): UIO[Response] =
+  def seeOther(to: LiveLocation, values: FlashEntry*): UIO[Response] =
     addCookie(Response.seeOther(to.url), values)
 
   /** Returns a 303 redirect to an unchecked URL that carries `values` as flash messages.
@@ -146,14 +147,14 @@ final class HttpFlash private (config: ZioHttpConfig, cookies: CookiePolicy):
     * Scalive does not validate `to`, so use this only for a URL validated independently. Prefer
     * [[seeOther]], which takes a typed `LiveLocation`. The messages behave as with `seeOther`.
     */
-  def seeOtherUnsafe(to: URL, values: (FlashKind, String)*): UIO[Response] =
+  def seeOtherUnsafe(to: URL, values: FlashEntry*): UIO[Response] =
     addCookie(Response.seeOther(to), values)
 
   private def addCookie(
     response: Response,
-    values: Seq[(FlashKind, String)]
+    values: Seq[FlashEntry]
   ): UIO[Response] =
-    val encoded = values.iterator.map((kind, message) => kind.value -> message).toMap
+    val encoded = values.iterator.map(entry => entry.key.value -> entry.encoded).toMap
     ZioHttpSecurity.issueFlash(config, encoded).map {
       case Some(token) =>
         response.addCookie(

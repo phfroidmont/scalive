@@ -624,6 +624,32 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
         yield assertTrue(childCount == "1", siblingCount == "1", missingPing.isLeft, joined)
       }
     },
+    test("a typed flash kind stores, renders and reads its value") {
+      final case class Notice(title: String, count: Int) derives JsonCodec
+      val notice = FlashKind.json[Notice]("notice")
+
+      ZIO.scoped {
+        for
+          read <- Ref.make(Option.empty[Notice])
+          view = new LiveView[Unit, Unit]:
+                   def mount(ctx: MountContext) = ZIO.unit
+                   def handleMessage(model: Unit, ctx: MessageContext) = _ =>
+                     ctx.flash.put(notice, Notice("Saved", 2)) *>
+                       ctx.flash.get(notice).flatMap(read.set)
+                   override def view(model: Signal[Unit]) =
+                     div(
+                       button(dataAttr("save") := "", on.click(()), "Save"),
+                       flash(notice)(value =>
+                         p(dataAttr("notice") := "", s"${value.title} (${value.count})")
+                       )
+                     )
+          connected <- ConnectedRender.join(view)
+          _         <- connected.click("[data-save]")
+          shown     <- connected.text("[data-notice]")
+          value     <- read.get
+        yield assertTrue(shown == "Saved (2)", value.contains(Notice("Saved", 2)))
+      }
+    },
     test("handles keyed and full client flash clearing for root and component targets") {
       val info    = FlashKind("info")
       val error   = FlashKind("error")

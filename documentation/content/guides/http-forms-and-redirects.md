@@ -191,7 +191,7 @@ val LoginError = FlashKind("error")
 private def invalidLogin: UIO[Response] =
   security.flash.seeOther(
     Pages.login.location,
-    LoginError -> "The sign-in request was invalid. Please try again."
+    LoginError.message("The sign-in request was invalid. Please try again.")
   )
 ```
 
@@ -201,8 +201,9 @@ Render the same kind in the destination LiveView, as `LoginLiveView` does:
 flash(LoginError)(message => div(role := "alert", message))
 ```
 
-`HttpFlash.seeOther` accepts a typed `LiveLocation`; use `seeOtherUnsafe` only
-for an independently validated URL. Flash values are signed but not encrypted,
+`HttpFlash.seeOther` accepts a typed `LiveLocation` and messages built with
+their kind, as in `LoginError.message("...")`; use `seeOtherUnsafe` only for an
+independently validated URL. Flash values are signed but not encrypted,
 so never put secrets in them. The next successful disconnected Live render
 transfers valid values into the signed Live session and expires the browser
 cookie. This is browser consume-on-render behavior, not server-side replay

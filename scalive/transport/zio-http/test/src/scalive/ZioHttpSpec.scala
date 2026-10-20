@@ -375,6 +375,35 @@ object ZioHttpSpec extends ZIOSpecDefault:
         )
       )
     },
+    test("a typed flash set by an HTTP redirect renders decoded, and an undecodable one is absent") {
+      final case class Notice(title: String) derives zio.json.JsonCodec
+      val notice = FlashKind.json[Notice]("notice")
+      val broken = FlashKind.json[Notice]("broken")
+      object View extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        def view(model: Signal[Unit]) =
+          div(
+            flash(notice)(value => span(idAttr := "notice", value.title)),
+            flash(broken)(value => span(idAttr := "broken", value.title))
+          )
+      val security = LiveSecurity(config)
+
+      for
+        redirect <- security.flash.seeOther(
+                      scalive.live.location,
+                      notice.message(Notice("Saved")),
+                      FlashKind("broken").message("not json")
+                    )
+        cookie = redirect.headers(Header.SetCookie).map(_.value)
+                   .find(_.name == "__phoenix_flash__").get
+        request = Request.get(URL.root).addCookie(Cookie.Request(cookie.name, cookie.content))
+        response <- run(ZioHttp.routes(scalive.Live.router(scalive.live -> View), config), request)
+        body     <- response.body.asString.orDie
+      yield assertTrue(
+        body.contains("<span id=\"notice\">Saved</span>"),
+        !body.contains("id=\"broken\"")
+      )
+    },
     test("disconnected component flash changes reproject root HTML and signed claims") {
       val oldKind = FlashKind("old")
       val newKind = FlashKind("component")

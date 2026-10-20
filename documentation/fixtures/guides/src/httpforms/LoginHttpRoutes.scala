@@ -61,7 +61,7 @@ final class LoginHttpRoutes(security: LiveSecurity):
   private def invalidLogin: UIO[Response] =
     security.flash.seeOther(
       Pages.login.location,
-      LoginError -> "The sign-in request was invalid. Please try again."
+      LoginError.message("The sign-in request was invalid. Please try again.")
     )
 end LoginHttpRoutes
 // docs:end http-forms-handler

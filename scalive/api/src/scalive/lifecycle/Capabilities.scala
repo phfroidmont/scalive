@@ -111,19 +111,19 @@ private[scalive] object RoutedNavigation:
   */
 trait Flash:
   /** Sets the message for `kind`, replacing any previous one. */
-  def put(kind: FlashKind, message: String): Task[Unit]
+  def put[A](kind: FlashKind[A], message: A): Task[Unit]
 
   /** Removes the message for `kind`. */
-  def clear(kind: FlashKind): Task[Unit]
+  def clear(kind: FlashKind[?]): Task[Unit]
 
   /** Removes every message. */
   def clearAll: Task[Unit]
 
-  /** Returns the current message for `kind`, if any. */
-  def get(kind: FlashKind): Task[Option[String]]
-
-  /** Returns every current message. */
-  def snapshot: Task[Map[FlashKind, String]]
+  /** Returns the current message for `kind`, if any.
+    *
+    * A stored message that does not decode as `A` is absent.
+    */
+  def get[A](kind: FlashKind[A]): Task[Option[A]]
 
 /** Allows, inspects, cancels, and consumes the file uploads of one LiveView or component.
   *

@@ -548,7 +548,7 @@ object RenderProgramSpec extends ZIOSpecDefault:
       val notice = FlashKind("notice")
       var viewConstructions = 0
       var projections       = Vector.empty[String]
-      val compiled = RenderProgram.compile[(Int, Map[FlashKind, String]), Nothing](
+      val compiled = RenderProgram.compile[(Int, Map[FlashKey, String]), Nothing](
         model =>
           viewConstructions += 1
           div(model.map(_._1.toString), flash(notice) { message =>
@@ -561,9 +561,9 @@ object RenderProgramSpec extends ZIOSpecDefault:
       for
         program <- ZIO.fromEither(compiled)
         absent  <- program.evaluate(0 -> Map.empty)
-        first   <- program.evaluate(1 -> Map(notice -> "saved"), Some(absent.commit))
+        first   <- program.evaluate(1 -> Map(notice.key -> "saved"), Some(absent.commit))
         removed <- program.evaluate(2 -> Map.empty, Some(first.commit))
-        again   <- program.evaluate(3 -> Map(notice -> "saved"), Some(removed.commit))
+        again   <- program.evaluate(3 -> Map(notice.key -> "saved"), Some(removed.commit))
       yield assertTrue(
         viewConstructions == 1,
         projections == Vector("saved", "saved"),
@@ -577,7 +577,7 @@ object RenderProgramSpec extends ZIOSpecDefault:
     test("retires flash projection row scopes only after replacement or removal commits") {
       val notice = FlashKind("notice")
       val compiled = RenderProgram.compile[
-        (Map[FlashKind, String], Vector[String]),
+        (Map[FlashKey, String], Vector[String]),
         Nothing
       ](
         model =>
@@ -591,11 +591,11 @@ object RenderProgramSpec extends ZIOSpecDefault:
 
       for
         program <- ZIO.fromEither(compiled)
-        initial <- program.evaluate(Map(notice -> "first") -> Vector("row"))
+        initial <- program.evaluate(Map(notice.key -> "first") -> Vector("row"))
         initialScope = initial.newRowScopes.values.head
         base = initial.commit
         stagedReplacement <- program.evaluate(
-                               Map(notice -> "second") -> Vector("row"),
+                               Map(notice.key -> "second") -> Vector("row"),
                                Some(base)
                              )
         stagedScope = stagedReplacement.newRowScopes.values.head
@@ -604,7 +604,7 @@ object RenderProgramSpec extends ZIOSpecDefault:
         stagedClosedOnRollback = stagedScope.isClosed
         oldOpenAfterReplacementRollback = !initialScope.isClosed
         replacement <- program.evaluate(
-                         Map(notice -> "second") -> Vector("row"),
+                         Map(notice.key -> "second") -> Vector("row"),
                          Some(base)
                        )
         replacementScope = replacement.newRowScopes.values.head
@@ -619,7 +619,7 @@ object RenderProgramSpec extends ZIOSpecDefault:
         removalCommit = removal.commit
         replacementClosedAfterRemovalCommit = replacementScope.isClosed
         reintroduced <- program.evaluate(
-                          Map(notice -> "first") -> Vector("row"),
+                          Map(notice.key -> "first") -> Vector("row"),
                           Some(removalCommit)
                         )
         reintroducedScope = reintroduced.newRowScopes.values.head
@@ -642,7 +642,7 @@ object RenderProgramSpec extends ZIOSpecDefault:
     test("keeps flash bindings candidate-local across rollback") {
       val notice = FlashKind("notice")
       var dispatched = Vector.empty[String]
-      val compiled = RenderProgram.compile[Map[FlashKind, String], Nothing](
+      val compiled = RenderProgram.compile[Map[FlashKey, String], Nothing](
         _ => div(flash(notice) { message =>
           button(on.click { _ =>
             dispatched :+= message
@@ -654,19 +654,19 @@ object RenderProgramSpec extends ZIOSpecDefault:
 
       for
         program   <- ZIO.fromEither(compiled)
-        initial   <- program.evaluate(Map(notice -> "old"))
+        initial   <- program.evaluate(Map(notice.key -> "old"))
         committed = initial.commit
         oldId     = committed.bindings.ids.head
-        staged    <- program.evaluate(Map(notice -> "new"), Some(committed))
+        staged    <- program.evaluate(Map(notice.key -> "new"), Some(committed))
         newId     = staged.bindings.ids.head
         _ = staged.bindings.resolve(newId).get.dispatch(BindingPayload.Params(Map.empty))
         _ <- staged.discard
         _ = committed.bindings.resolve(oldId).get.dispatch(BindingPayload.Params(Map.empty))
-        restored <- program.evaluate(Map(notice -> "old"), Some(committed))
+        restored <- program.evaluate(Map(notice.key -> "old"), Some(committed))
         restoredCommit = restored.commit
         absent <- program.evaluate(Map.empty, Some(restoredCommit))
         absentCommit = absent.commit
-        reintroduced <- program.evaluate(Map(notice -> "old"), Some(absentCommit))
+        reintroduced <- program.evaluate(Map(notice.key -> "old"), Some(absentCommit))
         reintroducedId = reintroduced.bindings.ids.head
       yield assertTrue(
         oldId == newId,
@@ -680,7 +680,7 @@ object RenderProgramSpec extends ZIOSpecDefault:
     },
     test("rejects duplicate projected bindings without replacing committed state") {
       val notice = FlashKind("notice")
-      val compiled = RenderProgram.compile[Map[FlashKind, String], Nothing](
+      val compiled = RenderProgram.compile[Map[FlashKey, String], Nothing](
         _ => div(flash(notice)(message => button(on.click(_ => throw RuntimeException(message)), on.click(_ => throw RuntimeException(message))))),
         RenderState(_)
       )
@@ -689,7 +689,7 @@ object RenderProgramSpec extends ZIOSpecDefault:
         program   <- ZIO.fromEither(compiled)
         initial   <- program.evaluate(Map.empty)
         committed = initial.commit
-        failed    <- program.evaluate(Map(notice -> "bad"), Some(committed)).exit
+        failed    <- program.evaluate(Map(notice.key -> "bad"), Some(committed)).exit
       yield assertTrue(
         failed.isFailure,
         program.retainedFlashProjectionCount == 0,
@@ -700,7 +700,7 @@ object RenderProgramSpec extends ZIOSpecDefault:
     },
     test("failed flash candidates preserve committed identity and bounded state") {
       val notice = FlashKind("notice")
-      val compiled = RenderProgram.compile[Map[FlashKind, String], Nothing](
+      val compiled = RenderProgram.compile[Map[FlashKey, String], Nothing](
         _ => div(flash(notice) { message =>
           if message == "invalid" then
             button(
@@ -714,13 +714,13 @@ object RenderProgramSpec extends ZIOSpecDefault:
 
       for
         program   <- ZIO.fromEither(compiled)
-        initial   <- program.evaluate(Map(notice -> "one"))
+        initial   <- program.evaluate(Map(notice.key -> "one"))
         committed = initial.commit
         bindingId = committed.bindings.ids.head
-        failed    <- program.evaluate(Map(notice -> "invalid"), Some(committed)).exit
-        changed   <- program.evaluate(Map(notice -> "two"), Some(committed))
+        failed    <- program.evaluate(Map(notice.key -> "invalid"), Some(committed)).exit
+        changed   <- program.evaluate(Map(notice.key -> "two"), Some(committed))
         changedCommit = changed.commit
-        third <- program.evaluate(Map(notice -> "three"), Some(changedCommit))
+        third <- program.evaluate(Map(notice.key -> "three"), Some(changedCommit))
         thirdCommit = third.commit
       yield assertTrue(
         failed.isFailure,

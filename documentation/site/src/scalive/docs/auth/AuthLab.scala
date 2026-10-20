@@ -130,13 +130,13 @@ final class AuthHttpRoutes(security: LiveSecurity):
   private def invalidLoginResponse: UIO[Response] =
     security.flash.seeOther(
       AuthLabRoutes.login.location,
-      LoginLiveView.LoginErrorFlash -> LoginLiveView.InvalidLoginMessage
+      LoginLiveView.LoginErrorFlash.message(LoginLiveView.InvalidLoginMessage)
     )
 
   private def rateLimitedResponse: UIO[Response] =
     security.flash.seeOther(
       AuthLabRoutes.login.location,
-      LoginLiveView.LoginErrorFlash -> LoginLiveView.RateLimitedMessage
+      LoginLiveView.LoginErrorFlash.message(LoginLiveView.RateLimitedMessage)
     )
 end AuthHttpRoutes
 

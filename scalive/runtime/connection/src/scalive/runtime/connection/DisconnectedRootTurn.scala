@@ -59,7 +59,7 @@ final private[scalive] class DisconnectedRootTurn[Msg, Model] private[connection
 
   def navigation: UIO[Option[NavigationRequest]] = journal.navigationWithFlash
 
-  def flash: UIO[Map[FlashKind, String]] = journal.flash.get
+  def flash: UIO[Map[FlashKey, String]] = journal.flash.get
 
   /** Shared request journal used by disconnected component rendering. */
   private[scalive] def componentJournal: RootTurnJournal = journal
@@ -69,7 +69,7 @@ private[scalive] object DisconnectedRootTurn:
   def make[Msg, Model](
     hooks: LiveHooks[Msg, Model],
     initialUrl: URL,
-    initialFlash: Map[FlashKind, String],
+    initialFlash: Map[FlashKey, String],
     providedLifecycle: Option[LifecycleId] = None
   ): Task[DisconnectedRootTurn[Msg, Model]] =
     for

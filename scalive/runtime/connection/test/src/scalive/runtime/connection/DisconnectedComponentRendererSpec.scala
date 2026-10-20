@@ -255,11 +255,11 @@ object DisconnectedComponentRendererSpec extends ZIOSpecDefault:
         turn <- DisconnectedRootTurn.make[Unit, Unit](
                   LiveHooks.empty,
                   URL.root,
-                  Map(oldKind -> "remove-me")
+                  Map(oldKind.key -> "remove-me")
                 )
         consumed <- DisconnectedComponentRenderer.renderTurnWith[Unit, Nothing, (
                       String,
-                      Map[FlashKind, String]
+                      Map[FlashKey, String]
                     )](
                       _ => div(
                         scalive.flash(oldKind)(message => span(message)),
@@ -272,7 +272,7 @@ object DisconnectedComponentRendererSpec extends ZIOSpecDefault:
         finalFlash <- turn.flash
       yield assertTrue(
         consumed._1 == "root-visible",
-        consumed._2 == Map(newKind -> "root-visible"),
+        consumed._2 == Map(newKind.key -> "root-visible"),
         finalFlash == consumed._2
       )
     },
@@ -307,7 +307,7 @@ object DisconnectedComponentRendererSpec extends ZIOSpecDefault:
         removed <- DisconnectedComponentRenderer.renderWith[Unit, Nothing, String](
                       _ => div(remove.render(()), scalive.flash(kind)(_ => div(child.render(())))),
                      (),
-                     Map(kind -> "show")
+                     Map(kind.key -> "show")
                    )(tree => ZIO.succeed(text(tree.root)))
         finalChildMounts <- childMounts.get
         finalChildAfters <- childAfters.get
@@ -348,7 +348,7 @@ object DisconnectedComponentRendererSpec extends ZIOSpecDefault:
                         scalive.flash(kind)(value => div(retained.render(value)))
                       ),
                       (),
-                      Map(kind -> "initial")
+                      Map(kind.key -> "initial")
                     )(tree => ZIO.succeed(text(tree.root)))
         mountCount <- mounts.get
         updateProps <- updates.get

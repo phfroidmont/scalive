@@ -12,7 +12,7 @@ import scalive.BindingPayload
 import scalive.ComponentRef
 import scalive.ComponentSpec
 import scalive.Escaping
-import scalive.FlashKind
+import scalive.FlashKey
 import scalive.FormEventKind
 import scalive.HtmlElement
 import scalive.JSCommands.JSCommand
@@ -202,8 +202,8 @@ object RenderProgram:
 
   final private case class FlashTemplate(
     id: TemplateId,
-    kind: FlashKind,
-    project: String => HtmlElement[Nothing],
+    key: FlashKey,
+    project: String => Option[HtmlElement[Nothing]],
     compiler: Compiler,
     state: FlashTemplate.State)
       extends NodeTemplate[Nothing]
@@ -884,11 +884,11 @@ object RenderProgram:
                    case _: NestedViewSpec.Static[?, ?]           => Right(())
             id <- allocator.template()
           yield NestedTemplate(id, spec)
-        case Mod.Content.Flash(kind, project) =>
+        case Mod.Content.Flash(key, project) =>
           allocator.template().map { id =>
             FlashTemplate(
               id,
-              kind,
+              key,
               project,
               this,
               FlashTemplate.State()
@@ -1068,19 +1068,28 @@ object RenderProgram:
           }
         }.map(_ => ())
 
-    /** Compiles a changed projection candidate without changing committed retained state. */
+    /** Compiles a changed projection candidate without changing committed retained state.
+      *
+      * `None` when the message does not decode for the template's kind, which renders as absent.
+      */
     def flashProjectionCandidate(
       template: FlashTemplate,
       message: String
-    ): Either[RenderError, ElementTemplate[Nothing]] = lock.synchronized {
+    ): Either[RenderError, Option[ElementTemplate[Nothing]]] = lock.synchronized {
       template.state.snapshot match
-        case Some((retainedMessage, retained)) if retainedMessage == message => Right(retained)
-        case retained                                                        =>
-          compileElement(template.project(message)).map { compiled =>
-            retained
-              .flatMap((_, existing) => alignElement(compiled, existing))
-              .getOrElse(markStaticScalars(compiled))
-          }
+        case Some((retainedMessage, retained)) if retainedMessage == message =>
+          Right(Some(retained))
+        case retained =>
+          template.project(message) match
+            case None          => Right(None)
+            case Some(element) =>
+              compileElement(element).map { compiled =>
+                Some(
+                  retained
+                    .flatMap((_, existing) => alignElement(compiled, existing))
+                    .getOrElse(markStaticScalars(compiled))
+                )
+              }
     }
 
     private def markStaticScalars[Msg](
@@ -1157,7 +1166,7 @@ object RenderProgram:
               ) if raw == oldRaw =>
             Some(left.copy(id = right.id, value = TextTemplate.Value.Dynamic(oldSlot, signal, raw)))
           case _ => None
-      case (left: FlashTemplate, right: FlashTemplate) if left.kind == right.kind =>
+      case (left: FlashTemplate, right: FlashTemplate) if left.key == right.key =>
         Some(left.copy(id = right.id))
       case _ => None
 
@@ -1248,7 +1257,7 @@ object RenderProgram:
     previous: Option[EvaluatedNode.Element],
     revision: RenderRevision,
     transaction: SignalEvaluation.Transaction,
-    flash: Map[FlashKind, String],
+    flash: Map[FlashKey, String],
     candidateRows: CandidateRows
   ): Either[
     RenderError,
@@ -1340,7 +1349,7 @@ object RenderProgram:
     previous: Option[EvaluatedNode],
     revision: RenderRevision,
     transaction: SignalEvaluation.Transaction,
-    flash: Map[FlashKind, String],
+    flash: Map[FlashKey, String],
     bindings: BindingTable.Builder[Msg],
     commitActions: ArrayBuffer[() => Unit],
     candidateRows: CandidateRows,
@@ -1505,27 +1514,33 @@ object RenderProgram:
         }
       case template: FlashTemplate =>
         val oldFlash = previous.collect { case node: EvaluatedNode.Flash => node }
-        flash.get(template.kind) match
-          case None =>
-            commitActions += template.state.assignment(None)
-            oldFlash match
-              case Some(node) if node.id == template.id && node.child.isEmpty => Right(node)
-              case _ => Right(EvaluatedNode.Flash(template.id, None, revision))
-          case Some(message) =>
-            for
-              value     <- nonNullString(message, s"flash '${template.kind.value}'")
-              projected <- template.compiler.flashProjectionCandidate(template, value)
-              child     <- evaluateNode(
-                         projected,
-                         oldFlash.flatMap(_.child),
-                         revision,
-                         transaction,
-                         flash,
-                         bindings,
-                         commitActions,
-                         candidateRows,
-                         requirements
-                       ).map(_.asInstanceOf[EvaluatedNode.Element])
+        def absent   =
+          commitActions += template.state.assignment(None)
+          oldFlash match
+            case Some(node) if node.id == template.id && node.child.isEmpty => Right(node)
+            case _ => Right(EvaluatedNode.Flash(template.id, None, revision))
+        val candidate =
+          flash.get(template.key) match
+            case None          => Right(None)
+            case Some(message) =>
+              for
+                value     <- nonNullString(message, s"flash '${template.key.value}'")
+                projected <- template.compiler.flashProjectionCandidate(template, value)
+              yield projected.map(value -> _)
+        candidate.flatMap {
+          case None                     => absent
+          case Some((value, projected)) =>
+            for child <- evaluateNode(
+                           projected,
+                           oldFlash.flatMap(_.child),
+                           revision,
+                           transaction,
+                           flash,
+                           bindings,
+                           commitActions,
+                           candidateRows,
+                           requirements
+                         ).map(_.asInstanceOf[EvaluatedNode.Element])
             yield
               commitActions += template.state.assignment(Some(value -> projected))
               oldFlash match
@@ -1533,13 +1548,14 @@ object RenderProgram:
                     if node.id == template.id && node.child.exists(_.revision == child.revision) =>
                   node.copy(child = Some(child))
                 case _ => EvaluatedNode.Flash(template.id, Some(child), revision)
+        }
 
   private def evaluateStaticStream[A, Msg](
     template: StaticStreamTemplate[A, Msg],
     previous: Option[EvaluatedNode],
     revision: RenderRevision,
     transaction: SignalEvaluation.Transaction,
-    flash: Map[FlashKind, String],
+    flash: Map[FlashKey, String],
     bindings: BindingTable.Builder[Msg],
     commitActions: ArrayBuffer[() => Unit],
     candidateRows: CandidateRows,
@@ -1573,7 +1589,7 @@ object RenderProgram:
     previous: Option[EvaluatedNode],
     revision: RenderRevision,
     transaction: SignalEvaluation.Transaction,
-    flash: Map[FlashKind, String],
+    flash: Map[FlashKey, String],
     bindings: BindingTable.Builder[Msg],
     commitActions: ArrayBuffer[() => Unit],
     candidateRows: CandidateRows,
@@ -1605,7 +1621,7 @@ object RenderProgram:
     previous: Option[EvaluatedNode],
     revision: RenderRevision,
     transaction: SignalEvaluation.Transaction,
-    flash: Map[FlashKind, String],
+    flash: Map[FlashKey, String],
     bindings: BindingTable.Builder[Msg],
     commitActions: ArrayBuffer[() => Unit],
     candidateRows: CandidateRows,
@@ -1695,7 +1711,7 @@ object RenderProgram:
     previous: Option[EvaluatedNode],
     revision: RenderRevision,
     transaction: SignalEvaluation.Transaction,
-    flash: Map[FlashKind, String],
+    flash: Map[FlashKey, String],
     bindings: BindingTable.Builder[Msg],
     commitActions: ArrayBuffer[() => Unit],
     candidateRows: CandidateRows,
@@ -1746,7 +1762,7 @@ object RenderProgram:
     previous: Option[EvaluatedNode],
     revision: RenderRevision,
     transaction: SignalEvaluation.Transaction,
-    flash: Map[FlashKind, String],
+    flash: Map[FlashKey, String],
     bindings: BindingTable.Builder[Msg],
     commitActions: ArrayBuffer[() => Unit],
     candidateRows: CandidateRows,
@@ -1798,7 +1814,7 @@ object RenderProgram:
     previous: Option[EvaluatedNode],
     revision: RenderRevision,
     transaction: SignalEvaluation.Transaction,
-    flash: Map[FlashKind, String],
+    flash: Map[FlashKey, String],
     bindings: BindingTable.Builder[Msg],
     commitActions: ArrayBuffer[() => Unit],
     candidateRows: CandidateRows,

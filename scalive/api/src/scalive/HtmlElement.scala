@@ -556,8 +556,9 @@ object Mod:
     private[scalive] case Tag[Msg](element: HtmlElement[Msg])      extends Content[Msg]
     private[scalive] case Component[Msg](spec: ComponentSpec[Msg]) extends Content[Msg]
     private[scalive] case NestedView(spec: NestedViewSpec)         extends Content[Nothing]
-    private[scalive] case Flash(kind: FlashKind, project: String => HtmlElement[Nothing])
-        extends Content[Nothing]
+    private[scalive] case Flash(
+      key: FlashKey,
+      project: String => Option[HtmlElement[Nothing]]) extends Content[Nothing]
   end Content
 
   object Content:

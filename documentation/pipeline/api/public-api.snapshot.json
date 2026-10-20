@@ -146,6 +146,30 @@
       ]
     },
     {
+      "id" : "class:scalive.FlashEntry",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.FlashEntry",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.FlashEntry:dd9c717e37134b97",
+          "signature" : "class FlashEntry"
+        }
+      ]
+    },
+    {
+      "id" : "class:scalive.FlashKind",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.FlashKind",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.FlashKind:145714b912bfd0fd",
+          "signature" : "class FlashKind[A]"
+        }
+      ]
+    },
+    {
       "id" : "class:scalive.Form",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.Form",
@@ -2692,8 +2716,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.Flash.clear:e6887cec9ed912c3",
-          "signature" : "def clear(kind: FlashKind): zio.package.Task[Unit]"
+          "id" : "def:scalive.Flash.clear:40423406659be4ee",
+          "signature" : "def clear(kind: FlashKind[?]): zio.package.Task[Unit]"
         }
       ]
     },
@@ -2716,8 +2740,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.Flash.get:3e066e3ff7670b78",
-          "signature" : "def get(kind: FlashKind): zio.package.Task[Option[String]]"
+          "id" : "def:scalive.Flash.get:d21f0a2086259287",
+          "signature" : "def get[A](kind: FlashKind[A]): zio.package.Task[Option[A]]"
         }
       ]
     },
@@ -2728,20 +2752,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.Flash.put:b325fcc9b821d7cb",
-          "signature" : "def put(kind: FlashKind, message: String): zio.package.Task[Unit]"
-        }
-      ]
-    },
-    {
-      "id" : "def:scalive.Flash.snapshot",
-      "ownerId" : "trait:scalive.Flash",
-      "qualifiedName" : "scalive.Flash.snapshot",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.Flash.snapshot:a74c644e2b56064d",
-          "signature" : "def snapshot: zio.package.Task[Map[FlashKind, String]]"
+          "id" : "def:scalive.Flash.put:0ac4c623d69534d3",
+          "signature" : "def put[A](kind: FlashKind[A], message: A): zio.package.Task[Unit]"
         }
       ]
     },
@@ -2752,8 +2764,44 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.FlashKind.apply:d69fe46e8e0d8bb9",
-          "signature" : "def apply(value: String): FlashKind"
+          "id" : "def:scalive.FlashKind.apply:ba7f85a1b081cb09",
+          "signature" : "def apply(value: String): FlashKind[String]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.FlashKind.json",
+      "ownerId" : "object:scalive.FlashKind",
+      "qualifiedName" : "scalive.FlashKind.json",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FlashKind.json:35637d5c020fdaee",
+          "signature" : "def json[A](value: String)(using evidence$1: zio.json.JsonCodec[A]): FlashKind[A]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.FlashKind.message",
+      "ownerId" : "class:scalive.FlashKind",
+      "qualifiedName" : "scalive.FlashKind.message",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FlashKind.message:f5c4ddd5e47addfc",
+          "signature" : "def message(value: A): FlashEntry"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.FlashKind.value",
+      "ownerId" : "class:scalive.FlashKind",
+      "qualifiedName" : "scalive.FlashKind.value",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FlashKind.value:75ae3d0b628284f4",
+          "signature" : "def value: String"
         }
       ]
     },
@@ -5340,8 +5388,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.HttpFlash.seeOther:47c9721f15997520",
-          "signature" : "def seeOther(to: LiveLocation, values: (FlashKind, String)*): zio.package.UIO[zio.http.Response]"
+          "id" : "def:scalive.HttpFlash.seeOther:44b5253af3fc1a57",
+          "signature" : "def seeOther(to: LiveLocation, values: FlashEntry*): zio.package.UIO[zio.http.Response]"
         }
       ]
     },
@@ -5352,8 +5400,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.HttpFlash.seeOtherUnsafe:f7efc7a5f7ef84da",
-          "signature" : "def seeOtherUnsafe(to: zio.http.URL, values: (FlashKind, String)*): zio.package.UIO[zio.http.Response]"
+          "id" : "def:scalive.HttpFlash.seeOtherUnsafe:6d9f037cfc4b9a8f",
+          "signature" : "def seeOtherUnsafe(to: zio.http.URL, values: FlashEntry*): zio.package.UIO[zio.http.Response]"
         }
       ]
     },
@@ -9352,8 +9400,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.flash.apply:688902e71c40175b",
-          "signature" : "def apply(kind: FlashKind)(project: String => HtmlElement[Nothing]): Mod.Content[Nothing]"
+          "id" : "def:scalive.flash.apply:41b5c40c3e7121e8",
+          "signature" : "def apply[A](kind: FlashKind[A])(project: A => HtmlElement[Nothing]): Mod.Content[Nothing]"
         }
       ]
     },
@@ -9364,8 +9412,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.flash.clearOnClick:151d98dfbc1731d0",
-          "signature" : "def clearOnClick(kind: FlashKind): Vector[Mod.Attr[Nothing]]"
+          "id" : "def:scalive.flash.clearOnClick:5972002f408607eb",
+          "signature" : "def clearOnClick(kind: FlashKind[?]): Vector[Mod.Attr[Nothing]]"
         }
       ]
     },
@@ -12542,18 +12590,6 @@
         {
           "id" : "extension:scalive.DomRef.value:231efeca9cbf8542",
           "signature" : "extension def value(ref: DomRef): String"
-        }
-      ]
-    },
-    {
-      "id" : "extension:scalive.FlashKind.value",
-      "ownerId" : "object:scalive.FlashKind",
-      "qualifiedName" : "scalive.FlashKind.value",
-      "kind" : "extension",
-      "signatures" : [
-        {
-          "id" : "extension:scalive.FlashKind.value:6c94dffbe80240ba",
-          "signature" : "extension def value(kind: FlashKind): String"
         }
       ]
     },
@@ -18062,18 +18098,6 @@
         {
           "id" : "opaque-type:scalive.DomSelector:15988127f1e88174",
           "signature" : "opaque type DomSelector = Option[String]"
-        }
-      ]
-    },
-    {
-      "id" : "opaque-type:scalive.FlashKind",
-      "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.FlashKind",
-      "kind" : "opaqueType",
-      "signatures" : [
-        {
-          "id" : "opaque-type:scalive.FlashKind:47dcfae36b9cc879",
-          "signature" : "opaque type FlashKind = String"
         }
       ]
     },

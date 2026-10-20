@@ -452,7 +452,7 @@ object ZioHttp:
                 ZioHttpSecurity
                   .verifyFlash(config, cookie.content).orElseSucceed(Map.empty)
             )
-        typedFlash = initialFlash.view.map((key, value) => FlashKind(key) -> value).toMap
+        typedFlash = initialFlash.view.map((key, value) => FlashKey(key) -> value).toMap
         turn <- DisconnectedRootTurn.make(
                   lifecycle.hooks,
                   request.url,
@@ -1190,7 +1190,7 @@ object ZioHttp:
         case None => response
     }
 
-  final private case class RenderedElement(html: String, finalFlash: Map[FlashKind, String])
+  final private case class RenderedElement(html: String, finalFlash: Map[FlashKey, String])
 
   private def renderElement[A, Msg](
     view: Signal[A] => HtmlElement[Msg],
@@ -2641,14 +2641,14 @@ object ZioHttp:
     config: ZioHttpConfig,
     join: RootJoin,
     claims: ZioHttpSecurity.RootClaims
-  ): UIO[Map[FlashKind, String]] =
+  ): UIO[Map[FlashKey, String]] =
     val values =
       if join.redirect.nonEmpty then
         join.flash.fold[UIO[Map[String, String]]](ZIO.succeed(Map.empty))(token =>
           ZioHttpSecurity.verifyFlash(config, token).orElseSucceed(Map.empty)
         )
       else ZIO.succeed(claims.initialFlash)
-    values.map(_.view.map((key, value) => FlashKind(key) -> value).toMap)
+    values.map(_.view.map((key, value) => FlashKey(key) -> value).toMap)
 
   private[scalive] def joinFailureEnvelope(
     joinRef: PhoenixRef,

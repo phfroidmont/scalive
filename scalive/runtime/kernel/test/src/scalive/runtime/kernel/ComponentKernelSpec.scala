@@ -287,7 +287,7 @@ object ComponentKernelSpec extends ZIOSpecDefault:
             draft: TurnDraft[Int, Int],
             state: ComponentEnvironmentState
           ) =
-            RenderState(if draft.model == 1 then Map(notice -> "candidate flash") else Map.empty)
+            RenderState(if draft.model == 1 then Map(notice.key -> "candidate flash") else Map.empty)
           override def message[P, M, A, O](id: ComponentInstanceId, component: LiveComponent[P, M, A], props: P, model: A, value: M, emit: O => Task[Unit], state: ComponentEnvironmentState, draft: TurnDraft[Int, Int]) =
             ZIO.succeed(ComponentCallbackResult(model, draft.copy(model = 1), state))
         for
@@ -330,7 +330,7 @@ object ComponentKernelSpec extends ZIOSpecDefault:
                                else div(retained.render(3), added.render(4))
                              }
                            ),
-                         model => RenderState(Map(notice -> (if model == 0 then "initial" else "final")))
+                         model => RenderState(Map(notice.key -> (if model == 0 then "initial" else "final")))
                        )
                      )
           kernel <- SessionKernel.start(config, logic(seen), program, Outbound(), environment)

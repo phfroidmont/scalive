@@ -35,7 +35,7 @@ final private[scalive] class RootTurnJournal private (
   val ownerEpoch: Epoch,
   val navigation: Ref[Option[NavigationRequest]],
   val hooks: Ref[RootHookRegistry[Any, Any]],
-  val flash: Ref[Map[FlashKind, String]],
+  val flash: Ref[Map[FlashKey, String]],
   val clientEvents: Ref[Vector[ClientEffect]],
   val componentUpdates: Ref[Vector[ComponentUpdateRequest]],
   val resourceOperations: Ref[Vector[ResourceOperation]],
@@ -102,7 +102,7 @@ end RootTurnJournal
 /** The flash values, uploads, and streams of one LiveView or component, as one render reads them.
   */
 final private[connection] case class OwnerRenderState(
-  flash: Map[FlashKind, String],
+  flash: Map[FlashKey, String],
   uploads: UploadRegistry,
   owner: OwnerId,
   ownerEpoch: Epoch,
@@ -122,7 +122,7 @@ private[scalive] object RootTurnJournal:
   def make[Msg, Model](
     owner: OwnerId,
     registry: RootHookRegistry[Msg, Model],
-    initialFlash: Map[FlashKind, String] = Map.empty,
+    initialFlash: Map[FlashKey, String] = Map.empty,
     initialClientEvents: Vector[ClientEffect] = Vector.empty,
     initialComponentUpdates: Vector[ComponentUpdateRequest] = Vector.empty,
     initialNavigation: Option[NavigationRequest] = None,
@@ -216,20 +216,31 @@ final private class RootMountNavigation(currentUrl: URL, journal: RootTurnJourna
   def redirectUnsafe(to: String): Task[Unit]        = navigation.redirectUnsafe(to)
 
 private object DeferredFlash extends Flash:
-  def put(kind: FlashKind, message: String): Task[Unit] = Deferred.fail("put flash")
-  def clear(kind: FlashKind): Task[Unit]                = Deferred.fail("clear flash")
-  def clearAll: Task[Unit]                              = Deferred.fail("clear all flash")
-  def get(kind: FlashKind): Task[Option[String]]        = Deferred.fail("get flash")
-  def snapshot: Task[Map[FlashKind, String]]            = Deferred.fail("snapshot flash")
+  def put[A](kind: FlashKind[A], message: A): Task[Unit] = Deferred.fail("put flash")
+  def clear(kind: FlashKind[?]): Task[Unit]              = Deferred.fail("clear flash")
+  def clearAll: Task[Unit]                               = Deferred.fail("clear all flash")
+  def get[A](kind: FlashKind[A]): Task[Option[A]]        = Deferred.fail("get flash")
 
 final private class JournaledFlash(journal: RootTurnJournal) extends Flash:
-  def put(kind: FlashKind, message: String): Task[Unit] =
+  def put[A](kind: FlashKind[A], message: A): Task[Unit] =
     ZIO.fail(NullPointerException("flash message must not be null")).when(message == null) *>
-      journal.flash.update(_.updated(kind, message))
-  def clear(kind: FlashKind): Task[Unit]         = journal.flash.update(_ - kind)
-  def clearAll: Task[Unit]                       = journal.flash.set(Map.empty)
-  def get(kind: FlashKind): Task[Option[String]] = journal.flash.get.map(_.get(kind))
-  def snapshot: Task[Map[FlashKind, String]]     = journal.flash.get
+      ZIO
+        .attempt(kind.encodeValue(message)).flatMap(encoded =>
+          journal.flash.update(_.updated(kind.key, encoded))
+        )
+  def clear(kind: FlashKind[?]): Task[Unit]       = journal.flash.update(_ - kind.key)
+  def clearAll: Task[Unit]                        = journal.flash.set(Map.empty)
+  def get[A](kind: FlashKind[A]): Task[Option[A]] =
+    journal.flash.get.flatMap(_.get(kind.key) match
+      case None          => ZIO.none
+      case Some(encoded) =>
+        kind.decodeValue(encoded) match
+          case Some(value) => ZIO.some(value)
+          case None        =>
+            ZIO
+              .logAnnotate("flash_kind", kind.value)(
+                ZIO.logWarning("Ignoring a flash value that does not decode for its kind")
+              ).as(None))
 
 private object DeferredUploads extends Uploads:
   def allow[R](definition: LiveUploadDef[R]): Task[Unit]    = Deferred.fail("allow upload")

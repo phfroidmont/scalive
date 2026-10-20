@@ -14,9 +14,9 @@ before attaching effects to lifecycle hooks.
 
 ## Render keyed flash {#render-keyed-flash}
 
-Define a stable @:apiSymbol(opaque-type:scalive.FlashKind)`FlashKind`@:@, update it through the phase context, and render only
+Define a stable @:apiSymbol(class:scalive.FlashKind)`FlashKind`@:@, update it through the phase context, and render only
 that key with @:apiSymbol(object:scalive.flash)`flash`@:@. `Saved` is
-`FlashKind("saved")`. Put the message from `handleMessage`:
+`FlashKind("saved")`, a kind for text. Put the message from `handleMessage`:
 
 @:sourceRegion(documentation/fixtures/guides/src/feedback/DocumentLiveView.scala, feedback-flash-put)
 
@@ -28,6 +28,15 @@ Then render that key in `view`:
 @:apiSymbol(def:scalive.Flash.clear)`clear`@:@ removes that key, and
 @:apiSymbol(def:scalive.Flash.clearAll)`clearAll`@:@ removes every flash value owned by the current lifecycle. Prefer a
 specific key when independent notices can coexist.
+
+A notice with more than text, such as a title and whether it can be undone, uses
+a kind for its own type. `FlashKind.json` stores the value as JSON, and `put`,
+`get`, and `flash` take and return that type:
+
+@:sourceRegion(documentation/fixtures/guides/src/feedback/ArchiveNotice.scala, feedback-flash-typed)
+
+A stored value that no longer decodes, for example one an earlier deployment
+encoded differently, is treated as absent.
 
 Flash is lifecycle state, not a substitute for model data. Use it for brief
 feedback such as a save result or navigation notice. Keep values free of

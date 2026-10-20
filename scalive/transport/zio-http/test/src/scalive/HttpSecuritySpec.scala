@@ -81,7 +81,7 @@ object HttpSecuritySpec extends ZIOSpecDefault:
     test("issues transport-compatible signed flash redirects") {
       val kind = FlashKind("notice")
       for
-        response <- security.flash.seeOther(scalive.live.location, kind -> "saved")
+        response <- security.flash.seeOther(scalive.live.location, kind.message("saved"))
         cookie <- ZIO
                     .fromOption(response.headers(Header.SetCookie).map(_.value)
                       .find(_.name == HttpFlash.CookieName))

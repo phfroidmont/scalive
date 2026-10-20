@@ -163,9 +163,12 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
 
   /** Renders flash messages set with `ctx.flash`. */
   object flash:
-    /** Renders the message for `kind` with `project`, and nothing while there is none. */
-    def apply(kind: FlashKind)(project: String => HtmlElement[Nothing]): Mod.Content[Nothing] =
-      Mod.Content.Flash(kind, project)
+    /** Renders the message for `kind` with `project`, and nothing while there is none.
+      *
+      * A stored message that does not decode as `A` renders nothing.
+      */
+    def apply[A](kind: FlashKind[A])(project: A => HtmlElement[Nothing]): Mod.Content[Nothing] =
+      Mod.Content.Flash(kind.key, encoded => kind.decodeValue(encoded).map(project))
 
     /** Clears flash when the element is clicked, without a message to the LiveView.
       *
@@ -177,7 +180,7 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
       *
       * This form clears only the message for `kind`.
       */
-    def clearOnClick(kind: FlashKind): Vector[Mod.Attr[Nothing]] =
+    def clearOnClick(kind: FlashKind[?]): Vector[Mod.Attr[Nothing]] =
       Vector(clearOnClick, phx.value("key") := kind.value)
 
   /** Renders the document `<title>` in a root layout, so the LiveView's `pageTitle` can change it.

@@ -9,6 +9,11 @@ function monitorPageErrors(page) {
   return errors
 }
 
+// The dead render already shows the view; a click before the join is lost.
+async function waitForConnected(page) {
+  await expect(page.locator(".phx-connected")).toBeAttached({ timeout: 15_000 })
+}
+
 async function waitForGuardConnected(page) {
   await expect(page.locator("#guard-connected")).toHaveText("true")
 }
@@ -127,6 +132,7 @@ test("same-session navigation replaces the root over the existing websocket", as
 
   await page.goto("/nav/a")
   await expect(page.locator("#view-a")).toBeVisible()
+  await waitForConnected(page)
   documents.length = 0
   frames.length = 0
 
@@ -152,6 +158,7 @@ test("incompatible navigation falls back to HTTP and preserves flash", async ({ 
 
   await page.goto("/nav/a")
   await expect(page.locator("#view-a")).toBeVisible()
+  await waitForConnected(page)
   documents.length = 0
 
   await page.getByRole("button", { name: "To C" }).click()
@@ -160,6 +167,7 @@ test("incompatible navigation falls back to HTTP and preserves flash", async ({ 
   await expect(page.locator("#view-c")).toBeVisible()
   await expect(page.locator("#flash")).toContainText("Flash from A")
   await expect(page.locator("body#root-two")).toBeVisible()
+  await waitForConnected(page)
   expect(documents.some(url => url.endsWith("/nav/c"))).toBe(true)
 
   documents.length = 0
@@ -180,6 +188,7 @@ test("root layout mismatch falls back to a fresh document", async ({ page }) => 
   })
 
   await page.goto("/nav/a")
+  await waitForConnected(page)
   documents.length = 0
   await page.getByRole("button", { name: "To D" }).click()
 
@@ -198,6 +207,7 @@ test("full redirect performs HTTP navigation and transfers flash", async ({ page
   })
 
   await page.goto("/nav/a")
+  await waitForConnected(page)
   await page.getByRole("button", { name: "To B" }).click()
   await expect(page.locator("#view-b")).toBeVisible()
   documents.length = 0

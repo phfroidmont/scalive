@@ -198,6 +198,11 @@ final case class CommittedRender[+Msg] private[render] (
   /** Closes this render after its replacement has become active. */
   def close: UIO[Unit] = scope.closeCommitted
 
+  /** Returns whether this render's program generates `id`, now or in an earlier render, rather than
+    * another program such as a component's.
+    */
+  private[scalive] def generates(id: BindingId): Boolean = BindingId.isFrom(id, programIdentity)
+
   /** This render, also resolving for a while the bindings `previous` had and this one dropped. */
   private[scalive] def retiring[M >: Msg](
     previous: CommittedRender[M],

@@ -554,6 +554,9 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                     executeRootEvent(draft, message, client.event)
                   case Exit.Success(ClientEventInterception.Continue(draft)) =>
                     resolveClient(state, client).flatMap {
+                      case Left(SessionRejection.UnknownBinding(binding))
+                          if state.committed.render.generates(binding) =>
+                        ignoreRemovedBinding(binding) *> haltActiveTurn(state, work, Some(tracked))
                       case Left(rejection) => response.fail(rejection).unit *> loop(state, work)
                       case Right(ResolvedClient.Root(message)) =>
                         executeRootEvent(draft, message, client.event)
@@ -718,6 +721,10 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                     executeRootEvent(draft, message, client.event)
                   case Exit.Success(ClientEventInterception.Continue(draft)) =>
                     resolveComponentClient(state, client).flatMap {
+                      case Left(SessionRejection.UnknownBinding(binding))
+                          if state.committed.components
+                            .get(client.component).exists(_.render.generates(binding)) =>
+                        ignoreRemovedBinding(binding) *> haltActiveTurn(state, work, Some(tracked))
                       case Left(rejection) => response.fail(rejection).unit *> loop(state, work)
                       case Right((component, action)) =>
                         executeComponentTurn(
@@ -3353,6 +3360,15 @@ final private[scalive] class SessionKernel[Msg, Model] private (
             )
       }
     }
+
+  /** An event from a binding dropped longer ago than retired bindings are kept changes nothing. It
+    * is answered with an empty reply rather than an error, so that the browser releases the element
+    * it locked for the event.
+    */
+  private def ignoreRemovedBinding(id: BindingId): UIO[Unit] =
+    ZIO.logAnnotate(RuntimeLog.Event, id.encoded)(
+      ZIO.logDebug("Ignored an event from a binding the page no longer renders")
+    )
 
   /** Resolves `id` against the committed bindings, then against those a recent render dropped. */
   private def resolveBinding[M](

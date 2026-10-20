@@ -67,7 +67,7 @@ object BindingId:
   private[render] def js(slot: BindingSlotId): BindingId = s"j${BindingSlotId.value(slot)}"
 
   // A JS command names each push it contains by its own ID followed by `:js:<index>`.
-  private val EventShape      = "b\\d+:\\d+(?::js:\\d+)?".r
+  private val EventShape      = "b(\\d+):\\d+(?::js:\\d+)?".r
   private val FormChangeShape = "(?s)f(\\d+):(.*)".r
   private val JsShape         = "j\\d+(?::js:\\d+)?".r
   private val JsPushSuffix    = "(?::js:\\d+)?".r
@@ -76,16 +76,24 @@ object BindingId:
     * than an event name.
     */
   private[scalive] def isGenerated(value: String): Boolean = value match
-    case EventShape() | JsShape()      => true
+    case EventShape(_) | JsShape()     => true
     case FormChangeShape(length, rest) =>
       length.toIntOption.exists(formId =>
         formId <= rest.length && JsPushSuffix.matches(rest.drop(formId))
       )
     case _ => false
 
+  /** Returns whether `id` has the shape of a binding `program` renders. Only event bindings name
+    * their program, so any other generated shape counts as its own.
+    */
+  private[scalive] def isFrom(id: BindingId, program: RenderProgramId): Boolean = id match
+    case EventShape(owner) => owner.toLongOption.contains(RenderProgramId.value(program))
+    case _                 => isGenerated(id)
+
   def fromEncoded(value: String): BindingId = value
 
   extension (id: BindingId) def encoded: String = id
+end BindingId
 
 /** Monotonic proof of an exact retained render change, never a content hash. */
 opaque type RenderRevision = Long

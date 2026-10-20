@@ -470,13 +470,13 @@ object RootConnectionSpec extends ZIOSpecDefault:
         assertTrue(model == Vector(2) -> Vector(1), rejections.isEmpty)
       )
     },
-    test("a click from a row removed longer ago than retired bindings are kept is rejected") {
+    test("a click from a row removed longer ago than retired bindings are kept gets an empty reply") {
       ZIO
         .scoped(clickRemovedRow(TestClock.adjust(Duration.fromJava(BindingTable.RetiredFor))))
         .map((model, rejections) =>
           assertTrue(
             model == Vector(2) -> Vector.empty,
-            rejections.exists(_.isInstanceOf[scalive.runtime.kernel.SessionRejection.UnknownBinding])
+            rejections.isEmpty
           )
         )
     },

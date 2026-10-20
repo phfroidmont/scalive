@@ -509,13 +509,13 @@ object ComponentRuntimeSpec extends ZIOSpecDefault:
         assertTrue(failure.isEmpty, rejections.isEmpty, model.contains(Vector(2) -> Vector(1, 2)))
       )
     },
-    test("a click from a component row removed long ago is rejected and leaves the LiveView running") {
+    test("a click from a component row removed long ago gets an empty reply and leaves the LiveView running") {
       ZIO
         .scoped(clickRemovedComponentRow(TestClock.adjust(Duration.fromJava(BindingTable.RetiredFor))))
         .map((model, failure, rejections) =>
           assertTrue(
             failure.isEmpty,
-            rejections.exists(_.isInstanceOf[SessionRejection.UnknownBinding]),
+            rejections.isEmpty,
             model.contains(Vector(2) -> Vector(2))
           )
         )

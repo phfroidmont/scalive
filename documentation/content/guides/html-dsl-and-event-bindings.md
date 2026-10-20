@@ -311,7 +311,9 @@ already does when two tabs edit the same data. Check the current model before
 acting, for example that the row still exists or that no save is running, and
 keep permission checks in the handler or the service it calls rather than
 relying on a button being hidden. Connected-turn guards run first, as for any
-other event. After 10 seconds, an event from a removed element is not delivered.
+other event. After 10 seconds, an event from a removed element is ignored: the
+browser gets an empty reply, which releases the element it disabled while
+waiting.
 
 ## Show conditional and repeated content {#show-conditional-and-repeated-content}
 

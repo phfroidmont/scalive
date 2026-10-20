@@ -139,7 +139,10 @@ object BindingTableSpec extends ZIOSpecDefault:
         replacementId = secondRender.bindings.ids.head
       yield assertTrue(
         oldId != replacementId,
-        secondRender.bindings.resolve(BindingId.fromEncoded(oldId.encoded)).isEmpty
+        secondRender.bindings.resolve(BindingId.fromEncoded(oldId.encoded)).isEmpty,
+        BindingId.isFrom(oldId, firstRender.programIdentity),
+        !BindingId.isFrom(oldId, secondRender.programIdentity),
+        !BindingId.isFrom(BindingId.fromEncoded("save"), firstRender.programIdentity)
       )
     },
     test("decodes browser payload inside the typed operation") {

@@ -26,7 +26,7 @@ export default {
     { name: "chromium", use: { channel: "chromium" } },
     {
       name: "firefox",
-      testMatch: "**/typed-form-feedback.spec.js",
+      testMatch: ["**/typed-form-feedback.spec.js", "**/live-navigation-reconnect.spec.js"],
       use: { browserName: "firefox" },
     },
     {

@@ -2247,18 +2247,15 @@ object ZioHttp:
               registration.get.flatMap { registered =>
                 val admission = join.redirect match
                   case Some(_) =>
-                    ZIO
-                      .fromOption(registered).orElseFail("missing root registration").flatMap(
-                        ZioHttpAdmission.admitRedirect(
-                          routes,
-                          config,
-                          csrfCookie,
-                          csrfToken,
-                          _,
-                          topic,
-                          join
-                        )
-                      )
+                    ZioHttpAdmission.admitRedirect(
+                      routes,
+                      config,
+                      csrfCookie,
+                      csrfToken,
+                      registered,
+                      topic,
+                      join
+                    )
                   case None =>
                     ZioHttpAdmission.admit(
                       routes,
@@ -4148,10 +4145,12 @@ private[scalive] object ZioHttpAdmission:
     config: ZioHttpConfig,
     csrfCookie: Option[String],
     csrfToken: Option[String],
-    registered: ZioHttpSecurity.RootClaims,
+    registered: Option[ZioHttpSecurity.RootClaims],
     topic: String,
     join: RootJoin
   ): IO[String, Admitted[R]] =
+    // Like Phoenix, a redirect join without a registration on this connection is admitted from
+    // its own signed claims: the client sends it again when it rejoins after a reconnect.
     val checked = for
       rootId <- ZIO
                   .fromOption(topic.stripPrefix("lv:") match
@@ -4165,7 +4164,7 @@ private[scalive] object ZioHttpAdmission:
       staticToken <- ZIO.fromOption(join.static).orElseFail("missing static token")
       static      <- ZioHttpSecurity.verifyStatic(config, staticToken).mapError(_.toString)
       _           <- ZIO.fail("session/static claims differ").unless(session == static)
-      _           <- ZIO.fail("root registration differs").unless(session == registered)
+      _           <- ZIO.fail("root registration differs").when(registered.exists(_ != session))
       _           <- ZIO.fail("root id differs").unless(session.rootId == rootId)
       cookie      <- ZIO.fromOption(csrfCookie).orElseFail("missing CSRF cookie")
       token       <- ZIO.fromOption(csrfToken).orElseFail("missing CSRF token")
@@ -4173,6 +4172,10 @@ private[scalive] object ZioHttpAdmission:
       route       <- ZIO.fromOption(routes.find(_.matches(url))).orElseFail("unknown route")
       _ <- ZIO.fail("session identity differs").unless(session.sessionIdentity == route.sessionName)
       _ <- ZIO.fail("missing root layout identity").when(session.rootLayoutKey.isEmpty)
+      // The client answers with a page request, which the current server renders.
+      _ <- ZIO
+             .fail("page rendered by an earlier server process")
+             .when(config.reloadOnRestart && session.serverInstance != ZioHttp.serverInstance)
     yield Admitted(route, url, session)
     checked
   end admitRedirect

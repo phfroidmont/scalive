@@ -916,11 +916,22 @@ object ZioHttpSpec extends ZIOSpecDefault:
         rejected <- admit(reloading, earlier)
         admitted <- admit(reloading, current)
         ignored  <- admit(config, earlier)
+        redirect <- ZioHttpAdmission
+                      .admitRedirect(
+                        directRoutes,
+                        reloading,
+                        Some(csrf.cookieToken),
+                        Some(csrf.token),
+                        None,
+                        "lv:root-id",
+                        earlier.copy(url = None, redirect = Some("/"))
+                      ).either
         response <- run(ZioHttp.routes(application, reloading), Request.get(URL.root))
         body     <- response.body.asString.orDie
         rendered <- ZioHttpSecurity.verifySession(reloading, attribute(body, "data-phx-session").get)
       yield assertTrue(
         rejected == Left("page rendered by an earlier server process"),
+        redirect == Left("page rendered by an earlier server process"),
         admitted.isRight,
         ignored.isRight,
         rendered.serverInstance == ZioHttp.serverInstance,
@@ -993,7 +1004,7 @@ object ZioHttpSpec extends ZIOSpecDefault:
         wrongPath.isLeft
       )
     },
-    test("redirect admission stays in the registered session and accepts route mount aspects") {
+    test("redirect admission stays in the live session, with or without a root registration") {
       object View extends LiveView.Eventless[Unit]:
         def mount(ctx: MountContext) = ZIO.unit
         def view(model: Signal[Unit]) = div()
@@ -1039,40 +1050,55 @@ object ZioHttpSpec extends ZIOSpecDefault:
                  params = Map("_mounts" -> Json.Num(1)),
                  sticky = false
                )
-        valid <- ZioHttpAdmission
-                   .admitRedirect(
-                     catalog,
-                     config,
-                     Some(csrf.cookieToken),
-                     Some(csrf.token),
-                     registered,
-                     "lv:root-id",
-                     join
-                   ).either
-        guarded <- ZioHttpAdmission
-                     .admitRedirect(
-                       catalog,
+        otherCsrf <- ZioHttpSecurity.issueCsrf(config)
+        otherRoot <- ZioHttpSecurity.issueSession(
                        config,
-                       Some(csrf.cookieToken),
-                       Some(csrf.token),
-                       registered,
-                       "lv:root-id",
-                       join.copy(redirect = Some("/guard"))
-                     ).either
-        other <- ZioHttpAdmission
-                   .admitRedirect(
-                     catalog,
-                     config,
-                     Some(csrf.cookieToken),
-                     Some(csrf.token),
-                     registered,
-                     "lv:root-id",
-                     join.copy(redirect = Some("/c"))
-                   ).either
+                       "root-id",
+                       LifecycleId(2L),
+                       source.index,
+                       "/a",
+                       source.routeIdentity,
+                       source.sessionName,
+                       "shared-root"
+                     )
+        otherRegistered <- ZioHttpSecurity.verifySession(config, otherRoot)
+        admit = (registration: Option[ZioHttpSecurity.RootClaims], join: RootJoin) =>
+                  ZioHttpAdmission
+                    .admitRedirect(
+                      catalog,
+                      config,
+                      Some(csrf.cookieToken),
+                      Some(csrf.token),
+                      registration,
+                      "lv:root-id",
+                      join
+                    ).either
+        valid       <- admit(Some(registered), join)
+        guarded     <- admit(Some(registered), join.copy(redirect = Some("/guard")))
+        other       <- admit(Some(registered), join.copy(redirect = Some("/c")))
+        differs     <- admit(Some(otherRegistered), join)
+        rejoined    <- admit(None, join)
+        rejoinOther <- admit(None, join.copy(redirect = Some("/c")))
+        tampered    <- admit(None, join.copy(session = token + "tampered"))
+        csrfDiffers <- ZioHttpAdmission
+                         .admitRedirect(
+                           catalog,
+                           config,
+                           Some(otherCsrf.cookieToken),
+                           Some(csrf.token),
+                           None,
+                           "lv:root-id",
+                           join
+                         ).either
       yield assertTrue(
         valid.exists(_.route.matches(URL.decode("/b").toOption.get)),
         guarded.exists(_.route.matches(URL.decode("/guard").toOption.get)),
-        other.left.exists(_.contains("session identity differs"))
+        other.left.exists(_.contains("session identity differs")),
+        differs == Left("root registration differs"),
+        rejoined.exists(_.route.matches(URL.decode("/b").toOption.get)),
+        rejoinOther.left.exists(_.contains("session identity differs")),
+        tampered.isLeft,
+        csrfDiffers.isLeft
       )
     },
     test("effective Phoenix join ref falls back to the initial push ref") {
@@ -2217,6 +2243,41 @@ object ZioHttpSpec extends ZIOSpecDefault:
           !logs.exists(_.logLevel == LogLevel.Error)
         )
       })
+    },
+    test("a live-navigated root rejoins by redirect on a new connection") {
+      object Page extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        def view(model: Signal[Unit]) = div("page")
+      val application = scalive.Live.router(
+        scalive.live         -> Page,
+        scalive.live / "next" -> Page,
+        scalive.Live.session("other")(scalive.live / "other" -> Page)
+      )
+
+      withServer(application) { port =>
+        for
+          page       <- bootstrap(port)
+          first      <- connect(port, page)
+          joined     <- joinRoot(first, page)
+          navigated  <- redirectRoot(first, page, "/next", "2")
+          _          <- first.close
+          second     <- connect(port, page)
+          rejoined   <- redirectRoot(second, page, "/next", "3")
+          _          <- second.close
+          third      <- connect(port, page)
+          crossed    <- redirectRoot(third, page, "/other", "4")
+          _          <- third.close
+          fourth     <- connect(port, page)
+          tampered   <- redirectRoot(fourth, page.copy(session = page.session + "x"), "/next", "5")
+          _          <- fourth.close
+        yield assertTrue(
+          status(joined) == "ok",
+          status(navigated) == "ok",
+          status(rejoined) == "ok",
+          status(crossed) == "error",
+          status(tampered) == "error"
+        )
+      }
     },
     test("reload guard returns a full redirect to the current URL without running the event") {
       val event        = BrowserToServerEvent[Json]("reload-event")

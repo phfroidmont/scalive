@@ -7,6 +7,7 @@ import zio.stream.ZStream
 import zio.test.*
 
 import scalive.*
+import scalive.render.AttributeValue
 import scalive.render.EvaluatedNode
 import scalive.runtime.contracts.*
 import scalive.runtime.kernel.*
@@ -40,6 +41,32 @@ object ComponentRuntimeSpec extends ZIOSpecDefault:
     case value: EvaluatedNode.Flash  => value.child.map(renderedText).getOrElse("")
     case value: EvaluatedNode.Keyed  => value.rows.map(row => renderedText(row.child)).mkString
     case _                           => ""
+
+  // The phx-click bindings rendered in `node`, in document order.
+  private def clickBindings(node: EvaluatedNode): Vector[String] = node match
+    case value: EvaluatedNode.Element =>
+      value.attributes.collect {
+        case attribute if attribute.name == "phx-click" =>
+          attribute.value.collect { case AttributeValue.Text(id) => id }
+      }.flatten ++ value.children.flatMap(clickBindings)
+    case value: EvaluatedNode.Choice => value.children.flatMap(clickBindings)
+    case value: EvaluatedNode.Keyed  => value.rows.flatMap(row => clickBindings(row.child))
+    case _                           => Vector.empty
+
+  private enum RowMsg:
+    case Remove(row: Int)
+    case Clicked(row: Int)
+
+  // Rows, each with a button, and the rows whose button was clicked.
+  private final class RowsComponent
+      extends LiveComponent[Unit, RowMsg, (Vector[Int], Vector[Int])]:
+    def mount(props: Unit, ctx: MountContext) = ZIO.succeed(Vector(1, 2) -> Vector.empty)
+    def handleMessage(props: Unit, model: (Vector[Int], Vector[Int]), ctx: MessageContext)
+      : RowMsg => Task[(Vector[Int], Vector[Int])] =
+      case RowMsg.Remove(row)  => ZIO.succeed(model._1.filterNot(_ == row) -> model._2)
+      case RowMsg.Clicked(row) => ZIO.succeed(model._1 -> (model._2 :+ row))
+    def view(props: Signal[Unit], model: Signal[(Vector[Int], Vector[Int])]) =
+      div(model.map(_._1).splitBy(identity)((row, _) => button(on.click(RowMsg.Clicked(row)))))
 
   private final class RecordingComponent(order: Ref[Vector[String]])
       extends LiveComponent.WithOutput[Int, Int, Int, Int]:
@@ -439,6 +466,44 @@ object ComponentRuntimeSpec extends ZIOSpecDefault:
             entry.logLevel == LogLevel.Debug && entry.annotations.get("event").contains("copied") &&
               entry.message().contains("browserEvents")
           )
+        )
+      }
+    },
+    test("a click from a component row that is no longer rendered leaves the LiveView running") {
+      ZIO.scoped {
+        val instance = component(RowsComponent(), "rows")
+        val view = new LiveView[Unit, Unit]:
+          def mount(ctx: MountContext) = ZIO.unit
+          def handleMessage(model: Unit, ctx: MessageContext): Unit => Task[Unit] = _ => ZIO.unit
+          def view(model: Signal[Unit]) = div(instance.render(()))
+        for
+          sink       <- Queue.unbounded[ConnectionOutput]
+          connection <- RootConnection.start(config, metadata, view, sink.offer(_).unit)
+          _          <- sink.take
+          id         <- connection.inspectComponentIds.map(_.head)
+          tree       <- connection.inspectComponentTree(id).someOrFailException
+          removed = scalive.render.BindingId.fromEncoded(clickBindings(tree.root).head)
+          _ <- connection.submitComponentMessage(CommandId.fresh().toOption.get, id, RowMsg.Remove(1))
+          stale = CommandId.fresh().toOption.get
+          clicked <- connection
+                       .submitComponentRawEvent(
+                         stale,
+                         id,
+                         removed,
+                         BindingPayload.Params(Map.empty),
+                         LiveEvent("click", removed.encoded, Json.Obj(), Map.empty, None, None)
+                       ).either
+          _       <- connection.submitComponentMessage(CommandId.fresh().toOption.get, id, RowMsg.Clicked(2))
+          model   <- connection.inspectComponentModel[(Vector[Int], Vector[Int])](id)
+          failure <- connection.pollFailure
+          outputs <- sink.takeAll
+        yield assertTrue(
+          clicked.isRight,
+          failure.isEmpty,
+          outputs.contains(
+            ConnectionOutput.Rejected(stale, SessionRejection.UnknownBinding(removed))
+          ),
+          model.contains(Vector(2) -> Vector(2))
         )
       }
     },

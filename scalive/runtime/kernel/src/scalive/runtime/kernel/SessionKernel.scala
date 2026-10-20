@@ -3373,6 +3373,9 @@ final private[scalive] class SessionKernel[Msg, Model] private (
       case None          => Left(SessionRejection.StaleComponent(command.component))
       case Some(mounted) =>
         mounted.render.bindings.resolve(command.binding) match
+          // Rendered earlier: the browser sent it before applying the update that removed it.
+          case None if BindingId.isGenerated(command.binding.encoded) =>
+            Left(SessionRejection.UnknownBinding(command.binding))
           case None =>
             val unknown = IllegalStateException(s"unknown component binding ${command.binding}")
             Right(browser(Left(unknown)))

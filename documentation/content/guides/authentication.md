@@ -191,10 +191,17 @@ guard narrows the revocation window, but it does not replace domain
 authorization immediately before sensitive mutations. Recheck the relevant
 record or capability where it is used to avoid time-of-check/time-of-use gaps.
 
-Guard checks are on the hot path. Read authoritative mutable data, but bound the
-cost, and cache only when the staleness is acceptable for the policy. A failure
-reason supplied to `reload(reason)` or `disconnect(reason)` is server-side
-diagnostic context, not a message sent to the browser.
+Guard checks are on the hot path: they also run for ticks, subscription
+deliveries and async results. Read authoritative mutable data, but bound the
+cost. To check at most every 30 seconds, build the check with ZIO's `cached` in
+the mount aspect, as in `check.cached(30.seconds)`, and keep the cached effect
+in the context. The lifecycle and its nested views then share one result for
+that period, which is how long the guard can miss a revocation. Disconnecting
+at logout, as the next section shows, covers that gap. A cached failure repeats
+for the same period, so fail with an outcome that ends the lifecycle, such as a
+redirect or a reload, rather than a halt. A failure reason supplied to
+`reload(reason)` or `disconnect(reason)` is server-side diagnostic context, not
+a message sent to the browser.
 
 ## Log out through a CSRF-protected POST {#revoke-through-a-csrf-protected-reset}
 

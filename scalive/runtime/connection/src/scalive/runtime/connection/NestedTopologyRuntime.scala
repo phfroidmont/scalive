@@ -102,10 +102,7 @@ final private[scalive] class NestedTopologyRuntime private (
           parentLifecycle,
           parentEpoch,
           parentRevision,
-          requirements.map(requirement =>
-            if connectedTurnGuard.isEmpty then requirement
-            else requirement.copy(sticky = false)
-          ),
+          requirements,
           connectedTurnGuard
         )
 

@@ -508,47 +508,99 @@ object ConnectionSupervisorSpec extends ZIOSpecDefault:
         yield assertTrue(turns == 0)
       }
     },
-    test("a guarded parent resolves a requested sticky child as non-sticky") {
+    test("a guarded sticky child keeps the guard it was mounted with across navigation") {
       ZIO.scoped {
-        object Child extends LiveView.Eventless[Unit]:
-          def mount(ctx: MountContext): Task[Unit] = ZIO.unit
-          def view(model: Signal[Unit]): HtmlElement[Nothing] = div("child")
-        object Parent extends LiveView.Eventless[Unit]:
-          def mount(ctx: MountContext): Task[Unit] = ZIO.unit
-          def view(model: Signal[Unit]): HtmlElement[Nothing] =
-            div(liveView("child", Child, sticky = true))
-
         for
+          mounts      <- Ref.make(0)
+          firstGuard  <- Ref.make(0)
+          secondGuard <- Ref.make(0)
+          allowed     <- Ref.make(true)
           value       <- fixture
-          rootOutput  <- Queue.bounded[ConnectionOutput](4)
-          childOutput <- Queue.bounded[ConnectionOutput](4)
-          root <- startRoot(
-                    value,
-                    Parent,
-                    rootOutput,
-                    connectedTurnGuard = ZIO.unit,
-                    hasConnectedTurnGuard = true
-                  )
-          _           <- rootOutput.take
-          claims      <- claimsFor(value)
-          reservation <- value.supervisor.reserveNested(claims)
-          child <- value.supervisor.startNested(
-                     reservation,
-                     URL.root,
-                     metadata,
-                     "child",
-                     false,
-                     childOutput.offer(_).unit
-                   )
-          _      <- childOutput.take
-          leave  <- value.supervisor.routeNavigationLeave(root.topic)
-          _      <- root.awaitClosed
-          _      <- child.awaitClosed
-          active <- value.supervisor.lifecycle(child.lifecycle, child.epoch)
+          firstRootOutput   <- Queue.bounded[ConnectionOutput](4)
+          secondRootOutput  <- Queue.bounded[ConnectionOutput](4)
+          firstChildOutput  <- Queue.bounded[ConnectionOutput](4)
+          secondChildOutput <- Queue.bounded[ConnectionOutput](4)
+          child = new LiveView[Unit, Int]:
+                    def mount(ctx: MountContext): Task[Int] = mounts.updateAndGet(_ + 1).as(0)
+                    def handleMessage(model: Int, ctx: MessageContext): Unit => Task[Int] =
+                      _ => ZIO.succeed(model + 1)
+                    def view(model: Signal[Int]): HtmlElement[Unit] =
+                      button(on.click(()), model.map(_.toString))
+          parent = new LiveView.Eventless[Unit]:
+                     def mount(ctx: MountContext): Task[Unit] = ZIO.unit
+                     def view(model: Signal[Unit]): HtmlElement[Nothing] =
+                       div(liveView("sticky-child", child, sticky = true))
+          firstRoot <- startRoot(
+                         value,
+                         parent,
+                         firstRootOutput,
+                         connectedTurnGuard = firstGuard.update(_ + 1) *>
+                           ZIO.fail(LiveConnectedTurnFailure.halt).unlessZIO(allowed.get).unit,
+                         hasConnectedTurnGuard = true
+                       )
+          _           <- firstRootOutput.take
+          firstClaims <- claimsFor(value)
+          firstJoin   <- value.supervisor.reserveNested(firstClaims)
+          firstChild <- value.supervisor.startNested(
+                          firstJoin,
+                          URL.root,
+                          metadata,
+                          "sticky-child",
+                          false,
+                          firstChildOutput.offer(_).unit
+                        )
+          joined <- firstChildOutput.take
+          _      <- value.supervisor.routeNavigationLeave(NestedTopic("root:main"))
+          _      <- firstRoot.awaitClosed
+          _      <- value.supervisor.routeLeave(firstClaims.topic)
+          _      <- startRoot(
+                 value,
+                 parent,
+                 secondRootOutput,
+                 connectedTurnGuard = secondGuard.update(_ + 1),
+                 hasConnectedTurnGuard = true
+               )
+          _            <- secondRootOutput.take
+          secondClaims <- claimsFor(value)
+          secondJoin   <- value.supervisor.reserveNested(secondClaims)
+          reattached <- value.supervisor.startNested(
+                          secondJoin,
+                          URL.root,
+                          metadata,
+                          "sticky-child",
+                          false,
+                          secondChildOutput.offer(_).unit,
+                          reattach = true
+                        )
+          _               <- secondChildOutput.take
+          guardsBefore    <- firstGuard.get.zip(secondGuard.get)
+          _               <- reattached.browserEvent(
+                 CommandId.fresh().toOption.get,
+                 bindingFrom(joined),
+                 BindingPayload.Params(Map.empty)
+               )
+          allowedReply <- secondChildOutput.take
+          _            <- allowed.set(false)
+          _            <- reattached.browserEvent(
+                 CommandId.fresh().toOption.get,
+                 bindingFrom(joined),
+                 BindingPayload.Params(Map.empty)
+               )
+          haltedReply <- secondChildOutput.take
+          guardsAfter <- firstGuard.get.zip(secondGuard.get)
+          mountCount  <- mounts.get
         yield assertTrue(
-          !reservation.registration.sticky,
-          leave == ConnectionSupervisor.LeaveResult.Left,
-          active.isEmpty
+          firstJoin.registration.sticky,
+          reattached eq firstChild,
+          mountCount == 1,
+          guardsAfter._1 - guardsBefore._1 == 2,
+          guardsAfter._2 == guardsBefore._2,
+          allowedReply match
+            case ConnectionOutput.Reply(_, delta, _) => delta != RenderDelta.Empty
+            case _                                   => false,
+          haltedReply match
+            case ConnectionOutput.Reply(_, delta, _) => delta == RenderDelta.Empty
+            case _                                   => false
         )
       }
     },

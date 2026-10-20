@@ -196,8 +196,8 @@ selects one of these controlled outcomes:
 
 Session guards run before route guards. Within each boundary, guards run in
 declaration order. All run before hooks, handlers, and diff generation. Nested
-views inherit their parent declarations, so a nested view under guards is never
-sticky; see
+views inherit their parent declarations, and a sticky child keeps them across
+navigation; see
 [Choose sticky navigation deliberately](nested-liveviews.md#choose-sticky-navigation).
 
 The guarded scope is exactly connected application turns: root and component

@@ -110,11 +110,10 @@ still require a fresh mount. A sticky child is detached from normal parent
 ownership while navigating, so reserve it for UI that genuinely spans pages;
 do not enable it as a general remount optimization.
 
-`sticky = true` has no effect when the parent's route or live session declares
-[connected-turn guards](lifecycle-hooks.md#connected-turn-guards). The child
-inherits those guards, so Scalive mounts it as a non-sticky child: navigation
-and reconnect remount it under the current policy instead of keeping a
-lifecycle that was admitted under an earlier one.
+A child under [connected-turn guards](lifecycle-hooks.md#connected-turn-guards)
+inherits its parent's guards with the context they were mounted with. A sticky
+child keeps them after navigation: every later turn of the child still checks
+the admission it was mounted under, whatever guards the destination declares.
 
 ## Set the crash boundary {#set-the-crash-boundary}
 

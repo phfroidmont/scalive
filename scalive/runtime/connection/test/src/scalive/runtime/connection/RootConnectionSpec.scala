@@ -22,6 +22,51 @@ object RootConnectionSpec extends ZIOSpecDefault:
   // Shaped like a binding Scalive renders, from a render program that never exists.
   private val staleBinding = BindingId.fromEncoded(s"b${Long.MaxValue}:0")
 
+  private enum RowMsg:
+    case RemoveFirst
+    case Clicked(row: Int)
+
+  // A button that removes the first row, then rows with a button each. The model holds the rows
+  // and the rows whose button was clicked.
+  private object Rows extends LiveView[RowMsg, (Vector[Int], Vector[Int])]:
+    def mount(ctx: MountContext) = ZIO.succeed(Vector(1, 2) -> Vector.empty)
+    def handleMessage(model: (Vector[Int], Vector[Int]), ctx: MessageContext)
+      : RowMsg => Task[(Vector[Int], Vector[Int])] =
+      case RowMsg.RemoveFirst  => ZIO.succeed(model._1.drop(1) -> model._2)
+      case RowMsg.Clicked(row) => ZIO.succeed(model._1 -> (model._2 :+ row))
+    def view(model: Signal[(Vector[Int], Vector[Int])]) =
+      div(
+        button(on.click(RowMsg.RemoveFirst)),
+        model.map(_._1).splitBy(identity)((row, _) => button(on.click(RowMsg.Clicked(row))))
+      )
+
+  // The phx-click bindings rendered in `node`, in document order.
+  private def clickBindings(node: EvaluatedNode): Vector[BindingId] = node match
+    case value: EvaluatedNode.Element =>
+      value.attributes.collect {
+        case EvaluatedAttribute("phx-click", Some(AttributeValue.Text(id)), _, _) =>
+          BindingId.fromEncoded(id)
+      } ++ value.children.flatMap(clickBindings)
+    case value: EvaluatedNode.Keyed => value.rows.flatMap(row => clickBindings(row.child))
+    case _                          => Vector.empty
+
+  // Joins Rows, removes its first row, then clicks that row's button.
+  private def clickRemovedRow(beforeClick: UIO[Unit]) =
+    for
+      outputs    <- Queue.unbounded[ConnectionOutput]
+      connection <- RootConnection.start(config, metadata, Rows, outputs.offer(_).unit)
+      _          <- outputs.take
+      bindings   <- connection.inspectTree.map(tree => clickBindings(tree.root))
+      _          <- connection.submitEvent(CommandId.fresh().toOption.get, bindings(0), BindingPayload.Params(Map.empty))
+      _          <- beforeClick
+      click       = CommandId.fresh().toOption.get
+      _          <- connection.submitEvent(click, bindings(1), BindingPayload.Params(Map.empty))
+      model      <- connection.inspectModel
+      sent       <- outputs.takeAll
+    yield (model, sent.collect {
+      case ConnectionOutput.Rejected(`click`, rejection) => rejection
+    })
+
   private final class Counter(mounts: Ref[Int]) extends LiveView[Int, Int]:
     override def mount(ctx: MountContext): Task[Int] = mounts.updateAndGet(_ + 1).as(0)
     override def handleMessage(model: Int, ctx: MessageContext): Int => Task[Int] =
@@ -419,6 +464,21 @@ object RootConnectionSpec extends ZIOSpecDefault:
           !ignored.contains(staleBinding.encoded)
         )
       }
+    },
+    test("a click from a row the browser had not yet seen removed is delivered") {
+      ZIO.scoped(clickRemovedRow(ZIO.unit)).map((model, rejections) =>
+        assertTrue(model == Vector(2) -> Vector(1), rejections.isEmpty)
+      )
+    },
+    test("a click from a row removed longer ago than retired bindings are kept is rejected") {
+      ZIO
+        .scoped(clickRemovedRow(TestClock.adjust(Duration.fromJava(BindingTable.RetiredFor))))
+        .map((model, rejections) =>
+          assertTrue(
+            model == Vector(2) -> Vector.empty,
+            rejections.exists(_.isInstanceOf[scalive.runtime.kernel.SessionRejection.UnknownBinding])
+          )
+        )
     },
     test("a rendered binding that a hook executes still dispatches its message") {
       ZIO.scoped {

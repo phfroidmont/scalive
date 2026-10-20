@@ -345,6 +345,14 @@ sealed private[scalive] trait MountedComponent[OwnerMsg]:
   def environmentState: ComponentEnvironmentState
   def mapOutput(output: Output): Option[OwnerMsg]
 
+  /** This component, also resolving for a while the bindings `previous`, the same instance as last
+    * committed, had and this render dropped.
+    */
+  def retiringBindingsOf(
+    previous: MountedComponent[OwnerMsg],
+    now: Instant
+  ): MountedComponent[OwnerMsg]
+
 final private[kernel] case class MountedComponentValue[OwnerMsg, Props0, Message0, Model0, Output0](
   id: ComponentInstanceId,
   key: ComponentKey,
@@ -365,6 +373,13 @@ final private[kernel] case class MountedComponentValue[OwnerMsg, Props0, Message
   type Model   = Model0
   type Output  = Output0
   def mapOutput(output: Output0): Option[OwnerMsg] = outputMapper.map(_(output))
+
+  def retiringBindingsOf(
+    previous: MountedComponent[OwnerMsg],
+    now: Instant
+  ): MountedComponent[OwnerMsg] =
+    // One instance keeps its definition, so its renders share the message type.
+    copy(render = render.retiring(previous.render.asInstanceOf[CommittedRender[Message0]], now))
 
 final private[scalive] case class ComponentForest[OwnerMsg] private (
   roots: Vector[ComponentInstanceId],

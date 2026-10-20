@@ -553,7 +553,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                   case Exit.Success(ClientEventInterception.Dispatch(draft, message)) =>
                     executeRootEvent(draft, message, client.event)
                   case Exit.Success(ClientEventInterception.Continue(draft)) =>
-                    resolveClient(state, client) match
+                    resolveClient(state, client).flatMap {
                       case Left(rejection) => response.fail(rejection).unit *> loop(state, work)
                       case Right(ResolvedClient.Root(message)) =>
                         executeRootEvent(draft, message, client.event)
@@ -566,6 +566,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                           Some(tracked),
                           initialDraft = Some(draft)
                         )
+                    }
                   case Exit.Failure(cause) if cause.isInterruptedOnly =>
                     observeNewTurnFailed(
                       Some(tracked),
@@ -716,7 +717,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                   case Exit.Success(ClientEventInterception.Dispatch(draft, message)) =>
                     executeRootEvent(draft, message, client.event)
                   case Exit.Success(ClientEventInterception.Continue(draft)) =>
-                    resolveComponentClient(state, client) match
+                    resolveComponentClient(state, client).flatMap {
                       case Left(rejection) => response.fail(rejection).unit *> loop(state, work)
                       case Right((component, action)) =>
                         executeComponentTurn(
@@ -727,6 +728,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                           Some(tracked),
                           initialDraft = Some(draft)
                         )
+                    }
                   case Exit.Failure(cause) if cause.isInterruptedOnly =>
                     observeNewTurnFailed(
                       Some(tracked),
@@ -3162,8 +3164,16 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     publish: Boolean
   ): ZIO[Any, SessionFailure, CommitResult[Msg, Model]] =
     val commitTail = for
-      components <- ZIO.succeed(candidate.components.components.map(_.commitValue))
-      render     <- ZIO.succeed(candidate.render.commit)
+      now        <- Clock.instant
+      components <- ZIO.succeed(candidate.components.components.map(staged =>
+                      val committed = staged.commitValue
+                      staged.previous.fold(committed)(committed.retiringBindingsOf(_, now))
+                    ))
+      render <- ZIO.succeed(
+                  previous.fold(candidate.render.commit)(committed =>
+                    candidate.render.commit.retiring(committed.render, now)
+                  )
+                )
       activeIds = components.iterator.map(_.id).toSet
       dormant   = previous.toVector
                   .flatMap(_.components.allValues)
@@ -3344,17 +3354,36 @@ final private[scalive] class SessionKernel[Msg, Model] private (
       }
     }
 
+  /** Resolves `id` against the committed bindings, then against those a recent render dropped. */
+  private def resolveBinding[M](
+    bindings: BindingTable[M],
+    id: BindingId
+  ): UIO[Option[BindingOperation[M]]] =
+    bindings.resolve(id) match
+      case Some(operation) => ZIO.some(operation)
+      case None            =>
+        Clock.instant.flatMap(now =>
+          bindings.resolveRetired(id, now) match
+            case None            => ZIO.none
+            case Some(operation) =>
+              ZIO
+                .logAnnotate(RuntimeLog.Event, id.encoded)(
+                  ZIO.logDebug("Delivered an event from a binding the page no longer renders")
+                ).as(Some(operation))
+        )
+
   private def resolveClient(
     state: SessionState.Active[Msg, Model],
     command: SessionCommand.ClientEvent
-  ): Either[SessionRejection, ResolvedClient[Msg]] =
-    state.committed.render.bindings.resolve(command.binding) match
+  ): UIO[Either[SessionRejection, ResolvedClient[Msg]]] =
+    resolveBinding(state.committed.render.bindings, command.binding).map {
       case None            => Left(SessionRejection.UnknownBinding(command.binding))
       case Some(operation) =>
         operation
           .dispatch(command.payload)
           .left.map(SessionRejection.BindingFailed(command.binding, _))
           .flatMap(dispatch => resolveDispatch(state.committed.components, dispatch))
+    }
 
   /** Resolves a component event against the targeted component's bindings. A binding addressed to
     * another instance is delivered to that instance as a message, like a routed root binding. An
@@ -3364,16 +3393,16 @@ final private[scalive] class SessionKernel[Msg, Model] private (
   private def resolveComponentClient(
     state: SessionState.Active[Msg, Model],
     command: SessionCommand.ComponentClientEvent
-  ): Either[SessionRejection, (ComponentInstanceId, ComponentAction)] =
+  ): UIO[Either[SessionRejection, (ComponentInstanceId, ComponentAction)]] =
     val forest = state.committed.components
 
     def browser(message: Either[Throwable, Any]) =
       command.component -> ComponentAction.Browser(command, message)
     forest.get(command.component) match
-      case None          => Left(SessionRejection.StaleComponent(command.component))
+      case None          => ZIO.left(SessionRejection.StaleComponent(command.component))
       case Some(mounted) =>
-        mounted.render.bindings.resolve(command.binding) match
-          // Rendered earlier: the browser sent it before applying the update that removed it.
+        resolveBinding(mounted.render.bindings, command.binding).map {
+          // Rendered, but dropped longer ago than a retired binding is kept.
           case None if BindingId.isGenerated(command.binding.encoded) =>
             Left(SessionRejection.UnknownBinding(command.binding))
           case None =>
@@ -3388,6 +3417,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                   if component == command.component then browser(Right(routed.message))
                   else component -> ComponentAction.Message(routed.message)
                 }
+        }
 
   private def resolveDispatch[Owner](
     forest: ComponentForest[Msg],

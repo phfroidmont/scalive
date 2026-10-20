@@ -297,6 +297,22 @@ overrides the form's change binding, sends only that control, and still
 requires the control to belong to a form. A standalone input, like the search
 field above, uses a key binding instead.
 
+### Handle events from elements that just left the page {#handle-events-from-removed-elements}
+
+The browser sends an event from the page it shows, which can be one update
+behind the server. A visitor may click a search result while the server is
+replacing the results, or a row's button while another tab deletes the row.
+Scalive delivers such an event: for 10 seconds after an update removes an
+element, its bindings still produce the message they rendered, so the handler
+receives what the visitor clicked.
+
+The handler therefore sees messages for state that has since changed, as it
+already does when two tabs edit the same data. Check the current model before
+acting, for example that the row still exists or that no save is running, and
+keep permission checks in the handler or the service it calls rather than
+relying on a button being hidden. Connected-turn guards run first, as for any
+other event. After 10 seconds, an event from a removed element is not delivered.
+
 ## Show conditional and repeated content {#show-conditional-and-repeated-content}
 
 To show content only in some states, or one element per entry of a collection,

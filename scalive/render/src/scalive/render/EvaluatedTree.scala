@@ -1,5 +1,6 @@
 package scalive.render
 
+import java.time.Instant
 import java.util.IdentityHashMap
 import java.util.concurrent.atomic.AtomicReference
 
@@ -196,6 +197,14 @@ final case class CommittedRender[+Msg] private[render] (
   private[render] val programIdentity: RenderProgramId):
   /** Closes this render after its replacement has become active. */
   def close: UIO[Unit] = scope.closeCommitted
+
+  /** This render, also resolving for a while the bindings `previous` had and this one dropped. */
+  private[scalive] def retiring[M >: Msg](
+    previous: CommittedRender[M],
+    now: Instant
+  ): CommittedRender[M] =
+    if previous eq this then this
+    else copy(bindings = bindings.retiring(previous.bindings, now))
 
 /** Isolated render state awaiting lifecycle validation and commit. */
 final case class RenderCandidate[+Msg] private[render] (

@@ -1,5 +1,7 @@
 package scalive.render
 
+import java.time.Instant
+
 import zio.ZIO
 import zio.test.*
 
@@ -42,7 +44,55 @@ object BindingTableSpec extends ZIOSpecDefault:
       event: NestedAdapter.Event,
       intent: Either[FormSubmitter.DecodeError, TypedIntent])
 
+  private def table(entries: (String, Int)*): BindingTable[Int] =
+    val builder = BindingTable.Builder[Int]()
+    entries.foreach((id, message) =>
+      builder.add(BindingId.fromEncoded(id), BindingOperation(_ => message))
+    )
+    builder.result()
+
+  private def message(operation: Option[BindingOperation[Int]]): Option[Int] =
+    operation
+      .flatMap(_.dispatch(BindingPayload.Params(Map.empty)).toOption)
+      .collect { case BindingDispatch.Owner(value) => value }
+
+  private def id(value: String) = BindingId.fromEncoded(value)
+
   override def spec = suite("BindingTableSpec")(
+    test("resolves a dropped binding for a while, and a binding rendered again to its new operation") {
+      val start  = Instant.EPOCH
+      val first  = table("kept" -> 1, "dropped" -> 2, "back" -> 3)
+      val second = table("kept" -> 10).retiring(first, start)
+      val third  = table("kept" -> 10, "back" -> 30).retiring(second, start.plusSeconds(1))
+      val later  = start.plus(BindingTable.RetiredFor).minusMillis(1)
+      val expiry = start.plus(BindingTable.RetiredFor)
+
+      assertTrue(
+        second.resolve(id("dropped")).isEmpty,
+        message(second.resolveRetired(id("dropped"), later)).contains(2),
+        second.resolveRetired(id("dropped"), expiry).isEmpty,
+        message(third.resolveRetired(id("dropped"), later)).contains(2),
+        message(second.resolveRetired(id("back"), start)).contains(3),
+        message(third.resolve(id("back"))).contains(30),
+        third.resolveRetired(id("back"), start.plusSeconds(1)).isEmpty,
+        second.resolveRetired(id("kept"), start).isEmpty
+      )
+    },
+    test("retains the newest dropped bindings up to its capacity") {
+      val capacity = BindingTable.RetiredCapacity
+      val start    = Instant.EPOCH
+      val old      = table((0 until capacity).map(index => s"old-$index" -> index)*)
+      val first    = table("latest" -> -1).retiring(old, start)
+      val second   = table().retiring(first, start.plusSeconds(1))
+      val oldKept  = (0 until capacity).count(index =>
+        second.resolveRetired(id(s"old-$index"), start.plusSeconds(1)).isDefined
+      )
+
+      assertTrue(
+        message(second.resolveRetired(id("latest"), start.plusSeconds(1))).contains(-1),
+        oldKept == capacity - 1
+      )
+    },
     test("rejects every duplicate binding insertion") {
       val builder   = BindingTable.Builder[Int]()
       val id        = BindingId.fromEncoded("duplicate")

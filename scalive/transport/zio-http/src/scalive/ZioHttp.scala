@@ -1775,7 +1775,7 @@ object ZioHttp:
     ): Task[Unit] = termination.routeOrFail {
       joined.get.map(exactTopicGeneration(_, topic, joinRef, _.joinRef)).flatMap {
         case Some(entry) =>
-          enqueueCorrelated(entry, joinRef -> ref)(command =>
+          enqueueCorrelated(entry, writer, joinRef -> ref)(command =>
             entry.connection.message(command, value)
           )
         case None => writer.offer(PhoenixOutput.error(joinRef, ref, topic, staleReason))
@@ -3170,10 +3170,10 @@ object ZioHttp:
                 event.cid match
                   case None =>
                     ZIO.fromEither(event.toBindingPayload.left.map(Exception(_))).flatMap {
-                      payload => enqueueLifecycleEvent(joined, eventRefs, event, payload)
+                      payload => enqueueLifecycleEvent(joined, writer, eventRefs, event, payload)
                     }
                   case Some(cid) =>
-                    offerComponentEvent(joined, eventRefs, event, cid).flatMap {
+                    offerComponentEvent(joined, writer, eventRefs, event, cid).flatMap {
                       case true  => ZIO.unit
                       case false =>
                         writer.offer(PhoenixOutput.error(joinRef, ref, topic, staleReason))
@@ -3291,7 +3291,7 @@ object ZioHttp:
                     entry.meta
                   )
                 }
-                enqueueCorrelated(joined, eventRefs) { command =>
+                enqueueCorrelated(joined, writer, eventRefs) { command =>
                   joined.connection
                     .preflightUpload(
                       command,
@@ -3323,7 +3323,7 @@ object ZioHttp:
               case Right(component) =>
                 // Replies in order with earlier events; a no-op for an inactive entry.
                 val updateProgress =
-                  enqueueCorrelated(joined, eventRefs) { command =>
+                  enqueueCorrelated(joined, writer, eventRefs) { command =>
                     joined.connection
                       .progressUpload(
                         command,
@@ -3349,7 +3349,7 @@ object ZioHttp:
                           writer.offer(PhoenixOutput.error(joinRef, ref, topic, staleReason))
                         case Right(_) =>
                           rememberUploadProgress(uploads, joined, component, progress) *>
-                            enqueueCorrelated(joined, eventRefs)(command =>
+                            enqueueCorrelated(joined, writer, eventRefs)(command =>
                               dispatchUploadProgressEvent(
                                 joined,
                                 component,
@@ -3689,11 +3689,12 @@ object ZioHttp:
 
   private def enqueueLifecycleEvent(
     joined: JoinedLifecycle,
+    writer: SerialWriter[PhoenixEnvelope],
     eventRefs: (PhoenixRef, PhoenixRef),
     event: RootEvent,
     payload: BindingPayload
   ): Task[Unit] =
-    enqueueCorrelated(joined, eventRefs) { command =>
+    enqueueCorrelated(joined, writer, eventRefs) { command =>
       joined.connection.submitBrowserEvent(
         command,
         BindingId.fromEncoded(event.event),
@@ -3704,6 +3705,7 @@ object ZioHttp:
 
   private def offerComponentEvent(
     joined: JoinedLifecycle,
+    writer: SerialWriter[PhoenixEnvelope],
     eventRefs: (PhoenixRef, PhoenixRef),
     event: RootEvent,
     cid: Long
@@ -3718,7 +3720,7 @@ object ZioHttp:
       case Some(component) =>
         ZIO
           .fromEither(event.toBindingPayload.left.map(Exception(_))).flatMap { payload =>
-            enqueueCorrelated(joined, eventRefs) { command =>
+            enqueueCorrelated(joined, writer, eventRefs) { command =>
               joined.connection.submitComponentEvent(
                 command,
                 component,
@@ -3747,33 +3749,41 @@ object ZioHttp:
       case Some(value) => resolveToken(value)
     }
 
+  // A command racing the lifecycle's close (e.g. after a navigation) gets a stale reply, like
+  // one that arrives after the lifecycle is gone, instead of failing the whole socket.
   private def enqueueCorrelated(
     joined: JoinedLifecycle,
+    writer: SerialWriter[PhoenixEnvelope],
     eventRefs: (PhoenixRef, PhoenixRef)
   )(
     offer: CommandId => IO[ConnectionError, Unit]
   ): Task[Unit] =
-    ZIO.fromEither(CommandId.fresh().left.map(error => Exception(error.toString))).flatMap {
-      command =>
-        joined.correlations
-          .modify { current =>
-            if current.size >= RootIngressCapacity then false -> current
-            else true                                         -> current.updated(command, eventRefs)
-          }.flatMap {
-            case false => ZIO.fail(ConnectionError.IngressSaturated(RootIngressCapacity))
-            case true  =>
-              joined.connection
-                .correlateBrowserTrace(
-                  command,
-                  traceReference(eventRefs._1),
-                  traceReference(eventRefs._2)
-                ) *>
-                offer(command).onError(_ =>
-                  joined.correlations.update(_ - command) *>
-                    ZIO.succeed(joined.connection.cancelTrace(command))
-                )
-          }
-    }
+    ZIO
+      .fromEither(CommandId.fresh().left.map(error => Exception(error.toString))).flatMap {
+        command =>
+          joined.correlations
+            .modify { current =>
+              if current.size >= RootIngressCapacity then false -> current
+              else true -> current.updated(command, eventRefs)
+            }.flatMap {
+              case false => ZIO.fail(ConnectionError.IngressSaturated(RootIngressCapacity))
+              case true  =>
+                joined.connection
+                  .correlateBrowserTrace(
+                    command,
+                    traceReference(eventRefs._1),
+                    traceReference(eventRefs._2)
+                  ) *>
+                  offer(command).onError(_ =>
+                    joined.correlations.update(_ - command) *>
+                      ZIO.succeed(joined.connection.cancelTrace(command))
+                  )
+            }
+      }.catchSome { case ConnectionError.Closed =>
+        writer.offer(
+          PhoenixOutput.error(eventRefs._1, eventRefs._2, joined.topic.value, staleReason)
+        )
+      }
 
   private def traceReference(reference: PhoenixRef): Option[String] = reference match
     case PhoenixRef.Null         => None
@@ -3843,6 +3853,11 @@ object ZioHttp:
                         joined.correlations.update(_ - command) *>
                           ZIO.succeed(joined.connection.cancelTrace(command))
                       )
+                      .catchSome { case ConnectionError.Closed =>
+                        writer.offer(
+                          PhoenixOutput.error(eventRefs._1, eventRefs._2, topic, staleReason)
+                        )
+                      }
                 else ZIO.fail(ConnectionError.IngressSaturated(RootIngressCapacity))
             yield ()
           case None => writer.offer(PhoenixOutput.error(joinRef, ref, topic, staleReason))

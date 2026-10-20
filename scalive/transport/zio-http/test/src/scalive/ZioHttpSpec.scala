@@ -2162,6 +2162,62 @@ object ZioHttpSpec extends ZIOSpecDefault:
         )
       }
     },
+    test("an event racing a push navigation is answered as stale without failing the socket") {
+      val go   = BrowserToServerEvent[Json]("go")
+      val next = scalive.live / "next"
+      object From extends LiveView[Unit, Unit]:
+        override val browserEvents = BrowserEvents.on(go)(_ => ())
+        def mount(ctx: MountContext) = ZIO.unit
+        def handleMessage(model: Unit, ctx: MessageContext): Unit => Task[Unit] =
+          _ => ctx.nav.pushNavigate(next.location)
+        def view(model: Signal[Unit]) = div("from")
+      object Next extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        def view(model: Signal[Unit]) = div("next")
+      val application = scalive.Live.router(scalive.live -> From, next -> Next)
+
+      def click(socket: SocketClient, topic: String, ref: String) =
+        socket.send(
+          PhoenixEnvelope(
+            PhoenixRef.Value("root-join"),
+            PhoenixRef.Value(ref),
+            topic,
+            "event",
+            Json.Obj(
+              "type"  -> Json.Str("click"),
+              "event" -> Json.Str(go.value),
+              "value" -> Json.Obj.empty,
+              "cid"   -> Json.Null
+            )
+          )
+        )
+
+      zio.test.Live.live(withServer(application) { port =>
+        for
+          page   <- bootstrap(port)
+          socket <- connect(port, page)
+          topic = s"lv:${page.rootId}"
+          joined     <- joinRoot(socket, page)
+          _          <- click(socket, topic, "2")
+          _          <- click(socket, topic, "3")
+          navigation <- socket.receiveReply("2", topic)
+          raced      <- socket.receiveReply("3", topic)
+          redirected <- redirectRoot(socket, page, "/next", "4")
+          logs       <- ZTestLogger.logOutput
+          _          <- socket.close
+        yield assertTrue(
+          status(joined) == "ok",
+          response(navigation).get("live_redirect").nonEmpty,
+          status(raced) == "error",
+          raced.payload == Json.Obj(
+            "status"   -> Json.Str("error"),
+            "response" -> Json.Obj("reason" -> Json.Str("stale"))
+          ),
+          status(redirected) == "ok",
+          !logs.exists(_.logLevel == LogLevel.Error)
+        )
+      })
+    },
     test("reload guard returns a full redirect to the current URL without running the event") {
       val event        = BrowserToServerEvent[Json]("reload-event")
       val handlerCalls = AtomicInteger()

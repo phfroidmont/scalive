@@ -1661,6 +1661,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
         auxiliaryScope <- CandidateScope.make
         registry       <- PreparedResourceRegistry.make(auxiliaryScope.addFinalizer)
         componentOwner <- Ref.make(Option.empty[Ref[Vector[StagedComponent[Msg]]]])
+        dormantOwner   <- Ref.make(Option.empty[DormantAction[Msg]])
         uploadRollback <- Ref.make(draft.uploadRollback)
         result         <- restore(
                     for
@@ -1683,13 +1684,11 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                                            draft
                                          )
                       _          <- componentOwner.set(Some(componentResult.staged))
+                      _          <- dormantOwner.set(componentResult.forest.dormantAction)
                       stabilized <- stabilizeRootGraph(
                                       discovery,
                                       draft,
-                                      previous
-                                        .map(_.components).getOrElse(
-                                          ComponentForest.empty.asInstanceOf[ComponentForest[Msg]]
-                                        ),
+                                      componentResult.retained,
                                       previous.map(_.render),
                                       componentResult,
                                       config.navigationRedirectLimit
@@ -1801,6 +1800,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                             owner.get.flatMap(ZIO.foreachDiscard(_)(_.discard))
                           )
                         ) *>
+                        dormantOwner.get.flatMap(ZIO.foreachDiscard(_)(_.discard)) *>
                         auxiliaryScope.closeFromOwner
                   }
       yield result
@@ -1808,6 +1808,8 @@ final private[scalive] class SessionKernel[Msg, Model] private (
 
   final private case class StagedComponentsResult(
     forest: ComponentForestCandidate[Msg],
+    // The committed forest, with the dormant component that handled the action, if any.
+    retained: ComponentForest[Msg],
     resolutions: Vector[ComponentResolution],
     outputs: Vector[ComponentOutput[Msg]],
     draft: TurnDraft[Msg, Model],
@@ -1829,18 +1831,25 @@ final private[scalive] class SessionKernel[Msg, Model] private (
       staged     <- Ref.make(Vector.empty[StagedComponent[Msg]])
       draftRef   <- Ref.make(initialDraft)
       updates    <- Ref.make(lastComponentUpdates(initialDraft.componentUpdates))
-      roots      <- stageRequirements(
+      dormant    <- actOnDormant(previous, action, outputs, draftRef, updates)
+      retained       = dormant.fold(previous)(acted => previous.updated(acted.component))
+      discardDormant = ZIO.foreachDiscard(dormant)(_.discard)
+      roots <- stageRequirements(
                  requirements,
                  None,
-                 previous,
-                 action,
+                 retained,
+                 if dormant.isEmpty then action else None,
                  identities,
                  outputs,
                  staged,
                  draftRef,
                  updates
                )
-                 .onError(_ => staged.get.flatMap(values => ZIO.foreachDiscard(values)(_.discard)))
+                 .onError(_ =>
+                   staged.get.flatMap(values =>
+                     ZIO.foreachDiscard(values)(_.discard)
+                   ) *> discardDormant
+                 )
       values       <- staged.get
       emitted      <- outputs.get
       resultDraft  <- draftRef.get
@@ -1856,11 +1865,12 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                      )
                    )
                  case _ => ZIO.unit
-             }.onError(_ => ZIO.foreachDiscard(values)(_.discard))
+             }.onError(_ => ZIO.foreachDiscard(values)(_.discard) *> discardDormant)
       resolutions = roots.map(_._2)
-      forest      = ComponentForestCandidate(roots.map(_._1), values, resolutions)
+      forest      = ComponentForestCandidate(roots.map(_._1), values, resolutions, dormant)
     yield StagedComponentsResult(
       forest,
+      retained,
       resolutions,
       emitted,
       resultDraft.copy(componentUpdates = Vector.empty),
@@ -1870,6 +1880,102 @@ final private[scalive] class SessionKernel[Msg, Model] private (
       draftRef,
       updates
     )
+
+  /** Runs `action` when it targets a component the page no longer renders but the browser has not
+    * destroyed yet, such as a click sent before an update removed it. Phoenix likewise lets a
+    * component marked for deletion handle events. The component is not rendered: only its model and
+    * environment state change, and its outputs reach its owner as usual.
+    */
+  private def actOnDormant(
+    previous: ComponentForest[Msg],
+    action: Option[(ComponentInstanceId, ComponentAction)],
+    outputs: Ref[Vector[ComponentOutput[Msg]]],
+    draft: Ref[TurnDraft[Msg, Model]],
+    updates: Ref[Map[ComponentKey, ComponentUpdateRequest]]
+  ): ZIO[Any, SessionFailure, Option[DormantAction[Msg]]] =
+    action match
+      case Some((target, value)) if previous.isDormant(target) =>
+        val dormant = previous.get(target).get
+        actOnDormantValue(
+          dormant.asInstanceOf[MountedComponentValue[Msg, Any, Any, Any, Any]],
+          value,
+          outputs,
+          draft,
+          updates
+        ).map(Some(_))
+      case _ => ZIO.none
+
+  private def actOnDormantValue[P, M, A, O](
+    dormant: MountedComponentValue[Msg, P, M, A, O],
+    action: ComponentAction,
+    outputs: Ref[Vector[ComponentOutput[Msg]]],
+    draft: Ref[TurnDraft[Msg, Model]],
+    updates: Ref[Map[ComponentKey, ComponentUpdateRequest]]
+  ): ZIO[Any, SessionFailure, DormantAction[Msg]] =
+    val componentType           = dormant.definition.getClass.getName
+    val componentId             = dormant.key.applicationId
+    val output: O => Task[Unit] = value =>
+      dormant.mapOutput(value) match
+        case None          => ZIO.unit
+        case Some(message) =>
+          outputs.update(_ :+ (dormant.parent match
+            case None        => ComponentOutput.Root(message, componentType, componentId)
+            case Some(owner) => ComponentOutput.Parent(owner, message, componentType, componentId)))
+    for
+      current <- draft.get
+      result  <- action match
+                  case ComponentAction.Message(message) =>
+                    phase(SessionStage.ComponentMessage)(
+                      componentEnvironment.message[P, M, A, O](
+                        dormant.id,
+                        dormant.definition,
+                        dormant.props,
+                        dormant.model,
+                        message.asInstanceOf[M],
+                        output,
+                        dormant.environmentState,
+                        current
+                      )
+                    )
+                  case ComponentAction.ManagedAsync(completion) =>
+                    val event = LiveAsyncEvent(
+                      AsyncKey[Any](completion.name),
+                      completion.result,
+                      completion.message.asInstanceOf[M]
+                    )
+                    phase(SessionStage.ComponentAsync)(
+                      componentEnvironment.async[P, M, A, O](
+                        dormant.id,
+                        dormant.definition,
+                        dormant.props,
+                        dormant.model,
+                        event,
+                        output,
+                        dormant.environmentState,
+                        current
+                      )
+                    )
+                  case ComponentAction.Browser(command, message) =>
+                    phase(SessionStage.ComponentMessage)(
+                      componentEnvironment.browserEvent[P, M, A, O](
+                        dormant.id,
+                        dormant.definition,
+                        dormant.props,
+                        dormant.model,
+                        command,
+                        ZIO.fromEither(message).map(_.asInstanceOf[M]),
+                        output,
+                        dormant.environmentState,
+                        current
+                      )
+                    )
+      _ <- recordComponentDraft(draft, updates, result.draft)
+    yield DormantAction(
+      dormant.copy(model = result.model, environmentState = result.state),
+      discardEnvironmentCandidate(dormant.id, Some(dormant), result.state)
+    )
+    end for
+  end actOnDormantValue
 
   private def stabilizeRootGraph(
     currentRender: RenderCandidate[Msg],
@@ -1960,7 +2066,12 @@ final private[scalive] class SessionKernel[Msg, Model] private (
       outputs <- staging.outputRef.get
       draft   <- staging.draftRef.get
     yield staging.copy(
-      forest = ComponentForestCandidate(staging.forest.roots, values, staging.resolutions),
+      forest = ComponentForestCandidate(
+        staging.forest.roots,
+        values,
+        staging.resolutions,
+        staging.forest.dormantAction
+      ),
       outputs = outputs,
       draft = draft.copy(componentUpdates = Vector.empty)
     )
@@ -3162,6 +3273,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
         rollbackCandidate(candidate),
         candidate.render.discard,
         RuntimeCleanup.all(candidate.components.components.map(_.discard)),
+        ZIO.foreachDiscard(candidate.components.dormantAction)(_.discard),
         candidate.auxiliaryScope.closeFromOwner
       )
     )
@@ -3185,8 +3297,12 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                   )
                 )
       activeIds = components.iterator.map(_.id).toSet
-      dormant   = previous.toVector
-                  .flatMap(_.components.allValues)
+      retained  =
+        previous
+          .map(_.components).getOrElse(ComponentForest.empty.asInstanceOf[ComponentForest[Msg]])
+      acted   = candidate.components.dormantAction.map(_.component)
+      dormant = acted
+                  .fold(retained)(retained.updated).allValues
                   .filterNot(component => activeIds.contains(component.id))
       forest    = ComponentForest(candidate.components.roots, components ++ dormant)
       published = if publish then render.tree else previous.fold(render.tree)(_.published)
@@ -3311,7 +3427,8 @@ final private[scalive] class SessionKernel[Msg, Model] private (
             candidate.render.stagedScope.closeFromOwner,
             candidate.auxiliaryScope.closeFromOwner,
             closeManaged(candidate.managedActivations),
-            RuntimeCleanup.all(candidate.components.components.map(_.abortCommitted))
+            RuntimeCleanup.all(candidate.components.components.map(_.abortCommitted)),
+            ZIO.foreachDiscard(candidate.components.dormantAction)(_.discard)
           )
         )
         val previousCleanup = RuntimeCleanup.all(previous.toVector.map(closeCommitted))
@@ -3338,9 +3455,9 @@ final private[scalive] class SessionKernel[Msg, Model] private (
       val componentEffects = committed.components.allValues.flatMap { component =>
         val retained      = next.components.get(component.id)
         val renderEffects = retained match
-          case Some(value) if value.asInstanceOf[AnyRef] eq component.asInstanceOf[AnyRef] =>
-            Vector.empty
-          case _ => Vector(component.render.close)
+          // A dormant component that handled an event keeps its render.
+          case Some(value) if value.render eq component.render => Vector.empty
+          case _                                               => Vector(component.render.close)
         val ownershipEffects = retained match
           case Some(value) if value.environmentState.value eq component.environmentState.value =>
             Vector.empty

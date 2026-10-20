@@ -394,6 +394,10 @@ final private[scalive] case class ComponentForest[OwnerMsg] private (
     descendants(roots)
   private[kernel] def allValues: Vector[MountedComponent[OwnerMsg]] =
     entries.values.toVector.sortBy(_.id.value)
+  private[kernel] def isDormant(id: ComponentInstanceId): Boolean =
+    entries.contains(id) && !values.exists(_.id == id)
+  private[kernel] def updated(value: MountedComponent[OwnerMsg]): ComponentForest[OwnerMsg] =
+    ComponentForest(roots, entries.updated(value.id, value), refs)
   private[kernel] def removeDormant(
     tokens: Set[AnyRef]
   ): (ComponentForest[OwnerMsg], Vector[MountedComponent[OwnerMsg]]) =
@@ -779,7 +783,15 @@ final private[scalive] case class TurnResult(
 final private[kernel] case class ComponentForestCandidate[OwnerMsg](
   roots: Vector[ComponentInstanceId],
   components: Vector[StagedComponent[OwnerMsg]],
-  resolutions: Vector[ComponentResolution])
+  resolutions: Vector[ComponentResolution],
+  dormantAction: Option[DormantAction[OwnerMsg]])
+
+/** A component the page no longer renders, but the browser has not destroyed yet, after it handled
+  * the turn's action. It stays dormant: only its model and environment state change.
+  */
+final private[kernel] case class DormantAction[OwnerMsg](
+  component: MountedComponent[OwnerMsg],
+  discard: UIO[Unit])
 
 private[kernel] enum ComponentOutput[+RootMsg]:
   case Root(message: RootMsg, componentType: String, componentId: String)

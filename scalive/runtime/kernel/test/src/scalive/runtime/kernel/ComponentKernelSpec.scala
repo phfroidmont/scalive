@@ -637,6 +637,97 @@ object ComponentKernelSpec extends ZIOSpecDefault:
         )
       }
     },
+    test("a removed component handles browser events until the browser destroys it") {
+      ZIO.scoped {
+        for
+          events <- ZIO.succeed(ConcurrentLinkedQueue[String]())
+          seen   <- Ref.make(Vector.empty[Int])
+          definition = componentDefinition(events)
+          instance   = component(definition, "removed")
+          program <- ZIO.fromEither(
+                       RenderProgram.compile[Int, Int](model =>
+                         div(model.map(_ % 2 == 0).when(div(instance.render(1))))
+                       )
+                     )
+          kernel <- SessionKernel.start(config, logic(seen), program, Outbound(), FakeEnvironment(events))
+          before <- kernel.inspect
+          mounted = before.components.values.head
+          binding = mounted.render.bindings.ids.head
+          _ <- kernel.submit(SessionCommand.Message(kernel.epoch, 1))
+          _ <- kernel.submit(
+                 SessionCommand.ComponentClientEvent(
+                   kernel.epoch,
+                   mounted.id,
+                   binding,
+                   BindingPayload.Params(Map.empty)
+                 )
+               )
+          dormant <- kernel.inspect
+          _       <- kernel.submit(SessionCommand.Message(kernel.epoch, 1))
+          revived <- kernel.inspect
+          shown    = revived.components.values.head
+        yield assertTrue(
+          dormant.components.values.isEmpty,
+          dormant.components.allValues.map(_.model) == Vector(3),
+          shown.id == mounted.id,
+          shown.model == 3,
+          textValues(shown.render.tree.root) == Vector("3")
+        )
+      }
+    },
+    test("a removed component's outputs reach its owner, even a removed parent") {
+      ZIO.scoped {
+        val events   = ConcurrentLinkedQueue[String]()
+        val producer = component(outputDefinition, "removed-producer")
+        val parentDefinition = new LiveComponent[Int, Int, Int]:
+          def mount(props: Int, ctx: MountContext) = ZIO.succeed(props)
+          def handleMessage(props: Int, model: Int, ctx: MessageContext) = message =>
+            ZIO.succeed(model + message)
+          def view(props: Signal[Int], model: Signal[Int]) =
+            div(producer.render(1, _ + 100))
+        val parent = component(parentDefinition, "removed-parent")
+        for
+          seen <- Ref.make(Vector.empty[Int])
+          program <- ZIO.fromEither(
+                       RenderProgram.compile[Int, Int](model =>
+                         div(model.map(_ % 2 == 0).when(div(parent.render(0))))
+                       )
+                     )
+          kernel <- SessionKernel.start(config, logic(seen), program, Outbound(), FakeEnvironment(events))
+          before <- kernel.inspect
+          parentId = before.components.values.find(_.parent.isEmpty).get.id
+          childId  = before.components.values.find(_.parent.nonEmpty).get.id
+          _       <- kernel.submit(SessionCommand.Message(kernel.epoch, 1))
+          _       <- kernel.submitComponent(childId, 5)
+          dormant <- kernel.inspect
+        yield assertTrue(
+          dormant.components.values.isEmpty,
+          dormant.components.get(childId).map(_.model) == Some(6),
+          dormant.components.get(parentId).map(_.model) == Some(211)
+        )
+      }
+    },
+    test("a removed component's outputs to the page are delivered") {
+      ZIO.scoped {
+        for
+          seen     <- Ref.make(Vector.empty[Int])
+          events    = ConcurrentLinkedQueue[String]()
+          instance  = component(outputDefinition, "removed-root-producer")
+          program  <- ZIO.fromEither(
+                        RenderProgram.compile[Int, Int](model =>
+                          div(model.map(_ % 2 == 0).when(div(instance.render(1, _ + 100))))
+                        )
+                      )
+          kernel <- SessionKernel.start(config, logic(seen), program, Outbound(), FakeEnvironment(events))
+          before <- kernel.inspect
+          id      = before.components.values.head.id
+          _      <- kernel.submit(SessionCommand.Message(kernel.epoch, 1))
+          _      <- kernel.submitComponent(id, 5)
+          _      <- kernel.inspect
+          order  <- seen.get
+        yield assertTrue(order == Vector(1, 105, 106))
+      }
+    },
     test("a browser event for a destroyed component gets an empty reply and changes nothing") {
       ZIO.scoped {
         for

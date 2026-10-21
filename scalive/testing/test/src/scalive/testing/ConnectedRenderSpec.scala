@@ -916,7 +916,7 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
           terminalGuardCleanup(LiveConnectedTurnFailure.disconnect("test"), triggerNested)
         ).map(results => assertTrue(results.forall(identity)))
       }
-    },
+    } @@ TestAspect.nonFlaky(20),
     test("reload guards retire the shared physical session") {
       ZIO.scoped {
         terminalGuardCleanup(LiveConnectedTurnFailure.reload("test"), triggerNested = true)

@@ -1050,10 +1050,13 @@ final private class ConnectedSession(
       case error                                  => ConnectedJoinFailure.Transport(error)
     }
 
+  // A guard may close the view while its reply is on the way; a closed view has nothing to check.
   private[testing] def requireLiveChangeBindings(state: ConnectedViewState): Task[Unit] =
-    state.html.flatMap(html => ZIO.attempt(ConnectedDom.requireLiveChangeBindings(html)))
+    state.joinedHtml.flatMap(
+      ZIO.foreachDiscard(_)(html => ZIO.attempt(ConnectedDom.requireLiveChangeBindings(html)))
+    )
 
-  // Only a rendered action leaves the view joined with new HTML to check.
+  // Only a rendered action can leave new HTML to check.
   private[testing] def rendered(state: ConnectedViewState)(action: ConnectedAction): Task[Unit] =
     action match
       case ConnectedAction.Rendered => requireLiveChangeBindings(state)
@@ -1320,6 +1323,9 @@ final private class ConnectedViewState(
   val key: (String, String) = topic -> joinRef.value
 
   def html: UIO[String] = transport.html(topic, joinRef).orDie
+
+  // The latest HTML, or `None` once the view has left.
+  def joinedHtml: UIO[Option[String]] = transport.html(topic, joinRef).option
 
   def currentUrl: Task[URL] = transport.currentUrl(topic, joinRef)
 

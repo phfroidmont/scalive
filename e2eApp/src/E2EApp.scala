@@ -32,132 +32,138 @@ object E2EApp extends ZIOAppDefault:
     Runtime.removeDefaultLoggers >>> consoleLogger(ConsoleLoggerConfig(logFormat, logFilter))
 
   def liveRoutes(rootLayout: E2ERootLayout, assets: StaticAssets) =
-    Live.router.withRootLayout(rootLayout)(
-      live / "select"              -> SelectLiveView(),
-      E2ERoutes.keyedComprehension -> KeyedComprehensionLiveView(assets),
-      Live.session("navigation")(
-        E2ERoutes.navigationA            -> NavigationALiveView(),
-        E2ERoutes.navigationB            -> NavigationBLiveView(),
-        E2ERoutes.navigationBItemRoute   -> NavigationBLiveView(),
-        E2ERoutes.navigationRedirectLoop -> RedirectLoopLiveView()
-      ),
-      E2ERoutes.stream                                                -> StreamLiveView(),
-      (live / "stream" / "reset").queryOptional[String]("phx-remove") ->
-        StreamResetLiveView(),
-      live / "stream" / "reset-lc"                        -> StreamResetLCLiveView(),
-      live / "stream" / "limit"                           -> StreamLimitLiveView(),
-      live / "stream" / "nested-component-reset"          -> StreamNestedComponentResetLiveView(),
-      live / "stream" / "inside-for"                      -> StreamInsideForLiveView(),
-      E2ERoutes.healthy                                   -> HealthyLiveView(),
-      E2ERoutes.components                                -> ComponentsLiveView(),
-      live / "js"                                         -> JsLiveView(),
-      live / "colocated"                                  -> ColocatedLiveView(),
-      (live / "upload").query[UploadLiveView.QueryParams] -> UploadLiveView(),
-      E2ERoutes.form                                      -> FormLiveView(),
-      (live / "form" / "nested").params(FormQueryParams.codec) ->
-        NestedFormLiveView(),
-      live / "form" / "stream"                                         -> FormStreamLiveView(),
-      (live / "form" / "dynamic-inputs").params(FormQueryParams.codec) ->
-        FormDynamicInputsLiveView(),
-      live / "form" / "feedback"       -> FormFeedbackLiveView(),
-      live / "form" / "blur-feedback"  -> BlurFeedbackLiveView(),
-      live / "form" / "typed-feedback" -> TypedFormFeedbackLiveView(),
-      live / "form-unsaved"            -> FormUnsavedLiveView(),
-      live / "form-unsaved" / "target" -> FormUnsavedTargetLiveView(),
-      live / "flash" / "repeat"        -> FlashRepeatLiveView(),
-      (live / "navigation-guard" / "leaving").query[NavigationGuardScopeLiveView.UrlParams] ->
-        NavigationGuardScopeLiveView(NavigationGuardScope.LeavingView, "/navigation-guard/leaving"),
-      (live / "navigation-guard" / "any").query[NavigationGuardScopeLiveView.UrlParams] ->
-        NavigationGuardScopeLiveView(NavigationGuardScope.AnyNavigation, "/navigation-guard/any"),
-      E2ERoutes.portal                                          -> PortalLiveView(),
-      (live / "errors").params(ErrorLiveView.QueryParams.codec) -> ErrorLiveView(),
-      live / "issues" / "2965"                                  -> Issue2965LiveView(),
-      live / "issues" / "2787"                                  -> Issue2787LiveView(),
-      live / "issues" / "2835"                                  -> Issue2835LiveView(),
-      live / "issues" / "3040"                                  -> Issue3040LiveView(),
-      Live
-        .session("issue-3047").withLayout(Issue3047LiveView.Layout)(
-          E2ERoutes.issue3047A -> Issue3047LiveView(pageName = "A"),
-          E2ERoutes.issue3047B -> Issue3047LiveView(pageName = "B")
+    Live.router
+      .withRootLayout(rootLayout).withErrorPage(MissingItems.Page)(
+        live / "select"              -> SelectLiveView(),
+        E2ERoutes.keyedComprehension -> KeyedComprehensionLiveView(assets),
+        Live.session("navigation")(
+          E2ERoutes.navigationA            -> NavigationALiveView(),
+          E2ERoutes.navigationB            -> NavigationBLiveView(),
+          E2ERoutes.navigationBItemRoute   -> NavigationBLiveView(),
+          E2ERoutes.navigationRedirectLoop -> RedirectLoopLiveView()
         ),
-      live / "issues" / "3026"          -> Issue3026LiveView(),
-      live / "issues" / "3083"          -> Issue3083LiveView(),
-      live / "issues" / "3117"          -> Issue3117LiveView(),
-      live / "issues" / "3107"          -> Issue3107LiveView(),
-      live / "issues" / "3169"          -> Issue3169LiveView(),
-      live / "issues" / "3199"          -> Issue3199LiveView(away = false),
-      live / "issues" / "3199" / "away" -> Issue3199LiveView(away = true),
-      E2ERoutes.issue3194Other          -> Issue3194OtherLiveView(),
-      live / "issues" / "3194"          -> Issue3194LiveView(),
-      E2ERoutes.issue3200               -> Issue3200LiveView(),
-      live / "issues" / "3319"          -> Issue3319LiveView(),
-      live / "issues" / "3368"          -> Issue3368LiveView(),
-      live / "issues" / "3391"          -> Issue3391LiveView(),
-      live / "issues" / "3378"          -> Issue3378LiveView(),
-      live / "issues" / "3448"          -> Issue3448LiveView(),
-      live / "issues" / "3496" / "a"    -> Issue3496LiveView("A", includeStickyHook = true),
-      E2ERoutes.issue3496B              -> Issue3496LiveView("B", includeStickyHook = false),
-      E2ERoutes.issue3529               -> Issue3529LiveView(),
-      E2ERoutes.issue3530               -> Issue3530LiveView(),
-      E2ERoutes.issue3612A              -> Issue3612LiveView("A"),
-      E2ERoutes.issue3612B              -> Issue3612LiveView("B"),
-      live / "issues" / "3636"          -> Issue3636LiveView(),
-      live / "issues" / "3647"          -> Issue3647LiveView(),
-      live / "issues" / "3651"          -> Issue3651LiveView(),
-      live / "issues" / "3656"          -> Issue3656LiveView(),
-      live / "issues" / "3658"          -> Issue3658LiveView(),
-      E2ERoutes.issue3681               -> Issue3681LiveView(onAway = false),
-      E2ERoutes.issue3681Away           -> Issue3681LiveView(onAway = true),
-      live / "issues" / "3684"          -> Issue3684LiveView(),
-      E2ERoutes.issue3686A              -> Issue3686LiveView("A"),
-      E2ERoutes.issue3686B              -> Issue3686LiveView("B"),
-      E2ERoutes.issue3686C              -> Issue3686LiveView("C"),
-      E2ERoutes.issue3709.mapParams(_ => Option.empty[String])(_ => ()) ->
-        Issue3709LiveView(),
-      E2ERoutes.issue3709Id.mapParams(id => Option(id.toString))(
-        _.flatMap(_.toIntOption).getOrElse(0)
-      )                        -> Issue3709LiveView(),
-      live / "issues" / "3719" -> Issue3719LiveView(),
-      live / "issues" / "3814" -> Issue3814LiveView(),
-      live / "issues" / "3819" -> Issue3819LiveView(),
-      live / "issues" / "3919" -> Issue3919LiveView(),
-      live / "issues" / "3931" -> Issue3931LiveView(),
-      live / "issues" / "3941" -> Issue3941LiveView(),
-      live / "issues" / "3953" -> Issue3953LiveView(),
-      live / "issues" / "3979" -> Issue3979LiveView(),
-      (live / "issues" / "4027")
-        .queryOptional[String]("case")
-        .mapParams(caseName => Issue4027LiveView.QueryParams(caseName.getOrElse("first")))(params =>
-          Some(params.caseName)
-        ) ->
-        Issue4027LiveView(),
-      (live / "issues" / "4066")
-        .queryOptional[Int]("delay")
-        .mapParams(delay => Issue4066LiveView.QueryParams(delay.getOrElse(3000)))(params =>
-          Some(params.delay)
-        ) ->
-        Issue4066LiveView(),
-      live / "issues" / "4078"                                    -> Issue4078LiveView(),
-      live / "issues" / "4088"                                    -> Issue4088LiveView(),
-      E2ERoutes.issue4094                                         -> Issue4094LiveView(),
-      live / "issues" / "4095"                                    -> Issue4095LiveView(),
-      live / "issues" / "4102"                                    -> Issue4102LiveView(),
-      live / "issues" / "4107"                                    -> Issue4107LiveView(),
-      live / "issues" / "4121"                                    -> Issue4121LiveView(),
-      live / "issues" / "4147"                                    -> Issue4147LiveView(),
-      live / "issues" / "4209"                                    -> Issue4209LiveView(),
-      live / "issues" / "4212"                                    -> Issue4212LiveView(),
-      live / "issues" / "4290" / "a"                              -> Issue4290LiveView(page = "A"),
-      live / "issues" / "4290" / "b"                              -> Issue4290LiveView(page = "B"),
-      live / "issues" / "4323"                                    -> Issue4323LiveView(),
-      live / "issues" / "4325"                                    -> Issue4325LiveView(),
-      live / "issues" / "4334"                                    -> Issue4334LiveView(),
-      live / "issues" / "4350"                                    -> Issue4350LiveView(),
-      (live / "issues" / "4359").queryOptional[String]("done")    -> Issue4359LiveView(),
-      live / "issues" / "4368"                                    -> Issue4368LiveView(),
-      live / "issues" / "4442"                                    -> Issue4442LiveView(),
-      (live / "issues" / "4444").queryOptional[String]("variant") -> Issue4444LiveView()
-    )
+        E2ERoutes.stream                                                -> StreamLiveView(),
+        (live / "stream" / "reset").queryOptional[String]("phx-remove") ->
+          StreamResetLiveView(),
+        live / "stream" / "reset-lc"                        -> StreamResetLCLiveView(),
+        live / "stream" / "limit"                           -> StreamLimitLiveView(),
+        live / "stream" / "nested-component-reset"          -> StreamNestedComponentResetLiveView(),
+        live / "stream" / "inside-for"                      -> StreamInsideForLiveView(),
+        E2ERoutes.healthy                                   -> HealthyLiveView(),
+        E2ERoutes.components                                -> ComponentsLiveView(),
+        live / "js"                                         -> JsLiveView(),
+        live / "colocated"                                  -> ColocatedLiveView(),
+        (live / "upload").query[UploadLiveView.QueryParams] -> UploadLiveView(),
+        E2ERoutes.form                                      -> FormLiveView(),
+        (live / "form" / "nested").params(FormQueryParams.codec) ->
+          NestedFormLiveView(),
+        live / "form" / "stream"                                         -> FormStreamLiveView(),
+        (live / "form" / "dynamic-inputs").params(FormQueryParams.codec) ->
+          FormDynamicInputsLiveView(),
+        live / "form" / "feedback"       -> FormFeedbackLiveView(),
+        live / "form" / "blur-feedback"  -> BlurFeedbackLiveView(),
+        live / "form" / "typed-feedback" -> TypedFormFeedbackLiveView(),
+        live / "form-unsaved"            -> FormUnsavedLiveView(),
+        live / "form-unsaved" / "target" -> FormUnsavedTargetLiveView(),
+        live / "flash" / "repeat"        -> FlashRepeatLiveView(),
+        MissingItems.list                -> MissingItemsLiveView(),
+        MissingItems.item                -> MissingItemLiveView(),
+        (live / "navigation-guard" / "leaving").query[NavigationGuardScopeLiveView.UrlParams] ->
+          NavigationGuardScopeLiveView(
+            NavigationGuardScope.LeavingView,
+            "/navigation-guard/leaving"
+          ),
+        (live / "navigation-guard" / "any").query[NavigationGuardScopeLiveView.UrlParams] ->
+          NavigationGuardScopeLiveView(NavigationGuardScope.AnyNavigation, "/navigation-guard/any"),
+        E2ERoutes.portal                                          -> PortalLiveView(),
+        (live / "errors").params(ErrorLiveView.QueryParams.codec) -> ErrorLiveView(),
+        live / "issues" / "2965"                                  -> Issue2965LiveView(),
+        live / "issues" / "2787"                                  -> Issue2787LiveView(),
+        live / "issues" / "2835"                                  -> Issue2835LiveView(),
+        live / "issues" / "3040"                                  -> Issue3040LiveView(),
+        Live
+          .session("issue-3047").withLayout(Issue3047LiveView.Layout)(
+            E2ERoutes.issue3047A -> Issue3047LiveView(pageName = "A"),
+            E2ERoutes.issue3047B -> Issue3047LiveView(pageName = "B")
+          ),
+        live / "issues" / "3026"          -> Issue3026LiveView(),
+        live / "issues" / "3083"          -> Issue3083LiveView(),
+        live / "issues" / "3117"          -> Issue3117LiveView(),
+        live / "issues" / "3107"          -> Issue3107LiveView(),
+        live / "issues" / "3169"          -> Issue3169LiveView(),
+        live / "issues" / "3199"          -> Issue3199LiveView(away = false),
+        live / "issues" / "3199" / "away" -> Issue3199LiveView(away = true),
+        E2ERoutes.issue3194Other          -> Issue3194OtherLiveView(),
+        live / "issues" / "3194"          -> Issue3194LiveView(),
+        E2ERoutes.issue3200               -> Issue3200LiveView(),
+        live / "issues" / "3319"          -> Issue3319LiveView(),
+        live / "issues" / "3368"          -> Issue3368LiveView(),
+        live / "issues" / "3391"          -> Issue3391LiveView(),
+        live / "issues" / "3378"          -> Issue3378LiveView(),
+        live / "issues" / "3448"          -> Issue3448LiveView(),
+        live / "issues" / "3496" / "a"    -> Issue3496LiveView("A", includeStickyHook = true),
+        E2ERoutes.issue3496B              -> Issue3496LiveView("B", includeStickyHook = false),
+        E2ERoutes.issue3529               -> Issue3529LiveView(),
+        E2ERoutes.issue3530               -> Issue3530LiveView(),
+        E2ERoutes.issue3612A              -> Issue3612LiveView("A"),
+        E2ERoutes.issue3612B              -> Issue3612LiveView("B"),
+        live / "issues" / "3636"          -> Issue3636LiveView(),
+        live / "issues" / "3647"          -> Issue3647LiveView(),
+        live / "issues" / "3651"          -> Issue3651LiveView(),
+        live / "issues" / "3656"          -> Issue3656LiveView(),
+        live / "issues" / "3658"          -> Issue3658LiveView(),
+        E2ERoutes.issue3681               -> Issue3681LiveView(onAway = false),
+        E2ERoutes.issue3681Away           -> Issue3681LiveView(onAway = true),
+        live / "issues" / "3684"          -> Issue3684LiveView(),
+        E2ERoutes.issue3686A              -> Issue3686LiveView("A"),
+        E2ERoutes.issue3686B              -> Issue3686LiveView("B"),
+        E2ERoutes.issue3686C              -> Issue3686LiveView("C"),
+        E2ERoutes.issue3709.mapParams(_ => Option.empty[String])(_ => ()) ->
+          Issue3709LiveView(),
+        E2ERoutes.issue3709Id.mapParams(id => Option(id.toString))(
+          _.flatMap(_.toIntOption).getOrElse(0)
+        )                        -> Issue3709LiveView(),
+        live / "issues" / "3719" -> Issue3719LiveView(),
+        live / "issues" / "3814" -> Issue3814LiveView(),
+        live / "issues" / "3819" -> Issue3819LiveView(),
+        live / "issues" / "3919" -> Issue3919LiveView(),
+        live / "issues" / "3931" -> Issue3931LiveView(),
+        live / "issues" / "3941" -> Issue3941LiveView(),
+        live / "issues" / "3953" -> Issue3953LiveView(),
+        live / "issues" / "3979" -> Issue3979LiveView(),
+        (live / "issues" / "4027")
+          .queryOptional[String]("case")
+          .mapParams(caseName => Issue4027LiveView.QueryParams(caseName.getOrElse("first")))(
+            params => Some(params.caseName)
+          ) ->
+          Issue4027LiveView(),
+        (live / "issues" / "4066")
+          .queryOptional[Int]("delay")
+          .mapParams(delay => Issue4066LiveView.QueryParams(delay.getOrElse(3000)))(params =>
+            Some(params.delay)
+          ) ->
+          Issue4066LiveView(),
+        live / "issues" / "4078"                                 -> Issue4078LiveView(),
+        live / "issues" / "4088"                                 -> Issue4088LiveView(),
+        E2ERoutes.issue4094                                      -> Issue4094LiveView(),
+        live / "issues" / "4095"                                 -> Issue4095LiveView(),
+        live / "issues" / "4102"                                 -> Issue4102LiveView(),
+        live / "issues" / "4107"                                 -> Issue4107LiveView(),
+        live / "issues" / "4121"                                 -> Issue4121LiveView(),
+        live / "issues" / "4147"                                 -> Issue4147LiveView(),
+        live / "issues" / "4209"                                 -> Issue4209LiveView(),
+        live / "issues" / "4212"                                 -> Issue4212LiveView(),
+        live / "issues" / "4290" / "a"                           -> Issue4290LiveView(page = "A"),
+        live / "issues" / "4290" / "b"                           -> Issue4290LiveView(page = "B"),
+        live / "issues" / "4323"                                 -> Issue4323LiveView(),
+        live / "issues" / "4325"                                 -> Issue4325LiveView(),
+        live / "issues" / "4334"                                 -> Issue4334LiveView(),
+        live / "issues" / "4350"                                 -> Issue4350LiveView(),
+        (live / "issues" / "4359").queryOptional[String]("done") -> Issue4359LiveView(),
+        live / "issues" / "4368"                                 -> Issue4368LiveView(),
+        live / "issues" / "4442"                                 -> Issue4442LiveView(),
+        (live / "issues" / "4444").queryOptional[String]("variant") -> Issue4444LiveView()
+      )
 
   private def healthRoutes(assets: StaticAssets) =
     Routes(

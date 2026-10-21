@@ -1204,6 +1204,25 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
       yield result
       end for
     },
+    test("a connected mount that fails with LiveNotFound asks the browser to reload with 404") {
+      object View extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ctx.connection match
+          case Connection.Disconnected => ZIO.unit
+          case Connection.Connected(_) => ZIO.fail(LiveNotFound("gone since the page loaded"))
+        def view(model: Signal[Unit]) = div()
+
+      ZIO.scoped {
+        for
+          client <- ConnectedRender.open(scalive.Live.router(scalive.live -> View), config, Request.get(URL.root))
+          joined <- client.join.either
+          logs   <- ZTestLogger.logOutput
+        yield assertTrue(
+          joined == Left(ConnectedJoinFailure.Reload(zio.http.Status.NotFound)),
+          !logs.exists(_.logLevel == LogLevel.Error),
+          logs.exists(_.annotations.get("reason").contains("gone since the page loaded"))
+        )
+      }
+    },
     test("invalidation retires the transport and rejected reconnect acquires no resources") {
       val sessionId = TestSessionId("revoked")
       for

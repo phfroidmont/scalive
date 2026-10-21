@@ -872,13 +872,16 @@ object LiveSessionBuilder:
   * @param rootLayout
   *   The root layout used by routes whose session or route installs none; without
   *   [[LiveRouter.withRootLayout]], it is [[LiveRootLayout.default]].
+  * @param errorPage
+  *   The page rendered for Scalive's own error responses, set with [[LiveRouter.withErrorPage]].
   */
 final class LiveApplication[-R] private[scalive] (
   val routes: Vector[LiveRegistration[R] | LiveSession[R]],
   val socketPath: PathCodec[Unit],
   val clientPath: PathCodec[Unit],
   val layouts: Vector[LiveLayout[Any, Any]],
-  val rootLayout: LiveRootLayout[Any, Any])
+  val rootLayout: LiveRootLayout[Any, Any],
+  val errorPage: Option[LiveErrorPage])
 
 private[scalive] object LiveApplication:
   def apply[R](
@@ -886,23 +889,25 @@ private[scalive] object LiveApplication:
     socketPath: PathCodec[Unit],
     clientPath: PathCodec[Unit],
     layouts: Vector[LiveLayout[Any, Any]],
-    rootLayout: LiveRootLayout[Any, Any]
+    rootLayout: LiveRootLayout[Any, Any],
+    errorPage: Option[LiveErrorPage]
   ): LiveApplication[R] =
-    new LiveApplication(routes, socketPath, clientPath, layouts, rootLayout)
+    new LiveApplication(routes, socketPath, clientPath, layouts, rootLayout, errorPage)
 
 /** Collects an application's routes into a [[LiveApplication]]. Start from `Live.router`. */
 final class LiveRouter private[scalive] (
   private val socketPath: PathCodec[Unit],
   private val clientPath: PathCodec[Unit],
   private val layouts: Vector[LiveLayout[Any, Any]],
-  private val rootLayout: LiveRootLayout[Any, Any]):
+  private val rootLayout: LiveRootLayout[Any, Any],
+  private val errorPage: Option[LiveErrorPage]):
 
   /** Serves the LiveView WebSocket at `value` instead of `/live`.
     *
     * The browser's `LiveSocket` must connect to the same path.
     */
   def withSocketPath(value: PathCodec[Unit]): LiveRouter =
-    LiveRouter(value, clientPath, layouts, rootLayout)
+    LiveRouter(value, clientPath, layouts, rootLayout, errorPage)
 
   /** Serves Scalive's own browser files below `value` instead of `/_scalive`.
     *
@@ -910,14 +915,14 @@ final class LiveRouter private[scalive] (
     * prefix moves them there too, as in `withClientPath(PathCodec.empty / "app" / "_scalive")`.
     */
   def withClientPath(value: PathCodec[Unit]): LiveRouter =
-    LiveRouter(socketPath, value, layouts, rootLayout)
+    LiveRouter(socketPath, value, layouts, rootLayout, errorPage)
 
   /** Wraps every route in `value`.
     *
     * Router layouts sit outside session and route layouts, and nest in installation order.
     */
   def withLayout(value: LiveLayout[Any, Any]): LiveRouter =
-    LiveRouter(socketPath, clientPath, layouts :+ value, rootLayout)
+    LiveRouter(socketPath, clientPath, layouts :+ value, rootLayout, errorPage)
 
   /** Renders every route's document with `value`, unless a session or route installs its own.
     *
@@ -925,7 +930,16 @@ final class LiveRouter private[scalive] (
     * around it.
     */
   def withRootLayout(value: LiveRootLayout[Any, Any]): LiveRouter =
-    LiveRouter(socketPath, clientPath, layouts, value)
+    LiveRouter(socketPath, clientPath, layouts, value, errorPage)
+
+  /** Renders `value` for the error responses Scalive answers itself, inside the root layout.
+    *
+    * With an error page, a `GET` request that no route of the application matches also answers
+    * `404` with it, so add it to the routes that serve everything else. More specific routes still
+    * win, whatever their order. See [[LiveErrorPage]].
+    */
+  def withErrorPage(value: LiveErrorPage): LiveRouter =
+    LiveRouter(socketPath, clientPath, layouts, rootLayout, Some(value))
 
   /** Builds the application from registered routes and named live sessions.
     *
@@ -941,7 +955,7 @@ final class LiveRouter private[scalive] (
   private[scalive] def application[R](
     routes: Seq[LiveRegistration[R] | LiveSession[R]]
   ): LiveApplication[R] =
-    LiveApplication(routes.toVector, socketPath, clientPath, layouts, rootLayout)
+    LiveApplication(routes.toVector, socketPath, clientPath, layouts, rootLayout, errorPage)
 end LiveRouter
 
 private[scalive] object LiveRouter:
@@ -949,8 +963,9 @@ private[scalive] object LiveRouter:
     socketPath: PathCodec[Unit],
     clientPath: PathCodec[Unit],
     layouts: Vector[LiveLayout[Any, Any]],
-    rootLayout: LiveRootLayout[Any, Any]
-  ): LiveRouter = new LiveRouter(socketPath, clientPath, layouts, rootLayout)
+    rootLayout: LiveRootLayout[Any, Any],
+    errorPage: Option[LiveErrorPage]
+  ): LiveRouter = new LiveRouter(socketPath, clientPath, layouts, rootLayout, errorPage)
 
 /** Entry points for declaring a Scalive application. */
 object Live:
@@ -965,7 +980,8 @@ object Live:
       PathCodec.empty / "live",
       PathCodec.empty / "_scalive",
       Vector.empty,
-      LiveRootLayout.default
+      LiveRootLayout.default,
+      None
     )
 
   /** Starts a route from a ZIO HTTP path codec. Most routes start from `live` instead. */

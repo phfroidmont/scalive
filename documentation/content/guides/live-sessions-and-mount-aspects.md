@@ -202,7 +202,9 @@ rejection:
 - `redirect` uses a typed location in both phases; `redirectUnsafe` accepts an
   unchecked URL and is only for trusted destinations;
 - `unauthorized`, `forbidden`, and `notFound` render HTTP 401, 403, and 404
-  respectively, while all reject connected admission as unauthorized; and
+  respectively, with the router's
+  [error page](routes-and-navigation.md#answer-missing-pages-and-errors) when it
+  has one, while all reject connected admission as unauthorized; and
 - `custom` supplies an explicit disconnected `Response` and connected
   `LiveSessionMountFailure` for uncommon policies.
 

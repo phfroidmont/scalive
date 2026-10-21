@@ -172,6 +172,14 @@ enum ConnectedJoinFailure:
     */
   case Redirect(to: URL)
 
+  /** Connected mount failed with a status the page should answer, such as `404` from
+    * [[scalive.LiveNotFound]]. The browser reloads, and that page request answers the status.
+    *
+    * @param status
+    *   The status the reloaded page answers.
+    */
+  case Reload(status: Status)
+
   /** The in-process transport failed outside a protocol-visible join outcome.
     *
     * @param error
@@ -184,6 +192,7 @@ enum ConnectedJoinFailure:
     case Stale            => Exception("Connected LiveView join was stale.")
     case Disconnected     => Exception("Connected LiveView transport closed during join.")
     case Redirect(to)     => Exception(s"Connected LiveView join redirected to ${to.encode}.")
+    case Reload(status)   => Exception(s"Connected LiveView join asked for a reload with $status.")
     case Transport(error) => error
 end ConnectedJoinFailure
 
@@ -1093,7 +1102,13 @@ final private class ConnectedSession(
         val failure = fields.get("reason").flatMap(_.asString) match
           case Some("unauthorized") => ConnectedJoinFailure.Unauthorized
           case Some("stale")        => ConnectedJoinFailure.Stale
-          case _                    =>
+          case Some("reload")       =>
+            ConnectedJoinFailure.Reload(
+              fields
+                .get("status").collect { case Json.Num(code) => Status.fromInt(code.intValue) }
+                .getOrElse(Status.InternalServerError)
+            )
+          case _ =>
             fields.get("redirect").orElse(fields.get("live_redirect")) match
               case Some(value: Json.Obj) =>
                 value.fields.toMap

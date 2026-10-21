@@ -830,6 +830,18 @@
       ]
     },
     {
+      "id" : "class:scalive.LiveNotFound",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.LiveNotFound",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.LiveNotFound:cdfcbf849cd9e339",
+          "signature" : "class LiveNotFound(reason: String) extends RuntimeException"
+        }
+      ]
+    },
+    {
       "id" : "class:scalive.LiveParamsCodec.DecodeError",
       "ownerId" : "object:scalive.LiveParamsCodec",
       "qualifiedName" : "scalive.LiveParamsCodec.DecodeError",
@@ -6090,6 +6102,42 @@
       ]
     },
     {
+      "id" : "def:scalive.LiveErrorPage.pageTitle",
+      "ownerId" : "trait:scalive.LiveErrorPage",
+      "qualifiedName" : "scalive.LiveErrorPage.pageTitle",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveErrorPage.pageTitle:9774eca3ddc1fd68",
+          "signature" : "def pageTitle(status: zio.http.Status, request: zio.http.Request): Option[String]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LiveErrorPage.renders",
+      "ownerId" : "trait:scalive.LiveErrorPage",
+      "qualifiedName" : "scalive.LiveErrorPage.renders",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveErrorPage.renders:24f05b5dc6fa8aab",
+          "signature" : "def renders(status: zio.http.Status): Boolean"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LiveErrorPage.view",
+      "ownerId" : "trait:scalive.LiveErrorPage",
+      "qualifiedName" : "scalive.LiveErrorPage.view",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveErrorPage.view:6245bb31b7dfba0f",
+          "signature" : "def view(status: zio.http.Status, request: zio.http.Request): HtmlElement[Nothing]"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.LiveEventHookResult.cont",
       "ownerId" : "object:scalive.LiveEventHookResult",
       "qualifiedName" : "scalive.LiveEventHookResult.cont",
@@ -6922,6 +6970,18 @@
         {
           "id" : "def:scalive.LiveRouter.withClientPath:508eb51458db5fc7",
           "signature" : "def withClientPath(value: zio.http.codec.PathCodec[Unit]): LiveRouter"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LiveRouter.withErrorPage",
+      "ownerId" : "class:scalive.LiveRouter",
+      "qualifiedName" : "scalive.LiveRouter.withErrorPage",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveRouter.withErrorPage:2e1d40344e2ce1e5",
+          "signature" : "def withErrorPage(value: LiveErrorPage): LiveRouter"
         }
       ]
     },
@@ -12402,6 +12462,18 @@
         {
           "id" : "enum:scalive.testing.ConnectedJoinFailure.Redirect:b3d2eff94d298c9c",
           "signature" : "enum Redirect(to: zio.http.URL) extends testing.ConnectedJoinFailure"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.testing.ConnectedJoinFailure.Reload",
+      "ownerId" : "enum:scalive.testing.ConnectedJoinFailure",
+      "qualifiedName" : "scalive.testing.ConnectedJoinFailure.Reload",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.testing.ConnectedJoinFailure.Reload:95b99dd0b711a9b2",
+          "signature" : "enum Reload(status: zio.http.Status) extends testing.ConnectedJoinFailure"
         }
       ]
     },
@@ -18789,6 +18861,18 @@
       ]
     },
     {
+      "id" : "trait:scalive.LiveErrorPage",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.LiveErrorPage",
+      "kind" : "trait",
+      "signatures" : [
+        {
+          "id" : "trait:scalive.LiveErrorPage:f5d44e16425fe3f3",
+          "signature" : "trait LiveErrorPage"
+        }
+      ]
+    },
+    {
       "id" : "trait:scalive.LiveHooks",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.LiveHooks",
@@ -23217,6 +23301,18 @@
       ]
     },
     {
+      "id" : "val:scalive.LiveApplication.errorPage",
+      "ownerId" : "class:scalive.LiveApplication",
+      "qualifiedName" : "scalive.LiveApplication.errorPage",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveApplication.errorPage:8152f126d4af078a",
+          "signature" : "val errorPage: Option[LiveErrorPage]"
+        }
+      ]
+    },
+    {
       "id" : "val:scalive.LiveApplication.layouts",
       "ownerId" : "class:scalive.LiveApplication",
       "qualifiedName" : "scalive.LiveApplication.layouts",
@@ -23825,6 +23921,18 @@
         {
           "id" : "val:scalive.LiveLocation.EncodingException.error:2306ec1c539ff8fe",
           "signature" : "val error: LiveLocation.EncodeError"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveNotFound.reason",
+      "ownerId" : "class:scalive.LiveNotFound",
+      "qualifiedName" : "scalive.LiveNotFound.reason",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveNotFound.reason:e19c9f8bccc2ebfe",
+          "signature" : "val reason: String"
         }
       ]
     },
@@ -26057,6 +26165,18 @@
         {
           "id" : "val:scalive.testing.ConnectedJoinFailure.Redirect.to:f06d9b56981aaf59",
           "signature" : "val to: zio.http.URL"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.testing.ConnectedJoinFailure.Reload.status",
+      "ownerId" : "enum:scalive.testing.ConnectedJoinFailure.Reload",
+      "qualifiedName" : "scalive.testing.ConnectedJoinFailure.Reload.status",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.testing.ConnectedJoinFailure.Reload.status:cb0766cb3a5c8924",
+          "signature" : "val status: zio.http.Status"
         }
       ]
     },

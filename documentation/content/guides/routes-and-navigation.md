@@ -105,7 +105,8 @@ canonicalize a successfully decoded URL only when the canonicalization cannot
 loop.
 
 A URL whose parameters don't decode never mounts the view. A page request for it
-gets `400 Bad Request`, and Scalive logs the route and the decode error at debug
+gets `400 Bad Request`, with the [error page](#answer-missing-pages-and-errors) if
+the router has one, and Scalive logs the route and the decode error at debug
 level; live navigation to it falls back to that page request. A live patch to it
 calls
 @:apiSymbol(def:scalive.LiveView.Routed.handleParamsDecodeError)`handleParamsDecodeError`@:@
@@ -208,6 +209,50 @@ session callbacks before route callbacks and declaration order within each level
 They are additive, do not change context or the page model, and fail through
 `Task` as mount failures, not controlled authorization rejections. See
 [route and session resources](connected-resources.md#route-and-session-resources).
+
+## Answer missing pages and errors {#answer-missing-pages-and-errors}
+
+Scalive answers some page requests with an error itself: `400` when the
+parameters do not decode, `401`, `403`, or `404` from a
+[route mount aspect](live-sessions-and-mount-aspects.md), and `500` when a
+LiveView fails to mount or render. Without more setup, those responses carry only
+the status text, such as `Not Found`.
+Give them a page that looks like the rest of the site with a
+@:apiSymbol(trait:scalive.LiveErrorPage)`LiveErrorPage`@:@:
+
+@:sourceRegion(documentation/fixtures/guides/src/routing/ErrorPages.scala, routing-error-page)
+
+Install it on the router:
+
+@:sourceRegion(documentation/fixtures/guides/src/routing/ErrorPages.scala, routing-error-page-router)
+
+Scalive renders it inside the router's root layout, so it keeps the site's
+stylesheets and header, as a static document with no LiveView in it. The root
+layout receives `()` as its parameters and context, because a failed request may
+have none; read the request instead, for example for its language. Show nothing
+about why the request failed: Scalive logs the reason. A response given with
+`LiveRouteMountFailure.custom` or by a session mount aspect, such as a redirect
+to the login page, is sent as given.
+Override `renders` to keep some statuses bare, for example a `500` that should not
+depend on the root layout.
+
+With an error page installed, a `GET` request that no route of the application
+matches also answers `404` with it. Routes added next to Scalive's, such as
+static assets or health checks, still win, whatever their order, because ZIO HTTP
+prefers literal and parameter segments to a catch-all.
+
+When the record a URL names does not exist, fail `mount` or `handleParams` with
+@:apiSymbol(class:scalive.LiveNotFound)`LiveNotFound`@:@:
+
+@:sourceRegion(documentation/fixtures/guides/src/routing/ErrorPages.scala, routing-live-not-found)
+
+A page request for `/patients/2` then answers `404` with the error page instead
+of rendering the view, and the reason is logged at debug level. Live navigation
+to it ends on the same page: as in Phoenix, the failed join tells the browser to
+reload with the status, and the reloaded request answers it. That also covers a
+record deleted between the page request and the join, without a reload loop. A
+failure after a live patch crashes the LiveView, whose rejoin then fails the
+same way.
 
 ## Build locations from route declarations {#build-locations-from-route-declarations}
 

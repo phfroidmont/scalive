@@ -759,6 +759,172 @@ object ZioHttpSpec extends ZIOSpecDefault:
         custom.connectedFailure == LiveSessionMountFailure.stale("refresh policy")
       )
     },
+    test("an error page renders Scalive's error responses inside the router's root layout") {
+      object Home extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        def view(model: Signal[Unit]) = div("home")
+      object Missing extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ZIO.fail(LiveNotFound("item 7 is gone"))
+        def view(model: Signal[Unit]) = div()
+      object MissingParams extends LiveView.Routed.Eventless[Unit, Unit]:
+        def mount(params: Unit, ctx: MountContext) = ZIO.unit
+        override def handleParams(model: Unit, params: Unit, url: URL, ctx: ParamsContext) =
+          ZIO.fail(LiveNotFound("item 8 is gone"))
+        def view(model: Signal[Unit]) = div()
+      object Crash extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ZIO.fail(Exception("database down"))
+        def view(model: Signal[Unit]) = div()
+      object Item extends LiveView.Routed.Eventless[Unit, java.util.UUID]:
+        def mount(params: java.util.UUID, ctx: MountContext) = ZIO.unit
+        def view(model: Signal[Unit]) = div()
+      object Root extends LiveRootLayout[Any, Any]:
+        def view[Msg](
+          content: HtmlElement[Msg],
+          pageTitle: Option[String],
+          context: LiveRootLayoutContext[Any, Any]
+        ) = htmlRootTag(
+          headTag(liveTitle(pageTitle, default = "")),
+          bodyTag(dataAttr("root") := "app", content)
+        )
+      object Page extends LiveErrorPage:
+        override def pageTitle(status: Status, request: Request) = Some(s"Title ${status.code}")
+        def view(status: Status, request: Request) =
+          mainTag(s"Error ${status.code} at ${request.url.path.encode}")
+      def rejecting(failure: LiveRouteMountFailure) =
+        LiveRouteMountAspect.fromRequest[Any, Unit, Unit](_ => ZIO.fail(failure))
+      val application = scalive.Live.router
+        .withRootLayout(Root)
+        .withErrorPage(Page)(
+          scalive.live                                                -> Home,
+          (scalive.live / "item").query[java.util.UUID]("id")        -> Item,
+          (scalive.live / "missing")                                  -> Missing,
+          (scalive.live / "missing-params")                           -> MissingParams,
+          (scalive.live / "crash")                                    -> Crash,
+          (scalive.live / "forbidden")
+            .withMountAspect(rejecting(LiveRouteMountFailure.forbidden("policy"))) -> Home,
+          (scalive.live / "custom").withMountAspect(
+            rejecting(
+              LiveRouteMountFailure.custom(
+                Response.text("custom").status(Status.Conflict),
+                LiveSessionMountFailure.stale("custom")
+              )
+            )
+          ) -> Home
+        )
+      val routes = ZioHttp
+        .routes(application, config)
+        .map(_ ++ Routes(Method.GET / "health" -> Handler.fromResponse(Response.text("ok"))))
+      def get(path: String) =
+        for
+          response <- run(routes, Request.get(URL.decode(path).toOption.get))
+          body     <- response.body.asString.orDie
+        yield response.status -> body
+      def errorPage(page: (Status, String), status: Status, path: String) =
+        page._1 == status && page._2.contains("data-root=\"app\"") &&
+          page._2.contains(s"Title ${status.code}") &&
+          page._2.contains(s"Error ${status.code} at $path") && !page._2.contains("data-phx-main")
+
+      for
+        home          <- get("/")
+        health        <- get("/health")
+        badRequest    <- get("/item?id=garbage")
+        forbidden     <- get("/forbidden")
+        missing       <- get("/missing")
+        missingParams <- get("/missing-params")
+        crash         <- get("/crash")
+        unmatched     <- get("/nowhere/at/all")
+        custom        <- get("/custom")
+      yield assertTrue(
+        home._1 == Status.Ok,
+        home._2.contains("home"),
+        health == (Status.Ok -> "ok"),
+        errorPage(badRequest, Status.BadRequest, "/item"),
+        errorPage(forbidden, Status.Forbidden, "/forbidden"),
+        errorPage(missing, Status.NotFound, "/missing"),
+        !missing._2.contains("item 7"),
+        errorPage(missingParams, Status.NotFound, "/missing-params"),
+        errorPage(crash, Status.InternalServerError, "/crash"),
+        !crash._2.contains("database"),
+        errorPage(unmatched, Status.NotFound, "/nowhere/at/all"),
+        custom == (Status.Conflict -> "custom")
+      )
+    },
+    test("without an error page, error responses stay bare and LiveNotFound answers 404") {
+      object Missing extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ZIO.fail(LiveNotFound("item 7 is gone"))
+        def view(model: Signal[Unit]) = div()
+      val routes = ZioHttp.routes(
+        scalive.Live.router((scalive.live / "missing") -> Missing),
+        config
+      )
+
+      for
+        missing     <- run(routes, Request.get(URL.decode("/missing").toOption.get))
+        missingBody <- missing.body.asString.orDie
+        unmatched   <- run(routes, Request.get(URL.decode("/nowhere").toOption.get))
+        logs        <- ZTestLogger.logOutput
+      yield assertTrue(
+        missing.status == Status.NotFound,
+        missingBody == "Not Found",
+        unmatched.status == Status.NotFound,
+        logs.exists(entry =>
+          entry.logLevel == LogLevel.Debug &&
+            entry.annotations.get("reason").contains("item 7 is gone")
+        ),
+        !logs.exists(_.logLevel == LogLevel.Error)
+      )
+    },
+    test("an error page that renders only some statuses leaves the others bare") {
+      object Crash extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ZIO.fail(Exception("database down"))
+        def view(model: Signal[Unit]) = div()
+      object Page extends LiveErrorPage:
+        override def renders(status: Status) = status == Status.NotFound
+        def view(status: Status, request: Request) = mainTag(s"Error ${status.code}")
+      val routes = ZioHttp.routes(
+        scalive.Live.router.withErrorPage(Page)((scalive.live / "crash") -> Crash),
+        config
+      )
+
+      for
+        crash         <- run(routes, Request.get(URL.decode("/crash").toOption.get))
+        crashBody     <- crash.body.asString.orDie
+        unmatched     <- run(routes, Request.get(URL.decode("/nowhere").toOption.get))
+        unmatchedBody <- unmatched.body.asString.orDie
+      yield assertTrue(
+        crash.status == Status.InternalServerError,
+        crashBody == "Internal Server Error",
+        unmatched.status == Status.NotFound,
+        unmatchedBody.contains("Error 404")
+      )
+    },
+    test("a page request with a reload status answers that status once; a forged one answers 500") {
+      object Home extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        def view(model: Signal[Unit]) = div("home")
+      object Page extends LiveErrorPage:
+        def view(status: Status, request: Request) = mainTag(s"Error ${status.code}")
+      val routes = ZioHttp.routes(
+        scalive.Live.router.withErrorPage(Page)(scalive.live -> Home),
+        config
+      )
+      def withReloadStatus(token: String) =
+        Request.get(URL.root).addCookie(Cookie.Request("__phoenix_reload_status__", token))
+
+      for
+        token    <- ZioHttpSecurity.issueReloadStatus(config, Status.NotFound)
+        reloaded <- run(routes, withReloadStatus(token))
+        body     <- reloaded.body.asString.orDie
+        cleared = reloaded.headers(Header.SetCookie).map(_.value)
+                    .find(_.name == "__phoenix_reload_status__")
+        forged <- run(routes, withReloadStatus("forged"))
+      yield assertTrue(
+        reloaded.status == Status.NotFound,
+        body.contains("Error 404"),
+        cleared.exists(cookie => cookie.content.isEmpty && cookie.maxAge.contains(zio.Duration.Zero)),
+        forged.status == Status.InternalServerError
+      )
+    },
     test("a disconnected route mount rejection logs its reason") {
       object Account extends LiveView.Eventless[Unit]:
         def mount(ctx: MountContext) = ZIO.unit

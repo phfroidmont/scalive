@@ -34,6 +34,7 @@ import scalive.LiveAsyncEvent
 import scalive.LiveAsyncResult
 import scalive.LiveConnectedTurnFailure
 import scalive.LiveEvent
+import scalive.LiveNotFound
 import scalive.SubscriptionDelivery
 import scalive.render.*
 import scalive.runtime.contracts.*
@@ -1459,10 +1460,15 @@ final private[scalive] class SessionKernel[Msg, Model] private (
           LogAnnotation(RuntimeLog.TurnKind, RuntimeLog.label(kind)),
           LogAnnotation(RuntimeLog.TurnId, turnId.value.toString)
         ) ++ command.map(value => LogAnnotation(RuntimeLog.CommandId, value.value.toString))
-        ZIO.succeed(turnFailureLogged.set(true)) *>
-          ZIO.logAnnotate(annotations)(
-            ZIO.logErrorCause("LiveView turn failed", error.cause.fold(Cause.empty)(failureCause))
-          )
+        val cause = error.cause.fold(Cause.empty)(failureCause)
+        // A LiveView that names nothing is answered with a 404 page, not an error.
+        val log = LiveNotFound.in(cause) match
+          case Some(notFound) =>
+            ZIO.logAnnotate(RuntimeLog.Reason, notFound.reason)(
+              ZIO.logDebug("LiveView turn failed: not found")
+            )
+          case None => ZIO.logErrorCause("LiveView turn failed", cause)
+        ZIO.succeed(turnFailureLogged.set(true)) *> ZIO.logAnnotate(annotations)(log)
 
   // A crash outside a turn, such as a failed cleanup, has no turn failure to log it.
   private def logCrash(failure: SessionFailure): UIO[Unit] =

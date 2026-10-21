@@ -180,7 +180,8 @@ object ZioHttp:
                           .map(_.flatten)
                           .mapError(error => AssemblyException(s"invalid browser files: $error"))
     yield
-      val getRoutes   = catalog.map(_.getRoute(config, lifecycleObserver, browser))
+      val errors      = ErrorPages(application.rootLayout, application.errorPage)
+      val getRoutes   = catalog.map(_.getRoute(config, lifecycleObserver, browser, errors))
       val socketRoute = websocketRoute(
         application.socketPath,
         catalog,
@@ -189,7 +190,16 @@ object ZioHttp:
         lifecycleObserver,
         observerFactory
       )
-      Routes.fromIterable(getRoutes :+ socketRoute) ++ browser.routes
+      // ZIO HTTP prefers literal and parameter segments, so any other route still wins over this.
+      val unmatchedRoutes =
+        if errors.rendersNotFound then
+          Vector(
+            RoutePattern(Method.GET, PathCodec.trailing) -> handler((_: Path, request: Request) =>
+              errors.response(Status.NotFound, request)
+            )
+          )
+        else Vector.empty
+      Routes.fromIterable(getRoutes ++ unmatchedRoutes :+ socketRoute) ++ browser.routes
 
   private[scalive] def validate[R](
     application: LiveApplication[R]
@@ -317,13 +327,13 @@ object ZioHttp:
     final def getRoute(
       config: ZioHttpConfig,
       observer: LifecycleObserver,
-      browser: BrowserFiles
+      browser: BrowserFiles,
+      errors: ErrorPages
     ): Route[R, Nothing] =
       RoutePattern(Method.GET, pathCodec) -> handler { (path: PathParams, request: Request) =>
         ZIO.logAnnotate(RuntimeLog.Route, routeLabel) {
-          disconnected(path, request, config, observer, browser).catchAllCause { cause =>
-            ZIO.logErrorCause("Disconnected LiveView request failed", cause) *>
-              ZIO.succeed(Response.internalServerError)
+          disconnected(path, request, config, observer, browser, errors).catchAllCause { cause =>
+            errors.failed("Disconnected LiveView request failed", cause, request)
           }
         }
       }
@@ -343,7 +353,7 @@ object ZioHttp:
       request: Request
     ): ZIO[
       R,
-      Response,
+      PageFailure,
       (RootLifecycle[Msg, Model], Any, SessionMountClaims, LiveRootLayout[PathParams, Any])
     ]
 
@@ -400,10 +410,41 @@ object ZioHttp:
       request: Request,
       config: ZioHttpConfig,
       observer: LifecycleObserver,
-      browser: BrowserFiles
+      browser: BrowserFiles,
+      errors: ErrorPages
+    ): ZIO[R, Nothing, Response] =
+      request.cookie(ErrorPages.ReloadStatusCookie) match
+        case Some(cookie) => reloadedAfterFailedJoin(cookie.content, request, config, errors)
+        case None         => render(path, request, config, observer, browser, errors)
+
+    // A join that failed with a status made the browser reload; this request answers that status.
+    private def reloadedAfterFailedJoin(
+      token: String,
+      request: Request,
+      config: ZioHttpConfig,
+      errors: ErrorPages
+    ): UIO[Response] =
+      ZioHttpSecurity
+        .verifyReloadStatus(config, token)
+        .tapError(error =>
+          ZIO.logAnnotate(RuntimeLog.Reason, error.toString)(
+            ZIO.logWarning("Rejected the reload status of a failed join")
+          )
+        )
+        .orElseSucceed(Status.InternalServerError)
+        .flatMap(status => errors.response(status, request))
+        .map(_.addCookie(expiredCookie(ErrorPages.ReloadStatusCookie, config.secureCookie)))
+
+    private def render(
+      path: PathParams,
+      request: Request,
+      config: ZioHttpConfig,
+      observer: LifecycleObserver,
+      browser: BrowserFiles,
+      errors: ErrorPages
     ): ZIO[R, Nothing, Response] =
       disconnectedLifecycle(path, request).foldZIO(
-        ZIO.succeed(_),
+        errors.respond(_, request),
         (lifecycle, erasedContext, mountClaims, selectedRootLayout) =>
           DisconnectedRootTurn.freshLifecycleId.orDie.flatMap { lifecycleId =>
             ZIO.logAnnotate(
@@ -422,11 +463,7 @@ object ZioHttp:
                 observer,
                 browser
               ).catchAllCause { cause =>
-                ZIO.logErrorCause("Disconnected LiveView render failed", cause) *>
-                  ZIO.succeed(
-                    Response
-                      .text("Internal Server Error").copy(status = Status.InternalServerError)
-                  )
+                errors.failed("Disconnected LiveView render failed", cause, request)
               }
             }
           }
@@ -721,11 +758,9 @@ object ZioHttp:
                 ZIO.logDebug("Rejected disconnected LiveView route parameters")
               )
             )
-            .mapError(_ => Response.badRequest)
+            .mapError(_ => PageFailure.Error(Status.BadRequest))
             .flatMap(params =>
-              make(params, context, url)
-                .tapErrorCause(ZIO.logErrorCause("Disconnected LiveView factory failed", _))
-                .mapError(_ => Response.internalServerError)
+              make(params, context, url).sandbox.mapError(PageFailure.FactoryFailed(_))
             )
             .map { lifecycle =>
               val composed = composeLayouts(
@@ -1066,7 +1101,7 @@ object ZioHttp:
     path: A,
     request: Request,
     input: In
-  ): ZIO[R, Response, (Ctx, SessionMountClaims)] = context match
+  ): ZIO[R, PageFailure, (Ctx, SessionMountClaims)] = context match
     case _: LiveRouteContext.Direct[A]        => ZIO.succeed(((), SessionMountClaims(Vector.empty)))
     case _: LiveRouteContext.Required[A, Ctx] =>
       ZIO.succeed(input -> SessionMountClaims(Vector.empty))
@@ -1084,13 +1119,13 @@ object ZioHttp:
             )
           )
         )
-        .mapError(_.disconnectedResponse).map(_ -> SessionMountClaims(Vector.empty))
+        .mapError(PageFailure.fromRouteMount).map(_ -> SessionMountClaims(Vector.empty))
     case session: LiveRouteContext.SessionMounted[rs, rr, A, sessionCtx, routeIn, routeCtx] =>
       runDisconnectedSessionPipeline(
         session.session,
         LiveSessionMountRequest(request),
         ()
-      ).flatMap { case (sessionContext, sessionClaims) =>
+      ).mapError(PageFailure.Given(_)).flatMap { case (sessionContext, sessionClaims) =>
         runDisconnectedContext(
           session.route,
           path,
@@ -2445,7 +2480,8 @@ object ZioHttp:
                                 transportAdmission.isDisconnecting.flatMap {
                                   case true  => ZIO.unit
                                   case false =>
-                                    writer.offer(joinFailureEnvelope(joinRef, ref, topic, error))
+                                    rootJoinFailureEnvelope(config, joinRef, ref, topic, error)
+                                      .flatMap(writer.offer)
                                 }
                             )
                           }
@@ -2650,6 +2686,46 @@ object ZioHttp:
         )
       else ZIO.succeed(claims.initialFlash)
     values.map(_.view.map((key, value) => FlashKey(key) -> FlashValue(value, 0)).toMap)
+
+  // Like Phoenix for an exception with a 4xx `plug_status`: the browser stores the signed status
+  // and reloads, and that page request answers it, so a check failing only when connected cannot
+  // loop.
+  private def rootJoinFailureEnvelope(
+    config: ZioHttpConfig,
+    joinRef: PhoenixRef,
+    ref: PhoenixRef,
+    topic: String,
+    error: Throwable
+  ): UIO[PhoenixEnvelope] =
+    val failure = error match
+      case LifecycleStartFailed(
+            ConnectionSupervisor.StartError.ConnectionFailed(ConnectionError.SessionFailed(failure))
+          ) =>
+        failure
+      case LifecycleStartFailed(
+            ConnectionSupervisor.StartError.ConnectionFailed(
+              ConnectionError.ViewCreationFailed(cause)
+            )
+          ) =>
+        cause
+      case other => other
+    LiveNotFound.in(Cause.fail(failure)) match
+      case Some(_) =>
+        ZioHttpSecurity
+          .issueReloadStatus(config, Status.NotFound).map(token =>
+            PhoenixOutput.error(
+              joinRef,
+              ref,
+              topic,
+              Json.Obj(
+                "reason" -> Json.Str("reload"),
+                "status" -> Json.Num(Status.NotFound.code),
+                "token"  -> Json.Str(token)
+              )
+            )
+          )
+      case None => ZIO.succeed(joinFailureEnvelope(joinRef, ref, topic, error))
+  end rootJoinFailureEnvelope
 
   private[scalive] def joinFailureEnvelope(
     joinRef: PhoenixRef,
@@ -4071,6 +4147,17 @@ object ZioHttp:
 
   private def expiredFlashCookie(secure: Boolean): Cookie.Response =
     flashCookie("", secure, zio.Duration.Zero)
+
+  // The browser set it with `path=/`, so the deletion must use the same path.
+  private def expiredCookie(name: String, secure: Boolean): Cookie.Response =
+    Cookie.Response(
+      name,
+      "",
+      path = Some(Path.root),
+      isSecure = secure,
+      maxAge = Some(zio.Duration.Zero),
+      sameSite = Some(Cookie.SameSite.Lax)
+    )
 
   private def flashCookie(
     token: String,

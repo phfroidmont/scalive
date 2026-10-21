@@ -171,6 +171,8 @@ private[scalive] object ZioHttpSecurity:
   final case class CsrfClaims(browserSecret: String, issuedAtEpochSecond: Long) derives JsonCodec
   final case class FlashClaims(values: Map[String, String], issuedAtEpochSecond: Long)
       derives JsonCodec
+  final private case class ReloadStatusClaims(status: Int, issuedAtEpochSecond: Long)
+      derives JsonCodec
   final case class NestedClaims(
     registration: Long,
     registrationEpoch: Long,
@@ -212,6 +214,7 @@ private[scalive] object ZioHttpSecurity:
     case NestedJoin   extends Purpose("nested-join")
     case NestedStatic extends Purpose("nested-static")
     case UploadJoin   extends Purpose("upload-join")
+    case ReloadStatus extends Purpose("reload-status")
 
   private val Version       = "v1"
   private val HmacAlgorithm = "HmacSHA256"
@@ -305,6 +308,17 @@ private[scalive] object ZioHttpSecurity:
     verify[FlashClaims](config, Purpose.Flash, token)
       .flatMap(claims => validateAge(Duration.ofSeconds(60), claims, _.issuedAtEpochSecond))
       .map(_.values)
+
+  /** Signs the status a failed join asks the reloaded page to answer, as Phoenix's reload token. */
+  def issueReloadStatus(config: ZioHttpConfig, status: zio.http.Status): UIO[String] =
+    currentEpochSecond.map(issuedAt =>
+      encode(config, Purpose.ReloadStatus, ReloadStatusClaims(status.code, issuedAt))
+    )
+
+  def verifyReloadStatus(config: ZioHttpConfig, token: String): IO[Error, zio.http.Status] =
+    verify[ReloadStatusClaims](config, Purpose.ReloadStatus, token)
+      .flatMap(claims => validateAge(Duration.ofSeconds(60), claims, _.issuedAtEpochSecond))
+      .map(claims => zio.http.Status.fromInt(claims.status))
 
   def issueNested(
     config: ZioHttpConfig,

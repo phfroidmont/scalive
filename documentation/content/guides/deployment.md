@@ -168,7 +168,10 @@ use `no-cache` when explicitly enabled. Deployment manifests instead serve each
 declared final path with its declared `immutable` or `revalidate` policy.
 
 A CDN or edge may preserve those response headers, but must not apply immutable
-caching to application HTML or mutable asset URLs. Immutable manifest entries
+caching to application HTML or mutable asset URLs. Scalive marks its pages
+`private` or `no-store`, following the `pageCache` setting in
+[Configuration](configuration.md#current-configuration-contract), so a shared
+cache that respects `Cache-Control` never keeps one. Immutable manifest entries
 must have content-addressed or otherwise stable URLs. An immutable file replaced
 in place returns `404` until the application reloads its asset description;
 publish a new final path instead. See

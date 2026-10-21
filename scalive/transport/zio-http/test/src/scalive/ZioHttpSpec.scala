@@ -907,6 +907,63 @@ object ZioHttpSpec extends ZIOSpecDefault:
         !logs.exists(_.logLevel == LogLevel.Error)
       )
     },
+    test("pages, error pages and redirects carry the page cache policy; browser files keep theirs") {
+      object Home extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        def view(model: Signal[Unit]) = div()
+      object Missing extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ZIO.fail(LiveNotFound("gone"))
+        def view(model: Signal[Unit]) = div()
+      object Moved extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ctx.nav.pushNavigate((scalive.live / "home").location)
+        def view(model: Signal[Unit]) = div()
+      object Page extends LiveErrorPage:
+        def view(status: Status, request: Request) = mainTag(s"Error ${status.code}")
+      val application = scalive.Live.router.withErrorPage(Page)(
+        (scalive.live / "home")    -> Home,
+        (scalive.live / "missing") -> Missing,
+        (scalive.live / "moved")   -> Moved,
+        (scalive.live / "report").http((_, _) => ZIO.succeed(Response.text("report"))),
+        (scalive.live / "logo").http((_, _) =>
+          ZIO.succeed(Response.text("logo").addHeader(Header.CacheControl.MaxAge(60)))
+        )
+      )
+      def cacheControl(pageCache: PageCache, path: String) =
+        val cached = ZioHttpConfig(
+          "01234567890123456789012345678901",
+          Duration.ofMinutes(30),
+          secureCookie = false,
+          allowedWebSocketOrigins = Set(WebSocketOrigin.https("scalive.test")),
+          pageCache = pageCache
+        ).toOption.get
+        run(ZioHttp.routes(application, cached), Request.get(URL.decode(path).toOption.get))
+          .map(_.rawHeader(Header.CacheControl.name))
+      val revalidate = Some("private,max-age=0,must-revalidate")
+
+      for
+        home      <- run(ZioHttp.routes(application, config), Request.get(URL.decode("/home").toOption.get))
+        body      <- home.body.asString.orDie
+        guard      = "/_scalive/assets/[^\"]+".r.findFirstIn(body).get
+        missing   <- cacheControl(PageCache.Revalidate, "/missing")
+        unmatched <- cacheControl(PageCache.Revalidate, "/nowhere")
+        moved     <- cacheControl(PageCache.Revalidate, "/moved")
+        report    <- cacheControl(PageCache.Revalidate, "/report")
+        logo      <- cacheControl(PageCache.Revalidate, "/logo")
+        file      <- cacheControl(PageCache.Revalidate, guard)
+        stored    <- cacheControl(PageCache.NoStore, "/home")
+        missingNoStore <- cacheControl(PageCache.NoStore, "/missing")
+      yield assertTrue(
+        home.rawHeader(Header.CacheControl.name) == revalidate,
+        missing == revalidate,
+        unmatched == revalidate,
+        moved == revalidate,
+        report == revalidate,
+        logo == Some("max-age=60"),
+        file.exists(_.contains("immutable")),
+        stored == Some("no-store"),
+        missingNoStore == Some("no-store")
+      )
+    },
     test("an HTTP route is admitted by the session and route aspects, then answers its handler") {
       val session = LiveSessionMountAspect.fromRequest[Any, String, String](
         request =>

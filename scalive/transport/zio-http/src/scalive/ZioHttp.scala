@@ -200,8 +200,13 @@ object ZioHttp:
             )
           )
         else Vector.empty
-      Routes.fromIterable(getRoutes ++ httpRoutes ++ unmatchedRoutes :+ socketRoute) ++
-        browser.routes
+      // Pages carry their CSRF token and signed session. An HTTP route may set its own policy.
+      val pageCache = HandlerAspect.updateResponse(response =>
+        if response.headers.contains(Header.CacheControl.name) then response
+        else response.addHeader(config.pageCache.header)
+      )
+      val pageRoutes = Routes.fromIterable(getRoutes ++ httpRoutes ++ unmatchedRoutes) @@ pageCache
+      pageRoutes ++ Routes(socketRoute) ++ browser.routes
 
   private[scalive] def validate[R](
     application: LiveApplication[R]

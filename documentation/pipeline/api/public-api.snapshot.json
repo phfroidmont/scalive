@@ -9532,8 +9532,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.ZioHttpConfig.apply:f67126667975a657",
-          "signature" : "def apply(signingSecret: String, sessionMaxAge: java.time.Duration, secureCookie: Boolean, allowedWebSocketOrigins: Set[WebSocketOrigin], reloadOnRestart: Boolean = ...): Either[ZioHttpConfig.Error, ZioHttpConfig]"
+          "id" : "def:scalive.ZioHttpConfig.apply:edb75467b81993c8",
+          "signature" : "def apply(signingSecret: String, sessionMaxAge: java.time.Duration, secureCookie: Boolean, allowedWebSocketOrigins: Set[WebSocketOrigin], reloadOnRestart: Boolean = ..., pageCache: PageCache = ...): Either[ZioHttpConfig.Error, ZioHttpConfig]"
         }
       ]
     },
@@ -12542,6 +12542,18 @@
         {
           "id" : "enum:scalive.NavigationGuardScope:033bd458fb42043d",
           "signature" : "enum NavigationGuardScope"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.PageCache",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.PageCache",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.PageCache:835b281abe2df68d",
+          "signature" : "enum PageCache"
         }
       ]
     },
@@ -28241,6 +28253,30 @@
       ]
     },
     {
+      "id" : "val:scalive.PageCache.NoStore",
+      "ownerId" : "enum:scalive.PageCache",
+      "qualifiedName" : "scalive.PageCache.NoStore",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.PageCache.NoStore:8c2c83585f339cfe",
+          "signature" : "val NoStore: PageCache"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.PageCache.Revalidate",
+      "ownerId" : "enum:scalive.PageCache",
+      "qualifiedName" : "scalive.PageCache.Revalidate",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.PageCache.Revalidate:04bfb0e3614ca877",
+          "signature" : "val Revalidate: PageCache"
+        }
+      ]
+    },
+    {
       "id" : "val:scalive.PhoenixNestedParamsAdapter.definition",
       "ownerId" : "class:scalive.PhoenixNestedParamsAdapter",
       "qualifiedName" : "scalive.PhoenixNestedParamsAdapter.definition",
@@ -29317,6 +29353,18 @@
         {
           "id" : "val:scalive.ZioHttpConfig.allowedWebSocketOrigins:59a6ec8a7b36b559",
           "signature" : "val allowedWebSocketOrigins: Set[WebSocketOrigin]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.ZioHttpConfig.pageCache",
+      "ownerId" : "class:scalive.ZioHttpConfig",
+      "qualifiedName" : "scalive.ZioHttpConfig.pageCache",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.ZioHttpConfig.pageCache:8eb90617fe1f3636",
+          "signature" : "val pageCache: PageCache"
         }
       ]
     },

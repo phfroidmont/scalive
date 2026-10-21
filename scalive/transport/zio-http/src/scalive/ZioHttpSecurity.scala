@@ -38,19 +38,23 @@ final private[scalive] case class UploadCredentialClaims(
   *   The exact canonical browser origins admitted at the WebSocket upgrade boundary.
   * @param reloadOnRestart
   *   Whether a page rendered by an earlier server process reloads when it reconnects.
+  * @param pageCache
+  *   How browsers and caches may keep the responses served for pages.
   */
 final class ZioHttpConfig private (
   private[scalive] val signingSecretBytes: Array[Byte],
   val sessionMaxAge: Duration,
   val secureCookie: Boolean,
   val allowedWebSocketOrigins: Set[WebSocketOrigin],
-  val reloadOnRestart: Boolean):
+  val reloadOnRestart: Boolean,
+  val pageCache: PageCache):
   override def equals(other: Any): Boolean = other match
     case that: ZioHttpConfig =>
       sessionMaxAge == that.sessionMaxAge &&
       secureCookie == that.secureCookie &&
       allowedWebSocketOrigins == that.allowedWebSocketOrigins &&
       reloadOnRestart == that.reloadOnRestart &&
+      pageCache == that.pageCache &&
       MessageDigest.isEqual(signingSecretBytes, that.signingSecretBytes)
     case _ => false
 
@@ -59,11 +63,12 @@ final class ZioHttpConfig private (
     result = 31 * result + java.util.Arrays.hashCode(signingSecretBytes)
     result = 31 * result + java.lang.Boolean.hashCode(secureCookie)
     result = 31 * result + java.lang.Boolean.hashCode(reloadOnRestart)
+    result = 31 * result + pageCache.hashCode()
     31 * result + allowedWebSocketOrigins.hashCode()
 
   /** Describes the configuration with the signing secret redacted, so it is safe to log. */
   override def toString: String =
-    s"ZioHttpConfig(signingSecret=<redacted>, sessionMaxAge=$sessionMaxAge, secureCookie=$secureCookie, allowedWebSocketOrigins=$allowedWebSocketOrigins, reloadOnRestart=$reloadOnRestart)"
+    s"ZioHttpConfig(signingSecret=<redacted>, sessionMaxAge=$sessionMaxAge, secureCookie=$secureCookie, allowedWebSocketOrigins=$allowedWebSocketOrigins, reloadOnRestart=$reloadOnRestart, pageCache=$pageCache)"
 
 /** The validating constructor for [[ZioHttpConfig]] and its errors. */
 object ZioHttpConfig:
@@ -101,13 +106,17 @@ object ZioHttpConfig:
     * a manual refresh. Leave it off in deployments: every open page would reload after a deploy and
     * lose form input that LiveView would otherwise recover, and with several replicas a page
     * rendered by one would not join another.
+    *
+    * `pageCache` sets the `Cache-Control` of pages; the default lets only the browser keep them,
+    * and it revalidates before reuse. See [[PageCache]].
     */
   def apply(
     signingSecret: String,
     sessionMaxAge: Duration,
     secureCookie: Boolean,
     allowedWebSocketOrigins: Set[WebSocketOrigin],
-    reloadOnRestart: Boolean = false
+    reloadOnRestart: Boolean = false,
+    pageCache: PageCache = PageCache.Revalidate
   ): Either[Error, ZioHttpConfig] =
     val secretBytes = signingSecret.getBytes(StandardCharsets.UTF_8)
     if secretBytes.length < 32 then Left(Error.SecretTooShort(secretBytes.length))
@@ -122,7 +131,8 @@ object ZioHttpConfig:
           sessionMaxAge,
           secureCookie,
           allowedWebSocketOrigins,
-          reloadOnRestart
+          reloadOnRestart,
+          pageCache
         )
       )
 
@@ -148,7 +158,8 @@ object ZioHttpConfig:
       Duration.ofDays(7),
       secureCookie = false,
       Set(localhost, loopback),
-      reloadOnRestart = true
+      reloadOnRestart = true,
+      PageCache.Revalidate
     )
 end ZioHttpConfig
 

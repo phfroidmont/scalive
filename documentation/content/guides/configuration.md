@@ -43,6 +43,7 @@ The first four values are required:
 | `secureCookie` | Controls the `Secure` attribute on framework cookies and cookies created through `LiveSecurity.cookies`. Scalive does not infer it from TLS or proxy headers. | Use `true` whenever the browser-facing origin is HTTPS. Local plain HTTP normally requires `false`. |
 | `allowedWebSocketOrigins` | Non-empty set of exact browser origins admitted for WebSocket upgrades. Construction rejects a set with no usable origin. | List every browser-facing page origin that may connect. See [Admit WebSocket origins](#admit-websocket-origins). |
 | `reloadOnRestart` | Optional, `false` by default. When `true`, a page rendered by an earlier server process reloads when it reconnects. | Development only. See [Reload pages after a restart](#reload-pages-after-a-restart). |
+| `pageCache` | Optional, @:apiSymbol(enum:scalive.PageCache)`PageCache.Revalidate`@:@ by default: `private, max-age=0, must-revalidate`, as Phoenix sends. `PageCache.NoStore` sends `no-store`. It sets `Cache-Control` on pages, error pages, redirects, and HTTP route responses without their own; Scalive's browser files keep their immutable headers. | Use `NoStore` when pages hold sensitive data. No setting lets a shared cache keep a page, since it carries the CSRF token and signed session. |
 
 Construct the value once and reuse it. `ZioHttp.routes` also validates the
 assembled Live route catalog: its effect fails with
@@ -134,7 +135,7 @@ The remaining framework choices are made while assembling the application:
 | Concern | API and default | Requirement |
 | --- | --- | --- |
 | WebSocket path | `Live.router.withSocketPath`; default `/live` | The packaged client connects to it; a custom bundle must use the same mount. The WebSocket upgrade is the mount's `/websocket` child, `/live/websocket` by default. |
-| Scalive browser files | `Live.router.withClientPath`; default `/_scalive` | Scalive serves its navigation-guard runtime below it with either client, and the packaged Phoenix clients too. No Live route may match one of these files. |
+| Scalive browser files | `Live.router.withClientPath`; default `/_scalive` | Scalive serves its navigation-guard runtime below it with either client, and the packaged Phoenix clients too. No Live route may match one of these files. Keep application static mounts outside it: `ZioHttp.routes` cannot see them, so it cannot report a collision. |
 | Root and Live layouts | `Live.router.withRootLayout` and `.withLayout`; `LiveRootLayout.default` and no ordinary layouts by default | A custom root renders a complete `<html>`, `<head>`, and `<body>` with the application assets. Scalive inserts its CSRF metadata and browser scripts into the `<head>`. |
 | Phoenix clients | The `client` argument of `ZioHttp.routes`; default `LiveClient.Packaged`, served below the client path | Pass `LiveClient.Custom` when the application bundle imports both npm clients and connects its own `LiveSocket`. |
 | Static assets | `StaticAssetConfig.classpath`, `.directory`, `.deploymentClasspath`, or `.deploymentDirectory`; default mount `/static` | Load assets before startup, add `assets.routes`, and render versioned or final URLs from the same loaded value. |

@@ -186,7 +186,10 @@ object FormControlRenderingSpec extends ZIOSpecDefault:
 
       assertTrue(compiled.left.exists {
         case RenderError.EvaluationFailed(error: IllegalArgumentException) =>
-          error.getMessage.endsWith("form control owns attributes: id")
+          error.getMessage.endsWith(
+            "form control owns attributes: id. Use the control's id for a label's forId, or " +
+              "build a custom control from its inputAttributes"
+          )
         case _ => false
       })
     },

@@ -203,17 +203,23 @@ private[scalive] object FormBinding:
   private[scalive] def checked[Msg](
     owner: String,
     mods: Vector[Mod[Msg]],
-    owned: Set[String]
+    owned: Set[String],
+    remedy: String = ""
   ): Vector[Mod[Msg]] =
     val overrides = Form.overriddenAttributes(mods, owned)
-    require(overrides.isEmpty, s"$owner owns attributes: ${overrides.distinct.mkString(", ")}")
+    require(
+      overrides.isEmpty,
+      s"$owner owns attributes: ${overrides.distinct.mkString(", ")}$remedy"
+    )
     mods
 
   private[scalive] def controlModifiers[Msg](mods: Seq[Mod.Input[Msg]]): Vector[Mod[Msg]] =
     checked(
       "form control",
       Mod.flatten(mods),
-      Set("id", "name", "value", "type", "checked", "phx-change", "phx-blur")
+      Set("id", "name", "value", "type", "checked", "phx-change", "phx-blur"),
+      ". Use the control's id for a label's forId, or build a custom control from its " +
+        "inputAttributes"
     )
 
 /** The handle that renders one field's controls and error feedback.

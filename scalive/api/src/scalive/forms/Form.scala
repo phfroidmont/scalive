@@ -588,7 +588,10 @@ final class FormRowView[Owner, Schema, Group, Row] private[scalive] (
     new BoundFormField(form.values.schemaIdentity, rows, key, definition, view.address, view.path)
 end FormRowView
 
-extension [Owner, Schema, Domain](form: Signal[Form[Owner, Schema, Domain]])
+// The receiver is the whole form type, so a form whose definition was built at runtime, such as one
+// per record, works too: its signal cannot name the schema. Only row views and row-bound fields
+// need the schema, and they ask for it as evidence.
+extension [Owner, Domain, F <: Form[Owner, ?, Domain]](form: Signal[F])
   /** Returns the control that renders a declared field from the current form value.
     *
     * The control uses the field's logical id and reports no blur feedback; use [[bind]] for
@@ -596,16 +599,6 @@ extension [Owner, Schema, Domain](form: Signal[Form[Owner, Schema, Domain]])
     */
   def field[Input, Value](
     definition: FormField[Owner, Input, Value]
-  ): FormControl[Owner, Input, Value, Nothing] =
-    FormControl.unbound(form.map(_.fieldView(definition)))
-
-  /** Returns the control that renders a declared field from the current form value.
-    *
-    * This form takes a row-bound field from [[FormRowView.bind]]. The bound row must exist whenever
-    * the control is evaluated.
-    */
-  def field[Group, Input, Value](
-    definition: BoundFormField[Owner, Schema, Group, Input, Value]
   ): FormControl[Owner, Input, Value, Nothing] =
     FormControl.unbound(form.map(_.fieldView(definition)))
 
@@ -665,8 +658,21 @@ extension [Owner, Schema, Domain](form: Signal[Form[Owner, Schema, Domain]])
       current.rows(rows).find(_.key == key).map(_.fieldView(definition))
     }
 
+  /** Returns the control that renders a declared field from the current form value.
+    *
+    * This form takes a row-bound field from [[FormRowView.bind]]. The bound row must exist whenever
+    * the control is evaluated.
+    */
+  def field[Schema, Group, Input, Value](
+    definition: BoundFormField[Owner, Schema, Group, Input, Value]
+  )(using schema: F <:< Form[Owner, Schema, Domain]
+  ): FormControl[Owner, Input, Value, Nothing] =
+    FormControl.unbound(form.map(current => schema(current).fieldView(definition)))
+
   /** Resolves stable repeated row views for each current form value. */
-  def rows[Group, Row](
+  def rows[Schema, Group, Row](
     definition: RepeatedRows[Owner, Group, Row]
-  ): Signal[Vector[FormRowView[Owner, Schema, Group, Row]]] = form.map(_.rows(definition))
+  )(using schema: F <:< Form[Owner, Schema, Domain]
+  ): Signal[Vector[FormRowView[Owner, Schema, Group, Row]]] =
+    form.map(current => schema(current).rows(definition))
 end extension

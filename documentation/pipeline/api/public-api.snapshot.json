@@ -13548,16 +13548,16 @@
       "kind" : "extension",
       "signatures" : [
         {
-          "id" : "extension:scalive.field:2bcf1f80b6234055",
-          "signature" : "extension def field[Owner, Schema, Domain](form: Signal[Form[Owner, Schema, Domain]])[Group, Input, Value](definition: BoundFormField[Owner, Schema, Group, Input, Value]): FormControl[Owner, Input, Value, Nothing]"
+          "id" : "extension:scalive.field:61f28d67841533fe",
+          "signature" : "extension def field[Owner, Domain, F <: Form[Owner, ?, Domain]](form: Signal[F])[Group, Row, Input, Value](rows: RepeatedRows[Owner, Group, Row], key: FormRowKey[Group], definition: FormField[Group, Input, Value]): FormControl[Owner, Input, Value, Nothing]"
         },
         {
-          "id" : "extension:scalive.field:961c627be9625b81",
-          "signature" : "extension def field[Owner, Schema, Domain](form: Signal[Form[Owner, Schema, Domain]])[Group, Row, Input, Value](rows: RepeatedRows[Owner, Group, Row], key: FormRowKey[Group], definition: FormField[Group, Input, Value]): FormControl[Owner, Input, Value, Nothing]"
+          "id" : "extension:scalive.field:e0a94f0341d155d1",
+          "signature" : "extension def field[Owner, Domain, F <: Form[Owner, ?, Domain]](form: Signal[F])[Input, Value](definition: FormField[Owner, Input, Value]): FormControl[Owner, Input, Value, Nothing]"
         },
         {
-          "id" : "extension:scalive.field:f90d357528bf8a7f",
-          "signature" : "extension def field[Owner, Schema, Domain](form: Signal[Form[Owner, Schema, Domain]])[Input, Value](definition: FormField[Owner, Input, Value]): FormControl[Owner, Input, Value, Nothing]"
+          "id" : "extension:scalive.field:f0cd02ec715c8164",
+          "signature" : "extension def field[Owner, Domain, F <: Form[Owner, ?, Domain]](form: Signal[F])[Schema, Group, Input, Value](definition: BoundFormField[Owner, Schema, Group, Input, Value])(using schema: <:<[F, Form[Owner, Schema, Domain]]): FormControl[Owner, Input, Value, Nothing]"
         }
       ]
     },
@@ -13584,8 +13584,8 @@
       "kind" : "extension",
       "signatures" : [
         {
-          "id" : "extension:scalive.presence:da96a016dd5cda6b",
-          "signature" : "extension def presence[Owner, Schema, Domain](form: Signal[Form[Owner, Schema, Domain]])[Group, Row, Msg](rows: RepeatedRows[Owner, Group, Row], key: FormRowKey[Group], mods: Mod.Input[Msg]*): HtmlElement[Msg]"
+          "id" : "extension:scalive.presence:f7b5dee92469a377",
+          "signature" : "extension def presence[Owner, Domain, F <: Form[Owner, ?, Domain]](form: Signal[F])[Group, Row, Msg](rows: RepeatedRows[Owner, Group, Row], key: FormRowKey[Group], mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         }
       ]
     },
@@ -13608,8 +13608,8 @@
       "kind" : "extension",
       "signatures" : [
         {
-          "id" : "extension:scalive.rows:d1ee7e2135e9d2b9",
-          "signature" : "extension def rows[Owner, Schema, Domain](form: Signal[Form[Owner, Schema, Domain]])[Group, Row](definition: RepeatedRows[Owner, Group, Row]): Signal[Vector[FormRowView[Owner, Schema, Group, Row]]]"
+          "id" : "extension:scalive.rows:ef0dbb00db2b95e0",
+          "signature" : "extension def rows[Owner, Domain, F <: Form[Owner, ?, Domain]](form: Signal[F])[Schema, Group, Row](definition: RepeatedRows[Owner, Group, Row])(using schema: <:<[F, Form[Owner, Schema, Domain]]): Signal[Vector[FormRowView[Owner, Schema, Group, Row]]]"
         }
       ]
     },

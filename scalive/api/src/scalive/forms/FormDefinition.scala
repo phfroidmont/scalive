@@ -294,7 +294,14 @@ final class FormDefinition[Owner, Domain] private[scalive] (
   ): FormDefinition[Owner, B] =
     new FormDefinition(root, owner, parts, values => construct(values).flatMap(f), limits)
 
-  /** Returns an equivalent definition with new projection limits and a fresh schema identity. */
+  /** Returns an equivalent definition with new projection limits and a fresh schema identity.
+    *
+    * Limits bound what an untrusted payload may contain, and a form's rows must fit them. Apply it
+    * once to the definition's `val` with a bound that has headroom over real data: a definition
+    * built per record gets its own types, so the model must keep it with its form. See [keep
+    * definitions
+    * static](https://scalive.dev/guides/typed-forms-and-validation#keep-definitions-static).
+    */
   def withLimits(value: FormLimits): FormDefinition[Owner, Domain] =
     new FormDefinition(root, owner, parts, construct, value)
 

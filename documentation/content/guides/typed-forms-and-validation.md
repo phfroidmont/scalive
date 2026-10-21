@@ -73,6 +73,33 @@ the initial editable values immediately, so state may contain required-field err
 Those errors are intentionally not visible yet: the form has not been submitted
 and no field is used.
 
+### Keep definitions static {#keep-definitions-static}
+
+Declare each definition once, as a `val`, as above. Its forms, events, and
+workflows are typed by that exact definition, which is what lets the model hold
+a `Definition.Form` and a message carry a `Definition.Event`.
+@:apiSymbol(def:scalive.FormDefinition.withLimits)`withLimits`@:@,
+`map`, and `emap` return a new definition with new types, so apply them to the
+`val` rather than building one per record.
+
+Limits bound what an untrusted payload may contain, and a form's rows must fit
+them: `initial` rejects more rows than `maxRowsPerGroup`. Choose a fixed bound
+with headroom over any real data, and check rules that depend on the data, such
+as how many rows one record may gain, in the handler or when saving.
+
+When a definition must be built from the data, for example to show a
+capacity error inline, its types belong to that one value. Keep it with its
+form in a small class:
+
+@:sourceRegion(documentation/fixtures/guides/src/forms/GuestListForm.scala, forms-per-record-definition)
+
+A signal of such a form cannot name its schema, but its `field` and `presence`
+controls do not need it. Read the row keys from the form value, and decode
+events in the handler, because a binding is built once, with the static
+definition:
+
+@:sourceRegion(documentation/fixtures/guides/src/forms/GuestListForm.scala, forms-per-record-render)
+
 ## Handle change and submit {#handle-change-and-submit-events}
 
 Bind both LiveView events through the form definition, and read fields from the

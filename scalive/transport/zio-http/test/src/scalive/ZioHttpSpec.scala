@@ -874,6 +874,131 @@ object ZioHttpSpec extends ZIOSpecDefault:
         !logs.exists(_.logLevel == LogLevel.Error)
       )
     },
+    test("an HTTP route is admitted by the session and route aspects, then answers its handler") {
+      val session = LiveSessionMountAspect.fromRequest[Any, String, String](
+        request =>
+          request.request.cookie("session") match
+            case Some(cookie) => ZIO.succeed(cookie.content -> cookie.content)
+            case None         => ZIO.fail(Response.seeOther(URL.decode("/login").toOption.get)),
+        (claim, _) => ZIO.succeed(claim)
+      )
+      val member = LiveRouteMountAspect.make[Any, (Int, Int), String, Int]((request, user) =>
+        if user == "ada" then ZIO.succeed(request.params._1)
+        else ZIO.fail(LiveRouteMountFailure.forbidden(s"$user is no member"))
+      )
+      val image = (scalive.live / "orgs" / PathCodec.int("org") / "images" / PathCodec.int("id"))
+        .queryOptional[String]("size")
+      object Page extends LiveErrorPage:
+        def view(status: Status, request: Request) = mainTag(s"Error ${status.code}")
+      val application = scalive.Live.router.withErrorPage(Page)(
+        scalive.Live
+          .session("organization")
+          .withMountAspect(session)(
+            image
+              .withMountAspect(member)
+              .http((params, context, request) =>
+                val (org, id, size) = params
+                val (user, member) = context
+                if id == 0 then ZIO.fail(LiveNotFound(s"image $id"))
+                else ZIO.succeed(Response.text(s"$user $member $org $id ${size.getOrElse("full")}"))
+              )
+          )
+      )
+      val routes = ZioHttp.routes(application, config)
+      def get(path: String, user: Option[String] = Some("ada")) =
+        val request = Request.get(URL.decode(path).toOption.get)
+        for
+          response <- run(routes, user.fold(request)(name => request.addCookie(Cookie.Request("session", name))))
+          body     <- response.body.asString.orDie
+        yield (response.status, body, response.header(Header.Location).map(_.renderedValue))
+
+      for
+        served    <- get("/orgs/3/images/7?size=small")
+        anonymous <- get("/orgs/3/images/7", user = None)
+        stranger  <- get("/orgs/3/images/7", user = Some("bob"))
+        missing   <- get("/orgs/3/images/0")
+        malformed <- get("/orgs/3/images/seven")
+      yield assertTrue(
+        served == (Status.Ok, "ada 3 3 7 small", None),
+        image.location((3, 7, Some("small"))).href == "/orgs/3/images/7?size=small",
+        anonymous._1 == Status.SeeOther,
+        anonymous._3.contains("/login"),
+        stranger._1 == Status.Forbidden,
+        stranger._2.contains("Error 403"),
+        missing._1 == Status.NotFound,
+        missing._2.contains("Error 404"),
+        malformed._1 == Status.NotFound
+      )
+    },
+    test("an HTTP route outside a session reads its params and request") {
+      val download = (scalive.live / "export").queryOptional[String]("format")
+      val routes = ZioHttp.routes(
+        scalive.Live.router(
+          download.http((format, request) =>
+            ZIO.succeed(Response.text(s"${format.getOrElse("csv")} ${request.url.path.encode}"))
+          )
+        ),
+        config
+      )
+
+      for
+        response <- run(routes, Request.get(URL.decode("/export?format=json").toOption.get))
+        body     <- response.body.asString.orDie
+      yield assertTrue(response.status == Status.Ok, body == "json /export")
+    },
+    test("live navigation does not mount a LiveView on a URL an HTTP route answers") {
+      object Item extends LiveView.Routed.Eventless[String, String]:
+        def mount(id: String, ctx: MountContext) = ZIO.succeed(id)
+        def view(model: Signal[String]) = div(model)
+      val application = scalive.Live.router(
+        (scalive.live / "items" / PathCodec.string("id")) -> Item,
+        (scalive.live / "items" / "report.txt").http((_, _) => ZIO.succeed(Response.text("report")))
+      )
+      val item = ZioHttp.validate(application).fold(throw _, identity).head
+
+      for
+        report <- run(
+                    ZioHttp.routes(application, config),
+                    Request.get(URL.decode("/items/report.txt").toOption.get)
+                  )
+        body <- report.body.asString.orDie
+      yield assertTrue(
+        body == "report",
+        item.isLiveDestination(URL.decode("/items/7").toOption.get),
+        !item.isLiveDestination(URL.decode("/items/report.txt").toOption.get)
+      )
+    },
+    test("an HTTP route and a LiveView on the same path fail assembly") {
+      object View extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        def view(model: Signal[Unit]) = div()
+      val application = scalive.Live.router(
+        (scalive.live / "same") -> View,
+        (scalive.live / "same").http((_, _) => ZIO.succeed(Response.ok))
+      )
+
+      for error <- ZioHttp.routes(application, config).flip
+      yield assertTrue(error.getMessage.startsWith("duplicate rendered route path"))
+    },
+    test("an HTTP route that reads session context compiles only inside a session that has it") {
+      val errors = scala.compiletime.testing.typeCheckErrors("""
+        import zio.*
+        import zio.http.Response
+        scalive.Live.router(
+          (scalive.live / "export").http((_: Unit, user: String, _: zio.http.Request) =>
+            ZIO.succeed(Response.text(user))
+          )
+        )
+      """)
+
+      assertTrue(
+        errors.map(_.message) ==
+          List(
+            "This route reads String from a named live session, so the router cannot mount it. " +
+              "Register it inside a Live.session whose mount aspects produce String."
+          )
+      )
+    },
     test("an error page that renders only some statuses leaves the others bare") {
       object Crash extends LiveView.Eventless[Unit]:
         def mount(ctx: MountContext) = ZIO.fail(Exception("database down"))

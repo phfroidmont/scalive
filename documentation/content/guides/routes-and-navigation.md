@@ -254,6 +254,41 @@ record deleted between the page request and the join, without a reload loop. A
 failure after a live patch crashes the LiveView, whose rejoin then fails the
 same way.
 
+## Serve HTTP responses from routes {#serve-http-responses-from-routes}
+
+Some URLs answer with something other than a page: a PDF download, an image, a
+CSV export. Declare them as routes like any other, and register an ordinary HTTP
+`GET` handler with
+@:apiSymbol(def:scalive.LiveRouteSetup.http)`http`@:@ instead of a LiveView:
+
+@:sourceRegion(documentation/fixtures/guides/src/routing/HttpRoutes.scala, routing-http-route)
+
+Register it where its LiveViews are. Inside a named live session, the session's
+mount aspects admit each request first, exactly as for a page request, and the
+handler reads the context they produce, so authentication is written once:
+
+@:sourceRegion(documentation/fixtures/guides/src/routing/HttpRoutes.scala, routing-http-route-registration)
+
+The handler receives the decoded parameters, the context, and the request, and
+its `Response` is sent as is: it sets its own headers, such as the content type
+and `Content-Disposition`. A route mount aspect added with `withMountAspect`
+runs before it too. A failed admission answers as for a page: the session
+aspect's response, such as a redirect to sign in, or the route aspect's `401`,
+`403`, or `404`. Parameters that do not decode answer `400`, `LiveNotFound`
+answers `404`, and any other failure answers `500`, each with the
+[error page](#answer-missing-pages-and-errors) when the router has one. An HTTP
+route and a LiveView cannot share a path.
+
+Because it is a route value, it builds its own links, with typed path and query
+parameters:
+
+@:sourceRegion(documentation/fixtures/guides/src/routing/HttpRoutes.scala, routing-http-route-link)
+
+Live navigation to an HTTP route, through `link.pushNavigate` for example, falls
+back to an ordinary page request, which is also what starts a download. HTTP
+routes answer only `GET`; a form that changes state posts to a ZIO HTTP route,
+as [Ordinary HTTP forms and redirects](http-forms-and-redirects.md) shows.
+
 ## Build locations from route declarations {#build-locations-from-route-declarations}
 
 Call @:apiSymbol(def:scalive.LiveRoute.location)`location(params)`@:@ to create a

@@ -4,11 +4,13 @@ import scala.annotation.implicitNotFound
 import scala.annotation.targetName
 
 import zio.IO
+import zio.RIO
 import zio.Tag
 import zio.Task
 import zio.URIO
 import zio.ZIO
 import zio.http.codec.{Combiner, PathCodec, QueryCodec}
+import zio.http.{Request, Response}
 import zio.schema.Schema
 
 /** A typed session pipeline whose individual claim types remain hidden until interpretation. */
@@ -129,6 +131,32 @@ object LiveRouteDefinition:
           .orElse(sessionRootLayout.map(_.forContext((_: (SessionCtx, Ctx))._1)))
       )
   end Route
+
+  /** A route that answers ordinary HTTP `GET` requests with `handler` instead of a LiveView. */
+  final case class Http[RC, RH, A, P, In, Ctx](
+    pathCodec: PathCodec[A],
+    paramsCodec: LiveParamsCodec[A, P],
+    context: LiveRouteContext[RC, A, In, Ctx],
+    handler: (P, Ctx, Request) => RIO[RH, Response])
+      extends LiveRouteDefinition[A]:
+    type Input = In
+
+    // Guards, connected resources and layouts concern LiveViews; an HTTP route keeps only the
+    // session's admission.
+    def withSession[R1, SessionCtx](
+      pipeline: LiveSessionMountPipeline[R1, Any, SessionCtx],
+      sessionGuards: LiveConnectedTurnGuard[SessionCtx],
+      sessionInitializers: LiveConnectedResourceInitializers[SessionCtx],
+      sessionLayouts: Vector[LiveLayout[Any, SessionCtx]],
+      sessionRootLayout: Option[LiveRootLayout[Any, SessionCtx]],
+      supplies: SessionCtx <:< In
+    ): LiveRouteDefinition[A] { type Input = Any } =
+      Http[R1 & RC, RH, A, P, Any, (SessionCtx, Ctx)](
+        pathCodec,
+        paramsCodec,
+        LiveRouteContext.SessionMounted(pipeline, context, supplies),
+        (params, contexts, request) => handler(params, contexts._2, request)
+      )
 end LiveRouteDefinition
 
 /** Evidence that a route whose parameters are `Params` can mount `View`.
@@ -344,6 +372,40 @@ sealed class LiveRouteSetup[A, P] private[scalive] (
   ): LiveRegistration[R] { type Input = Ctx } =
     register(LiveRouteContext.Required[A, Ctx](), context => factory(context).map(mount.erase))
 
+  /** Registers an ordinary HTTP `GET` handler for this route instead of a LiveView.
+    *
+    * Use it for responses that are not pages, such as a file download or an image, while keeping
+    * the route's typed parameters and [[LiveRoute.location]]. The handler receives the decoded
+    * parameters and the request, and its `Response` is sent as is. Parameters that do not decode
+    * answer `400`, [[LiveNotFound]] answers `404`, and any other failure answers `500`, with the
+    * router's [[LiveErrorPage]] when it has one. Inside a named live session, the session's mount
+    * aspects admit the request first, as for a page request. See the [routes
+    * guide](https://scalive.dev/guides/routes-and-navigation#serve-http-responses-from-routes).
+    */
+  def http[R](handler: (P, Request) => RIO[R, Response]): LiveRegistration[R] {
+    type Input = Any
+  } =
+    registerHttp(LiveRouteContext.Direct[A](), (params, _, request) => handler(params, request))
+
+  /** Registers an ordinary HTTP `GET` handler for this route instead of a LiveView.
+    *
+    * This form also reads the context of the enclosing named live session, as in
+    * `http((params, user: CurrentUser, request) => ...)`; it compiles only inside a session that
+    * produces `Ctx`.
+    */
+  def http[Ctx, R](handler: (P, Ctx, Request) => RIO[R, Response]): LiveRegistration[R] {
+    type Input = Ctx
+  } =
+    registerHttp(LiveRouteContext.Required[A, Ctx](), handler)
+
+  private def registerHttp[R, In, Ctx](
+    context: LiveRouteContext[Any, A, In, Ctx],
+    handler: (P, Ctx, Request) => RIO[R, Response]
+  ): LiveRegistration[R] { type Input = In } =
+    LiveRegistration(
+      LiveRouteDefinition.Http[Any, R, A, P, In, Ctx](pathCodec, paramsCodec, context, handler)
+    )
+
   private def register[R, In, Ctx](
     context: LiveRouteContext[Any, A, In, Ctx],
     factory: Ctx => URIO[R, LiveRouteView.Mounted[P]]
@@ -509,6 +571,23 @@ object LiveRouteSetup:
       mount: LiveRouteView[View, P]
     ): LiveRegistration[R & R1] { type Input = In } =
       register(context => factory(context).map(mount.erase))
+
+    /** Registers an ordinary HTTP `GET` handler that reads the aspects' context.
+      *
+      * The mount aspects admit each request first, as for a page request; see
+      * [[LiveRouteSetup.http]].
+      */
+    def http[R1](handler: (P, Ctx, Request) => RIO[R1, Response]): LiveRegistration[R & R1] {
+      type Input = In
+    } =
+      LiveRegistration(
+        LiveRouteDefinition.Http[R, R1, A, P, In, Ctx](
+          pathCodec,
+          paramsCodec,
+          LiveRouteContext.Mounted(pipeline),
+          handler
+        )
+      )
 
     private def register[R1](
       factory: Ctx => URIO[R1, LiveRouteView.Mounted[P]]

@@ -21,6 +21,10 @@ leaving LiveView, or applying Post/Redirect/Get. Post/Redirect/Get means the
 on a `GET` and reloading the result does not submit the form again. Keep purely
 interactive validation and in-page updates as Live events.
 
+A download or an image that only needs a `GET` does not need a form: register it
+as an [HTTP route](routes-and-navigation.md#serve-http-responses-from-routes),
+which reuses the session's admission and builds typed links.
+
 Define the target as a ZIO HTTP `RoutePattern`. This guide uses one login
 form, two Live pages, and two POST routes:
 

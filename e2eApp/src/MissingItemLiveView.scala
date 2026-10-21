@@ -6,8 +6,9 @@ import scalive.*
 
 /** Items that exist, are missing, or vanish between the page request and the join. */
 object MissingItems:
-  val list = live / "items"
-  val item = live / "items" / PathCodec.string("id")
+  val list   = live / "items"
+  val item   = live / "items" / PathCodec.string("id")
+  val report = live / "items" / "report.txt"
 
   object Page extends LiveErrorPage:
     // Upstream expects every response of a failed dead mount, assets included, to be a 500.
@@ -22,7 +23,8 @@ class MissingItemsLiveView extends LiveView.Eventless[Unit]:
   override def view(model: Signal[Unit]) =
     ul(
       li(link.pushNavigate(MissingItems.item.location("present"), "Present")),
-      li(link.pushNavigate(MissingItems.item.location("missing"), "Missing"))
+      li(link.pushNavigate(MissingItems.item.location("missing"), "Missing")),
+      li(link.pushNavigate(MissingItems.report.location, "Report"))
     )
 
 class MissingItemLiveView extends LiveView.Routed.Eventless[String, String]:

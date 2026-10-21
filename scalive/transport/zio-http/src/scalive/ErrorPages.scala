@@ -13,8 +13,8 @@ private[scalive] enum PageFailure:
   /** A response the application chose, such as a session aspect's redirect, sent unchanged. */
   case Given(response: Response)
 
-  /** The route's factory failed to build the LiveView. */
-  case FactoryFailed(cause: Cause[Throwable])
+  /** The route's LiveView factory or HTTP handler failed, as `message` logs it. */
+  case Failed(message: String, cause: Cause[Throwable])
 
 private[scalive] object PageFailure:
   def fromRouteMount(failure: LiveRouteMountFailure): PageFailure = failure match
@@ -32,10 +32,9 @@ final private[scalive] class ErrorPages(
   def rendersNotFound: Boolean = page.exists(_.renders(Status.NotFound))
 
   def respond(failure: PageFailure, request: Request): UIO[Response] = failure match
-    case PageFailure.Error(status)        => response(status, request)
-    case PageFailure.Given(response)      => ZIO.succeed(response)
-    case PageFailure.FactoryFailed(cause) =>
-      failed("Disconnected LiveView factory failed", cause, request)
+    case PageFailure.Error(status)          => response(status, request)
+    case PageFailure.Given(response)        => ZIO.succeed(response)
+    case PageFailure.Failed(message, cause) => failed(message, cause, request)
 
   def response(status: Status, request: Request): UIO[Response] = page match
     case Some(page) if page.renders(status) =>

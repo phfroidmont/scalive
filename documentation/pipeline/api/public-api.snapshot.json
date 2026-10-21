@@ -6806,6 +6806,18 @@
       ]
     },
     {
+      "id" : "def:scalive.LiveRouteSetup.WithContext.http",
+      "ownerId" : "class:scalive.LiveRouteSetup.WithContext",
+      "qualifiedName" : "scalive.LiveRouteSetup.WithContext.http",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveRouteSetup.WithContext.http:03a51730e96f113c",
+          "signature" : "def http: [R1](handler: (P, Ctx, zio.http.Request) => zio.package.RIO[R1, zio.http.Response])(LiveRegistration[&[R, R1]] { type Input = In })"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.LiveRouteSetup.WithContext.withConnectedResources",
       "ownerId" : "class:scalive.LiveRouteSetup.WithContext",
       "qualifiedName" : "scalive.LiveRouteSetup.WithContext.withConnectedResources",
@@ -6898,6 +6910,22 @@
         {
           "id" : "def:scalive.LiveRouteSetup.guardConnectedTurns:ff93c0ff04f01ca0",
           "signature" : "def guardConnectedTurns[Result <: Unit](guard: Any => zio.package.IO[LiveConnectedTurnFailure, Result]): LiveRouteSetup[A, P]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LiveRouteSetup.http",
+      "ownerId" : "class:scalive.LiveRouteSetup",
+      "qualifiedName" : "scalive.LiveRouteSetup.http",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveRouteSetup.http:7dcbbc12edb40879",
+          "signature" : "def http: [R](handler: (P, zio.http.Request) => zio.package.RIO[R, zio.http.Response])(LiveRegistration[R] { type Input = Any })"
+        },
+        {
+          "id" : "def:scalive.LiveRouteSetup.http:c97aee95c9e94b87",
+          "signature" : "def http: [Ctx, R](handler: (P, Ctx, zio.http.Request) => zio.package.RIO[R, zio.http.Response])(LiveRegistration[R] { type Input = Ctx })"
         }
       ]
     },

@@ -45,3 +45,12 @@ test("a URL no route matches answers the 404 page", async ({ page }) => {
   expect(response.status()).toBe(404)
   await expect(page.locator("#error-status")).toHaveText("Error 404")
 })
+
+test("live navigation to an HTTP route loads its response as a page", async ({ page }) => {
+  await page.goto("/items")
+  await expect(page.locator(".phx-connected")).toBeAttached({ timeout: 15_000 })
+
+  await page.getByRole("link", { name: "Report" }).click()
+  await expect(page).toHaveURL(/\/items\/report\.txt$/)
+  await expect(page.locator("body")).toHaveText("Item report")
+})

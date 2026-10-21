@@ -182,6 +182,7 @@ object ZioHttp:
     yield
       val errors      = ErrorPages(application.rootLayout, application.errorPage)
       val getRoutes   = catalog.map(_.getRoute(config, lifecycleObserver, browser, errors))
+      val httpRoutes  = httpDefinitions(application).map(httpRoute[R](_, errors))
       val socketRoute = websocketRoute(
         application.socketPath,
         catalog,
@@ -199,7 +200,8 @@ object ZioHttp:
             )
           )
         else Vector.empty
-      Routes.fromIterable(getRoutes ++ unmatchedRoutes :+ socketRoute) ++ browser.routes
+      Routes.fromIterable(getRoutes ++ httpRoutes ++ unmatchedRoutes :+ socketRoute) ++
+        browser.routes
 
   private[scalive] def validate[R](
     application: LiveApplication[R]
@@ -209,9 +211,10 @@ object ZioHttp:
       case (name, values) if values.size > 1 =>
         name
     }
-    val declarations = application.routes.flatMap {
-      case route: LiveRegistration[?] => Vector(None -> route)
-      case session: LiveSession[?]    => session.routes.map(Some(session.name) -> _)
+    val declarations = registrations(application).collect {
+      case (sessionName, route)
+          if !route.definition.isInstanceOf[LiveRouteDefinition.Http[?, ?, ?, ?, ?, ?]] =>
+        sessionName -> route
     }
     // A patch must resolve to the route already mounted, as live navigation would resolve it.
     lazy val catalog: Vector[CompiledRoute[R]] =
@@ -222,12 +225,15 @@ object ZioHttp:
           route.definition,
           application.layouts,
           application.rootLayout,
-          url => catalog.find(_.matches(url)).map(_.index)
+          httpDefinitions(application).map(_.pathCodec),
+          url => catalog.find(_.isLiveDestination(url)).map(_.index)
         )
       }
     // PathCodec does not expose structural equality. RoutePattern.toString is ZIO HTTP's stable
     // rendered pattern evidence and is also what its diagnostics use.
-    val duplicatePaths = catalog.groupBy(_.pathDescription).collect {
+    val httpPaths =
+      httpDefinitions(application).map(http => RoutePattern(Method.GET, http.pathCodec).toString)
+    val duplicatePaths = (catalog.map(_.pathDescription) ++ httpPaths).groupBy(identity).collect {
       case (description, values) if values.size > 1 => description
     }
     if duplicateSessions.nonEmpty then
@@ -244,6 +250,59 @@ object ZioHttp:
       )
     else Right(catalog)
   end validate
+
+  // Every registration with the name of the live session that declares it.
+  private def registrations[R](
+    application: LiveApplication[R]
+  ): Vector[(Option[String], LiveRegistration[R])] =
+    application.routes.flatMap {
+      case route: LiveRegistration[R] @unchecked => Vector(None -> route)
+      case session: LiveSession[R] @unchecked    => session.routes.map(Some(session.name) -> _)
+    }
+
+  private def httpDefinitions[R](
+    application: LiveApplication[R]
+  ): Vector[LiveRouteDefinition.Http[?, ?, ?, ?, ?, ?]] =
+    registrations(application)
+      .collect { case (_, route) =>
+        route.definition
+      }.collect { case http: LiveRouteDefinition.Http[?, ?, ?, ?, ?, ?] => http }
+
+  // An HTTP route is admitted like a page request, then answers its handler's response.
+  private def httpRoute[R](
+    definition: LiveRouteDefinition.Http[?, ?, ?, ?, ?, ?],
+    errors: ErrorPages
+  ): Route[R, Nothing] = definition match
+    case http: LiveRouteDefinition.Http[rc, rh, a, p, in, ctx] =>
+      typedHttpRoute(http, errors).asInstanceOf[Route[R, Nothing]]
+
+  private def typedHttpRoute[RC, RH, A, P, In, Ctx](
+    definition: LiveRouteDefinition.Http[RC, RH, A, P, In, Ctx],
+    errors: ErrorPages
+  ): Route[RC & RH, Nothing] =
+    val label = definition.pathCodec.render
+    RoutePattern(Method.GET, definition.pathCodec) -> handler { (path: A, request: Request) =>
+      ZIO.logAnnotate(RuntimeLog.Route, label) {
+        runDisconnectedContext(definition.context, path, request, ().asInstanceOf[In])
+          .flatMap { case (context, _) =>
+            definition.paramsCodec
+              .decode(path, request.url)
+              .tapError(error =>
+                ZIO.logAnnotate(RuntimeLog.Reason, error.getMessage)(
+                  ZIO.logDebug("Rejected HTTP route parameters")
+                )
+              )
+              .mapError(_ => PageFailure.Error(Status.BadRequest))
+              .flatMap(params =>
+                definition
+                  .handler(params, context, request)
+                  .sandbox
+                  .mapError(PageFailure.Failed("HTTP route handler failed", _))
+              )
+          }
+          .foldZIO(errors.respond(_, request), ZIO.succeed(_))
+      }
+    }
 
   // A route that matches one of Scalive's browser files would either hide it or never be reached.
   private def rejectBrowserFileRoutes[R](
@@ -323,6 +382,13 @@ object ZioHttp:
     def rootLayoutKey(path: PathParams, request: Request, context: Any): String
 
     final def matches(url: URL): Boolean = pathCodec.decode(url.path).isRight
+
+    // Whether an HTTP route of the application answers `url`, so live navigation to it falls back to
+    // a page request, whatever ZIO HTTP would pick between the two.
+    protected def servedOverHttp(url: URL): Boolean
+
+    /** Whether live navigation or a patch to `url` can mount this route. */
+    final def isLiveDestination(url: URL): Boolean = matches(url) && !servedOverHttp(url)
 
     final def getRoute(
       config: ZioHttpConfig,
@@ -675,6 +741,7 @@ object ZioHttp:
       definition: LiveRouteDefinition[A],
       applicationLayouts: Vector[LiveLayout[Any, Any]],
       applicationRootLayout: LiveRootLayout[Any, Any],
+      httpPaths: Vector[PathCodec[?]],
       resolveRoute: URL => Option[Int]
     ): CompiledRoute[R] = definition match
       case route: LiveRouteDefinition.Route[rc, rf, A, p, in, ctx] =>
@@ -684,8 +751,11 @@ object ZioHttp:
           route,
           applicationLayouts,
           applicationRootLayout,
+          httpPaths,
           resolveRoute
         ).asInstanceOf[CompiledRoute[R]]
+      case _: LiveRouteDefinition.Http[?, ?, ?, ?, ?, ?] =>
+        throw IllegalStateException("HTTP routes are served by httpRoute, not compiled as pages")
 
     private def compile[RC, RF, A, P, In, Ctx](
       routeIndex: Int,
@@ -693,11 +763,15 @@ object ZioHttp:
       definition: LiveRouteDefinition.Route[RC, RF, A, P, In, Ctx],
       applicationLayouts: Vector[LiveLayout[Any, Any]],
       applicationRoot: LiveRootLayout[Any, Any],
+      httpPaths: Vector[PathCodec[?]],
       resolveRoute: URL => Option[Int]
     ): CompiledRoute[RC & RF] = new CompiledRoute[RC & RF]:
       type PathParams = A
       type Msg        = Any
       type Model      = Any
+
+      protected def servedOverHttp(url: URL): Boolean =
+        httpPaths.exists(_.decode(url.path).isRight)
 
       private val codec = definition.pathCodec
 
@@ -760,7 +834,9 @@ object ZioHttp:
             )
             .mapError(_ => PageFailure.Error(Status.BadRequest))
             .flatMap(params =>
-              make(params, context, url).sandbox.mapError(PageFailure.FactoryFailed(_))
+              make(params, context, url).sandbox.mapError(
+                PageFailure.Failed("Disconnected LiveView factory failed", _)
+              )
             )
             .map { lifecycle =>
               val composed = composeLayouts(
@@ -4265,7 +4341,7 @@ private[scalive] object ZioHttpAdmission:
       cookie      <- ZIO.fromOption(csrfCookie).orElseFail("missing CSRF cookie")
       token       <- ZIO.fromOption(csrfToken).orElseFail("missing CSRF token")
       _           <- ZioHttpSecurity.verifyCsrf(config, token, cookie).mapError(_.toString)
-      route       <- ZIO.fromOption(routes.find(_.matches(url))).orElseFail("unknown route")
+      route <- ZIO.fromOption(routes.find(_.isLiveDestination(url))).orElseFail("unknown route")
       _ <- ZIO.fail("session identity differs").unless(session.sessionIdentity == route.sessionName)
       _ <- ZIO.fail("missing root layout identity").when(session.rootLayoutKey.isEmpty)
       // The client answers with a page request, which the current server renders.

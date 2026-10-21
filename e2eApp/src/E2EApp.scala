@@ -59,12 +59,16 @@ object E2EApp extends ZIOAppDefault:
       live / "form" / "stream"                                         -> FormStreamLiveView(),
       (live / "form" / "dynamic-inputs").params(FormQueryParams.codec) ->
         FormDynamicInputsLiveView(),
-      live / "form" / "feedback"                                -> FormFeedbackLiveView(),
-      live / "form" / "blur-feedback"                           -> BlurFeedbackLiveView(),
-      live / "form" / "typed-feedback"                          -> TypedFormFeedbackLiveView(),
-      live / "form-unsaved"                                     -> FormUnsavedLiveView(),
-      live / "form-unsaved" / "target"                          -> FormUnsavedTargetLiveView(),
-      live / "flash" / "repeat"                                 -> FlashRepeatLiveView(),
+      live / "form" / "feedback"       -> FormFeedbackLiveView(),
+      live / "form" / "blur-feedback"  -> BlurFeedbackLiveView(),
+      live / "form" / "typed-feedback" -> TypedFormFeedbackLiveView(),
+      live / "form-unsaved"            -> FormUnsavedLiveView(),
+      live / "form-unsaved" / "target" -> FormUnsavedTargetLiveView(),
+      live / "flash" / "repeat"        -> FlashRepeatLiveView(),
+      (live / "navigation-guard" / "leaving").query[NavigationGuardScopeLiveView.UrlParams] ->
+        NavigationGuardScopeLiveView(NavigationGuardScope.LeavingView, "/navigation-guard/leaving"),
+      (live / "navigation-guard" / "any").query[NavigationGuardScopeLiveView.UrlParams] ->
+        NavigationGuardScopeLiveView(NavigationGuardScope.AnyNavigation, "/navigation-guard/any"),
       E2ERoutes.portal                                          -> PortalLiveView(),
       (live / "errors").params(ErrorLiveView.QueryParams.codec) -> ErrorLiveView(),
       live / "issues" / "2965"                                  -> Issue2965LiveView(),

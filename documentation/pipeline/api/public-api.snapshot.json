@@ -9660,8 +9660,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.navigation.guardWhen:4f24e761a4d43d86",
-          "signature" : "def guardWhen(dirty: Signal[Boolean], message: String): Mod.Attr[Nothing]"
+          "id" : "def:scalive.navigation.guardWhen:091e2d3b1b76b2c8",
+          "signature" : "def guardWhen(dirty: Signal[Boolean], message: String, scope: NavigationGuardScope = ...): Mod.Attr[Nothing]"
         }
       ]
     },
@@ -12126,6 +12126,18 @@
         {
           "id" : "enum:scalive.Mod.Content:57f107fece7277d7",
           "signature" : "enum Content[+Msg] extends Mod[Msg]"
+        }
+      ]
+    },
+    {
+      "id" : "enum:scalive.NavigationGuardScope",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.NavigationGuardScope",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.NavigationGuardScope:033bd458fb42043d",
+          "signature" : "enum NavigationGuardScope"
         }
       ]
     },
@@ -24665,6 +24677,30 @@
         {
           "id" : "val:scalive.LiveUploadWriterError.reason:e19c9f8bccc2ebfe",
           "signature" : "val reason: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.NavigationGuardScope.AnyNavigation",
+      "ownerId" : "enum:scalive.NavigationGuardScope",
+      "qualifiedName" : "scalive.NavigationGuardScope.AnyNavigation",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.NavigationGuardScope.AnyNavigation:2fde67cf449efcae",
+          "signature" : "val AnyNavigation: NavigationGuardScope"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.NavigationGuardScope.LeavingView",
+      "ownerId" : "enum:scalive.NavigationGuardScope",
+      "qualifiedName" : "scalive.NavigationGuardScope.LeavingView",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.NavigationGuardScope.LeavingView:c696e73550c04ee9",
+          "signature" : "val LeavingView: NavigationGuardScope"
         }
       ]
     },

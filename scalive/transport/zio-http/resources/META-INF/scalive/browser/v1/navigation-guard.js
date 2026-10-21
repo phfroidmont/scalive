@@ -10,6 +10,8 @@
 
   var marker = "data-scalive-navigation-guard";
   var selector = "[data-scalive-navigation-guard]";
+  // A live patch keeps the LiveView, so only guards that opted in confirm it.
+  var patchSelector = "[data-scalive-navigation-guard][data-scalive-navigation-guard-patches]";
   var suppressionTimeout = 10000;
   var beforeUnloadInstalled = false;
   var suppressBeforeUnload = false;
@@ -76,7 +78,8 @@
 
   function beforeNavigate(event) {
     synchronize();
-    var guard = activeGuard();
+    var patch = !!(event.detail && event.detail.patch);
+    var guard = document.querySelector(patch ? patchSelector : selector);
     if (!guard) return;
 
     var message = guard.getAttribute(marker);

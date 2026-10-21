@@ -51,6 +51,13 @@ dirty. A blank message is rejected. If several guards are active, the first one
 in document order supplies the page-level message; prefer one combined guard
 when several editors belong to the same page.
 
+By default the guard covers navigation that leaves the LiveView, which loses its
+model and therefore the draft. A live patch keeps the LiveView mounted, so it
+passes, for example when switching tabs of the same record. If `handleParams`
+discards the draft, as when a patch opens another record in the same view, guard
+patches too with
+`navigation.guardWhen(dirty, message, NavigationGuardScope.AnyNavigation)`.
+
 ## Understand the coverage {#coverage}
 
 The runtime builds on Phoenix's cancelable `phx:before-navigate` event and the
@@ -59,8 +66,8 @@ browser's `beforeunload` event:
 | Trigger | Behavior |
 | --- | --- |
 | `link.pushNavigate` and `link.replaceNavigate` | Uses the configured confirmation message before browser-initiated live navigation. |
-| `link.pushPatch` and `link.replacePatch` | Uses the configured confirmation message before the live patch. |
-| Same-document LiveView Back and Forward | Uses the configured message; Phoenix restores the current history entry when rejected. |
+| `link.pushPatch` and `link.replacePatch` | Pass with the default scope. With `NavigationGuardScope.AnyNavigation`, use the configured confirmation message before the live patch. |
+| Same-document LiveView Back and Forward | Uses the configured message; Phoenix restores the current history entry when rejected. Traversal across a live patch follows the patch rule above. |
 | Cross-document Back and Forward, reload, ordinary navigation, and tab close | Requests the browser's generic unload confirmation. |
 | `ctx.nav`, redirects, and server-issued patches | Bypass the configured confirmation because the server lifecycle may already have committed or ended. A resulting document unload may still request the browser's generic confirmation. |
 | `JS.pushNavigate`, `JS.replaceNavigate`, `JS.pushPatch`, and `JS.replacePatch` | Bypass the configured confirmation. A resulting document unload may still request the browser's generic confirmation. |

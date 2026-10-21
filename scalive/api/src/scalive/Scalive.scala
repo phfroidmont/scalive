@@ -249,21 +249,35 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
     */
   object navigation:
     private lazy val guardMessage = dataAttr("scalive-navigation-guard")
+    private lazy val guardPatches = dataAttr("scalive-navigation-guard-patches")
 
     /** Guards browser-initiated navigation while `dirty` is true.
       *
       * Add the returned modifier to the element which owns the dirty state; pages served by
-      * `ZioHttp.routes` include the browser runtime. The runtime uses `message` for live links,
-      * live patch links, and LiveView history traversal. Browsers use their own generic message for
-      * cross-document history traversal, reload, and tab-close confirmation.
+      * `ZioHttp.routes` include the browser runtime. By default it guards navigation that leaves
+      * the LiveView, which loses its state: live links, LiveView history traversal, reload, and tab
+      * close. A live patch keeps the LiveView and its model, so it passes; guard it too with
+      * [[NavigationGuardScope.AnyNavigation]] when `handleParams` drops the unsaved state.
+      *
+      * The runtime uses `message` for live links, live patch links, and LiveView history traversal.
+      * Browsers use their own generic message for cross-document history traversal, reload, and
+      * tab-close confirmation.
       *
       * The guard reflects the latest value rendered by the server. Server-issued navigation and
       * navigation encoded in a [[JSCommands.JSCommand]] bypass the configured confirmation, but a
       * resulting document unload may still request the browser's generic confirmation.
       */
-    def guardWhen(dirty: Signal[Boolean], message: String): Mod.Attr[Nothing] =
+    def guardWhen(
+      dirty: Signal[Boolean],
+      message: String,
+      scope: NavigationGuardScope = NavigationGuardScope.LeavingView
+    ): Mod.Attr[Nothing] =
       require(!message.isBlank, "navigation guard message must not be blank")
-      guardMessage.optional(dirty.map(Option.when(_)(message)))
+      val guard = guardMessage.optional(dirty.map(Option.when(_)(message)))
+      scope match
+        case NavigationGuardScope.LeavingView   => guard
+        case NavigationGuardScope.AnyNavigation => Mod.Attr.Group(Vector(guard, guardPatches := ""))
+  end navigation
 
   /** Links that navigate or patch without reloading the page.
     *

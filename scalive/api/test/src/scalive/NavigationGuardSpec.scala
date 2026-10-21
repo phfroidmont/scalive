@@ -26,6 +26,26 @@ object NavigationGuardSpec extends ZIOSpecDefault:
           )
         case _ => assertTrue(false)
     },
+    test("guards patches only for the any-navigation scope") {
+      val dirty   = Signal.source[Boolean](new Object)
+      val leaving = navigation.guardWhen(dirty, "Unsaved", NavigationGuardScope.LeavingView)
+      val any     = navigation.guardWhen(dirty, "Unsaved", NavigationGuardScope.AnyNavigation)
+      val names   = (guard: Mod.Attr[Nothing]) =>
+        guard.flattened.map {
+          case Mod.Attr.SignalOptionalValue(name, _) => name
+          case Mod.Attr.Static(name, _)              => name
+          case other                                 => other.toString
+        }
+
+      assertTrue(
+        names(navigation.guardWhen(dirty, "Unsaved")) == names(leaving),
+        names(leaving) == Vector("data-scalive-navigation-guard"),
+        names(any) == Vector(
+          "data-scalive-navigation-guard",
+          "data-scalive-navigation-guard-patches"
+        )
+      )
+    },
     test("rejects blank messages") {
       val dirty = Signal.source[Boolean](new Object)
 

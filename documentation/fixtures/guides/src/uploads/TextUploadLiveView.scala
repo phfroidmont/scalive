@@ -72,7 +72,11 @@ final class TextUploadLiveView extends LiveView[Msg, Model]:
           }
         )
       },
-      button(typ := "submit", "Upload and save"),
+      // docs:start uploads-save-button
+      TextFiles.render(upload =>
+        button(typ := "submit", disabled := upload.map(_.entries.isEmpty), "Upload and save")
+      ),
+      // docs:end uploads-save-button
       button(typ := "button", on.click(Msg.Reset), "Reset")
     )
 

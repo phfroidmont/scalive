@@ -202,7 +202,9 @@ part after the case class field it fills, in order, as in
 `Root.product[Profile]((name = Name, email = Email))`. The compiler checks the
 names and the value types, so a missing, misnamed, or reordered field is
 rejected even when two fields have the same type. A form with one field passes a
-one-element named tuple, as in `Root.product[Note]((text = Text))`.
+one-element named tuple, as in `Root.product[Note]((text = Text))`. Use
+scalafmt 3.9.9 or later: with the `RedundantParens` rule, earlier versions
+remove the inner parentheses, and the call no longer compiles.
 
 Use `text` for a scalar that treats absence as its default and rejects
 duplicates, `optionalText` for `Option[String]`, and `texts` for repeated

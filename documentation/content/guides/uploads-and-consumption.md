@@ -86,6 +86,17 @@ Render upload-wide and entry-specific
 `errorMessages` does above. Display `entry.progress` as status only; 100 percent
 is not proof that valid content reached permanent storage.
 
+A control elsewhere in the view that depends on the upload, such as the submit
+button above, goes in another `render` call. Combine the upload signal with the
+model there when the control needs both:
+
+@:sourceRegion(documentation/fixtures/guides/src/uploads/TextUploadLiveView.scala, uploads-save-button)
+
+Don't copy the upload into the model to reach it: the runtime already keeps it
+current, and a handler reads it with
+@:apiSymbol(def:scalive.Uploads.get)`ctx.uploads.get`@:@. Like everything
+inside `render`, the button disappears while the upload is not allowed.
+
 This definition keeps the default `autoUpload = false`, so selecting a file only
 validates it. Submitting the form starts the transfer, and Phoenix sends the
 submit event after the transfer completes. Automatic transfer is covered after

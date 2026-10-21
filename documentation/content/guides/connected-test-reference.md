@@ -81,10 +81,10 @@ then call
 the production redirect-join admission path.
 
 Optional `connectParams` passed to `ConnectedRender.open` are untrusted client
-JSON, not authenticated session or request data. The harness owns `_mounts`,
-overwrites any supplied value, starts it at `0`, and advances it for each root
-reconnect or followed navigation. Applications should not treat Phoenix-owned
-keys as a stable contract.
+JSON, not authenticated session or request data. The harness owns `_mounts`
+and overwrites any supplied value. Like the Phoenix client, it starts at `0`,
+advances on each root reconnect, and restarts on a followed navigation, so
+`ConnectedMetadata.join` is `First`, then `Rejoin`, then `First` again.
 
 ## Wait for an HTML condition {#wait-for-an-html-condition}
 

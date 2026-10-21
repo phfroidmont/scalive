@@ -68,7 +68,8 @@ object ConnectedRender:
     * This form executes `request` against a whole application, validates its bootstrap credentials,
     * and starts its connected lifecycle through the production Phoenix transport session. Fails
     * when the disconnected render or the join fails. Connect parameters are untrusted client JSON;
-    * the harness replaces `_mounts` with its own progressing join counter.
+    * the harness replaces `_mounts` with its own join counter, which advances on reconnect and
+    * restarts on live navigation, as in the Phoenix client.
     */
   def join[R](
     application: LiveApplication[R],
@@ -82,7 +83,8 @@ object ConnectedRender:
 
   /** Executes the disconnected route and returns a stateful client that can join and reconnect with
     * the page's retained bootstrap credentials. Connect parameters are untrusted client JSON; the
-    * harness replaces `_mounts` with its own progressing join counter.
+    * harness replaces `_mounts` with its own join counter, which advances on reconnect and restarts
+    * on live navigation, as in the Phoenix client.
     */
   def open[R](
     application: LiveApplication[R],
@@ -995,6 +997,8 @@ final private class ConnectedSession(
     flash: Option[String]
   ): IO[ConnectedJoinFailure, ConnectedView[Nothing]] =
     for
+      // Like the Phoenix client, a navigated view starts its own join count.
+      _      <- mounts.set(0L)
       params <- nextConnectParams
       joined <- join(
                   bootstrap.topic,

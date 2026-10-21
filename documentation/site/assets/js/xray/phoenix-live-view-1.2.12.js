@@ -1,6 +1,6 @@
 import { Serializer, Socket } from "phoenix"
 
-export const traceSessionParameter = "_scalive_trace_session"
+export const traceSessionParameter = "scaliveTraceSession"
 export const expectedLiveViewVersion = "1.2.12"
 
 const redacted = "[redacted]"

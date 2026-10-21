@@ -74,6 +74,18 @@
       ]
     },
     {
+      "id" : "class:scalive.ConnectParam",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.ConnectParam",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.ConnectParam:2da99839bc46776b",
+          "signature" : "class ConnectParam[A]"
+        }
+      ]
+    },
+    {
       "id" : "class:scalive.ConnectedLifecycleContext",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.ConnectedLifecycleContext",
@@ -2394,14 +2406,38 @@
       ]
     },
     {
-      "id" : "def:scalive.ConnectedMetadata.connectParams",
-      "ownerId" : "trait:scalive.ConnectedMetadata",
-      "qualifiedName" : "scalive.ConnectedMetadata.connectParams",
+      "id" : "def:scalive.ConnectParam.apply",
+      "ownerId" : "object:scalive.ConnectParam",
+      "qualifiedName" : "scalive.ConnectParam.apply",
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.ConnectedMetadata.connectParams:7d08fcbb3a1eef7a",
-          "signature" : "def connectParams: Map[String, zio.json.ast.Json]"
+          "id" : "def:scalive.ConnectParam.apply:e474eaaa827fc92c",
+          "signature" : "def apply[A](name: String)(using decoder: zio.json.JsonDecoder[A]): ConnectParam[A]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.ConnectedMetadata.connectParam",
+      "ownerId" : "trait:scalive.ConnectedMetadata",
+      "qualifiedName" : "scalive.ConnectedMetadata.connectParam",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.ConnectedMetadata.connectParam:1ac69084c5065a1b",
+          "signature" : "def connectParam[A](param: ConnectParam[A]): Option[A]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.ConnectedMetadata.join",
+      "ownerId" : "trait:scalive.ConnectedMetadata",
+      "qualifiedName" : "scalive.ConnectedMetadata.join",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.ConnectedMetadata.join:d03ddf1ac94f80cf",
+          "signature" : "def join: ConnectedJoin"
         }
       ]
     },
@@ -10450,6 +10486,18 @@
       ]
     },
     {
+      "id" : "enum:scalive.ConnectedJoin",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.ConnectedJoin",
+      "kind" : "enum",
+      "signatures" : [
+        {
+          "id" : "enum:scalive.ConnectedJoin:31f5dbffc424b591",
+          "signature" : "enum ConnectedJoin"
+        }
+      ]
+    },
+    {
       "id" : "enum:scalive.Connection",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.Connection",
@@ -16918,6 +16966,18 @@
       ]
     },
     {
+      "id" : "object:scalive.ConnectParam",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.ConnectParam",
+      "kind" : "object",
+      "signatures" : [
+        {
+          "id" : "object:scalive.ConnectParam:dbe2d524d7a4004a",
+          "signature" : "object ConnectParam"
+        }
+      ]
+    },
+    {
       "id" : "object:scalive.ContextAppend",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.ContextAppend",
@@ -19865,6 +19925,42 @@
         {
           "id" : "val:scalive.CompletedUpload.result:33e0a70a5d83890f",
           "signature" : "val result: Result"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.ConnectParam.name",
+      "ownerId" : "class:scalive.ConnectParam",
+      "qualifiedName" : "scalive.ConnectParam.name",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.ConnectParam.name:81da2bb6fc574443",
+          "signature" : "val name: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.ConnectedJoin.First",
+      "ownerId" : "enum:scalive.ConnectedJoin",
+      "qualifiedName" : "scalive.ConnectedJoin.First",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.ConnectedJoin.First:79b8330dc2edb057",
+          "signature" : "val First: ConnectedJoin"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.ConnectedJoin.Rejoin",
+      "ownerId" : "enum:scalive.ConnectedJoin",
+      "qualifiedName" : "scalive.ConnectedJoin.Rejoin",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.ConnectedJoin.Rejoin:2c18c380448f1757",
+          "signature" : "val Rejoin: ConnectedJoin"
         }
       ]
     },

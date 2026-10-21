@@ -1242,40 +1242,37 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
       yield result
       end for
     },
-    test("reconnect and navigation progress harness-owned mount parameters") {
-      def connectedParams(ctx: scalive.MountContext[?, ?]): Task[(Long, String)] =
+    test("reports the first join, a rejoin after reconnect, and typed connect params") {
+      val custom = ConnectParam[String]("custom")
+      val broken = ConnectParam[Int]("custom")
+      def connectedParams(ctx: scalive.MountContext[?, ?]): Task[(String, String)] =
         ctx.connection match
-        case Connection.Disconnected => ZIO.succeed(-1L -> "disconnected")
+        case Connection.Disconnected         => ZIO.succeed("disconnected" -> "disconnected")
         case Connection.Connected(connected) =>
-          ZIO.attempt {
-            val mounts = connected.connectParams.get("_mounts") match
-              case Some(Json.Num(value)) => value.longValueExact()
-              case value                 => throw Exception(s"Invalid _mounts value: $value")
-            val custom = connected.connectParams.get("custom").flatMap(_.asString).getOrElse {
-              throw Exception("Missing custom connect parameter")
-            }
-            mounts -> custom
-          }
+          ZIO.succeed(
+            connected.join.toString ->
+              s"${connected.connectParam(custom)} ${connected.connectParam(broken)}"
+          )
 
-      def content(model: Signal[(Long, String)]) =
+      def content(model: Signal[(String, String)]) =
         div(
-          span(dataAttr("mounts") := "", model.map(_._1.toString)),
+          span(dataAttr("mounts") := "", model.map(_._1)),
           span(dataAttr("custom") := "", model.map(_._2))
         )
 
-      val source = new LiveView[RoutedNavigationMsg, (Long, String)]:
+      val source = new LiveView[RoutedNavigationMsg, (String, String)]:
         def mount(ctx: MountContext) = connectedParams(ctx)
-        def handleMessage(model: (Long, String), ctx: MessageContext) =
+        def handleMessage(model: (String, String), ctx: MessageContext) =
           case RoutedNavigationMsg.Navigate => ctx.nav.pushNavigateUnsafe("/next").as(model)
-        override def view(model: Signal[(Long, String)]) =
+        override def view(model: Signal[(String, String)]) =
           div(
             content(model),
             button(dataAttr("navigate") := "", on.click(RoutedNavigationMsg.Navigate), "Next")
           )
 
-      val destination = new LiveView.Eventless[(Long, String)]:
+      val destination = new LiveView.Eventless[(String, String)]:
         def mount(ctx: MountContext) = connectedParams(ctx)
-        override def view(model: Signal[(Long, String)]) = content(model)
+        override def view(model: Signal[(String, String)]) = content(model)
 
       val application = scalive.Live.router(
         scalive.live -> source,
@@ -1305,11 +1302,11 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
           thirdMount  <- third.text("[data-mounts]")
           customParam <- third.text("[data-custom]")
         yield assertTrue(
-          firstMount == "0",
-          secondMount == "1",
+          firstMount == "First",
+          secondMount == "Rejoin",
           !firstJoined,
-          thirdMount == "2",
-          customParam == "retained"
+          thirdMount == "First",
+          customParam == "Some(retained) None"
         )
       }
     },

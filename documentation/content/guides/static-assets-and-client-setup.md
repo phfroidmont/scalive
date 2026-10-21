@@ -297,23 +297,29 @@ window.liveSocketOptions = {
 A [custom bundle](#build-the-client-bundle) adds the same key next to
 `_csrf_token` in the `params` it passes to `LiveSocket`.
 
-Read them in mount. Match the connection phase, then decode and validate the
-expected shape:
+Read them in mount through a typed
+@:apiSymbol(class:scalive.ConnectParam)`ConnectParam`@:@ key, declared once like an
+`AsyncKey`:
 
 @:sourceRegion(documentation/fixtures/guides/src/assets/LocaleLiveView.scala, assets-connect-params)
 
 Connected capabilities implement
-@:apiSymbol(trait:scalive.ConnectedMetadata)`ConnectedMetadata`@:@ and expose
-@:apiSymbol(def:scalive.ConnectedMetadata.connectParams)`connectParams`@:@ as
-`Map[String, zio.json.ast.Json]`. No connected metadata exists during
-disconnected HTTP rendering, so the example falls back to `None`. During the
-connected lifecycle, the map contains all browser join parameters as untrusted
-JSON. Decode only application-owned keys and use the signed session or
-server-side state for identity, authorization, and other security decisions.
-Typed server-derived connect info such as peer, headers, or user agent remains
-partial. Do not set or depend on Phoenix's internal keys such as `_mounts` and
-`_track_static`; their exact values and reconnect behavior are protocol
-metadata, not an application recovery contract.
+@:apiSymbol(trait:scalive.ConnectedMetadata)`ConnectedMetadata`@:@, whose
+@:apiSymbol(def:scalive.ConnectedMetadata.connectParam)`connectParam`@:@ decodes the
+value with the key's zio-json decoder. It returns `None` when the browser did not
+send the key or the value does not decode, so a browser time zone, for example,
+is `ConnectParam[java.time.ZoneId]("timeZone")`. No connected metadata exists
+during disconnected HTTP rendering, so the example falls back to `None`. Values
+are untrusted: use the signed session or server-side state for identity,
+authorization, and other security decisions. Names starting with `_` are
+reserved for Phoenix's own keys and rejected. Typed server-derived connect info
+such as peer, headers, or user agent remains partial.
+
+@:apiSymbol(def:scalive.ConnectedMetadata.join)`join`@:@ tells a page view's first join,
+`ConnectedJoin.First`, from a rejoin after the connection dropped or the
+LiveView crashed, `ConnectedJoin.Rejoin`. Live navigation to a view is a first
+join. Use it to record a visit once or to skip an entrance animation; the
+browser reports it, so never use it for security.
 
 Connected capabilities also expose
 @:apiSymbol(def:scalive.ConnectedMetadata.staticChanged)`staticChanged`@:@, the

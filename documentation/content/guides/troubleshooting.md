@@ -174,10 +174,10 @@ promises.
 `ConnectedMetadata.staticChanged` reports whether the running server's root
 layout tracks an asset URL the browser has not loaded, usually after a
 deployment.
-`ConnectedMetadata.connectParams` exposes all browser join parameters as
-untrusted JSON, while typed server-derived connect info remains partial. Decode
-application-owned parameters when needed, but never base recovery on
-Phoenix-owned protocol keys.
+`ConnectedMetadata.connectParam` decodes one application-owned browser join
+parameter as untrusted input, while typed server-derived connect info remains
+partial. `ConnectedMetadata.join` tells a first join from a rejoin after a
+reconnect; it is reported by the browser, so never base security on it.
 
 ## Use lifecycle metrics to narrow the failure {#use-lifecycle-metrics}
 

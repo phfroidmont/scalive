@@ -48,13 +48,26 @@ trait ConnectedMetadata:
     */
   def staticChanged: Boolean
 
-  /** The parameters the browser sent when it joined, as untrusted JSON.
+  /** The value the browser sent for `param` when it joined.
     *
-    * They include the `params` given to the browser's `LiveSocket` and Phoenix's own keys such as
-    * `_mounts`. Decode only keys the application owns, and never base identity or authorization on
-    * them.
+    * `None` when the browser did not send it or it does not decode as `A`. The value is untrusted.
     */
-  def connectParams: Map[String, Json]
+  final def connectParam[A](param: ConnectParam[A]): Option[A] =
+    connectParams.get(param.name).flatMap(param.decode)
+
+  /** Whether this is the page view's first join or a rejoin after a reconnect or a crash.
+    *
+    * The browser reports it, so use it for visit counts or to skip a welcome animation, never for
+    * security. Each nested LiveView reports its own.
+    */
+  final def join: ConnectedJoin =
+    connectParams.get("_mounts") match
+      case Some(Json.Num(mounts)) if mounts.signum > 0 => ConnectedJoin.Rejoin
+      case _                                           => ConnectedJoin.First
+
+  /** Every parameter the browser sent, including Phoenix's own keys such as `_mounts`. */
+  private[scalive] def connectParams: Map[String, Json]
+end ConnectedMetadata
 
 /** Capabilities that a [[LiveView]] can use only when it mounts in a connected lifecycle.
   *

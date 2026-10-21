@@ -426,12 +426,12 @@ object NavigationGuardLiveView:
   final case class Model(note: String, step: Option[String], connected: Boolean)
 
 object SocketOptionsLiveView extends LiveView.Eventless[Option[String]]:
+  private val Locale = ConnectParam[String]("locale")
+
   def mount(ctx: MountContext) =
     val locale = ctx.connection match
       case Connection.Connected(capabilities) =>
-        capabilities.connectParams.get("locale").collect { case zio.json.ast.Json.Str(value) =>
-          value
-        }
+        capabilities.connectParam(Locale)
       case Connection.Disconnected => None
     ZIO.succeed(locale)
 

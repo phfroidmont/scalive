@@ -1,7 +1,6 @@
 package scalive.docs.trace
 
 import zio.*
-import zio.json.ast.Json
 
 import scalive.*
 import scalive.docs.examples.RegisteredExample
@@ -22,8 +21,8 @@ final private[docs] class LiveTraceViewer(
   def mount(ctx: MountContext): Task[Model] =
     ctx.connection match
       case Connection.Connected(capabilities) =>
-        capabilities.connectParams.get(TraceSessionParameter) match
-          case Some(Json.Str(session)) if ValidSession.matches(session) =>
+        capabilities.connectParam(TraceSession) match
+          case Some(session) if ValidSession.matches(session) =>
             for
               owner = s"$viewerTopic:${java.util.UUID.randomUUID()}"
               _ <- capabilities.resources.acquireRelease(
@@ -485,10 +484,10 @@ final private[docs] class LiveTraceViewer(
 end LiveTraceViewer
 
 private[docs] object LiveTraceViewer:
-  private val TraceSessionParameter = "_scalive_trace_session"
-  private val ValidSession          = "[A-Za-z0-9_-]{16,64}".r
-  val HookName                      = "LiveTraceViewer"
-  val BrowserRecordsEvent           = BrowserToServerEvent[BrowserTraceBatch](
+  private val TraceSession = ConnectParam[String]("scaliveTraceSession")
+  private val ValidSession = "[A-Za-z0-9_-]{16,64}".r
+  val HookName             = "LiveTraceViewer"
+  val BrowserRecordsEvent  = BrowserToServerEvent[BrowserTraceBatch](
     "docs:live-trace-browser-records"
   )
 

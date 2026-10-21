@@ -112,5 +112,5 @@ final private[docs] class DocumentationRuntimeObserverFactory(store: Documentati
       )
 
 private[docs] object DocumentationRuntimeObserverFactory:
-  val TraceSessionParameter = "_scalive_trace_session"
+  val TraceSessionParameter = "scaliveTraceSession"
   val ValidSession          = "[A-Za-z0-9_-]{16,64}".r

@@ -2,7 +2,6 @@ import java.util.concurrent.atomic.AtomicInteger
 
 import zio.*
 import zio.http.URL
-import zio.json.ast.Json
 
 import scalive.*
 import scalive.Signal.*
@@ -155,24 +154,17 @@ object ErrorLiveView:
   ): Option[ChildBehavior] =
     params.connectedChildMountRaise match
       case Some("link") =>
-        val failOnce = if connectedRootMountCount(ctx) == 0 then 1 else 0
+        val failOnce = if isFirstJoin(ctx) then 1 else 0
         Some(ChildBehavior(AtomicInteger(failOnce), linkParentOnCrash = true))
       case Some(value) =>
         Some(ChildBehavior(AtomicInteger(value.toIntOption.getOrElse(0))))
       case None if params.child => Some(ChildBehavior())
       case None                 => None
 
-  private def connectedRootMountCount(ctx: scalive.ParamsContext[Msg, Model]): Int =
-    val connectParams = ctx.connection match
-      case Connection.Disconnected            => Map.empty
-      case Connection.Connected(capabilities) => capabilities.connectParams
-    connectParams
-      .get("_mounts")
-      .flatMap {
-        case Json.Num(value) => Some(value.intValue)
-        case Json.Str(value) => value.toIntOption
-        case _               => None
-      }.getOrElse(0)
+  private def isFirstJoin(ctx: scalive.ParamsContext[Msg, Model]): Boolean =
+    ctx.connection match
+      case Connection.Disconnected            => true
+      case Connection.Connected(capabilities) => capabilities.join == ConnectedJoin.First
 
   private def now: String =
     java.time.Instant.now().toString + ":" + java.lang.System.nanoTime().toString

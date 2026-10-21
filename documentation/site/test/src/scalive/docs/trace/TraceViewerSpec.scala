@@ -51,7 +51,7 @@ object TraceViewerSpec extends ZIOSpecDefault:
                          application,
                          transportConfig,
                          Request.get(URL.root),
-                         Map("_scalive_trace_session" -> Json.Str(session))
+                         Map("scaliveTraceSession" -> Json.Str(session))
                        )
           _         <- connected.leave
           _         <- TestClock.adjust(5.seconds)

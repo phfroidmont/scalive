@@ -5334,6 +5334,34 @@
       ]
     },
     {
+      "id" : "def:scalive.HtmlAttrBinding.field",
+      "ownerId" : "class:scalive.HtmlAttrBinding",
+      "qualifiedName" : "scalive.HtmlAttrBinding.field",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.HtmlAttrBinding.field:0a481dd965b8a5ca",
+          "signature" : "def field[A](name: String)(using schema: zio.schema.Schema[A])[Msg](f: A => Msg): Mod.Attr[Msg]"
+        },
+        {
+          "id" : "def:scalive.HtmlAttrBinding.field:1c5b6738bcc43f08",
+          "signature" : "def field[A](name: String, default: A)(using schema: zio.schema.Schema[A])[Msg](f: A => Msg): Mod.Attr[Msg]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.HtmlAttrBinding.fields",
+      "ownerId" : "class:scalive.HtmlAttrBinding",
+      "qualifiedName" : "scalive.HtmlAttrBinding.fields",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.HtmlAttrBinding.fields:0728b8e299634fd4",
+          "signature" : "def fields[A](using schema: zio.schema.Schema[A])[Msg](f: A => Msg): Mod.Attr[Msg]"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.HtmlAttrBinding.form",
       "ownerId" : "class:scalive.HtmlAttrBinding",
       "qualifiedName" : "scalive.HtmlAttrBinding.form",

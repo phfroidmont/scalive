@@ -47,6 +47,49 @@ private[scalive] object SchemaQuery:
           s"A query needs a case class; use a named query parameter for $schema"
         )
 
+  /** Reads the fields of a form event into the case class `A`, as a query reads its parameters.
+    *
+    * A binding must produce a message, so every field needs a fallback and decoding never fails.
+    * Throws `IllegalArgumentException`, naming the field, when one has none.
+    */
+  def formFields[A](schema: Schema[A]): FormData => A =
+    node(schema) match
+      case record: Node.Record =>
+        record.fields.foreach(requireFallback(_, prefix = ""))
+        formDecoder(Param("", record, fallback = None))
+      case _ =>
+        throw IllegalArgumentException(
+          s"Form fields need a case class; use a single field for $schema"
+        )
+
+  /** Reads the form field `name`, taking `default` or the empty value of an option or a collection
+    * when it is missing or malformed.
+    */
+  def formField[A](name: String, schema: Schema[A], default: Option[A]): FormData => A =
+    val param = Param(name, node(schema), default)
+    requireFallback(param, prefix = "")
+    formDecoder(param)
+
+  private def formDecoder[A](param: Param): FormData => A = data =>
+    val params = data.raw.foldLeft(QueryParams.empty) { case (params, (name, value)) =>
+      params.addQueryParam(name, value)
+    }
+    param.decode(params) match
+      case Decoded.Value(value, _) => value.asInstanceOf[A]
+      case other => throw IllegalStateException(s"A form field with a fallback failed: $other")
+
+  // A nested case class needs no fallback of its own when each of its fields has one.
+  private def requireFallback(param: Param, prefix: String): Unit =
+    val name = qualified(prefix, param.name)
+    if param.fallback.isEmpty && param.node.empty.isEmpty then
+      param.node match
+        case Node.Record(_, fields) => fields.foreach(requireFallback(_, name))
+        case _                      =>
+          throw IllegalArgumentException(
+            s"Form field $name needs a fallback, since a form event may leave it out: give it a " +
+              "default value, or make it an Option or a collection"
+          )
+
   /** One parameter called `name`. It fails when missing or malformed unless it is optional. */
   def param[A](name: String, schema: Schema[A]): SchemaQuery[A] =
     SchemaQuery(Param(name, node(schema), fallback = None))

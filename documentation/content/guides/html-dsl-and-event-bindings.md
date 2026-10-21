@@ -303,6 +303,29 @@ flags these: the disconnected render logs a warning naming the element, and
 `ConnectedRender` fails the test whose render contains one; see
 [an input that sends nothing](troubleshooting.md#diagnose-an-input-that-sends-nothing).
 
+### Read small forms {#read-small-forms}
+
+A filter form or a single select needs no validation, so a
+[typed form definition](typed-forms-and-validation.md) is more than it needs.
+Decode its fields into a case class with
+@:apiSymbol(def:scalive.HtmlAttrBinding.fields)`fields`@:@, or one field with
+@:apiSymbol(def:scalive.HtmlAttrBinding.field)`field`@:@:
+
+@:sourceRegion(documentation/fixtures/guides/src/bindings/InvoiceFilters.scala, bindings-small-form)
+
+The fields decode as a
+[typed query](routes-and-navigation.md#keep-page-state-in-the-query) does, so
+the same case class can be the route's query and `pushPatch` the filters. Each
+control is named after its field. An enum is its case name, a list or a set
+comes from repeated names, as a checkbox set sends them, and a nested case
+class reads `field.inner`. Fields the case class does not name are ignored.
+
+A missing or malformed value takes the field's fallback, so every field needs
+one: a default value, an `Option`, a collection, or a nested case class whose
+fields all have one. The binding checks this when it is built and throws an
+`IllegalArgumentException` naming the field. `field(name, default)` takes a
+default; `field[A](name)` reads an `Option` or a collection.
+
 ### Handle events from elements that just left the page {#handle-events-from-removed-elements}
 
 The browser sends an event from the page it shows, which can be one update

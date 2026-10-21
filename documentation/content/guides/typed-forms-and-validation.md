@@ -25,6 +25,10 @@ after it build on the same form:
 - [Saving forms](saving-forms.md#prerequisites): dirty state and saving in the
   background.
 
+A filter form or a single select that needs no validation can skip the
+definition: [read small forms](html-dsl-and-event-bindings.md#read-small-forms)
+decodes their fields into a case class.
+
 ## Define a rooted form {#define-a-rooted-form}
 
 Start with a @:apiSymbol(class:scalive.FormRoot)`FormRoot`@:@, define fields relative

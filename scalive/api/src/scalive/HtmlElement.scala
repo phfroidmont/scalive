@@ -3,6 +3,7 @@ package scalive
 import scala.annotation.targetName
 
 import zio.Duration
+import zio.schema.Schema
 
 import scalive.JSCommands.JSCommand
 import scalive.codecs.BooleanAsAttrPresenceEncoder
@@ -303,6 +304,41 @@ class HtmlAttrBinding private[scalive] (
     */
   def apply[Msg](f: Map[String, String] => Msg): Mod.Attr[Msg] =
     configured(Mod.Attr.Binding(name, payload => f(payload.params)))
+
+  /** Builds the message from the form fields the event carries, decoded into the case class `A`.
+    *
+    * Use it for a small form that needs no validation, such as filters, as in
+    * `on.change.fields[InvoiceFilters](Msg.FiltersChanged(_))`. Fields decode as a typed query
+    * does: a control named after each field, an enum by case name, a list or a set from repeated
+    * names such as a checkbox set, and a nested case class under `field.inner`. A missing or
+    * malformed value takes the field's fallback, so every field needs one: a default value, an
+    * `Option`, a collection, or a nested case class whose fields have one. A field without one
+    * throws `IllegalArgumentException` when the binding is built. Other fields are ignored. For
+    * validation and error display, use a [[FormDefinition]]. See [small
+    * forms](https://scalive.dev/guides/html-dsl-and-event-bindings#read-small-forms).
+    */
+  def fields[A](using schema: Schema[A])[Msg](f: A => Msg): Mod.Attr[Msg] =
+    val decode = SchemaQuery.formFields(schema)
+    form(data => f(decode(data)))
+
+  /** Builds the message from one form field the event carries, decoded into `A`.
+    *
+    * This form takes `default` when the field is missing or malformed, as in
+    * `on.change.field("days", 7)(Msg.DaysChanged(_))` for a select.
+    */
+  def field[A](name: String, default: A)(using schema: Schema[A])[Msg](f: A => Msg): Mod.Attr[Msg] =
+    val decode = SchemaQuery.formField(name, schema, Some(default))
+    form(data => f(decode(data)))
+
+  /** Builds the message from one form field the event carries, decoded into `A`.
+    *
+    * This form reads an `Option` or a collection, which is empty when the field is missing, as in
+    * `on.change.field[Set[TagId]]("tags")(Msg.TagsChanged(_))` for a checkbox set. Any other type
+    * throws `IllegalArgumentException`; give it a default instead.
+    */
+  def field[A](name: String)(using schema: Schema[A])[Msg](f: A => Msg): Mod.Attr[Msg] =
+    val decode = SchemaQuery.formField(name, schema, None)
+    form(data => f(decode(data)))
 
   /** Builds the message from the form fields the event carries.
     *

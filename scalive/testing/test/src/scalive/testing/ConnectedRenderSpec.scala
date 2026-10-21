@@ -9,6 +9,7 @@ import zio.http.{Request, URL}
 import zio.http.codec.PathCodec
 import zio.json.JsonCodec
 import zio.json.ast.Json
+import zio.schema.{Schema, derived}
 import zio.test.*
 
 import scalive.*
@@ -228,6 +229,36 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
           connected <- ConnectedRender.join(view)
           error     <- connected.changeForm("#q", Vector("q" -> "police")).flip
         yield assertTrue(error.getMessage.contains("has no form"))
+      }
+    },
+    test("schema field bindings deliver a filter form and one control typed") {
+      final case class Filters(status: Option[String], days: Int = 7, tags: Set[String])
+          derives Schema
+      val view = new LiveView[Filters | Int, (Filters, Int)]:
+        def mount(ctx: MountContext) = ZIO.succeed(Filters(None, 7, Set.empty) -> 0)
+        def handleMessage(model: (Filters, Int), ctx: MessageContext) =
+          case filters: Filters => ZIO.succeed(filters -> model._2)
+          case page: Int        => ZIO.succeed(model._1 -> page)
+        override def view(model: Signal[(Filters, Int)]) =
+          div(
+            form(
+              idAttr := "filters",
+              on.change.fields[Filters](identity),
+              input(nameAttr := "status"),
+              input(typ := "checkbox", nameAttr := "tags", value := "a"),
+              input(typ := "checkbox", nameAttr := "tags", value := "b")
+            ),
+            form(idAttr := "pages", on.change.field("page", 1)(identity), input(nameAttr := "page")),
+            p(idAttr := "model", model.map(_.toString))
+          )
+
+      ZIO.scoped {
+        for
+          connected <- ConnectedRender.join(view)
+          _         <- connected.changeForm("#filters", Vector("status" -> "open", "tags" -> "a", "tags" -> "b"))
+          _         <- connected.changeForm("#pages", Vector("page" -> "3"))
+          rendered  <- connected.text("#model")
+        yield assertTrue(rendered == "(Filters(Some(open),7,Set(a, b)),3)")
       }
     },
     test("a message handler redirects to an external URL") {

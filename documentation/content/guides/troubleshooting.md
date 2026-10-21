@@ -143,6 +143,22 @@ failure at this point can appear as a stale join rather than an HTTP form error.
 Ordinary checked POST forms use the same protection and receive a hidden
 `_csrf_token`; do not remove that generated field.
 
+## Diagnose an input that sends nothing {#diagnose-an-input-that-sends-nothing}
+
+When typing in a control with `on.change` reaches no handler, the control
+probably has no form. The Phoenix client sends a change binding only from a
+form or from a control that belongs to one; for any other control it throws
+"form events require the input to be inside a form" in the browser console on
+every keystroke, and a `phx-change` on an element that is neither, such as a
+wrapping `div`, is never read.
+
+Scalive reports both. The disconnected render logs a warning, "A change binding
+the browser never sends", with the route and the element. In tests,
+`ConnectedRender` fails the join or the action whose render contains one. Put
+the control in a `form`, give it a `form` attribute naming one, or use a
+[key binding](html-dsl-and-event-bindings.md#limit-event-rates) for a
+standalone input.
+
 ## Diagnose reconnects and crashes {#diagnose-reconnects-and-crashes}
 
 On transport interruption, expect the Phoenix client to attempt reconnection and

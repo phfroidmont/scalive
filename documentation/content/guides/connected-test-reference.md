@@ -62,6 +62,13 @@ field. A submit marks every field of the form as used and appends the
 submitter's name and value. The raw `changeForm(selector, fields)` and
 `submitForm(selector, fields)` send exactly the given fields.
 
+Like the browser, the harness refuses change bindings that the Phoenix client
+never sends. The join, every action that renders, and `awaitDiff` fail when the
+view renders a `phx-change` on an element other than a form or a control, or on
+a control with neither an ancestor form nor a `form` attribute. A raw
+`changeForm` on a control whose `form` attribute names no form fails too. See
+[an input that sends nothing](troubleshooting.md#diagnose-an-input-that-sends-nothing).
+
 Actions return a @:apiSymbol(enum:scalive.testing.ConnectedAction)`ConnectedAction`@:@:
 
 | Case | Meaning |

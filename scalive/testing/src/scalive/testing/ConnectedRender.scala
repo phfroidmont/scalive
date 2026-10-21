@@ -180,7 +180,8 @@ enum ConnectedJoinFailure:
     */
   case Reload(status: Status)
 
-  /** The in-process transport failed outside a protocol-visible join outcome.
+  /** The join failed outside a protocol-visible outcome: the in-process transport failed, or the
+    * joined view renders a change binding the browser never sends.
     *
     * @param error
     *   The underlying failure.
@@ -285,6 +286,10 @@ end ConnectedClient
   *
   * Actions resolve bindings from the latest committed HTML and wait for the correlated lifecycle
   * reply. Runtime connection objects and protocol frames remain private implementation details.
+  *
+  * The join and every rendered action fail when the view renders a `phx-change` the browser never
+  * sends: on an element other than a form or a control, or on a control without a form. See [form
+  * changes](https://scalive.dev/guides/html-dsl-and-event-bindings#bind-form-changes).
   */
 final class ConnectedView[-Msg] private[testing] (
   session: ConnectedSession,
@@ -487,10 +492,10 @@ final class ConnectedView[-Msg] private[testing] (
   def send(message: Msg): Task[ConnectedAction] = session.send(state, message)
 
   /** Waits for the next uncorrelated async, subscription, or component output. */
-  def awaitDiff: Task[Unit] = state.awaitDiff
+  def awaitDiff: Task[Unit] = state.awaitDiff *> session.requireLiveChangeBindings(state)
 
   /** Waits for the next uncorrelated navigation or physical disconnect. */
-  def awaitAction: Task[ConnectedAction] = state.awaitAction
+  def awaitAction: Task[ConnectedAction] = state.awaitAction.tap(session.rendered(state))
 
   /** Joins a nested LiveView registered in this view's latest committed HTML. */
   def joinNested(instanceId: String): RIO[Scope, ConnectedView[Nothing]] =
@@ -560,8 +565,9 @@ final class ConnectedView[-Msg] private[testing] (
       event   <- ZIO.attempt {
                  val element = ConnectedDom.selectOne(current, selector)
                  val binding = ConnectedDom.requiredBinding(element, attribute)
-                 val cid     = ConnectedDom.eventTarget(element)
-                 val meta    = target.map(value => Json.Obj("_target" -> Json.Str(value)))
+                 if attribute == "phx-change" then ConnectedDom.requireChangeSource(element)
+                 val cid  = ConnectedDom.eventTarget(element)
+                 val meta = target.map(value => Json.Obj("_target" -> Json.Str(value)))
                  RootEvent(
                    eventType = "form",
                    event = binding,
@@ -631,6 +637,45 @@ private object ConnectedDom:
       .parseBodyFragment(html)
       .select("button").asScala.toVector.filter(_.text() == label)
     exactlyOne(buttons, s"button labelled '$label'")
+
+  /** Fails when `html` renders a `phx-change` the browser never sends.
+    *
+    * This is the rule of the server's disconnected-render warning, applied to every connected
+    * render so that content that appears after the join, such as a dialog, is checked too. Like the
+    * server, it does not resolve a `form` attribute's id, whose form may be outside the view.
+    */
+  def requireLiveChangeBindings(html: String): Unit =
+    val dead = Jsoup
+      .parseBodyFragment(html)
+      .select("[phx-change]").asScala.toVector
+      .filterNot(element =>
+        element.tagName == "form" ||
+          isControl(element) && (element.hasAttr("form") || element.parents().is("form"))
+      )
+    if dead.nonEmpty then
+      throw IllegalStateException(
+        s"The view renders a change binding the browser never sends: " +
+          s"${dead.map(describe).mkString(", ")}. phx-change belongs on a form, or on a control " +
+          "inside a form or with a form attribute. See " +
+          "https://scalive.dev/guides/html-dsl-and-event-bindings#bind-form-changes"
+      )
+
+  /** Fails when the browser could not send a change from `element`, a control with no form. */
+  def requireChangeSource(element: Element): Unit =
+    if isControl(element) && FormOwner.owner(element).isEmpty then
+      throw IllegalStateException(
+        s"The browser cannot send a change from ${describe(element)}: it has no form."
+      )
+
+  // A custom element may be form-associated, and then has a form owner like a control.
+  private def isControl(element: Element): Boolean =
+    Set("input", "select", "textarea")(element.tagName) || element.tagName.contains('-')
+
+  private def describe(element: Element): String =
+    val attributes = Vector("id", "name", "class").collect {
+      case name if element.hasAttr(name) => s" $name=\"${element.attr(name)}\""
+    }
+    s"<${element.tagName}${attributes.mkString}>"
 
   def requiredBinding(element: Element, attribute: String): String =
     Option
@@ -835,15 +880,18 @@ final private class ConnectedSession(
         "uploads" -> event.uploads.fold[Json](Json.Obj.empty)(identity),
         "meta"    -> event.meta.fold[Json](Json.Obj.empty)(identity)
       )
-    ).flatMap(action).catchSome { case _: ZioHttp.InProcessTransportClosed =>
-      ZIO.succeed(ConnectedAction.Disconnected)
-    }
+    ).flatMap(action)
+      .tap(rendered(state))
+      .catchSome { case _: ZioHttp.InProcessTransportClosed =>
+        ZIO.succeed(ConnectedAction.Disconnected)
+      }
 
   def send(state: ConnectedViewState, message: Any): Task[ConnectedAction] =
     (for
       ref      <- freshReference
       response <- awaitReply(ref)(transport.sendMessage(state.topic, state.joinRef, ref, message))
       result   <- action(response)
+      _        <- rendered(state)(result)
     yield result).catchSome { case _: ZioHttp.InProcessTransportClosed =>
       ZIO.succeed(ConnectedAction.Disconnected)
     }
@@ -995,11 +1043,21 @@ final private class ConnectedSession(
                ).onError(_ => states.update(_ - state.key) *> state.close)
       _ <- joinResponse(reply).onError(_ => states.update(_ - state.key) *> state.close)
       _ <- state.markJoined
+      _ <- requireLiveChangeBindings(state)
     yield new ConnectedView(this, state)).mapError {
       case failure: ConnectedJoinFailureException => failure.failure
       case _: ZioHttp.InProcessTransportClosed    => ConnectedJoinFailure.Disconnected
       case error                                  => ConnectedJoinFailure.Transport(error)
     }
+
+  private[testing] def requireLiveChangeBindings(state: ConnectedViewState): Task[Unit] =
+    state.html.flatMap(html => ZIO.attempt(ConnectedDom.requireLiveChangeBindings(html)))
+
+  // Only a rendered action leaves the view joined with new HTML to check.
+  private[testing] def rendered(state: ConnectedViewState)(action: ConnectedAction): Task[Unit] =
+    action match
+      case ConnectedAction.Rendered => requireLiveChangeBindings(state)
+      case _                        => ZIO.unit
 
   private def followRoot(
     destination: String,

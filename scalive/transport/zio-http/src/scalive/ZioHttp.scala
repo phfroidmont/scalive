@@ -1314,7 +1314,7 @@ object ZioHttp:
   ): Task[RenderedElement] =
     DisconnectedComponentRenderer.renderTurnWith(view, value, turn, nestedResolver) {
       (tree, finalFlash) =>
-        ZIO
+        warnDeadChangeBindings(tree) *> ZIO
           .fromEither(
             PhoenixRenderedEncoder
               .fullHtml(tree, Some(csrfToken)).left.map(error => Exception(error.toString))
@@ -1325,6 +1325,18 @@ object ZioHttp:
             )
           }
     }
+
+  // The disconnected render is the one place the server sees the composed page, layouts and
+  // components included, so it can tell whether a control has a form.
+  private def warnDeadChangeBindings(tree: EvaluatedTree): UIO[Unit] =
+    ZIO.foreachDiscard(DeadChangeBindings.find(tree))(element =>
+      ZIO.logAnnotate("element", element)(
+        ZIO.logWarning(
+          "A change binding the browser never sends: phx-change belongs on a form, or on a " +
+            "control inside a form or with a form attribute"
+        )
+      )
+    )
 
   private def disconnectedNestedResolver(
     config: ZioHttpConfig,

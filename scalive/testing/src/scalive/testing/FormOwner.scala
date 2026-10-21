@@ -18,7 +18,8 @@ private[testing] object FormOwner:
       .select("button[name], input[name], select[name], textarea[name]").asScala.toVector
       .filter(control => owner(control).exists(_ eq form))
 
-  private def owner(control: Element): Option[Element] =
+  /** The form that owns `control`, if any. */
+  def owner(control: Element): Option[Element] =
     if control.hasAttr("form") then
       val id = control.attr("form")
       Option

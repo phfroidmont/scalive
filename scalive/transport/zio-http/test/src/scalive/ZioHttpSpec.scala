@@ -507,6 +507,39 @@ object ZioHttpSpec extends ZIOSpecDefault:
         body.contains("component model")
       )
     },
+    test("the disconnected render warns about change bindings the browser never sends") {
+      val field = new LiveComponent[String, String, String]:
+        def mount(props: String, ctx: MountContext) = ZIO.succeed(props)
+        def handleMessage(props: String, model: String, ctx: MessageContext): String => Task[String] =
+          _ => ZIO.succeed(model)
+        def view(props: Signal[String], model: Signal[String]) =
+          input(nameAttr := model, on.change(JS.push("validate")))
+      val owned = component(field, "owned-field")
+      object View extends LiveView[String, Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        def handleMessage(model: Unit, ctx: MessageContext) = _ => ZIO.unit
+        def view(model: Signal[Unit]) =
+          div(
+            form(owned.render("title")),
+            input(idAttr := "search", nameAttr := "q", on.change(JS.push("search")))
+          )
+
+      for
+        response <- run(
+                      ZioHttp.routes(scalive.Live.router((scalive.live / "books") -> View), config),
+                      Request.get(URL.decode("/books").toOption.get)
+                    )
+        body <- response.body.asString.orDie
+        logs <- ZTestLogger.logOutput
+        warnings = logs.filter(_.logLevel == LogLevel.Warning)
+      yield assertTrue(
+        response.status == Status.Ok,
+        body.contains("name=\"q\""),
+        warnings.map(_.annotations.get("element")) == Vector(Some("<input id=\"search\" name=\"q\">")),
+        warnings.forall(_.annotations.get("route").contains("/books")),
+        warnings.forall(_.message().contains("change binding the browser never sends"))
+      )
+    },
     test("connected CID ingress releases the projection gate before exact component inspection") {
       ZIO.scoped {
         val componentEvent = BrowserToServerEvent[String]("component:event")

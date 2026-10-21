@@ -297,6 +297,12 @@ overrides the form's change binding, sends only that control, and still
 requires the control to belong to a form. A standalone input, like the search
 field above, uses a key binding instead.
 
+The client throws, only in the browser console, when a control with a change
+binding has no form, and never reads `phx-change` on other elements. Scalive
+flags these: the disconnected render logs a warning naming the element, and
+`ConnectedRender` fails the test whose render contains one; see
+[an input that sends nothing](troubleshooting.md#diagnose-an-input-that-sends-nothing).
+
 ### Handle events from elements that just left the page {#handle-events-from-removed-elements}
 
 The browser sends an event from the page it shows, which can be one update

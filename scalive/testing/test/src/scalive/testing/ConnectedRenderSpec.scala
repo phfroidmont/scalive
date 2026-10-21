@@ -189,6 +189,47 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
         yield assertTrue(initial == "0", clicked == "1", sent == "2", joined, !left)
       }
     },
+    test("a render with a change binding the browser never sends fails the join or the action") {
+      def view(standaloneAtJoin: Boolean) = new LiveView[Msg, Boolean]:
+        def mount(ctx: MountContext) = ZIO.succeed(standaloneAtJoin)
+        def handleMessage(model: Boolean, ctx: MessageContext) =
+          case Msg.Increment => ZIO.succeed(true)
+        override def view(model: Signal[Boolean]) =
+          div(
+            button(idAttr := "open", on.click(Msg.Increment), "Open"),
+            form(input(nameAttr := "owned", on.change(_ => Msg.Increment))),
+            model.when(input(idAttr := "search", nameAttr := "q", on.change(_ => Msg.Increment)))
+          )
+
+      ZIO.scoped {
+        for
+          joined <- ConnectedRender.join(view(standaloneAtJoin = true)).flip
+          later  <- ConnectedRender.join(view(standaloneAtJoin = false))
+          opened <- later.click("#open").flip
+        yield assertTrue(
+          joined.getMessage.contains("never sends: <input id=\"search\" name=\"q\">"),
+          opened.getMessage.contains("never sends: <input id=\"search\" name=\"q\">"),
+          opened.getMessage.contains("guides/html-dsl-and-event-bindings#bind-form-changes")
+        )
+      }
+    },
+    test("changing a control without a form owner fails, as the browser cannot send it") {
+      val view = new LiveView[Msg, Int]:
+        def mount(ctx: MountContext) = ZIO.succeed(0)
+        def handleMessage(model: Int, ctx: MessageContext) =
+          case Msg.Increment => ZIO.succeed(model + 1)
+        override def view(model: Signal[Int]) =
+          div(
+            input(idAttr := "q", nameAttr := "q", formId := "missing", on.change(_ => Msg.Increment))
+          )
+
+      ZIO.scoped {
+        for
+          connected <- ConnectedRender.join(view)
+          error     <- connected.changeForm("#q", Vector("q" -> "police")).flip
+        yield assertTrue(error.getMessage.contains("has no form"))
+      }
+    },
     test("a message handler redirects to an external URL") {
       val checkout = ExternalUrl.parse("https://checkout.example.com/pay?session=a1").toOption.get
       val view     = new LiveView[Msg, Int]:

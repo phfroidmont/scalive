@@ -199,8 +199,9 @@ Route aspects fail with
 standard outcomes preserve HTTP semantics while producing a controlled connected
 rejection:
 
-- `redirect` uses a typed location in both phases; `redirectUnsafe` accepts an
-  unchecked URL and is only for trusted destinations;
+- `redirect` uses a typed location or an `ExternalUrl` in both phases;
+  `redirectUnsafe` accepts an unchecked URL and is only for trusted
+  destinations;
 - `unauthorized`, `forbidden`, and `notFound` render HTTP 401, 403, and 404
   respectively, with the router's
   [error page](routes-and-navigation.md#answer-missing-pages-and-errors) when it

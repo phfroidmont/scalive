@@ -134,6 +134,18 @@
       ]
     },
     {
+      "id" : "class:scalive.ExternalUrl",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.ExternalUrl",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.ExternalUrl:7265978400bd82dd",
+          "signature" : "class ExternalUrl"
+        }
+      ]
+    },
+    {
       "id" : "class:scalive.FieldIssue",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.FieldIssue",
@@ -2630,6 +2642,42 @@
         {
           "id" : "def:scalive.ExternalUploadClientConfig.validated:4af3f534b139c4b7",
           "signature" : "def validated(json: zio.json.ast.Json.Obj): Either[IllegalArgumentException, ExternalUploadClientConfig]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.ExternalUrl.from",
+      "ownerId" : "object:scalive.ExternalUrl",
+      "qualifiedName" : "scalive.ExternalUrl.from",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.ExternalUrl.from:89a302228515c914",
+          "signature" : "def from(url: zio.http.URL): Either[IllegalArgumentException, ExternalUrl]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.ExternalUrl.href",
+      "ownerId" : "class:scalive.ExternalUrl",
+      "qualifiedName" : "scalive.ExternalUrl.href",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.ExternalUrl.href:908450d2fc363f71",
+          "signature" : "def href: String"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.ExternalUrl.parse",
+      "ownerId" : "object:scalive.ExternalUrl",
+      "qualifiedName" : "scalive.ExternalUrl.parse",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.ExternalUrl.parse:4028a18ee3db9716",
+          "signature" : "def parse(text: String): Either[IllegalArgumentException, ExternalUrl]"
         }
       ]
     },
@@ -6004,6 +6052,10 @@
       "kind" : "def",
       "signatures" : [
         {
+          "id" : "def:scalive.LiveConnectedTurnFailure.redirect:5ec34a7ab6381433",
+          "signature" : "def redirect(to: ExternalUrl): LiveConnectedTurnFailure"
+        },
+        {
           "id" : "def:scalive.LiveConnectedTurnFailure.redirect:81315352606c5b85",
           "signature" : "def redirect(to: LiveLocation): LiveConnectedTurnFailure"
         }
@@ -6710,6 +6762,10 @@
         {
           "id" : "def:scalive.LiveRouteMountFailure.redirect:702567b8c5e5276e",
           "signature" : "def redirect(to: LiveLocation): LiveRouteMountFailure"
+        },
+        {
+          "id" : "def:scalive.LiveRouteMountFailure.redirect:ad3a1d7abff0c09d",
+          "signature" : "def redirect(to: ExternalUrl): LiveRouteMountFailure"
         }
       ]
     },
@@ -7210,6 +7266,10 @@
         {
           "id" : "def:scalive.LiveSessionMountFailure.redirect:151316bf74937e6e",
           "signature" : "def redirect(to: LiveLocation): LiveSessionMountFailure"
+        },
+        {
+          "id" : "def:scalive.LiveSessionMountFailure.redirect:70ff8c78e8d64720",
+          "signature" : "def redirect(to: ExternalUrl): LiveSessionMountFailure"
         }
       ]
     },
@@ -8226,6 +8286,10 @@
         {
           "id" : "def:scalive.MountNavigation.redirect:699a470d19dfdeca",
           "signature" : "def redirect(to: LiveLocation): zio.package.Task[Unit]"
+        },
+        {
+          "id" : "def:scalive.MountNavigation.redirect:a594e83104917724",
+          "signature" : "def redirect(to: ExternalUrl): zio.package.Task[Unit]"
         }
       ]
     },
@@ -17138,6 +17202,18 @@
       ]
     },
     {
+      "id" : "object:scalive.ExternalUrl",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.ExternalUrl",
+      "kind" : "object",
+      "signatures" : [
+        {
+          "id" : "object:scalive.ExternalUrl:b32210bfaf422488",
+          "signature" : "object ExternalUrl"
+        }
+      ]
+    },
+    {
       "id" : "object:scalive.FieldInput",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.FieldInput",
@@ -20301,6 +20377,18 @@
         {
           "id" : "val:scalive.ExternalUploadClientConfig.json:0ebd87758bd5e200",
           "signature" : "val json: zio.json.ast.Json.Obj"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.ExternalUrl.url",
+      "ownerId" : "class:scalive.ExternalUrl",
+      "qualifiedName" : "scalive.ExternalUrl.url",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.ExternalUrl.url:4bddc0dd41c6be59",
+          "signature" : "val url: zio.http.URL"
         }
       ]
     },

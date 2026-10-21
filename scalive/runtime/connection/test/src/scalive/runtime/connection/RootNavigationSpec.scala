@@ -95,6 +95,17 @@ object RootNavigationSpec extends ZIOSpecDefault:
         })
       )
     },
+    test("redirect to an external URL records a full redirect there") {
+      val checkout = ExternalUrl.parse("https://checkout.example.com/pay?session=a1").toOption.get
+
+      attempt(checkout.href)(_.redirect(checkout)).map { case (result, recorded) =>
+        assertTrue(
+          result.isRight,
+          recorded.map(_.kind).contains(scalive.runtime.kernel.NavigationKind.Redirect),
+          recorded.map(_.destination.encode).contains("https://checkout.example.com/pay?session=a1")
+        )
+      }
+    },
     test("redirect rejects an implicit unsafe scheme") {
       attempt("javascript:alert('hi')")(_.redirectUnsafe("javascript:alert('hi')")).map {
         case (result, recorded) => assertTrue(result.isLeft, recorded.isEmpty)

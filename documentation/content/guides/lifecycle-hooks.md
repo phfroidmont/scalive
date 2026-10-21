@@ -189,7 +189,8 @@ services through its context. `ZIO.unit` means **Continue** and `ZIO.fail(...)`
 selects one of these controlled outcomes:
 
 - `LiveConnectedTurnFailure.halt`;
-- `redirect(location)` for a typed `LiveLocation`;
+- `redirect(location)` for a typed `LiveLocation`, or `redirect(url)` for an
+  `ExternalUrl` outside the application;
 - `redirectUnsafe(url)` for an explicitly unsafe `URL`;
 - `reload` or `reload(reason)`; and
 - `disconnect` or `disconnect(reason)`.

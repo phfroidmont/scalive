@@ -52,8 +52,17 @@ object LiveConnectedTurnFailure:
   /** Skips the turn without changing or rendering the model. */
   def halt: LiveConnectedTurnFailure = Halt
 
-  /** Redirects to a typed Live route. */
+  /** Redirects the browser to `to` with a full page request.
+    *
+    * This form targets a typed Live route.
+    */
   def redirect(to: LiveLocation): LiveConnectedTurnFailure = Redirect(to)
+
+  /** Redirects the browser to `to` with a full page request.
+    *
+    * This form leaves the application, for example for an identity provider.
+    */
+  def redirect(to: ExternalUrl): LiveConnectedTurnFailure = RedirectUnsafe(to.url)
 
   /** Redirects to an unchecked URL without validating its origin or locality. */
   def redirectUnsafe(to: URL): LiveConnectedTurnFailure = RedirectUnsafe(to)

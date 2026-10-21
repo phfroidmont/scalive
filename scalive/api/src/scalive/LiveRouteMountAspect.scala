@@ -84,8 +84,17 @@ end LiveRouteMountFailure
 
 /** Constructors for route mount failures. */
 object LiveRouteMountFailure:
-  /** Redirects to a typed location: 303 See Other when disconnected, a redirect when connected. */
+  /** Redirects to `to`: 303 See Other when disconnected, a redirect when connected.
+    *
+    * This form targets a typed location.
+    */
   def redirect(to: LiveLocation): LiveRouteMountFailure = Redirect(to)
+
+  /** Redirects to `to`: 303 See Other when disconnected, a redirect when connected.
+    *
+    * This form leaves the application, for example for an identity provider.
+    */
+  def redirect(to: ExternalUrl): LiveRouteMountFailure = RedirectUnsafe(to.url)
 
   /** Redirects to an unchecked URL without same-origin or local-path validation.
     *

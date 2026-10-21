@@ -189,6 +189,21 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
         yield assertTrue(initial == "0", clicked == "1", sent == "2", joined, !left)
       }
     },
+    test("a message handler redirects to an external URL") {
+      val checkout = ExternalUrl.parse("https://checkout.example.com/pay?session=a1").toOption.get
+      val view     = new LiveView[Msg, Int]:
+        def mount(ctx: MountContext) = ZIO.succeed(0)
+        def handleMessage(model: Int, ctx: MessageContext) =
+          case Msg.Increment => ctx.nav.redirect(checkout).as(model)
+        override def view(model: Signal[Int]) = div()
+
+      ZIO.scoped {
+        for
+          connected <- ConnectedRender.join(view)
+          action    <- connected.send(Msg.Increment)
+        yield assertTrue(action == ConnectedAction.Redirect(checkout.url))
+      }
+    },
     test("delivers delayed messages, replacing or cancelling them by key") {
       val replaced  = SubscriptionKey("replaced")
       val cancelled = SubscriptionKey("cancelled")

@@ -133,7 +133,7 @@ private[scalive] object NavigationDestination:
 
   def redirect(value: String): Either[IllegalArgumentException, String] = live(value)
 
-  private def validateCharacters(value: String): Either[IllegalArgumentException, String] =
+  def validateCharacters(value: String): Either[IllegalArgumentException, String] =
     val literalControl = value.exists(character => character <= ' ' || character == '\u007f')
     val lower          = value.toLowerCase(java.util.Locale.ROOT)
     val encodedControl = lower.indices.exists(index =>

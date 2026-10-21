@@ -45,15 +45,25 @@ end LiveSessionMountFailure
 
 /** Constructors for connected mount failures. */
 object LiveSessionMountFailure:
-  /** Redirects connected mount to a typed Live route location. */
+  /** Redirects connected mount to `to`.
+    *
+    * This form targets a typed Live route location.
+    */
   def redirect(to: LiveLocation): LiveSessionMountFailure =
     LiveSessionMountFailure.Redirect(to)
 
+  /** Redirects connected mount to `to`.
+    *
+    * This form leaves the application, for example for an identity provider.
+    */
+  def redirect(to: ExternalUrl): LiveSessionMountFailure =
+    LiveSessionMountFailure.RedirectUnsafe(to.url)
+
   /** Redirects connected mount to an unchecked URL.
     *
-    * This is an escape hatch for destinations that cannot be represented by [[LiveLocation]]. It
-    * does not validate origin or locality and can create an open redirect when given untrusted
-    * input.
+    * This is an escape hatch for destinations that neither [[LiveLocation]] nor [[ExternalUrl]] can
+    * represent. It does not validate origin or locality and can create an open redirect when given
+    * untrusted input.
     */
   def redirectUnsafe(to: URL): LiveSessionMountFailure =
     LiveSessionMountFailure.RedirectUnsafe(to)

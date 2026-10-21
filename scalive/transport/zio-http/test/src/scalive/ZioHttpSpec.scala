@@ -1575,6 +1575,27 @@ object ZioHttpSpec extends ZIOSpecDefault:
         body.contains("<span>moved</span>")
       )
     },
+    test("redirects to an external URL answer 303 with that location, in mount and in aspects") {
+      val checkout = ExternalUrl.parse("https://checkout.example.com/pay?session=a1").toOption.get
+      object Checkout extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ctx.nav.redirect(checkout)
+        def view(model: Signal[Unit]) = div()
+      val routes = ZioHttp.routes(scalive.Live.router((scalive.live / "checkout") -> Checkout), config)
+      val routeFailure   = LiveRouteMountFailure.redirect(checkout)
+      val sessionFailure = LiveSessionMountFailure.redirect(checkout)
+      val turnFailure    = LiveConnectedTurnFailure.redirect(checkout)
+
+      for redirect <- run(routes, Request.get(URL.decode("/checkout").toOption.get))
+      yield assertTrue(
+        redirect.status == Status.SeeOther,
+        redirect.header(Header.Location).map(_.renderedValue).contains(checkout.href),
+        routeFailure.disconnectedResponse.header(Header.Location).map(_.renderedValue)
+          .contains(checkout.href),
+        routeFailure.connectedFailure == sessionFailure,
+        sessionFailure == LiveSessionMountFailure.redirectUnsafe(checkout.url),
+        turnFailure == LiveConnectedTurnFailure.redirectUnsafe(checkout.url)
+      )
+    },
     test("initial routed decode failure answers 400 and logs before factory and mount") {
       val factories = AtomicInteger()
       val mounts     = AtomicInteger()

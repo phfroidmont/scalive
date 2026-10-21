@@ -372,6 +372,19 @@ Redirects are also typed destinations, but they end the current lifecycle rather
 than requesting a live patch or navigation. Choose redirects for mount-time
 authorization, canonical HTTP responses, and completed ordinary HTTP actions.
 
+To leave the application, for a payment page or an identity provider, redirect
+to an @:apiSymbol(class:scalive.ExternalUrl)`ExternalUrl`@:@: an absolute HTTP or
+HTTPS URL with a host. `ExternalUrl.parse` checks a URL received as text, such as
+a checkout URL returned by a payment service:
+
+@:sourceRegion(documentation/fixtures/guides/src/routing/ExternalRedirect.scala, routing-external-redirect)
+
+The browser loads the destination with a full page request; during the
+disconnected render the response is a `303 See Other` there. Mount aspect and
+connected-turn guard failures accept an `ExternalUrl` in `redirect` too.
+`ExternalUrl` checks the URL's shape, not its host: when any part of it comes
+from user input, check the host against an allowlist first.
+
 Prefer APIs that accept `LiveLocation`. Runtime `Navigation` string methods such
 as `ctx.nav.pushNavigateUnsafe` accept raw destinations and give up route typing,
 refactoring, and encoding checks, but the connected runtime still rejects
@@ -380,7 +393,7 @@ HTTPS before recording the navigation.
 
 Mount-admission failures are different:
 `LiveRouteMountFailure.redirectUnsafe` and `LiveSessionMountFailure.redirectUnsafe`
-accept an unchecked `URL` and perform no same-origin or local-path validation.
+accept an unchecked `URL`, not even checked to be HTTP(S), and perform no same-origin or local-path validation.
 Use them only for trusted destinations. Never concatenate untrusted input into
 any unsafe destination; parse it and enforce an application allowlist first.
 

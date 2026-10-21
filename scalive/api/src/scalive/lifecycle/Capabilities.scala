@@ -41,8 +41,15 @@ trait MountNavigation:
     */
   def redirect(to: LiveLocation): Task[Unit] = redirectUnsafe(to.href)
 
+  /** Ends this LiveView and loads `to` with a full page request.
+    *
+    * This form leaves the application, for example for a payment page or an identity provider.
+    */
+  def redirect(to: ExternalUrl): Task[Unit] = redirectUnsafe(to.href)
+
   /** Like [[redirect]], for a raw URL that the route types do not check. */
   def redirectUnsafe(to: String): Task[Unit]
+end MountNavigation
 
 /** Changes the URL or leaves the current LiveView while it handles a message.
   *

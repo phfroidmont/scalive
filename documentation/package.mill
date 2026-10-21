@@ -29,7 +29,7 @@ object `package` extends Module:
     object test extends ScaliveTests
 
   object pipeline extends build.ScalaCommon:
-    def moduleDeps = Seq(model, build.scalive)
+    def moduleDeps = Seq(model, build.scalive) ++ build.scalive.bundledModuleDeps
     def mvnDeps = Seq(
       mvn"org.typelevel::laika-io:1.3.2",
       mvn"ch.epfl.scala::tasty-query:1.10.0",
@@ -175,7 +175,7 @@ object `package` extends Module:
       override def moduleDeps = super.moduleDeps ++ Seq(build.scalive.testing)
 
   object quickStartFixture extends build.ScalaCommon:
-    def moduleDeps = Seq(build.scalive)
+    def moduleDeps = Seq(build.scalive) ++ build.scalive.bundledModuleDeps
 
     override def moduleDir = super.moduleDir / os.up / "fixtures" / "quick-start"
 
@@ -187,7 +187,7 @@ object `package` extends Module:
     * It does not depend on `quickStartFixture`, whose classes it replaces.
     */
   object learnFixture extends build.ScalaCommon:
-    def moduleDeps = Seq(build.scalive)
+    def moduleDeps = Seq(build.scalive) ++ build.scalive.bundledModuleDeps
 
     override def moduleDir = super.moduleDir / os.up / "fixtures" / "learn"
 
@@ -196,7 +196,7 @@ object `package` extends Module:
 
   /** Compiled recipes embedded in guides with `@:sourceRegion`. */
   object guideFixtures extends build.ScalaCommon:
-    def moduleDeps = Seq(build.scalive, quickStartFixture)
+    def moduleDeps = Seq(build.scalive, quickStartFixture) ++ build.scalive.bundledModuleDeps
     def mvnDeps = Seq(mvn"dev.zio::zio-metrics-connectors-prometheus:2.6.0")
 
     override def moduleDir = super.moduleDir / os.up / "fixtures" / "guides"
@@ -205,7 +205,7 @@ object `package` extends Module:
       override def moduleDeps = super.moduleDeps ++ Seq(build.scalive.testing)
 
   object site extends build.ScalaCommon with build.NpmAssets:
-    def moduleDeps = Seq(build.scalive, model)
+    def moduleDeps = Seq(build.scalive, model) ++ build.scalive.bundledModuleDeps
     override def mvnDeps = Seq(mvn"com.lihaoyi::pprint:0.9.6")
 
     def resources = Task {

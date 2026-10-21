@@ -62,12 +62,19 @@ trait PublishCommon extends PublishModule:
   )
 
 trait ScaliveModule extends ScalaCommon:
-  object test extends ScaliveTests
+  def testModuleDeps: Seq[JavaModule] = Nil
+
+  object test extends ScaliveTests:
+    override def moduleDeps = super.moduleDeps ++ testModuleDeps
 
 trait PublishedScaliveModule extends ScaliveModule with PublishCommon
 
 trait PublishedScaliveBundle extends PublishedScaliveModule:
   protected def bundledModules: Seq[ScaliveModule]
+
+  // Incremental compilation tracks API changes only through module dependencies, not through the
+  // bundled classes on the unmanaged classpath, so in-repo consumers depend on these too.
+  def bundledModuleDeps: Seq[JavaModule] = bundledModules
 
   private def bundledCompilations = Task.traverse(bundledModules)(_.compile)
   private def bundledResources = Task.traverse(bundledModules)(_.resources)
@@ -287,12 +294,18 @@ object scalive extends PublishedScaliveBundle:
     def moduleDeps = Seq(scalive)
     def mvnDeps    = Seq(mvn"org.jsoup:jsoup:1.23.2")
 
+    // A published module can only depend on published modules, so it cannot use
+    // `bundledModuleDeps`. It is small: compile it in full whenever its inputs change.
+    override def zincIncrementalCompilation = false
+
+    override def testModuleDeps = scalive.bundledModuleDeps
+
 object benchmarks extends ScalaCommon with JmhModule:
-  def moduleDeps    = Seq(scalive)
+  def moduleDeps    = Seq(scalive) ++ scalive.bundledModuleDeps
   def jmhCoreVersion = "1.37"
 
 object e2eApp extends ScalaCommon with NpmAssets:
-  def moduleDeps = Seq(scalive)
+  def moduleDeps = Seq(scalive) ++ scalive.bundledModuleDeps
   def mvnDeps    = Seq(mvn"dev.zio::zio-logging:2.5.3")
   override def forkArgs = Seq("-Xmx512m")
 
@@ -301,5 +314,5 @@ object e2eApp extends ScalaCommon with NpmAssets:
   }
 
 object rootSliceApp extends ScalaCommon:
-  def moduleDeps = Seq(scalive)
+  def moduleDeps = Seq(scalive) ++ scalive.bundledModuleDeps
   override def forkArgs = Seq("-Xmx512m")

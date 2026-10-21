@@ -3,9 +3,11 @@ import scalive.codecs.Encoder
 import scalive.codecs.IntAsStringEncoder
 import scalive.codecs.StringAsIsEncoder
 import scalive.defs.attrs.HtmlAttrs
+import scalive.defs.attrs.SvgAttrs
 import scalive.defs.complex.ComplexHtmlKeys
 import scalive.defs.components.Components
 import scalive.defs.tags.HtmlTags
+import scalive.defs.tags.SvgTags
 
 /** Scalive's application API: typed HTML, event bindings, and LiveView helpers, imported with
   * `scalive.*`.
@@ -28,6 +30,19 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
     * [[https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Global_attributes/inert inert @ MDN]]
     */
   lazy val inert: HtmlAttr[Boolean] = htmlAttr("inert", BooleanAsAttrPresenceEncoder)
+
+  /** Inline SVG: `svg(...)` creates an `<svg>` element, and the members are SVG tags and
+    * attributes.
+    *
+    * Their names, such as `path`, `text`, `x`, and `d`, would clash with HTML and application code,
+    * so they stay under `svg`, as in
+    * `svg(svg.viewBox := "0 0 24 24", svg.path(svg.d := "M4 12h16", svg.stroke := "currentColor"))`.
+    * HTML attributes such as `cls` and `idAttr` apply to SVG elements too. See [inline
+    * SVG](https://scalive.dev/guides/html-dsl-and-event-bindings#draw-inline-svg).
+    */
+  object svg extends SvgTags with SvgAttrs:
+    /** Creates an `<svg>` element from `mods`. */
+    def apply[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg] = this.svg(mods*)
 
   /** Inserts `html` without escaping it.
     *

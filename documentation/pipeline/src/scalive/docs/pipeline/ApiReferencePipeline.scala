@@ -214,6 +214,18 @@ object ApiReferencePipeline:
           case _ => ()
         }
 
+        // Generated DOM definitions, such as the SVG tags of `scalive.svg`, belong to their owner.
+        owner.linearization
+          .drop(1)
+          .filter(parent => originName(parent).startsWith(DomDefinitionPrefix))
+          .foreach(parent =>
+            parent.declarations.foreach {
+              case term: TermSymbol if eligibleTerm(term) =>
+                addMember(term, s"$qualifiedName.${sourceName(term)}", id, ApiExposure.Inherited)
+              case _ => ()
+            }
+          )
+
         if owner.isEnum then
           owner.sealedChildren.foreach {
             case enumCase: ClassSymbol if enumCase.isPublic =>

@@ -69,6 +69,7 @@ object E2EApp extends ZIOAppDefault:
         MissingItems.list                -> MissingItemsLiveView(),
         MissingItems.item                -> MissingItemLiveView(),
         live / "external-redirect"       -> ExternalRedirectLiveView(),
+        live / "svg"                     -> SvgLiveView(),
         MissingItems.report.http((_, _) => ZIO.succeed(Response.text("Item report"))),
         (live / "navigation-guard" / "leaving").query[NavigationGuardScopeLiveView.UrlParams] ->
           NavigationGuardScopeLiveView(

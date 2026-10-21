@@ -119,8 +119,9 @@ class DomDefsGenerator(baseOutputDirectoryPath: String):
       case _ => Nil
 
   private def scaliveAttrComments(attr: AttrDef): AttrDef =
-    val linkedComments = attr.commentLines.map(
-      _.replace("[[FormTags.dataList]]", "`dataList`")
+    val linkedComments = attr.commentLines.map(line =>
+      (if attr.tagType == SvgTagType then svgCommentLine(line) else line)
+        .replace("[[FormTags.dataList]]", "`dataList`")
         .replace("[[FormTags.form]]", "the `<form>` element")
         .replace("[[name]]", "[[nameAttr]]")
         .replace("See [[Props.checked]]", "Scalive emits the reflected `checked` HTML attribute.")
@@ -155,19 +156,114 @@ class DomDefsGenerator(baseOutputDirectoryPath: String):
         attr.copy(commentLines = linkedComments, scalaAliases = attr.scalaAliases.filterNot(_ == "tpe"))
       case _ => attr.copy(commentLines = linkedComments)
 
+  // SVG comments write value grammar such as `[R,G,B,A]` or `[[<family-name>],]*`, which the
+  // documentation would read as links; show it as code instead.
+  private def svgCommentLine(line: String): String =
+    if line.startsWith("Value: [") then s"Value: `${line.stripPrefix("Value: ")}`"
+    else line.replaceAll("""(?<!\[)\[([^\[\]]+)\](?!\])""", "`[$1]`")
+
   private def scaliveTagComments(tag: TagDef): TagDef =
-    tag.domName match
-      case "slot" => tag.copy(isVoid = false)
-      case "del" => tag.copy(commentLines = List("Represents content removed from the document."))
+    val cleaned =
+      if tag.tagType == SvgTagType then tag.copy(commentLines = tag.commentLines.map(svgCommentLine))
+      else tag
+    cleaned.domName match
+      case "slot" => cleaned.copy(isVoid = false)
+      // Typed forms name their value `form` and helpers take a `label`, which shadow the tags.
+      case "form" if cleaned.tagType == HtmlTagType  => cleaned.copy(scalaAliases = List("formTag"))
+      case "label" if cleaned.tagType == HtmlTagType => cleaned.copy(scalaAliases = List("labelTag"))
+      case "del" => cleaned.copy(commentLines = List("Represents content removed from the document."))
       case "keygen" =>
-        tag.copy(
+        cleaned.copy(
           commentLines = List(
             "Defines the obsolete `<keygen>` element.",
             "Current browsers do not support this element; it remains available only for source compatibility."
           ),
           docUrls = Nil
         )
-      case _ => tag
+      case _ => cleaned
+
+  private def markupLanguage(tagType: TagType): String =
+    if tagType == SvgTagType then "SVG" else "HTML"
+
+  private def htmlAttr(
+    scalaName: String,
+    domName: String,
+    valueType: String,
+    codec: String,
+    comment: String,
+    docUrl: String
+  ): AttrDef =
+    AttrDef(
+      tagType = HtmlTagType,
+      scalaName = scalaName,
+      domName = domName,
+      namespace = None,
+      scalaValueType = valueType,
+      codec = codec,
+      reflectedProp = None,
+      commentLines = List(comment),
+      docUrls = List(docUrl)
+    )
+
+  // Standard attributes newer than Scala DOM Types 19.0.2.
+  private val newerHtmlAttrs = List(
+    htmlAttr(
+      "command",
+      "command",
+      "String",
+      "StringAsIs",
+      "Names the action a button invokes on the element its `commandfor` names, such as `show-modal`.",
+      "https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/button#command"
+    ),
+    htmlAttr(
+      "commandFor",
+      "commandfor",
+      "String",
+      "StringAsIs",
+      "Names the id of the element a button's `command` acts on.",
+      "https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/button#commandfor"
+    ),
+    htmlAttr(
+      "dateTime",
+      "datetime",
+      "String",
+      "StringAsIs",
+      "Gives the machine-readable date or time of a `<time>`, `<ins>`, or `<del>` element.",
+      "https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/time#datetime"
+    ),
+    htmlAttr(
+      "popover",
+      "popover",
+      "String",
+      "StringAsIs",
+      "Makes the element a popover: `auto` closes on an outside click or Escape, `manual` does not.",
+      "https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Global_attributes/popover"
+    ),
+    htmlAttr(
+      "popoverTarget",
+      "popovertarget",
+      "String",
+      "StringAsIs",
+      "Names the id of the popover a button shows, hides, or toggles.",
+      "https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/button#popovertarget"
+    ),
+    htmlAttr(
+      "popoverTargetAction",
+      "popovertargetaction",
+      "String",
+      "StringAsIs",
+      "Chooses what a button does to its `popovertarget`: `show`, `hide`, or `toggle`.",
+      "https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/button#popovertargetaction"
+    ),
+    htmlAttr(
+      "scope",
+      "scope",
+      "String",
+      "StringAsIs",
+      "Tells which cells a `<th>` header applies to: `row`, `col`, `rowgroup`, or `colgroup`.",
+      "https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/th#scope"
+    )
+  )
 
   private def generateNamespacedHtmlKeysTrait(
     traitName: String,
@@ -278,7 +374,11 @@ class DomDefsGenerator(baseOutputDirectoryPath: String):
       defType: DefType
     ): String =
       val (rawDefs, defGroupComments) = defsAndGroupComments(defGroups, printDefGroupComments)
-      val defs                         = rawDefs.map(scaliveTagComments)
+      // A definition with only documentation links still needs a summary.
+      val defs = rawDefs.map(scaliveTagComments).map(tag =>
+        if tag.commentLines.nonEmpty then tag
+        else tag.copy(commentLines = List(s"Defines the `<${tag.domName}>` ${markupLanguage(tagType)} tag."))
+      )
 
       val baseImplDef =
         if tagType == HtmlTagType then
@@ -287,8 +387,9 @@ class DomDefsGenerator(baseOutputDirectoryPath: String):
           )
         else
           List(
-            s"def $keyImplName($keyImplNameArgName: String): $keyKind = ${keyKindConstructor(keyKind)}($keyImplNameArgName)"
+            s"protected def $keyImplName($keyImplNameArgName: String): $keyKind = ${keyKindConstructor(keyKind)}($keyImplNameArgName)"
           )
+      val language = markupLanguage(tagType)
 
       val headerLines = List(
         s"package $tagDefsPackagePath",
@@ -321,10 +422,10 @@ class DomDefsGenerator(baseOutputDirectoryPath: String):
             case Some(_) =>
               val canonicalName = keyDef.scalaName.stripPrefix("`").stripSuffix("`")
               blockCommentLines(
-                List(s"Alias for the `$canonicalName` member defining the `<${keyDef.domName}>` HTML tag.")
+                List(s"Alias for the `$canonicalName` member defining the `<${keyDef.domName}>` $language tag.")
               )
             case None if keyDef.commentLines.isEmpty && keyDef.docUrls.isEmpty =>
-              blockCommentLines(List(s"Defines the `<${keyDef.domName}>` HTML tag."))
+              blockCommentLines(List(s"Defines the `<${keyDef.domName}>` $language tag."))
             case None => ()
           super.printDef(keyDef, alias)
       .printTrait().getOutput()
@@ -346,7 +447,10 @@ class DomDefsGenerator(baseOutputDirectoryPath: String):
       defType: DefType
     ): String =
       val (rawDefs, defGroupComments) = defsAndGroupComments(defGroups, printDefGroupComments)
-      val defs                         = rawDefs.map(scaliveAttrComments)
+      val defs = rawDefs.map(scaliveAttrComments).map(attr =>
+        if attr.commentLines.nonEmpty then attr
+        else attr.copy(commentLines = List(s"Defines the `${attr.domName}` ${markupLanguage(attr.tagType)} attribute."))
+      )
 
       val tagTypes = defs.foldLeft(List[TagType]())((acc, k) => (acc :+ k.tagType).distinct)
       if tagTypes.size > 1 then
@@ -355,15 +459,25 @@ class DomDefsGenerator(baseOutputDirectoryPath: String):
         )
       val tagType = tagTypes.head
 
+      // XML-namespaced SVG attributes are filtered out before generation, so every attribute is a
+      // plain HTML attribute.
       val baseImplDef =
         if tagType == SvgTagType then
           List(
-            s"def $baseImplName[V]($keyImplNameArgName: String, encoder: Encoder[V, String], namespace: Option[String]): $keyKind[V] = ${keyKindConstructor(keyKind)}($keyImplNameArgName, encoder, namespace)"
+            s"protected def $baseImplName[V]($keyImplNameArgName: String, encoder: Encoder[V, String]): $keyKind[V] = ${keyKindConstructor(keyKind)}($keyImplNameArgName, encoder)"
           )
         else
           List(
-            s"def $baseImplName[V]($keyImplNameArgName: String, encoder: Encoder[V, String]): $keyKind[V] = ${keyKindConstructor(keyKind)}($keyImplNameArgName, encoder)"
+            s"def $baseImplName[V]($keyImplNameArgName: String, encoder: Encoder[V, String]): $keyKind[V] = ${keyKindConstructor(keyKind)}($keyImplNameArgName, encoder)",
+            "",
+            "/** Creates a typed HTML attribute definition.",
+            "  *",
+            "  * This form defines a text attribute, as in `htmlAttr(\"data-section\") := \"billing\"`;",
+            "  * pass an [[scalive.codecs.Encoder]] for other value types.",
+            "  */",
+            s"def $baseImplName($keyImplNameArgName: String): $keyKind[String] = $baseImplName($keyImplNameArgName, StringAsIsEncoder)"
           )
+      val language = markupLanguage(tagType)
 
       val headerLines = List(
         s"package $attrDefsPackagePath",
@@ -398,10 +512,10 @@ class DomDefsGenerator(baseOutputDirectoryPath: String):
             case Some(_) =>
               val canonicalName = keyDef.scalaName.stripPrefix("`").stripSuffix("`")
               blockCommentLines(
-                List(s"Alias for the `$canonicalName` member defining the `${keyDef.domName}` HTML attribute.")
+                List(s"Alias for the `$canonicalName` member defining the `${keyDef.domName}` $language attribute.")
               )
             case None if keyDef.commentLines.isEmpty && keyDef.docUrls.isEmpty =>
-              blockCommentLines(List(s"Defines the `${keyDef.domName}` HTML attribute."))
+              blockCommentLines(List(s"Defines the `${keyDef.domName}` $language attribute."))
             case None => ()
           super.printDef(keyDef, alias)
       .printTrait().getOutput()
@@ -460,7 +574,7 @@ class DomDefsGenerator(baseOutputDirectoryPath: String):
       val fileContent = generator.generateAttrsTrait(
         defGroups = (defGroups.globalAttrDefGroups.map((name, defs) =>
           name -> defs.map(_.copy(tagType = HtmlTagType))
-        ) ++ defGroups.htmlAttrDefGroups).appended(
+        ) ++ defGroups.htmlAttrDefGroups :+ ("Newer Attributes" -> newerHtmlAttrs)).appended(
           "Reflected Attributes" -> ReflectedHtmlAttrDefs.defs
             .map(d =>
               d.scalaName match
@@ -493,6 +607,67 @@ class DomDefsGenerator(baseOutputDirectoryPath: String):
           "  Scala value type accepted by this attribute"
         ),
         baseImplName = "htmlAttr",
+        namespaceImports = Nil,
+        namespaceImpl = _ => ???,
+        transformAttrDomName = identity,
+        defType = LazyVal
+      )
+
+      generator.writeToFile(
+        packagePath = generator.attrDefsPackagePath,
+        fileName = traitName,
+        fileContent = fileContent
+      )
+    }
+
+    // -- SVG tags and attributes, members of the `svg` object --
+
+    {
+      val traitName = "SvgTags"
+
+      val fileContent = generator.generateTagsTrait(
+        tagType = SvgTagType,
+        defGroups = defGroups.svgTagsDefGroups,
+        printDefGroupComments = false,
+        traitCommentLines = List(
+          "Reusable definitions for SVG tags, members of [[scalive.svg]].",
+          "",
+          "Each member is an [[HtmlTag]] factory that creates an element when applied to modifiers."
+        ),
+        traitModifiers = Nil,
+        traitName = traitName,
+        keyKind = "HtmlTag",
+        baseImplDefComments = List("Creates an SVG tag definition."),
+        keyImplName = "svgTag",
+        defType = LazyVal
+      )
+
+      generator.writeToFile(
+        packagePath = generator.tagDefsPackagePath,
+        fileName = traitName,
+        fileContent = fileContent
+      )
+    }
+
+    {
+      val traitName = "SvgAttrs"
+
+      val fileContent = generator.generateAttrsTrait(
+        defGroups = defGroups.svgAttrDefGroups.map((name, defs) =>
+          name -> defs.filter(_.namespace.isEmpty)
+        ),
+        printDefGroupComments = false,
+        traitCommentLines = List(
+          "Typed definitions for SVG attributes, members of [[scalive.svg]].",
+          "",
+          "Assigning a value with `:=` encodes it using the definition's [[scalive.codecs.Encoder]]."
+        ),
+        traitModifiers = Nil,
+        traitName = traitName,
+        keyKind = "HtmlAttr",
+        implNameSuffix = "SvgAttr",
+        baseImplDefComments = List("Creates a typed SVG attribute definition."),
+        baseImplName = "svgAttr",
         namespaceImports = Nil,
         namespaceImpl = _ => ???,
         transformAttrDomName = identity,

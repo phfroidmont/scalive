@@ -54,9 +54,9 @@ object CartMarkup:
   // docs:end bindings-namespaced-attributes
 
   // docs:start bindings-custom-attribute
-  private val popover = htmlAttr("popover", scalive.codecs.StringAsIsEncoder)
+  private val fetchPriority = htmlAttr("fetchpriority")
 
-  val helpPopover: HtmlElement[Msg] = div(popover := "manual", "Details")
+  val heroImage: HtmlElement[Msg] = img(src := "/hero.webp", alt := "", fetchPriority := "high")
   // docs:end bindings-custom-attribute
 
   // docs:start bindings-keyed-rows

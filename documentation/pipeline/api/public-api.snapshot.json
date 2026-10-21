@@ -9656,6 +9656,10 @@
       "kind" : "def",
       "signatures" : [
         {
+          "id" : "def:scalive.htmlAttr:1104b889afcff3ba",
+          "signature" : "def htmlAttr(name: String): HtmlAttr[String]"
+        },
+        {
           "id" : "def:scalive.htmlAttr:eb31720bf5fa6eb8",
           "signature" : "def htmlAttr[V](name: String, encoder: codecs.Encoder[V, String]): HtmlAttr[V]"
         }
@@ -9966,6 +9970,18 @@
         {
           "id" : "def:scalive.submission.replaceTextWith:9754b972a1b836be",
           "signature" : "def replaceTextWith(text: String): Mod.Attr[Nothing]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.svg.apply",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.apply",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.svg.apply:2d891a3611387e68",
+          "signature" : "def apply[Msg](mods: Mod.Input[Msg]*): HtmlElement[Msg]"
         }
       ]
     },
@@ -14554,6 +14570,30 @@
       ]
     },
     {
+      "id" : "lazy-val:scalive.command",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.command",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.command:cf7ac773b37d1176",
+          "signature" : "lazy val command: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.commandFor",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.commandFor",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.commandFor:3757708fe834fe80",
+          "signature" : "lazy val commandFor: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
       "id" : "lazy-val:scalive.commandTag",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.commandTag",
@@ -14682,6 +14722,18 @@
         {
           "id" : "lazy-val:scalive.dataTag:70a5c8f0d443ed6f",
           "signature" : "lazy val dataTag: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.dateTime",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.dateTime",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.dateTime:55bce94d332e69d7",
+          "signature" : "lazy val dateTime: HtmlAttr[String]"
         }
       ]
     },
@@ -15058,6 +15110,18 @@
       ]
     },
     {
+      "id" : "lazy-val:scalive.formTag",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.formTag",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.formTag:4cc29afa8a4bdb16",
+          "signature" : "lazy val formTag: HtmlTag"
+        }
+      ]
+    },
+    {
       "id" : "lazy-val:scalive.formTarget",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.formTarget",
@@ -15390,6 +15454,18 @@
         {
           "id" : "lazy-val:scalive.labelAttr:10c3827518d40eea",
           "signature" : "lazy val labelAttr: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.labelTag",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.labelTag",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.labelTag:3b2d121ba823b392",
+          "signature" : "lazy val labelTag: HtmlTag"
         }
       ]
     },
@@ -16330,6 +16406,42 @@
       ]
     },
     {
+      "id" : "lazy-val:scalive.popover",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.popover",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.popover:6d9ca3dfb1b9b122",
+          "signature" : "lazy val popover: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.popoverTarget",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.popoverTarget",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.popoverTarget:4c6554e81d0a4f16",
+          "signature" : "lazy val popoverTarget: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.popoverTargetAction",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.popoverTargetAction",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.popoverTargetAction:8af26f1b1d2a9efb",
+          "signature" : "lazy val popoverTargetAction: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
       "id" : "lazy-val:scalive.pre",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.pre",
@@ -16494,6 +16606,18 @@
         {
           "id" : "lazy-val:scalive.samp:6f568c968722df3b",
           "signature" : "lazy val samp: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.scope",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.scope",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.scope:dcce4ed76f90e7db",
+          "signature" : "lazy val scope: HtmlAttr[String]"
         }
       ]
     },
@@ -16746,6 +16870,2898 @@
         {
           "id" : "lazy-val:scalive.sup:5b968fc6b500c41c",
           "signature" : "lazy val sup: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.a",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.a",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.a:f933fb5f0cc8681c",
+          "signature" : "lazy val a: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.accentHeight",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.accentHeight",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.accentHeight:013dfc91d6f3d8fb",
+          "signature" : "lazy val accentHeight: HtmlAttr[Double]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.accumulate",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.accumulate",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.accumulate:bca729a62ce6d061",
+          "signature" : "lazy val accumulate: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.additive",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.additive",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.additive:f22d4889cb4a6233",
+          "signature" : "lazy val additive: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.alignmentBaseline",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.alignmentBaseline",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.alignmentBaseline:1d4ac1f1f78fa259",
+          "signature" : "lazy val alignmentBaseline: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.altGlyph",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.altGlyph",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.altGlyph:5ac627928e532bd8",
+          "signature" : "lazy val altGlyph: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.altGlyphDef",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.altGlyphDef",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.altGlyphDef:f12fe03f8f6b197a",
+          "signature" : "lazy val altGlyphDef: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.altGlyphItem",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.altGlyphItem",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.altGlyphItem:a374620e0a6c7d4b",
+          "signature" : "lazy val altGlyphItem: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.animate",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.animate",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.animate:0a4c2e2640eb1d09",
+          "signature" : "lazy val animate: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.animateMotion",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.animateMotion",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.animateMotion:78c7ca20683241b7",
+          "signature" : "lazy val animateMotion: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.animateTransform",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.animateTransform",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.animateTransform:9f89f796e0f6fadd",
+          "signature" : "lazy val animateTransform: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.ascent",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.ascent",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.ascent:c44966439390205e",
+          "signature" : "lazy val ascent: HtmlAttr[Double]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.attributeName",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.attributeName",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.attributeName:0d101915c3fe08fd",
+          "signature" : "lazy val attributeName: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.attributeType",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.attributeType",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.attributeType:a32c8e64bb3110da",
+          "signature" : "lazy val attributeType: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.azimuth",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.azimuth",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.azimuth:76b79520001f2cc6",
+          "signature" : "lazy val azimuth: HtmlAttr[Double]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.baseFrequency",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.baseFrequency",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.baseFrequency:e0f67d2a119511c9",
+          "signature" : "lazy val baseFrequency: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.baselineShift",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.baselineShift",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.baselineShift:7d62ea3d285c0ea4",
+          "signature" : "lazy val baselineShift: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.begin",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.begin",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.begin:27bc286ee182fc31",
+          "signature" : "lazy val begin: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.bias",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.bias",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.bias:a3adf5f72f89f933",
+          "signature" : "lazy val bias: HtmlAttr[Double]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.calcMode",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.calcMode",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.calcMode:1290cd26e7e08b66",
+          "signature" : "lazy val calcMode: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.circle",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.circle",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.circle:4d9d129c1813fe18",
+          "signature" : "lazy val circle: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.clip",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.clip",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.clip:60e804c30579c6d1",
+          "signature" : "lazy val clip: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.clipPathAttr",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.clipPathAttr",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.clipPathAttr:be934591e0b53fd5",
+          "signature" : "lazy val clipPathAttr: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.clipPathTag",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.clipPathTag",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.clipPathTag:89f1c3a4f355b410",
+          "signature" : "lazy val clipPathTag: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.clipPathUnits",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.clipPathUnits",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.clipPathUnits:3bb7e2f832201bc5",
+          "signature" : "lazy val clipPathUnits: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.clipRule",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.clipRule",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.clipRule:3a68615802df79a9",
+          "signature" : "lazy val clipRule: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.color",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.color",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.color:85428e52ea3818b8",
+          "signature" : "lazy val color: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.colorInterpolation",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.colorInterpolation",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.colorInterpolation:47364dc7f6b388fd",
+          "signature" : "lazy val colorInterpolation: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.colorInterpolationFilters",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.colorInterpolationFilters",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.colorInterpolationFilters:b9b82a9f39258623",
+          "signature" : "lazy val colorInterpolationFilters: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.colorProfileAttr",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.colorProfileAttr",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.colorProfileAttr:aef453f8ca2bd52c",
+          "signature" : "lazy val colorProfileAttr: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.colorProfileTag",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.colorProfileTag",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.colorProfileTag:53897e85685ff864",
+          "signature" : "lazy val colorProfileTag: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.colorRendering",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.colorRendering",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.colorRendering:a52c501b6f7442da",
+          "signature" : "lazy val colorRendering: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.contentScriptType",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.contentScriptType",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.contentScriptType:7e9c5aa91a5862d0",
+          "signature" : "lazy val contentScriptType: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.contentStyleType",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.contentStyleType",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.contentStyleType:8d94c626c2817c9d",
+          "signature" : "lazy val contentStyleType: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.cursor",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.cursor",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.cursor:3473c230f6687d2b",
+          "signature" : "lazy val cursor: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.cursorAttr",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.cursorAttr",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.cursorAttr:82aa913d008fac42",
+          "signature" : "lazy val cursorAttr: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.cx",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.cx",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.cx:60ae4703df6627b7",
+          "signature" : "lazy val cx: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.cy",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.cy",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.cy:60c2b147aed00af5",
+          "signature" : "lazy val cy: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.d",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.d",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.d:c65af7747c42ebbe",
+          "signature" : "lazy val d: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.defs",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.defs",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.defs:60a6f6ab45e3adee",
+          "signature" : "lazy val defs: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.desc",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.desc",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.desc:839ca670b6cce7ee",
+          "signature" : "lazy val desc: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.diffuseConstant",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.diffuseConstant",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.diffuseConstant:78320f2f387cbb7c",
+          "signature" : "lazy val diffuseConstant: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.direction",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.direction",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.direction:a82c172daade2be2",
+          "signature" : "lazy val direction: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.display",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.display",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.display:9bc86cc1fa5124d6",
+          "signature" : "lazy val display: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.divisor",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.divisor",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.divisor:703e50f06d7a45d1",
+          "signature" : "lazy val divisor: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.dominantBaseline",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.dominantBaseline",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.dominantBaseline:23209dc249b46a00",
+          "signature" : "lazy val dominantBaseline: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.dur",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.dur",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.dur:6fb27fa804e3adc3",
+          "signature" : "lazy val dur: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.dx",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.dx",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.dx:708abe1348f533a3",
+          "signature" : "lazy val dx: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.dy",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.dy",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.dy:58ab08942c29f692",
+          "signature" : "lazy val dy: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.edgeMode",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.edgeMode",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.edgeMode:4100098302ccc010",
+          "signature" : "lazy val edgeMode: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.elevation",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.elevation",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.elevation:1e63758d72c6762e",
+          "signature" : "lazy val elevation: HtmlAttr[Double]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.ellipse",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.ellipse",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.ellipse:1408e1d0c36c5d8e",
+          "signature" : "lazy val ellipse: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.end",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.end",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.end:17f33cbf7195c6e9",
+          "signature" : "lazy val end: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.externalResourcesRequired",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.externalResourcesRequired",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.externalResourcesRequired:e8cfdc0ebdb49d41",
+          "signature" : "lazy val externalResourcesRequired: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.feBlend",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.feBlend",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.feBlend:3e8dd3ac41b920e3",
+          "signature" : "lazy val feBlend: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.feColorMatrix",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.feColorMatrix",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.feColorMatrix:56990b271d238ec9",
+          "signature" : "lazy val feColorMatrix: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.feComponentTransfer",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.feComponentTransfer",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.feComponentTransfer:8df2693c4676c0e7",
+          "signature" : "lazy val feComponentTransfer: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.feComposite",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.feComposite",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.feComposite:9c8bd05992c5c529",
+          "signature" : "lazy val feComposite: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.feConvolveMatrix",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.feConvolveMatrix",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.feConvolveMatrix:b9f4dc6a9a3b527f",
+          "signature" : "lazy val feConvolveMatrix: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.feDiffuseLighting",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.feDiffuseLighting",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.feDiffuseLighting:460654db72c854d5",
+          "signature" : "lazy val feDiffuseLighting: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.feDisplacementMap",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.feDisplacementMap",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.feDisplacementMap:62b25f4ed9c90e6f",
+          "signature" : "lazy val feDisplacementMap: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.feDistantLighting",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.feDistantLighting",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.feDistantLighting:d087e0bbefa7e9ab",
+          "signature" : "lazy val feDistantLighting: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.feFlood",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.feFlood",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.feFlood:d330b0ab67808c32",
+          "signature" : "lazy val feFlood: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.feFuncA",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.feFuncA",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.feFuncA:ca6aabaeb1456885",
+          "signature" : "lazy val feFuncA: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.feFuncB",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.feFuncB",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.feFuncB:e29343ba8485024b",
+          "signature" : "lazy val feFuncB: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.feFuncG",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.feFuncG",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.feFuncG:84a2594e5cfeec1d",
+          "signature" : "lazy val feFuncG: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.feFuncR",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.feFuncR",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.feFuncR:329b1ede80ddf65e",
+          "signature" : "lazy val feFuncR: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.feGaussianBlur",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.feGaussianBlur",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.feGaussianBlur:d30ab9b302324a3a",
+          "signature" : "lazy val feGaussianBlur: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.feImage",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.feImage",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.feImage:36c37f99b6cd4ebe",
+          "signature" : "lazy val feImage: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.feMerge",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.feMerge",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.feMerge:35f9dd884750971f",
+          "signature" : "lazy val feMerge: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.feMergeNode",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.feMergeNode",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.feMergeNode:86cd6f67fdd2efbe",
+          "signature" : "lazy val feMergeNode: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.feMorphology",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.feMorphology",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.feMorphology:7c183deffe6e8b97",
+          "signature" : "lazy val feMorphology: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.feOffset",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.feOffset",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.feOffset:e2ecad6130e17880",
+          "signature" : "lazy val feOffset: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.fePointLight",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.fePointLight",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.fePointLight:1537de4546182891",
+          "signature" : "lazy val fePointLight: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.feSpecularLighting",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.feSpecularLighting",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.feSpecularLighting:98c2eb7dda1a859c",
+          "signature" : "lazy val feSpecularLighting: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.feSpotlight",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.feSpotlight",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.feSpotlight:cc4bbcf55af214de",
+          "signature" : "lazy val feSpotlight: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.feTile",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.feTile",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.feTile:94dbbeb312bf1c44",
+          "signature" : "lazy val feTile: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.feTurbulence",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.feTurbulence",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.feTurbulence:ceb2537ba57ef0fe",
+          "signature" : "lazy val feTurbulence: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.fill",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.fill",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.fill:94803c7353f9b07f",
+          "signature" : "lazy val fill: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.fillOpacity",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.fillOpacity",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.fillOpacity:66a27c3de950405c",
+          "signature" : "lazy val fillOpacity: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.fillRule",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.fillRule",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.fillRule:2780e620fc584613",
+          "signature" : "lazy val fillRule: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.filter",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.filter",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.filter:4172ef61f18cefa9",
+          "signature" : "lazy val filter: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.filterAttr",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.filterAttr",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.filterAttr:0ab2a34538eda60e",
+          "signature" : "lazy val filterAttr: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.filterRes",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.filterRes",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.filterRes:5d82ccf42bd1b40e",
+          "signature" : "lazy val filterRes: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.filterUnits",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.filterUnits",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.filterUnits:e5d593f15452009f",
+          "signature" : "lazy val filterUnits: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.floodColor",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.floodColor",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.floodColor:1ce39f5e834a8c4a",
+          "signature" : "lazy val floodColor: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.floodOpacity",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.floodOpacity",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.floodOpacity:aba590c3ff654b05",
+          "signature" : "lazy val floodOpacity: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.font",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.font",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.font:fd088aba13375c45",
+          "signature" : "lazy val font: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.fontFace",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.fontFace",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.fontFace:011001c6260d9a65",
+          "signature" : "lazy val fontFace: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.fontFaceFormat",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.fontFaceFormat",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.fontFaceFormat:4d338e0148845bd7",
+          "signature" : "lazy val fontFaceFormat: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.fontFaceName",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.fontFaceName",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.fontFaceName:748f0017c161a491",
+          "signature" : "lazy val fontFaceName: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.fontFaceSrc",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.fontFaceSrc",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.fontFaceSrc:3863d49f00939abd",
+          "signature" : "lazy val fontFaceSrc: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.fontFaceUri",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.fontFaceUri",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.fontFaceUri:5a53356facd24fd9",
+          "signature" : "lazy val fontFaceUri: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.fontFamily",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.fontFamily",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.fontFamily:622cf9485adfd5e0",
+          "signature" : "lazy val fontFamily: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.fontSize",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.fontSize",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.fontSize:a020435a2b790e05",
+          "signature" : "lazy val fontSize: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.fontSizeAdjust",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.fontSizeAdjust",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.fontSizeAdjust:6453d241fecdb13a",
+          "signature" : "lazy val fontSizeAdjust: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.fontStretch",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.fontStretch",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.fontStretch:89ccd4955de95e62",
+          "signature" : "lazy val fontStretch: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.fontVariant",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.fontVariant",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.fontVariant:46c393aa6c6ae5ee",
+          "signature" : "lazy val fontVariant: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.fontWeight",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.fontWeight",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.fontWeight:7a3b1e7644c293e2",
+          "signature" : "lazy val fontWeight: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.foreignObject",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.foreignObject",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.foreignObject:a172304b00f60d7e",
+          "signature" : "lazy val foreignObject: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.from",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.from",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.from:234320c1329a5a74",
+          "signature" : "lazy val from: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.g",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.g",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.g:6157cc072f0cfeef",
+          "signature" : "lazy val g: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.glyph",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.glyph",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.glyph:fb03985ef0112bf6",
+          "signature" : "lazy val glyph: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.glyphRef",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.glyphRef",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.glyphRef:4699c97a636ed194",
+          "signature" : "lazy val glyphRef: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.gradientTransform",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.gradientTransform",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.gradientTransform:ddb23a9e470bfd34",
+          "signature" : "lazy val gradientTransform: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.gradientUnits",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.gradientUnits",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.gradientUnits:696033e95a9e0bf3",
+          "signature" : "lazy val gradientUnits: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.height",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.height",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.height:8ee9523c5247a146",
+          "signature" : "lazy val height: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.hkern",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.hkern",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.hkern:612d9afb9e360e98",
+          "signature" : "lazy val hkern: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.href",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.href",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.href:e1c1b00a4e4a495e",
+          "signature" : "lazy val href: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.image",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.image",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.image:9ab539a97ae159de",
+          "signature" : "lazy val image: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.imageRendering",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.imageRendering",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.imageRendering:981103077519daaa",
+          "signature" : "lazy val imageRendering: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.in",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.in",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.in:07b35d02032f9d80",
+          "signature" : "lazy val in: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.in2",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.in2",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.in2:be641cd057383ce5",
+          "signature" : "lazy val in2: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.k1",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.k1",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.k1:859053609b9d1774",
+          "signature" : "lazy val k1: HtmlAttr[Double]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.k2",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.k2",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.k2:8084fbb74149f266",
+          "signature" : "lazy val k2: HtmlAttr[Double]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.k3",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.k3",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.k3:da0ac6cf69bc36ee",
+          "signature" : "lazy val k3: HtmlAttr[Double]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.k4",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.k4",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.k4:52e3cebb32ea18e3",
+          "signature" : "lazy val k4: HtmlAttr[Double]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.kernelMatrix",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.kernelMatrix",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.kernelMatrix:22c9658cae3fe44d",
+          "signature" : "lazy val kernelMatrix: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.kernelUnitLength",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.kernelUnitLength",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.kernelUnitLength:c93532ef34d3a9b7",
+          "signature" : "lazy val kernelUnitLength: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.kerning",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.kerning",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.kerning:c05e0527e4a6321b",
+          "signature" : "lazy val kerning: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.keySplines",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.keySplines",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.keySplines:5c8c8ba590b75bcd",
+          "signature" : "lazy val keySplines: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.keyTimes",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.keyTimes",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.keyTimes:d4e49ee87ab7d237",
+          "signature" : "lazy val keyTimes: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.letterSpacing",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.letterSpacing",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.letterSpacing:4f9ec048a5e42b62",
+          "signature" : "lazy val letterSpacing: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.lightingColor",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.lightingColor",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.lightingColor:fca6a8098b2b0d37",
+          "signature" : "lazy val lightingColor: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.limitingConeAngle",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.limitingConeAngle",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.limitingConeAngle:96907c3c7f3d0ff6",
+          "signature" : "lazy val limitingConeAngle: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.line",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.line",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.line:fb943541cb3ab012",
+          "signature" : "lazy val line: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.linearGradient",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.linearGradient",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.linearGradient:3ccb82efa2906918",
+          "signature" : "lazy val linearGradient: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.local",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.local",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.local:2a9330d9019c3771",
+          "signature" : "lazy val local: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.marker",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.marker",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.marker:42273ac6d25638aa",
+          "signature" : "lazy val marker: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.markerEnd",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.markerEnd",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.markerEnd:46834e0a726bf151",
+          "signature" : "lazy val markerEnd: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.markerHeight",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.markerHeight",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.markerHeight:146aa2e7ddc530a2",
+          "signature" : "lazy val markerHeight: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.markerMid",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.markerMid",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.markerMid:ef5caef88393e755",
+          "signature" : "lazy val markerMid: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.markerStart",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.markerStart",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.markerStart:333db407f5947dda",
+          "signature" : "lazy val markerStart: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.markerUnits",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.markerUnits",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.markerUnits:4b8e564e429ff51f",
+          "signature" : "lazy val markerUnits: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.markerWidth",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.markerWidth",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.markerWidth:303190b42eb664d1",
+          "signature" : "lazy val markerWidth: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.mask",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.mask",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.mask:b923e7607469c9b3",
+          "signature" : "lazy val mask: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.maskAttr",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.maskAttr",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.maskAttr:3f24f5e101607be7",
+          "signature" : "lazy val maskAttr: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.maskContentUnits",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.maskContentUnits",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.maskContentUnits:1c5dada732bad150",
+          "signature" : "lazy val maskContentUnits: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.maskUnits",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.maskUnits",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.maskUnits:5f1c43ae1fcc21c9",
+          "signature" : "lazy val maskUnits: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.maxAttr",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.maxAttr",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.maxAttr:9285fcbe4dffffa5",
+          "signature" : "lazy val maxAttr: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.metadata",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.metadata",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.metadata:9765eebb6ef44fc2",
+          "signature" : "lazy val metadata: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.minAttr",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.minAttr",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.minAttr:8edfa3b43a27d0f9",
+          "signature" : "lazy val minAttr: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.missingGlyph",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.missingGlyph",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.missingGlyph:23df3053f7c39d40",
+          "signature" : "lazy val missingGlyph: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.mode",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.mode",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.mode:179b8a446dfc364a",
+          "signature" : "lazy val mode: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.mpath",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.mpath",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.mpath:dbc19236ff918490",
+          "signature" : "lazy val mpath: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.numOctaves",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.numOctaves",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.numOctaves:8eca212a9991e4b2",
+          "signature" : "lazy val numOctaves: HtmlAttr[Int]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.offsetAttr",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.offsetAttr",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.offsetAttr:a20e05e9ebcc6214",
+          "signature" : "lazy val offsetAttr: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.opacity",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.opacity",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.opacity:2e00d1eb757c158e",
+          "signature" : "lazy val opacity: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.operator",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.operator",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.operator:155a5e29fa22741f",
+          "signature" : "lazy val operator: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.order",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.order",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.order:d4d1fc6b106f0bb7",
+          "signature" : "lazy val order: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.orient",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.orient",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.orient:481ebc4e9c8f3514",
+          "signature" : "lazy val orient: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.overflow",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.overflow",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.overflow:2588181fdb416359",
+          "signature" : "lazy val overflow: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.paintOrder",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.paintOrder",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.paintOrder:5a6351ad1430b53f",
+          "signature" : "lazy val paintOrder: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.path",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.path",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.path:748f0aef8a9ba991",
+          "signature" : "lazy val path: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.pathLength",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.pathLength",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.pathLength:367ab8f80a03945e",
+          "signature" : "lazy val pathLength: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.pattern",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.pattern",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.pattern:f11aa7c0ae41bc58",
+          "signature" : "lazy val pattern: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.patternContentUnits",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.patternContentUnits",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.patternContentUnits:5b637f2a4d690c17",
+          "signature" : "lazy val patternContentUnits: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.patternTransform",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.patternTransform",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.patternTransform:a7939e7e242678cd",
+          "signature" : "lazy val patternTransform: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.patternUnits",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.patternUnits",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.patternUnits:23714887fcda7da8",
+          "signature" : "lazy val patternUnits: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.pointerEvents",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.pointerEvents",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.pointerEvents:2496432109155d1f",
+          "signature" : "lazy val pointerEvents: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.points",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.points",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.points:7b493a3a22f8a534",
+          "signature" : "lazy val points: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.pointsAtX",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.pointsAtX",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.pointsAtX:941f662bc96a106f",
+          "signature" : "lazy val pointsAtX: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.pointsAtY",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.pointsAtY",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.pointsAtY:c31d89118ffdb3aa",
+          "signature" : "lazy val pointsAtY: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.pointsAtZ",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.pointsAtZ",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.pointsAtZ:b3fa9044cdb65fa0",
+          "signature" : "lazy val pointsAtZ: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.polygon",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.polygon",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.polygon:e76cf2d022a13651",
+          "signature" : "lazy val polygon: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.polyline",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.polyline",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.polyline:bfdb95eabeff38dc",
+          "signature" : "lazy val polyline: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.preserveAlpha",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.preserveAlpha",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.preserveAlpha:21a70b44acc998b1",
+          "signature" : "lazy val preserveAlpha: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.preserveAspectRatio",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.preserveAspectRatio",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.preserveAspectRatio:9079b495b777be1f",
+          "signature" : "lazy val preserveAspectRatio: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.primitiveUnits",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.primitiveUnits",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.primitiveUnits:7374bdea45141b97",
+          "signature" : "lazy val primitiveUnits: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.r",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.r",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.r:8540cde2f0b12a24",
+          "signature" : "lazy val r: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.radialGradient",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.radialGradient",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.radialGradient:f72ad6e929cc6333",
+          "signature" : "lazy val radialGradient: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.radius",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.radius",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.radius:5c439e664f4a23de",
+          "signature" : "lazy val radius: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.rect",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.rect",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.rect:7f1ada071bd57bf5",
+          "signature" : "lazy val rect: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.refX",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.refX",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.refX:255adb42fde8234a",
+          "signature" : "lazy val refX: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.refY",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.refY",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.refY:05ac8319fa0e4dec",
+          "signature" : "lazy val refY: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.repeatCount",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.repeatCount",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.repeatCount:29f4ebe24adaa694",
+          "signature" : "lazy val repeatCount: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.repeatDur",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.repeatDur",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.repeatDur:ba376c21bd8bf5fb",
+          "signature" : "lazy val repeatDur: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.requiredFeatures",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.requiredFeatures",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.requiredFeatures:cdc37a0b85d12ae8",
+          "signature" : "lazy val requiredFeatures: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.restart",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.restart",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.restart:b1a9da4fd9536035",
+          "signature" : "lazy val restart: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.resultAttr",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.resultAttr",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.resultAttr:06898ce4bb2a405f",
+          "signature" : "lazy val resultAttr: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.rx",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.rx",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.rx:0e546feaea15517e",
+          "signature" : "lazy val rx: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.ry",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.ry",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.ry:4dfbf4087cb266b9",
+          "signature" : "lazy val ry: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.scale",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.scale",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.scale:3f53ecea21d8b319",
+          "signature" : "lazy val scale: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.seed",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.seed",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.seed:6b9cb383aafdd3d2",
+          "signature" : "lazy val seed: HtmlAttr[Double]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.set",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.set",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.set:506158e1754272d0",
+          "signature" : "lazy val set: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.shapeRendering",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.shapeRendering",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.shapeRendering:26bc512d0e04e620",
+          "signature" : "lazy val shapeRendering: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.specularConstant",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.specularConstant",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.specularConstant:e4051b3f5b1f402a",
+          "signature" : "lazy val specularConstant: HtmlAttr[Double]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.specularExponent",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.specularExponent",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.specularExponent:068d02dd8be31389",
+          "signature" : "lazy val specularExponent: HtmlAttr[Double]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.spreadMethod",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.spreadMethod",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.spreadMethod:3cd359a109e3203b",
+          "signature" : "lazy val spreadMethod: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.stdDeviation",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.stdDeviation",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.stdDeviation:53502e31f058a88f",
+          "signature" : "lazy val stdDeviation: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.stitchTiles",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.stitchTiles",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.stitchTiles:c1a0871e312f7fa6",
+          "signature" : "lazy val stitchTiles: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.stop",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.stop",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.stop:82ff847954f232a5",
+          "signature" : "lazy val stop: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.stopColor",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.stopColor",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.stopColor:88aea60d4d89a769",
+          "signature" : "lazy val stopColor: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.stopOpacity",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.stopOpacity",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.stopOpacity:d6aa1b0d66154ca8",
+          "signature" : "lazy val stopOpacity: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.stroke",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.stroke",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.stroke:3a78d35b233ae0d7",
+          "signature" : "lazy val stroke: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.strokeDashArray",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.strokeDashArray",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.strokeDashArray:eb55d73a9b23b932",
+          "signature" : "lazy val strokeDashArray: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.strokeDashOffset",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.strokeDashOffset",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.strokeDashOffset:3d582e0697d39581",
+          "signature" : "lazy val strokeDashOffset: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.strokeLineCap",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.strokeLineCap",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.strokeLineCap:2b7e8a3eadfbb54c",
+          "signature" : "lazy val strokeLineCap: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.strokeLineJoin",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.strokeLineJoin",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.strokeLineJoin:2e879955eb065d33",
+          "signature" : "lazy val strokeLineJoin: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.strokeMiterLimit",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.strokeMiterLimit",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.strokeMiterLimit:bb112e6ff225de4c",
+          "signature" : "lazy val strokeMiterLimit: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.strokeOpacity",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.strokeOpacity",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.strokeOpacity:01e4011b7fa66072",
+          "signature" : "lazy val strokeOpacity: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.strokeWidth",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.strokeWidth",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.strokeWidth:e992331ec98a2c9e",
+          "signature" : "lazy val strokeWidth: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.styleAttr",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.styleAttr",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.styleAttr:4c6d3ed978b5a28e",
+          "signature" : "lazy val styleAttr: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.surfaceScale",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.surfaceScale",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.surfaceScale:8bb7479c8e2ffc6e",
+          "signature" : "lazy val surfaceScale: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.svg",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.svg",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.svg:bc44bb582f8ee4eb",
+          "signature" : "lazy val svg: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.switch",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.switch",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.switch:baf6abf697514409",
+          "signature" : "lazy val switch: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.symbol",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.symbol",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.symbol:d3ce82371f1af71e",
+          "signature" : "lazy val symbol: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.target",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.target",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.target:3a931e3531247342",
+          "signature" : "lazy val target: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.targetX",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.targetX",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.targetX:f331c9ea0a51a9c4",
+          "signature" : "lazy val targetX: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.targetY",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.targetY",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.targetY:3881d18244c3f2ee",
+          "signature" : "lazy val targetY: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.text",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.text",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.text:87d1119b80d22ac9",
+          "signature" : "lazy val text: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.textAnchor",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.textAnchor",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.textAnchor:1fffa36068edd2b5",
+          "signature" : "lazy val textAnchor: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.textDecoration",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.textDecoration",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.textDecoration:8c5279f13f2f8be8",
+          "signature" : "lazy val textDecoration: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.textPath",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.textPath",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.textPath:d15a7c203e9fecec",
+          "signature" : "lazy val textPath: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.textRendering",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.textRendering",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.textRendering:1201ebed1535cb84",
+          "signature" : "lazy val textRendering: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.titleTag",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.titleTag",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.titleTag:bdb371d1c733450b",
+          "signature" : "lazy val titleTag: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.to",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.to",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.to:058ff5d9a96a2c5a",
+          "signature" : "lazy val to: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.transform",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.transform",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.transform:376921f0d725cb7b",
+          "signature" : "lazy val transform: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.tref",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.tref",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.tref:3d826742e46d1f19",
+          "signature" : "lazy val tref: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.tspan",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.tspan",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.tspan:84aef22e569c9a4d",
+          "signature" : "lazy val tspan: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.typ",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.typ",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.typ:ab42373a0d5b8556",
+          "signature" : "lazy val typ: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.type",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.type",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.type:b5db75485717ae6f",
+          "signature" : "lazy val type: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.use",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.use",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.use:688b932b9fb3289a",
+          "signature" : "lazy val use: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.values",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.values",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.values:ca13bcd8a05adf15",
+          "signature" : "lazy val values: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.view",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.view",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.view:d7ff40bb11efdefe",
+          "signature" : "lazy val view: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.viewBox",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.viewBox",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.viewBox:6e2e6602a96eb8b2",
+          "signature" : "lazy val viewBox: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.visibility",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.visibility",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.visibility:f1ee2160503b69ed",
+          "signature" : "lazy val visibility: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.vkern",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.vkern",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.vkern:6271a7e025cab9ba",
+          "signature" : "lazy val vkern: HtmlTag"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.width",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.width",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.width:c809f2e1418290aa",
+          "signature" : "lazy val width: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.wordSpacing",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.wordSpacing",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.wordSpacing:c728a29c6d8502a4",
+          "signature" : "lazy val wordSpacing: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.writingMode",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.writingMode",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.writingMode:7fea8c28c81cc518",
+          "signature" : "lazy val writingMode: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.x",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.x",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.x:fe0e1bcc6ed137bd",
+          "signature" : "lazy val x: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.x1",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.x1",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.x1:7e18613ccde74915",
+          "signature" : "lazy val x1: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.x2",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.x2",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.x2:70debac9571eafae",
+          "signature" : "lazy val x2: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.xChannelSelector",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.xChannelSelector",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.xChannelSelector:4ef55622321c5f37",
+          "signature" : "lazy val xChannelSelector: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.xmlns",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.xmlns",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.xmlns:0c02e9656434f04c",
+          "signature" : "lazy val xmlns: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.y",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.y",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.y:0ecaa29ac6a72f9d",
+          "signature" : "lazy val y: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.y1",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.y1",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.y1:8b6d659fcc99041c",
+          "signature" : "lazy val y1: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.y2",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.y2",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.y2:7df277004b6d879d",
+          "signature" : "lazy val y2: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.yChannelSelector",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.yChannelSelector",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.yChannelSelector:99437fffb3e3d3cc",
+          "signature" : "lazy val yChannelSelector: HtmlAttr[String]"
+        }
+      ]
+    },
+    {
+      "id" : "lazy-val:scalive.svg.z",
+      "ownerId" : "object:scalive.svg",
+      "qualifiedName" : "scalive.svg.z",
+      "kind" : "lazyVal",
+      "signatures" : [
+        {
+          "id" : "lazy-val:scalive.svg.z:ef7e57b6f2f6a12c",
+          "signature" : "lazy val z: HtmlAttr[String]"
         }
       ]
     },
@@ -18282,6 +21298,18 @@
         {
           "id" : "object:scalive.submission:6bc1c6aa97954013",
           "signature" : "object submission"
+        }
+      ]
+    },
+    {
+      "id" : "object:scalive.svg",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.svg",
+      "kind" : "object",
+      "signatures" : [
+        {
+          "id" : "object:scalive.svg:b96be33fe41d9710",
+          "signature" : "object svg extends defs.tags.SvgTags with defs.attrs.SvgAttrs"
         }
       ]
     },

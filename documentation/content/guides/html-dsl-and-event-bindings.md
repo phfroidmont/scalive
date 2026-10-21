@@ -83,6 +83,118 @@ semantics when one exists. Use
 @:apiSymbol(def:scalive.CompositeHtmlAttr.apply)`CompositeHtmlAttr(name)`@:@ for a
 custom attribute only when its grammar is a space-separated token list.
 
+### Find a tag or attribute {#find-a-tag-or-attribute}
+
+Most tags and attributes have their HTML name, as in `div`, `href`, or
+`disabled`. The rest are renamed so that common names stay free for
+application code, such as `id` or `name`, or because they are camelCase in
+Scala. If an HTML name does not compile, look it up here before defining it
+yourself.
+
+The `form` and `label` tags have the aliases
+@:apiSymbol(lazy-val:scalive.formTag)`formTag`@:@ and
+@:apiSymbol(lazy-val:scalive.labelTag)`labelTag`@:@, for code where a value
+named `form`, such as a typed form, or a `label` parameter shadows the tag.
+
+| HTML tag | Scalive |
+| --- | --- |
+| `<address>` | `addressTag` |
+| `<area>` | `areaTag` |
+| `<article>` | `articleTag` |
+| `<aside>` | `asideTag` |
+| `<audio>` | `audioTag` |
+| `<base>` | `baseTag` |
+| `<blockquote>` | `blockQuote` |
+| `<body>` | `bodyTag` |
+| `<canvas>` | `canvasTag` |
+| `<colgroup>` | `colGroup` |
+| `<command>` | `commandTag` |
+| `<data>` | `dataTag` |
+| `<datalist>` | `dataList` |
+| `<details>` | `detailsTag` |
+| `<dialog>` | `dialogTag` |
+| `<embed>` | `embedTag` |
+| `<fieldset>` | `fieldSet` |
+| `<figcaption>` | `figCaption` |
+| `<footer>` | `footerTag` |
+| `<head>` | `headTag` |
+| `<header>` | `headerTag` |
+| `<html>` | `htmlRootTag` |
+| `<keygen>` | `keyGenTag` |
+| `<link>` | `linkTag` |
+| `<main>` | `mainTag` |
+| `<map>` | `mapTag` |
+| `<math>` | `mathTag` |
+| `<menu>` | `menuTag` |
+| `<meta>` | `metaTag` |
+| `<meter>` | `meterTag` |
+| `<nav>` | `navTag` |
+| `<noscript>` | `noScriptTag` |
+| `<object>` | `objectTag` |
+| `<optgroup>` | `optGroup` |
+| `<output>` | `outputTag` |
+| `<param>` | `paramTag` |
+| `<progress>` | `progressTag` |
+| `<script>` | `scriptTag` |
+| `<section>` | `sectionTag` |
+| `<slot>` | `slotTag` |
+| `<source>` | `sourceTag` |
+| `<style>` | `styleTag` |
+| `<summary>` | `summaryTag` |
+| `<textarea>` | `textArea` |
+| `<time>` | `timeTag` |
+| `<title>` | `titleTag` |
+| `<track>` | `trackTag` |
+| `<var>` | `varTag` |
+| `<video>` | `videoTag` |
+
+| HTML attribute | Scalive |
+| --- | --- |
+| `accesskey` | `accessKey` |
+| `autocapitalize` | `autoCapitalize` |
+| `autocomplete` | `autoComplete` |
+| `autofocus` | `autoFocus` |
+| `class` | `cls` |
+| `colspan` | `colSpan` |
+| `commandfor` | `commandFor` |
+| `content` | `contentAttr` |
+| `contenteditable` | `contentEditable` |
+| `contextmenu` | `contextMenuId` |
+| `crossorigin` | `crossOrigin` |
+| `datetime` | `dateTime` |
+| `dropzone` | `dropZone` |
+| `enctype` | `encType` |
+| `for` | `forId` |
+| `form` | `formId` |
+| `formaction` | `formAction` |
+| `formenctype` | `formEncType` |
+| `formmethod` | `formMethod` |
+| `formnovalidate` | `formNoValidate` |
+| `formtarget` | `formTarget` |
+| `height` | `heightAttr` |
+| `http-equiv` | `httpEquiv` |
+| `id` | `idAttr` |
+| `inputmode` | `inputMode` |
+| `label` | `labelAttr` |
+| `list` | `listId` |
+| `loading` | `loadingAttr` |
+| `max` | `maxAttr` |
+| `maxlength` | `maxLength` |
+| `min` | `minAttr` |
+| `minlength` | `minLength` |
+| `name` | `nameAttr` |
+| `novalidate` | `noValidate` |
+| `open` | `openAttr` |
+| `popovertarget` | `popoverTarget` |
+| `popovertargetaction` | `popoverTargetAction` |
+| `readonly` | `readOnly` |
+| `rowspan` | `rowSpan` |
+| `spellcheck` | `spellCheck` |
+| `step` | `stepAttr` |
+| `style` | `styleAttr` |
+| `tabindex` | `tabIndex` |
+| `width` | `widthAttr` |
+
 ### Use namespaced and custom attributes {#use-namespaced-and-custom-attributes}
 
 Use @:apiSymbol(def:scalive.dataAttr)`dataAttr(name)`@:@ for application `data-*` attributes and
@@ -90,13 +202,32 @@ the @:apiSymbol(object:scalive.aria)`aria`@:@ namespace for ARIA attributes:
 
 @:sourceRegion(documentation/fixtures/guides/src/bindings/CartMarkup.scala, bindings-namespaced-attributes)
 
-For an attribute absent from the DSL, use @:apiSymbol(def:scalive.htmlAttr)`htmlAttr(name, encoder)`@:@ with
-an explicit encoder rather than assembling rendered HTML:
+For an attribute absent from the DSL, define it with
+@:apiSymbol(def:scalive.htmlAttr)`htmlAttr(name)`@:@ for a text value, or
+`htmlAttr(name, encoder)` with an encoder for another type, rather than
+assembling rendered HTML:
 
 @:sourceRegion(documentation/fixtures/guides/src/bindings/CartMarkup.scala, bindings-custom-attribute)
 
 Avoid @:apiSymbol(def:scalive.rawHtml)`rawHtml`@:@ for ordinary content. It bypasses escaping and should be limited
 to HTML that the application already trusts.
+
+### Draw inline SVG {#draw-inline-svg}
+
+Build icons and charts with @:apiSymbol(object:scalive.svg)`svg`@:@ rather than
+SVG strings in `rawHtml`. `svg(...)` creates the `<svg>` element, and the SVG tags
+and attributes are members of `svg`, as in `svg.rect` and `svg.viewBox`, because
+names such as `path`, `text`, `x`, and `d` would clash with HTML and application
+code. HTML attributes such as `cls`, `idAttr`, and `aria.label`, and event bindings,
+apply to SVG elements too:
+
+@:sourceRegion(documentation/fixtures/guides/src/bindings/WeeklyChart.scala, bindings-svg-chart)
+
+Attributes take signals and rows take keys, as in HTML, so each update patches
+only the bars that changed. SVG attribute values are mostly strings, written as
+SVG expects them. The XML-namespaced attributes `xlink:href`, `xml:space`, and
+`xmlns:xlink` are not defined; use `svg.href`, which current browsers support
+instead of `xlink:href`.
 
 ## Bind events to messages {#bind-events-to-messages}
 

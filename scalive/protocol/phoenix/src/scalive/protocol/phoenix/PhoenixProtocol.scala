@@ -147,6 +147,9 @@ final private[scalive] case class RootEvent(
             .left.map(error => s"could not decode form event value: $error")
             .map(data => BindingPayload.Form(data, formMeta(data)))
         case _ => Left("form event value must be a URL-encoded string")
+    // A hook pushes any JSON, as in Phoenix. Browser events and raw hooks read the raw value.
+    else if eventType == "hook" && !value.isInstanceOf[Json.Obj] then
+      Right(BindingPayload.Params(Map.empty))
     else rootClickParams
 
   private def formMeta(data: FormData): RawFormEvent.Meta =

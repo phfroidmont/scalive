@@ -282,6 +282,40 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
         yield assertTrue(pushed == ConnectedAction.Rendered, slots == "Slot(monday,9)")
       }
     },
+    test("a hook event's payload may be any JSON value, on a LiveView and a component") {
+      val Copied = BrowserToServerEvent[String]("copied")
+      val Picked = BrowserToServerEvent[Vector[Int]]("picked")
+      val counter = new LiveComponent[Unit, Int, Int]:
+        override val browserEvents = BrowserEvents.on(Copied)(_.length)
+        def mount(props: Unit, ctx: MountContext) = ZIO.succeed(0)
+        def handleMessage(props: Unit, model: Int, ctx: MessageContext): Int => Task[Int] =
+          length => ZIO.succeed(length)
+        def view(props: Signal[Unit], model: Signal[Int]) =
+          div(span(idAttr := "length", model.map(_.toString)))
+      val view = new LiveView[String, Vector[String]]:
+        override val browserEvents =
+          BrowserEvents.on(Copied)(identity).on(Picked)(_.mkString("+"))
+        def mount(ctx: MountContext) = ZIO.succeed(Vector.empty)
+        def handleMessage(model: Vector[String], ctx: MessageContext) = value =>
+          ZIO.succeed(model :+ value)
+        override def view(model: Signal[Vector[String]]) =
+          div(
+            p(idAttr := "values", model.map(_.mkString(","))),
+            component(counter, "counter").render(())
+          )
+
+      ZIO.scoped {
+        for
+          connected <- ConnectedRender.join(view)
+          _         <- connected.pushEvent(Copied, "hello")
+          _         <- connected.pushEvent(Picked, Vector(1, 2))
+          _         <- connected.pushEventTo("#length", Copied, "four")
+          values    <- connected.text("#values")
+          length    <- connected.text("#length")
+          joined    <- connected.isJoined
+        yield assertTrue(values == "hello,1+2", length == "4", joined)
+      }
+    },
     test("pushEventTo sends a hook event to the component that renders the target") {
       final case class Rename(name: String) derives JsonCodec
       val RenameEvent = BrowserToServerEvent[Rename]("rename")

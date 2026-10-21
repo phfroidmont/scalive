@@ -46,7 +46,7 @@ payload encoded by its `JsonEncoder`, decoded by the view's `browserEvents`.
 element `target` selects, like `this.pushEventTo`, and `pushEventJson(event,
 json)` sends a raw payload, such as one that does not decode. Undeclared events
 and undecodable payloads are consumed without a model change, as in production.
-The transport accepts only JSON objects as hook payloads. `awaitDiff` waits for an uncorrelated async
+A payload may be any JSON value, not only an object. `awaitDiff` waits for an uncorrelated async
 or subscription update, and `awaitAction` waits for uncorrelated navigation or
 transport disconnect. `joinNested(instanceId)` enters a nested lifecycle
 registered by the parent.

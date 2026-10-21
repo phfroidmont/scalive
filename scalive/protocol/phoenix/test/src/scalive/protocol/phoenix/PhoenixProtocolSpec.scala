@@ -261,6 +261,16 @@ object PhoenixProtocolSpec extends ZIOSpecDefault:
         RootEvent("click", "save", Json.Str("value"), None).toBindingPayload.isLeft
       )
     },
+    test("a hook event's value may be any JSON; it then has no binding parameters") {
+      val values = List(Json.Str("hello"), Json.Num(7), Json.Arr(Json.Num(1)), Json.Null)
+
+      assertTrue(
+        values.forall(value =>
+          RootEvent("hook", "copied", value, None).toBindingPayload ==
+            Right(BindingPayload.Params(Map.empty))
+        )
+      )
+    },
     test("strictly decodes root event optional fields") {
       val valid = Json.Obj(
         "type"    -> Json.Str("click"),

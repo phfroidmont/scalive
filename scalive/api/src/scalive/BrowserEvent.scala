@@ -77,10 +77,11 @@ object BrowserToServerEvent:
   * it becomes.
   *
   * A hook's `this.pushEvent(name, payload)` reaches the LiveView, and `this.pushEventTo(target,
-  * name, payload)` reaches the component that renders `target`. The payload is decoded as the
-  * event's type, and the message then goes through event hooks and `handleMessage`, like a
-  * binding's message. A payload that does not decode is logged at debug level and consumed without
-  * changing the model, and so is an event that isn't declared. Build it with `on`, as in
+  * name, payload)` reaches the component that renders `target`. The payload may be any JSON value,
+  * such as a string or an array, and is decoded as the event's type, and the message then goes
+  * through event hooks and `handleMessage`, like a binding's message. A payload that does not
+  * decode is logged at debug level and consumed without changing the model, and so is an event that
+  * isn't declared. Build it with `on`, as in
   * `BrowserEvents.on(CopyResultEvent)(Msg.CopyFinished(_)).on(ScrollEvent)(Msg.Scrolled(_))`.
   *
   * @tparam Msg

@@ -39,7 +39,14 @@ browser boundary.
 latest committed HTML and wait for the correlated lifecycle output.
 `send(message)` delivers a typed message out of band, because arbitrary Scala
 values have no Phoenix wire representation; its resulting lifecycle output still
-uses the production transport sink. `awaitDiff` waits for an uncorrelated async
+uses the production transport sink. `pushEvent(event, payload)` instead sends what a
+browser hook's `this.pushEvent` sends: an `event` frame of type `hook` with the
+payload encoded by its `JsonEncoder`, decoded by the view's `browserEvents`.
+`pushEventTo(target, event, payload)` addresses the closest component of the
+element `target` selects, like `this.pushEventTo`, and `pushEventJson(event,
+json)` sends a raw payload, such as one that does not decode. Undeclared events
+and undecodable payloads are consumed without a model change, as in production.
+The transport accepts only JSON objects as hook payloads. `awaitDiff` waits for an uncorrelated async
 or subscription update, and `awaitAction` waits for uncorrelated navigation or
 transport disconnect. `joinNested(instanceId)` enters a nested lifecycle
 registered by the parent.
@@ -148,7 +155,12 @@ selector syntax:
   `Either` or handle its errors explicitly rather than hiding failures in defaults.
 
 Each @:apiSymbol(class:scalive.testing.RenderedElement)`RenderedElement`@:@ exposes
-read-only `tagName`, Jsoup-normalized `text`, and `value`.
+read-only `tagName`, Jsoup-normalized `text`, and `value`. Its `selectOne` and `selectAll` query
+inside the element, excluding the element itself, with the same results as
+`RenderedHtml`, and `classes` is the set of its `class` tokens. A disconnected
+`RenderedPage` has the same `selectOne` and `selectAll`. On a connected view,
+`selectOne(css)` and `selectAll(css)` query the latest HTML and fail the task
+with the query error's description instead of returning an `Either`.
 @:apiSymbol(def:scalive.testing.RenderedElement.attribute)`attribute(name)`@:@ is
 case-insensitive and returns entity-decoded values: `None` means absent, while
 `Some("")` means present but empty. Relative URL attributes stay relative; lookup

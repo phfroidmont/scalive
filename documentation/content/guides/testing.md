@@ -64,12 +64,17 @@ Interact through the view the way a visitor would:
   [typed form behavior](#test-typed-form-behavior) shows.
 - `upload(definition, fileName, mediaType, bytes)` uploads one file through the
   file input of a `LiveUploadDef`.
+- `pushEvent(event, payload)` pushes a browser event as a hook's
+  `this.pushEvent` does, and `pushEventTo(target, event, payload)` pushes it to
+  the component that renders `target`. The payload goes through the view's
+  `browserEvents`, so the test covers the event name and its decoder.
 - `send(message)` delivers a typed message directly, when the message itself is
   the behavior under test.
 
 Each action waits for the server's reply. Then read the result with
-`text(selector)` or `text(ref)` for one element, or `html` for the whole
-rendered view.
+`text(selector)` or `text(ref)` for one element, `selectOne(selector)` and
+`selectAll(selector)` for elements whose attributes, classes, or contents you
+query further, or `html` for the whole rendered view.
 
 ## Wait for background updates {#wait-for-an-html-condition}
 

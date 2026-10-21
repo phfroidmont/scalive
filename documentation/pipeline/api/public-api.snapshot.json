@@ -10246,6 +10246,70 @@
       ]
     },
     {
+      "id" : "def:scalive.testing.ConnectedView.pushEvent",
+      "ownerId" : "class:scalive.testing.ConnectedView",
+      "qualifiedName" : "scalive.testing.ConnectedView.pushEvent",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.testing.ConnectedView.pushEvent:fce5967688c2c278",
+          "signature" : "def pushEvent[A](event: BrowserToServerEvent[A], payload: A)(using evidence$1: zio.json.JsonEncoder[A]): zio.package.Task[testing.ConnectedAction]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.testing.ConnectedView.pushEventJson",
+      "ownerId" : "class:scalive.testing.ConnectedView",
+      "qualifiedName" : "scalive.testing.ConnectedView.pushEventJson",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.testing.ConnectedView.pushEventJson:e01d8e1c15d63d58",
+          "signature" : "def pushEventJson[A](event: BrowserToServerEvent[A], payload: zio.json.ast.Json): zio.package.Task[testing.ConnectedAction]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.testing.ConnectedView.pushEventTo",
+      "ownerId" : "class:scalive.testing.ConnectedView",
+      "qualifiedName" : "scalive.testing.ConnectedView.pushEventTo",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.testing.ConnectedView.pushEventTo:18f6fa7bc7a75933",
+          "signature" : "def pushEventTo[A](target: DomRef, event: BrowserToServerEvent[A], payload: A)(using evidence$1: zio.json.JsonEncoder[A]): zio.package.Task[testing.ConnectedAction]"
+        },
+        {
+          "id" : "def:scalive.testing.ConnectedView.pushEventTo:898f4d52f4dc80f7",
+          "signature" : "def pushEventTo[A](target: String, event: BrowserToServerEvent[A], payload: A)(using evidence$1: zio.json.JsonEncoder[A]): zio.package.Task[testing.ConnectedAction]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.testing.ConnectedView.selectAll",
+      "ownerId" : "class:scalive.testing.ConnectedView",
+      "qualifiedName" : "scalive.testing.ConnectedView.selectAll",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.testing.ConnectedView.selectAll:11b60a49c23bc542",
+          "signature" : "def selectAll(selector: String): zio.package.Task[Vector[testing.RenderedElement]]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.testing.ConnectedView.selectOne",
+      "ownerId" : "class:scalive.testing.ConnectedView",
+      "qualifiedName" : "scalive.testing.ConnectedView.selectOne",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.testing.ConnectedView.selectOne:ade1fbe5aad4b619",
+          "signature" : "def selectOne(selector: String): zio.package.Task[testing.RenderedElement]"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.testing.ConnectedView.send",
       "ownerId" : "class:scalive.testing.ConnectedView",
       "qualifiedName" : "scalive.testing.ConnectedView.send",
@@ -10326,6 +10390,18 @@
       ]
     },
     {
+      "id" : "def:scalive.testing.HtmlQueryError.description",
+      "ownerId" : "enum:scalive.testing.HtmlQueryError",
+      "qualifiedName" : "scalive.testing.HtmlQueryError.description",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.testing.HtmlQueryError.description:91bd4d857a396fb8",
+          "signature" : "def description: String"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.testing.RenderedElement.attribute",
       "ownerId" : "class:scalive.testing.RenderedElement",
       "qualifiedName" : "scalive.testing.RenderedElement.attribute",
@@ -10334,6 +10410,42 @@
         {
           "id" : "def:scalive.testing.RenderedElement.attribute:eeb3b5289bf07ac4",
           "signature" : "def attribute(name: String): Option[String]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.testing.RenderedElement.classes",
+      "ownerId" : "class:scalive.testing.RenderedElement",
+      "qualifiedName" : "scalive.testing.RenderedElement.classes",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.testing.RenderedElement.classes:aef9ef14f2cdd30f",
+          "signature" : "def classes: Set[String]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.testing.RenderedElement.selectAll",
+      "ownerId" : "class:scalive.testing.RenderedElement",
+      "qualifiedName" : "scalive.testing.RenderedElement.selectAll",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.testing.RenderedElement.selectAll:9acf2f4a1e9064d9",
+          "signature" : "def selectAll(selector: String): Either[testing.HtmlQueryError, Vector[testing.RenderedElement]]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.testing.RenderedElement.selectOne",
+      "ownerId" : "class:scalive.testing.RenderedElement",
+      "qualifiedName" : "scalive.testing.RenderedElement.selectOne",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.testing.RenderedElement.selectOne:d9b3122baf70c993",
+          "signature" : "def selectOne(selector: String): Either[testing.HtmlQueryError, testing.RenderedElement]"
         }
       ]
     },
@@ -10602,6 +10714,30 @@
         {
           "id" : "def:scalive.testing.RenderedPage.forms:f651747afa4bb33f",
           "signature" : "def forms: Vector[testing.RenderedForm]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.testing.RenderedPage.selectAll",
+      "ownerId" : "class:scalive.testing.RenderedPage",
+      "qualifiedName" : "scalive.testing.RenderedPage.selectAll",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.testing.RenderedPage.selectAll:9acf2f4a1e9064d9",
+          "signature" : "def selectAll(selector: String): Either[testing.HtmlQueryError, Vector[testing.RenderedElement]]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.testing.RenderedPage.selectOne",
+      "ownerId" : "class:scalive.testing.RenderedPage",
+      "qualifiedName" : "scalive.testing.RenderedPage.selectOne",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.testing.RenderedPage.selectOne:d9b3122baf70c993",
+          "signature" : "def selectOne(selector: String): Either[testing.HtmlQueryError, testing.RenderedElement]"
         }
       ]
     },

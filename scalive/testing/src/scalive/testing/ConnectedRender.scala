@@ -11,6 +11,7 @@ import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
 import zio.*
 import zio.http.*
+import zio.json.*
 import zio.json.ast.Json
 
 import scalive.*
@@ -325,6 +326,24 @@ final class ConnectedView[-Msg] private[testing] (
   @targetName("textOfRef")
   def text(ref: DomRef): Task[String] = text(s"#${ref.value}")
 
+  /** Returns exactly one element matching `selector` in the latest HTML.
+    *
+    * Fails, naming the selector, when none or several match. Query inside the element with its own
+    * `selectOne` and `selectAll`.
+    */
+  def selectOne(selector: String): Task[RenderedElement] =
+    html.flatMap(value =>
+      ZIO.fromEither(RenderedHtml.parse(value).selectOne(selector)).mapError(queryFailed)
+    )
+
+  /** Returns every element matching `selector` in the latest HTML, in document order. */
+  def selectAll(selector: String): Task[Vector[RenderedElement]] =
+    html.flatMap(value =>
+      ZIO.fromEither(RenderedHtml.parse(value).selectAll(selector)).mapError(queryFailed)
+    )
+
+  private def queryFailed(error: HtmlQueryError) = IllegalArgumentException(error.description)
+
   /** Dispatches the `phx-click` binding on exactly one matching element. */
   def click(selector: String): Task[ConnectedAction] =
     dispatchClick(ConnectedDom.selectOne(_, selector))
@@ -490,6 +509,62 @@ final class ConnectedView[-Msg] private[testing] (
 
   /** Sends one typed server message and waits for its committed output. */
   def send(message: Msg): Task[ConnectedAction] = session.send(state, message)
+
+  /** Pushes `event` to the LiveView, as a browser hook's `this.pushEvent(name, payload)` does.
+    *
+    * The payload is encoded as JSON and decoded by the view's `browserEvents`, so the test covers
+    * the event's name, its declaration, and its decoder. An undeclared event or a payload that does
+    * not decode is consumed without changing the model, as in the browser.
+    */
+  def pushEvent[A: JsonEncoder](event: BrowserToServerEvent[A], payload: A): Task[ConnectedAction] =
+    ZIO
+      .fromEither(payload.toJsonAST)
+      .mapError(IllegalArgumentException(_))
+      .flatMap(pushEventJson(event, _))
+
+  /** Pushes `event` to the LiveView with a raw JSON payload, for example one that does not decode.
+    */
+  def pushEventJson[A](event: BrowserToServerEvent[A], payload: Json): Task[ConnectedAction] =
+    pushHookEvent(event.value, payload, cid = None)
+
+  /** Pushes `event` to the component that renders `target`, as a hook's `this.pushEventTo` does.
+    *
+    * This form takes a selector matching exactly one element. The event goes to that element's
+    * closest component, or to the LiveView when no component renders it.
+    */
+  def pushEventTo[A: JsonEncoder](
+    target: String,
+    event: BrowserToServerEvent[A],
+    payload: A
+  ): Task[ConnectedAction] =
+    for
+      current <- html
+      cid     <- ZIO.attempt(ConnectedDom.closestComponent(ConnectedDom.selectOne(current, target)))
+      json    <- ZIO.fromEither(payload.toJsonAST).mapError(IllegalArgumentException(_))
+      result  <- pushHookEvent(event.value, json, cid)
+    yield result
+
+  /** Pushes `event` to the component that renders `target`, as a hook's `this.pushEventTo` does.
+    *
+    * This form takes the `DomRef` of the target element.
+    */
+  @targetName("pushEventToRef")
+  def pushEventTo[A: JsonEncoder](
+    target: DomRef,
+    event: BrowserToServerEvent[A],
+    payload: A
+  ): Task[ConnectedAction] =
+    pushEventTo(s"#${target.value}", event, payload)
+
+  private def pushHookEvent(
+    event: String,
+    payload: Json,
+    cid: Option[Long]
+  ): Task[ConnectedAction] =
+    session.dispatch(
+      state,
+      RootEvent(eventType = "hook", event = event, value = payload, cid = cid, meta = None)
+    )
 
   /** Waits for the next uncorrelated async, subscription, or component output. */
   def awaitDiff: Task[Unit] = state.awaitDiff *> session.requireLiveChangeBindings(state)
@@ -693,6 +768,10 @@ private object ConnectedDom:
     * LiveView. Like the client, it reads `phx-target` from `element` only: a component ID, or a
     * selector whose match belongs to its closest component.
     */
+  /** The component that renders `element`, or `None` for the LiveView. */
+  def closestComponent(element: Element): Option[Long] =
+    Option(element.closest("[data-phx-component]")).map(_.attr("data-phx-component").toLong)
+
   def eventTarget(element: Element): Option[Long] =
     Option.when(element.hasAttr("phx-target"))(element.attr("phx-target")).flatMap { target =>
       if target.matches("0|[1-9][0-9]*") then Some(target.toLong)

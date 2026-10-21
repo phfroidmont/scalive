@@ -261,6 +261,71 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
         yield assertTrue(rendered == "(Filters(Some(open),7,Set(a, b)),3)")
       }
     },
+    test("pushEvent sends a hook event through the view's declared browser events") {
+      final case class Slot(day: String, hour: Int) derives JsonCodec
+      val SlotEvent    = BrowserToServerEvent[Slot]("agenda-slot")
+      val UnknownEvent = BrowserToServerEvent[Slot]("agenda-unknown")
+      val view         = new LiveView[Slot, Vector[Slot]]:
+        override val browserEvents = BrowserEvents.on(SlotEvent)(identity)
+        def mount(ctx: MountContext) = ZIO.succeed(Vector.empty)
+        def handleMessage(model: Vector[Slot], ctx: MessageContext) = slot =>
+          ZIO.succeed(model :+ slot)
+        override def view(model: Signal[Vector[Slot]]) = p(idAttr := "slots", model.map(_.mkString(",")))
+
+      ZIO.scoped {
+        for
+          connected <- ConnectedRender.join(view)
+          pushed    <- connected.pushEvent(SlotEvent, Slot("monday", 9))
+          _         <- connected.pushEvent(UnknownEvent, Slot("tuesday", 10))
+          _         <- connected.pushEventJson(SlotEvent, Json.Obj("day" -> Json.Str("friday")))
+          slots     <- connected.text("#slots")
+        yield assertTrue(pushed == ConnectedAction.Rendered, slots == "Slot(monday,9)")
+      }
+    },
+    test("pushEventTo sends a hook event to the component that renders the target") {
+      final case class Rename(name: String) derives JsonCodec
+      val RenameEvent = BrowserToServerEvent[Rename]("rename")
+      val field = new LiveComponent[Unit, String, String]:
+        override val browserEvents = BrowserEvents.on(RenameEvent)(_.name)
+        def mount(props: Unit, ctx: MountContext) = ZIO.succeed("untitled")
+        def handleMessage(props: Unit, model: String, ctx: MessageContext): String => Task[String] =
+          name => ZIO.succeed(name)
+        def view(props: Signal[Unit], model: Signal[String]) =
+          div(span(idAttr := "name", model))
+      val instance = component(field, "name-field")
+      val view = new LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        override def view(model: Signal[Unit]) = div(instance.render(()))
+
+      ZIO.scoped {
+        for
+          connected <- ConnectedRender.join(view)
+          _         <- connected.pushEventTo("#name", RenameEvent, Rename("notes"))
+          renamed   <- connected.text("#name")
+        yield assertTrue(renamed == "notes")
+      }
+    },
+    test("selectOne and selectAll return the view's elements, failing unless the count fits") {
+      val view = new LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        override def view(model: Signal[Unit]) =
+          ul(li(cls := "item first", "One"), li(cls := "item", "Two"))
+
+      ZIO.scoped {
+        for
+          connected <- ConnectedRender.join(view)
+          items     <- connected.selectAll("li")
+          first     <- connected.selectOne(".first")
+          ambiguous <- connected.selectOne(".item").flip
+          missing   <- connected.selectOne(".missing").flip
+        yield assertTrue(
+          items.map(_.text) == Vector("One", "Two"),
+          first.classes == Set("item", "first"),
+          ambiguous.getMessage.contains("'.item' matches 2 elements"),
+          missing.getMessage.contains("'.missing' matches no element")
+        )
+      }
+    },
     test("a message handler redirects to an external URL") {
       val checkout = ExternalUrl.parse("https://checkout.example.com/pay?session=a1").toOption.get
       val view     = new LiveView[Msg, Int]:

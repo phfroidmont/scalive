@@ -47,6 +47,21 @@ object RenderedHtmlSpec extends ZIOSpecDefault:
         )
       )
     },
+    test("an element queries inside itself and reports its classes") {
+      val rendered = RenderedHtml.parse(
+        """<section id="gate" class="panel  open"><p class="item">Inside</p></section>
+          |<p class="item">Outside</p>""".stripMargin
+      )
+      val gate = rendered.selectOne("#gate")
+
+      assertTrue(
+        gate.flatMap(_.selectAll(".item")).map(_.map(_.text)) == Right(Vector("Inside")),
+        gate.flatMap(_.selectOne("p")).map(_.text) == Right("Inside"),
+        gate.flatMap(_.selectOne("#gate")) == Left(HtmlQueryError.NotFound("#gate")),
+        gate.map(_.classes) == Right(Set("panel", "open")),
+        rendered.selectAll("p").map(_.map(_.classes)) == Right(Vector(Set("item"), Set("item")))
+      )
+    },
     test("both query methods return typed errors for empty, blank, and malformed CSS") {
       val rendered  = RenderedHtml.parse("<p>Text</p>")
       val selectors = Vector("", " \t\n ", "[")
@@ -111,7 +126,12 @@ object RenderedHtmlSpec extends ZIOSpecDefault:
           Right(form.fields.map(field => (field.tagName, Some(field.name), field.value))),
         rendered.selectOne("textarea").map(_.text) == Right("First\n  & second"),
         rendered.selectOne("[name=enabled]").map(_.attribute("checked")) == Right(Some("")),
-        rendered.selectOne("[name=enabled]").map(_.attribute("disabled")) == Right(Some(""))
+        rendered.selectOne("[name=enabled]").map(_.attribute("disabled")) == Right(Some("")),
+        page.selectAll("select").map(_.map(_.attribute("name"))) ==
+          Right(Vector(Some("choice"), Some("explicit"))),
+        page.selectOne("form").flatMap(_.selectOne("textarea")).map(_.attribute("name")) ==
+          Right(Some("notes")),
+        page.selectOne("select") == Left(HtmlQueryError.MultipleMatches("select", 2))
       )
     },
     test("full documents and ordinary fragments preserve source HTML and expose document text") {

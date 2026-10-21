@@ -103,6 +103,14 @@ final class RenderedPage private[testing] (
   /** Returns the parsed document's decoded, combined text with whitespace normalized by Jsoup. */
   def text: String = document.text()
 
+  /** Selects exactly one element of the page, reporting missing or ambiguous matches explicitly. */
+  def selectOne(selector: String): Either[HtmlQueryError, RenderedElement] =
+    RenderedHtml.exactlyOne(selector, selectAll(selector))
+
+  /** Selects all matching elements of the page in document order. */
+  def selectAll(selector: String): Either[HtmlQueryError, Vector[RenderedElement]] =
+    RenderedHtml.select(document, selector, includeRoot = true)
+
   /** Returns every parsed `form` element in DOM order. */
   def forms: Vector[RenderedForm] =
     val baseHref = Option(document.selectFirst("base[href]"))

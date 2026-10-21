@@ -1518,6 +1518,69 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
         yield assertTrue(rendered == "destination", !sourceJoined, nextJoined)
       }
     },
+    test("mount aspects annotate every log of their lifecycle, and only of it") {
+      enum OrgMsg:
+        case Click, Navigate
+        case Loaded(result: LiveAsyncResult[Nothing, String])
+      val loading = AsyncKey[String]("load")
+      val user    = LiveSessionMountAspect
+        .fromRequest[Any, String, String](
+          _ => ZIO.succeed("ada" -> "ada"),
+          (claim, _) => ZIO.succeed(claim)
+        )
+        .logAnnotated(user => ZIOAspect.annotated("user", user))
+      val organization = LiveRouteMountAspect
+        .make[Any, Int, String, Int]((request, _) => ZIO.succeed(request.params))
+        .logAnnotated(org => ZIOAspect.annotated("organization", org.toString))
+      val page = new LiveView[OrgMsg, Unit]:
+        def mount(ctx: MountContext) = ZIO.logInfo("mounted")
+        def handleMessage(model: Unit, ctx: MessageContext) =
+          case OrgMsg.Click =>
+            ZIO.logInfo("clicked") *>
+              ctx.async.start(loading)(ZIO.logInfo("working").as("done"))(OrgMsg.Loaded(_))
+          case OrgMsg.Loaded(_) => ZIO.logInfo("loaded")
+          case OrgMsg.Navigate  => ctx.nav.pushNavigateUnsafe("/orgs/2")
+        override def view(model: Signal[Unit]) =
+          div(
+            button(dataAttr("click") := "", on.click(OrgMsg.Click), "Click"),
+            button(dataAttr("navigate") := "", on.click(OrgMsg.Navigate), "Navigate")
+          )
+      val application = scalive.Live.router(
+        scalive.Live
+          .session("organizations")
+          .withMountAspect(user)(
+            (scalive.live / "orgs" / PathCodec.int("org"))
+              .withMountAspect(organization)
+              .context((_: (String, Int)) => page)
+          )
+      )
+      def annotations(message: String, logs: Chunk[ZTestLogger.LogEntry]) =
+        logs
+          .filter(_.message() == message)
+          .map(entry => (entry.annotations.get("user"), entry.annotations.get("organization")))
+          .toSet
+
+      ZIO.scoped {
+        for
+          root   <- ConnectedRender.join(application, config, Request.get(url("/orgs/1")))
+          _      <- root.click("[data-click]")
+          _      <- ZTestLogger.logOutput.repeatUntil(_.exists(_.message() == "loaded")).timeout(3.seconds)
+          action <- root.click("[data-navigate]")
+          _      <- action match
+                 case ConnectedAction.LiveNavigation(navigation) => navigation.follow
+                 case other => ZIO.fail(Exception(s"Expected live navigation, got $other."))
+          logs <- ZTestLogger.logOutput
+        yield
+          val first  = (Some("ada"), Some("1"))
+          val second = (Some("ada"), Some("2"))
+          assertTrue(
+            annotations("mounted", logs) == Set(first, second),
+            annotations("clicked", logs) == Set(first),
+            annotations("working", logs) == Set(first),
+            annotations("loaded", logs) == Set(first)
+          )
+      }
+    },
     test("live navigation derives fresh destination route context after session admission") {
       val routeMounts = AtomicInteger()
       val source = new LiveView[RoutedNavigationMsg, Unit]:

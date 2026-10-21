@@ -18,7 +18,8 @@ final private[scalive] case class RootLifecycle[Msg, Model](
   view: Signal[(Model, URL)] => HtmlElement[Msg],
   connectedTurnGuard: LiveConnectedTurnGuard[Unit] = LiveConnectedTurnGuard.empty,
   acceptsPatch: URL => Boolean = _ => true,
-  browserEvents: BrowserEvents[Msg] = BrowserEvents.none)
+  browserEvents: BrowserEvents[Msg] = BrowserEvents.none,
+  logAnnotations: LiveLogAnnotations = LiveLogAnnotations.none)
 
 final private[scalive] case class RootParamsHandler[Msg, Model](
   runHooks: Boolean,

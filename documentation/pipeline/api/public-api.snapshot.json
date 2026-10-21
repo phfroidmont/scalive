@@ -6714,6 +6714,18 @@
       ]
     },
     {
+      "id" : "def:scalive.LiveRouteMountAspect.logAnnotated",
+      "ownerId" : "class:scalive.LiveRouteMountAspect",
+      "qualifiedName" : "scalive.LiveRouteMountAspect.logAnnotated",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveRouteMountAspect.logAnnotated:eea15bad6510c0d7",
+          "signature" : "def logAnnotated(f: Ctx => zio.ZIOAspect[Nothing, Any, Nothing, Any, Nothing, Any]): LiveRouteMountAspect[R, A, In, Ctx]"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.LiveRouteMountAspect.make",
       "ownerId" : "object:scalive.LiveRouteMountAspect",
       "qualifiedName" : "scalive.LiveRouteMountAspect.make",
@@ -7258,6 +7270,18 @@
         {
           "id" : "def:scalive.LiveSessionMountAspect.fromRequest:ef032d35228561da",
           "signature" : "def fromRequest[R, Claims, Ctx](disconnected: LiveSessionMountRequest => zio.ZIO[R, zio.http.Response, (Claims, Ctx)], connected: (Claims, LiveSessionMountRequest) => zio.ZIO[R, LiveSessionMountFailure, Ctx])(using evidence$1: zio.json.JsonCodec[Claims]): LiveSessionMountAspect[R, Any, Claims, Ctx]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LiveSessionMountAspect.logAnnotated",
+      "ownerId" : "class:scalive.LiveSessionMountAspect",
+      "qualifiedName" : "scalive.LiveSessionMountAspect.logAnnotated",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveSessionMountAspect.logAnnotated:d96a6511482d8a5b",
+          "signature" : "def logAnnotated(f: Ctx => zio.ZIOAspect[Nothing, Any, Nothing, Any, Nothing, Any]): LiveSessionMountAspect[R, In, Claims, Ctx]"
         }
       ]
     },

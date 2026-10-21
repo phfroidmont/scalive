@@ -1532,26 +1532,29 @@ private[scalive] object RootConnection:
                   closeLifecycle = connectedResources.close,
                   terminateOnNavigate = closeAfterNavigate
                 )
-        // Fibers forked below inherit these, so application logs carry them too.
+        // Fibers forked below inherit these and the mount aspects' annotations, so application logs
+        // carry them too.
         annotations = Set(
                         LogAnnotation(RuntimeLog.ConnectionId, connectionId.value.toString),
                         LogAnnotation(RuntimeLog.LifecycleId, lifecycleId.value.toString),
                         LogAnnotation(RuntimeLog.View, lifecycle.viewName)
                       ) ++ topic.map(value => LogAnnotation(RuntimeLog.Topic, value.value))
-        kernel <- ZIO.logAnnotate(annotations)(
-                    SessionKernel
-                      .start(
-                        sessionConfig,
-                        logic,
-                        program,
-                        outbound,
-                        componentEnvironment,
-                        Some(lifecycleId),
-                        topologyPreparer,
-                        Some(connectionId),
-                        observer
-                      )
-                      .mapError(ConnectionError.SessionFailed.apply)
+        kernel <- lifecycle.logAnnotations(
+                    ZIO.logAnnotate(annotations)(
+                      SessionKernel
+                        .start(
+                          sessionConfig,
+                          logic,
+                          program,
+                          outbound,
+                          componentEnvironment,
+                          Some(lifecycleId),
+                          topologyPreparer,
+                          Some(connectionId),
+                          observer
+                        )
+                        .mapError(ConnectionError.SessionFailed.apply)
+                    )
                   )
         ingress         <- Queue.dropping[Event](config.ingressCapacity)
         ingressGate     <- Semaphore.make(1L)

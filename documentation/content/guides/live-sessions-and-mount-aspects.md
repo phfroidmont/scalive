@@ -177,6 +177,29 @@ close every open tab, install the session aspect with `withAdmission` instead of
 `withMountAspect`. The [authentication guide](authentication.md#bind-admission-to-physical-connections)
 shows the complete flow.
 
+## Annotate logs with the context {#annotate-logs}
+
+Logs from a page usually need to say whose page it was. Rather than annotating
+each log call, let the aspect that produces the context annotate every log of
+the pages it admits with
+@:apiSymbol(def:scalive.LiveSessionMountAspect.logAnnotated)`logAnnotated`@:@:
+
+@:sourceRegion(documentation/fixtures/guides/src/sessions/LogAnnotations.scala, sessions-log-annotations)
+
+The function receives the aspect's context and returns a ZIO aspect that adds
+annotations: `ZIOAspect.annotated(key, value)`, or a typed `zio-logging`
+`LogAnnotation` applied to a value. Scalive applies it around the page render,
+around every connected turn of the LiveView and the fibers that turn starts
+(`mount`, handlers, hooks, async work, and subscriptions), and around
+[HTTP route](routes-and-navigation.md#serve-http-responses-from-routes)
+handlers. Session and route aspects both contribute. A live navigation2019s
+destination is admitted again, so it carries the annotations of its own
+context, such as another workspace. Logs written while the aspects themselves
+run do not carry them yet.
+
+Use it only for log annotations. It wraps all of that work, so an aspect that
+changed behavior, such as a timeout, would change every turn.
+
 ## Use failure semantics deliberately {#use-failure-semantics-deliberately}
 
 Disconnected session-aspect failures are ordinary HTTP responses. Connected

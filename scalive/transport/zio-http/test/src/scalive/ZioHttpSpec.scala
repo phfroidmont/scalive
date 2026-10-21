@@ -963,6 +963,39 @@ object ZioHttpSpec extends ZIOSpecDefault:
         malformed._1 == Status.NotFound
       )
     },
+    test("an HTTP route's handler logs with its mount aspects' annotations") {
+      val user = LiveSessionMountAspect
+        .fromRequest[Any, String, String](
+          _ => ZIO.succeed("ada" -> "ada"),
+          (claim, _) => ZIO.succeed(claim)
+        )
+        .logAnnotated(user => ZIOAspect.annotated("user", user))
+      val organization = LiveRouteMountAspect
+        .make[Any, Int, String, Int]((request, _) => ZIO.succeed(request.params))
+        .map(_ * 10)
+        .logAnnotated(org => ZIOAspect.annotated("organization", org.toString))
+      val routes = ZioHttp.routes(
+        scalive.Live.router(
+          scalive.Live
+            .session("exports")
+            .withMountAspect(user)(
+              (scalive.live / "orgs" / PathCodec.int("org") / "export")
+                .withMountAspect(organization)
+                .http((_, _, _) => ZIO.logInfo("exported").as(Response.ok))
+            )
+        ),
+        config
+      )
+
+      for
+        _    <- run(routes, Request.get(URL.decode("/orgs/4/export").toOption.get))
+        logs <- ZTestLogger.logOutput
+        exported = logs.filter(_.message() == "exported")
+      yield assertTrue(
+        exported.map(_.annotations.get("user")) == Chunk(Some("ada")),
+        exported.map(_.annotations.get("organization")) == Chunk(Some("40"))
+      )
+    },
     test("an HTTP route outside a session reads its params and request") {
       val download = (scalive.live / "export").queryOptional[String]("format")
       val routes = ZioHttp.routes(

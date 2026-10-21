@@ -1,8 +1,8 @@
 package scalive
 
-import zio.ZIO
 import zio.http.{Request, Response, URL}
 import zio.json.JsonCodec
+import zio.{ZIO, ZIOAspect}
 
 /** Input available to a [[LiveSessionMountAspect]] callback.
   *
@@ -47,6 +47,27 @@ final case class LiveSessionMountAspect[R, -In, Claims, Ctx] private[scalive] (
       (request, input) =>
         disconnected(request, input).map { case (claims, ctx) => claims -> f(ctx) },
       (claims, request, input) => connected(claims, request, input).map(f)
+    )
+
+  /** Annotates every log of a lifecycle that this aspect admits, from its context.
+    *
+    * `f` returns a ZIO aspect that adds log annotations, such as a zio-logging `LogAnnotation`
+    * applied to a value or `ZIOAspect.annotated("user", id)`. Scalive applies it around the
+    * disconnected page render, around every connected turn of the LiveView (mount, events,
+    * messages, async results, subscriptions, and renders) and the fibers they start, and around
+    * HTTP route handlers. Another lifecycle, such as the destination of a live navigation, gets the
+    * annotations of its own admission. Use it only to annotate logs: it runs around all of that
+    * work and must not change what it does. See [log
+    * annotations](https://scalive.dev/guides/live-sessions-and-mount-aspects#annotate-logs).
+    */
+  def logAnnotated(
+    f: Ctx => ZIOAspect[Nothing, Any, Nothing, Any, Nothing, Any]
+  ): LiveSessionMountAspect[R, In, Claims, Ctx] =
+    LiveSessionMountAspect(
+      (request, input) =>
+        disconnected(request, input).tap((_, ctx) => LiveLogAnnotations.record(f(ctx))),
+      (claims, request, input) =>
+        connected(claims, request, input).tap(ctx => LiveLogAnnotations.record(f(ctx)))
     )
 
   /** Composes two session aspects from left to right in both mount phases. */

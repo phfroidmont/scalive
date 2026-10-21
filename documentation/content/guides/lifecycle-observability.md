@@ -220,6 +220,9 @@ after an idle tab, an expired session, or a deployment.
 Logs written while a connected LiveView runs carry its annotations, including
 logs from `mount`, handlers, hooks, and async work. Disconnected renders carry
 `lifecycle_id`, `view`, and `route`.
+Add the application's own annotations, such as the signed-in user, from the
+mount aspects that produce them; see
+[annotate logs with the context](live-sessions-and-mount-aspects.md#annotate-logs).
 
 | Annotation | Meaning |
 | --- | --- |

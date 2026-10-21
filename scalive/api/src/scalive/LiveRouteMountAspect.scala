@@ -1,7 +1,7 @@
 package scalive
 
-import zio.ZIO
 import zio.http.{Response, URL}
+import zio.{ZIO, ZIOAspect}
 
 /** Stable input available to a [[LiveRouteMountAspect]] on every route mount.
   *
@@ -159,6 +159,20 @@ final case class LiveRouteMountAspect[R, A, -In, Ctx] private[scalive] (
   def map[Ctx2](f: Ctx => Ctx2): LiveRouteMountAspect[R, A, In, Ctx2] =
     LiveRouteMountAspect((request, input) => run(request, input).map(f))
 
+  /** Annotates every log of a lifecycle that this aspect admits, from its context.
+    *
+    * `f` returns a ZIO aspect that adds log annotations, such as
+    * `ZIOAspect.annotated("organization", id)`. Scalive applies it as
+    * [[LiveSessionMountAspect.logAnnotated]] does: around the page render, every connected turn,
+    * and HTTP route handlers, for this route's lifecycle only. Use it only to annotate logs.
+    */
+  def logAnnotated(
+    f: Ctx => ZIOAspect[Nothing, Any, Nothing, Any, Nothing, Any]
+  ): LiveRouteMountAspect[R, A, In, Ctx] =
+    LiveRouteMountAspect((request, input) =>
+      run(request, input).tap(ctx => LiveLogAnnotations.record(f(ctx)))
+    )
+
   /** Composes two route aspects from left to right on every mount. */
   def ++[R1, Ctx2, Result](
     that: LiveRouteMountAspect[R1, A, Ctx, Ctx2]
@@ -170,6 +184,7 @@ final case class LiveRouteMountAspect[R, A, -In, Ctx] private[scalive] (
         right <- that.run(request, left)
       yield append.append(left, right)
     )
+end LiveRouteMountAspect
 
 /** Constructors for route mount aspects. */
 object LiveRouteMountAspect:

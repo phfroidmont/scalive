@@ -65,6 +65,22 @@ object SessionsSpec extends ZIOSpecDefault:
         yield assertTrue(heading == "Ada: docs", header == "Signed in as Ada")
       }
     },
+    test("mount aspects annotate the logs of the pages they admit") {
+      ZIO.scoped {
+        for
+          client <- ConnectedRender.open(LogAnnotations.application, config, request("/workspaces/docs"))
+          _      <- client.join
+          logs   <- ZTestLogger.logOutput
+          opened = logs.filter(_.message() == "Workspace opened")
+        yield assertTrue(
+          opened.size == 2,
+          opened.forall(entry =>
+            entry.annotations.get("user").contains("1") &&
+              entry.annotations.get("workspace").contains("docs")
+          )
+        )
+      }
+    },
     test("live navigation stays inside the session") {
       ZIO.scoped {
         // docs:start testing-follow-navigation

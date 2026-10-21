@@ -1320,41 +1320,50 @@ object ZioHttpSpec extends ZIOSpecDefault:
         )
       )
     },
-    test("a malformed optional query value answers 400 and a missing one mounts") {
+    test("a malformed optional query value mounts with None and a malformed required one answers 400") {
       object View extends LiveView.Routed.Eventless[String, Option[java.util.UUID]]:
         def mount(params: Option[java.util.UUID], ctx: MountContext) =
           ZIO.succeed(params.fold("none")(_.toString))
         def view(model: Signal[String]) = div(model)
+      object RequiredView extends LiveView.Routed.Eventless[Unit, java.util.UUID]:
+        def mount(params: java.util.UUID, ctx: MountContext) = ZIO.unit
+        def view(model: Signal[Unit]) = div()
       val routes = ZioHttp.routes(
         scalive.Live.router(
-          (scalive.live / "reset").queryOptional[java.util.UUID]("id") -> View
+          (scalive.live / "reset").queryOptional[java.util.UUID]("id") -> View,
+          (scalive.live / "item").query[java.util.UUID]("id")         -> RequiredView
         ),
         config
       )
 
       for
         malformed <- run(routes, Request.get(URL.decode("/reset?id=garbage").toOption.get))
-        missing   <- run(routes, Request.get(URL.decode("/reset").toOption.get))
-        body      <- missing.body.asString.orDie
+        body      <- malformed.body.asString.orDie
+        required  <- run(routes, Request.get(URL.decode("/item?id=garbage").toOption.get))
+        logs      <- ZTestLogger.logOutput
       yield assertTrue(
-        malformed.status == Status.BadRequest,
-        missing.status == Status.Ok,
-        body.contains("none")
+        malformed.status == Status.Ok,
+        body.contains("none"),
+        required.status == Status.BadRequest,
+        logs.exists(entry =>
+          entry.logLevel == LogLevel.Debug && entry.message().contains("id") &&
+            entry.message().contains("garbage")
+        )
       )
     },
     test("a connected mount whose parameters fail to decode falls back to a page request") {
-      object View extends LiveView.Routed.Eventless[Unit, Option[java.util.UUID]]:
-        def mount(params: Option[java.util.UUID], ctx: MountContext) = ZIO.unit
+      object View extends LiveView.Routed.Eventless[Unit, java.util.UUID]:
+        def mount(params: java.util.UUID, ctx: MountContext) = ZIO.unit
         def view(model: Signal[Unit]) = div()
       val application =
-        scalive.Live.router(scalive.live.queryOptional[java.util.UUID]("id") -> View)
+        scalive.Live.router(scalive.live.query[java.util.UUID]("id") -> View)
       val route   = ZioHttp.validate(application).fold(throw _, identity).head
       val joinRef = PhoenixRef.Value("1")
       val ref     = PhoenixRef.Value("2")
       val badUrl  = URL.decode("/?id=garbage").toOption.get
 
       for
-        response <- run(ZioHttp.routes(application, config), Request.get(URL.root))
+        response <- run(ZioHttp.routes(application, config), Request.get(URL.decode(s"/?id=${java.util.UUID.randomUUID()}").toOption.get))
         body     <- response.body.asString.orDie
         claims <- ZioHttpSecurity.verifySession(config, attribute(body, "data-phx-session").get)
         error  <- route.prepareConnected(badUrl, Request.get(badUrl), claims).flip

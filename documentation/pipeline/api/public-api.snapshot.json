@@ -6420,8 +6420,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.LiveParamsCodec.query:d42422313d9110c2",
-          "signature" : "def query[A](using x$1: zio.schema.Schema[A]): LiveParamsCodec[Unit, A]"
+          "id" : "def:scalive.LiveParamsCodec.query:871467fe5883b414",
+          "signature" : "def query[A](using schema: zio.schema.Schema[A]): LiveParamsCodec[Unit, A]"
         }
       ]
     },

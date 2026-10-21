@@ -51,6 +51,39 @@ The reverse function builds links and patches from the domain type, so every
 route can encode the parameters it decodes. When decoding normalizes a value,
 such as trimming a search term, encode the normalized value.
 
+## Keep page state in the query {#keep-page-state-in-the-query}
+
+A page whose filters, date, or mode belong in the URL, so a reload or a
+bookmark keeps them, declares them as a case class with defaults and adds it
+with `query[A]`:
+
+@:sourceRegion(documentation/fixtures/guides/src/routing/PageState.scala, routing-page-state)
+
+Each field is a query parameter named after it. A list is a repeated name, as
+in `?people=a&people=b`, and an enum whose cases carry no data is its case name,
+renamed with zio-schema's `@caseName`. A field with a default, an `Option`, or a
+list takes that fallback when its value is missing, and also when it is
+malformed, so a stale bookmark or a hand-edited URL still opens the page:
+`?date=2026-13-01&mode=year` shows this week, and a garbled id is dropped from
+the list. Scalive logs each value it ignores at debug level. A field without a
+default is required, and a URL that lacks it or garbles it does not decode.
+
+Encoding leaves out every value equal to its default, so
+`CalendarRoutes.calendar.location(CalendarView())` is the bare `/calendar`, and
+changing one filter adds only that parameter.
+
+A case class field is encoded under its name, which is how a page carries the
+way back to another one. An editor opened from the calendar keeps the
+calendar's query, typed, and builds the link back with the calendar's route
+after changing what it needs:
+
+@:sourceRegion(documentation/fixtures/guides/src/routing/PageState.scala, routing-page-state-return)
+
+A new entry for the default calendar is the bare `/calendar/new`; from the month
+view it is `/calendar/new?back.mode=month`. Because the editor rebuilds the link
+from the calendar's route rather than echoing a URL, a crafted `back` cannot
+send the visitor to another site.
+
 ## Mount and react to parameters {#mount-and-react-to-parameters}
 
 `mount(params, ctx)` receives typed parameters for the disconnected render and
@@ -76,10 +109,10 @@ gets `400 Bad Request`, and Scalive logs the route and the decode error at debug
 level; live navigation to it falls back to that page request. A live patch to it
 calls
 @:apiSymbol(def:scalive.LiveView.Routed.handleParamsDecodeError)`handleParamsDecodeError`@:@
-instead, which crashes the LiveView unless you override it. `queryOptional`
-decodes a missing value to `None`, but a malformed one still fails; a view that
-must answer every link itself is shown in
-[Accept optional and untrusted query values](#accept-optional-and-untrusted-query-values).
+instead, which crashes the LiveView unless you override it. Only a required
+value fails that way: `queryOptional` decodes a missing or malformed value to
+`None`, and a schema-derived query gives such a field its fallback, as
+[Keep page state in the query](#keep-page-state-in-the-query) shows.
 
 The documentation examples catalog is a real routed view. Its `topic` query
 parameter controls a URL-addressable filter, and every topic link builds a typed
@@ -116,21 +149,17 @@ that do use the query route:
 
 A view whose links are built elsewhere, such as a password reset link sent by
 email, must answer every URL itself, including one with a missing or malformed
-value. A typed query such as `queryOptional[UUID]` would answer a malformed
-value with `400 Bad Request` instead. Declare the values as optional strings and
+value. Declare the values as optional, so a malformed one decodes to `None`, and
 parse them in `mapParams` into a type with a case for a link that cannot be
 used:
 
 @:sourceRegion(documentation/fixtures/guides/src/routing/QueryValues.scala, routing-reset-link)
 
 Every such URL now mounts the view: a bare `/reset-password`, a garbled UUID,
-or a missing code decodes to `ResetLink.Unusable`, which the view renders as its
-own message. `Unusable` encodes as no query at all, so code that sends the
-visitor back after a failed reset can use
-`ResetRoutes.resetPassword.location(ResetLink.Unusable)`. A query that repeats a
-name, as in `?id=a&id=b`, still fails to decode; build the codec with
-@:apiSymbol(def:scalive.LiveParamsCodec.custom)`LiveParamsCodec.custom`@:@ and
-read `url.queryParams` when the view must answer that as well.
+a repeated `id`, or a missing code decodes to `ResetLink.Unusable`, which the
+view renders as its own message. `Unusable` encodes as no query at all, so code
+that sends the visitor back after a failed reset can use
+`ResetRoutes.resetPassword.location(ResetLink.Unusable)`.
 
 ## Give a LiveView its services {#give-a-liveview-its-services}
 

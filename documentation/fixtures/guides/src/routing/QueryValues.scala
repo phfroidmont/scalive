@@ -1,7 +1,6 @@
 package routing
 
 import java.util.UUID
-import scala.util.Try
 
 import zio.*
 import zio.schema.Schema
@@ -51,21 +50,16 @@ enum ResetLink:
   case Unusable
 
 object ResetLink:
-  final case class Query(id: Option[String], code: Option[String]) derives Schema
+  final case class Query(id: Option[UUID], code: Option[UUID]) derives Schema
 
   def parse(query: Query): ResetLink =
-    val usable =
-      for
-        id   <- query.id.flatMap(uuid)
-        code <- query.code.flatMap(uuid)
-      yield Usable(id, code)
-    usable.getOrElse(Unusable)
+    (query.id, query.code) match
+      case (Some(id), Some(code)) => Usable(id, code)
+      case _                      => Unusable
 
   def encode(link: ResetLink): Query = link match
-    case Usable(id, code) => Query(Some(id.toString), Some(code.toString))
+    case Usable(id, code) => Query(Some(id), Some(code))
     case Unusable         => Query(None, None)
-
-  private def uuid(raw: String): Option[UUID] = Try(UUID.fromString(raw)).toOption
 
 object ResetRoutes:
   val resetPassword =

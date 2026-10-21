@@ -8,7 +8,7 @@ import zio.Tag
 import zio.Task
 import zio.URIO
 import zio.ZIO
-import zio.http.codec.{Combiner, HttpCodec, PathCodec, QueryCodec}
+import zio.http.codec.{Combiner, PathCodec, QueryCodec}
 import zio.schema.Schema
 
 /** A typed session pipeline whose individual claim types remain hidden until interpretation. */
@@ -623,7 +623,8 @@ final class LivePath[A] private[scalive] (path: PathCodec[A])
 
   /** Adds query parameters to the parameters a routed LiveView receives.
     *
-    * This form adds one required parameter, as in `query[Int]("page")`.
+    * This form adds one required parameter, as in `query[Int]("page")`. A missing or malformed
+    * value fails to decode.
     */
   def query[Query](
     name: String
@@ -631,10 +632,12 @@ final class LivePath[A] private[scalive] (path: PathCodec[A])
   )[Out](
     using combiner: Combiner.WithOut[A, Query, Out]
   ): LiveRoute[A, Out] =
-    query(HttpCodec.query[Query](name))
+    LiveRoute(pathCodec, LiveParamsCodec.fromSchemaQuery(SchemaQuery.param(name, schema)))
 
-  /** Adds an optional query parameter, which decodes to `None` when it is absent, as in
-    * `queryOptional[String]("q")`. A value that is present but malformed still fails to decode.
+  /** Adds an optional query parameter, as in `queryOptional[String]("q")`.
+    *
+    * It decodes to `None` when the value is absent or malformed, and `None` encodes as no
+    * parameter.
     */
   def queryOptional[Query](
     name: String
@@ -642,18 +645,23 @@ final class LivePath[A] private[scalive] (path: PathCodec[A])
   )[Out](
     using combiner: Combiner.WithOut[A, Option[Query], Out]
   ): LiveRoute[A, Out] =
-    query(HttpCodec.query[Query](name).optional)
+    LiveRoute(
+      pathCodec,
+      LiveParamsCodec.fromSchemaQuery(SchemaQuery.param(name, Schema.Optional(schema)))
+    )
 
   /** Adds query parameters to the parameters a routed LiveView receives.
     *
-    * This form derives the parameters from the fields of `Query`'s schema.
+    * This form derives the parameters from the fields of `Query`'s schema, as
+    * [[LiveParamsCodec.query]] describes: a field with a default value, an `Option` or a collection
+    * takes that fallback when its value is missing or malformed.
     */
   def query[Query](
     using schema: Schema[Query]
   )[Out](
     using combiner: Combiner.WithOut[A, Query, Out]
   ): LiveRoute[A, Out] =
-    query(HttpCodec.query[Query])
+    LiveRoute(pathCodec, LiveParamsCodec.fromSchemaQuery(SchemaQuery.fields(schema)))
 
   /** Decodes the route's values into another parameter type that can still build links. */
   def params[Params](codec: LiveParamsCodec[A, Params]): LiveRoute[A, Params] =

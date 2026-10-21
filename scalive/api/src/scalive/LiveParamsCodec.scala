@@ -2,7 +2,7 @@ package scalive
 
 import zio.*
 import zio.http.*
-import zio.http.codec.{Combiner, HttpCodec, HttpCodecError, QueryCodec}
+import zio.http.codec.{Combiner, HttpCodecError, QueryCodec}
 import zio.schema.Schema
 
 /** Bidirectionally maps route path/query values and typed routed parameters.
@@ -107,13 +107,20 @@ object LiveParamsCodec:
   /** A codec for routes with neither path values nor routed parameters. */
   val none: LiveParamsCodec[Unit, Unit] = path[Unit]
 
-  /** Derives query-only parameters from a ZIO Schema.
+  /** Derives query-only parameters from the fields of a case class's ZIO Schema.
+    *
+    * A field with a fallback (a default value, an `Option`, a collection) takes it when its value
+    * is missing or malformed, and logs the malformed value at debug level; a malformed list element
+    * is dropped. Only a field without a fallback fails the decode. Encoding leaves out values equal
+    * to their fallback, so a value with every field at its default encodes as no query at all. A
+    * list is a repeated name, an enum whose cases carry no data is its case name (rename one with
+    * `@caseName`), and a nested case class is encoded under its field name, as in `back.days=3`.
     *
     * @return
     *   a codec with no path values and schema-derived query parameters
     */
-  def query[A](using Schema[A]): LiveParamsCodec[Unit, A] =
-    fromQuery(HttpCodec.query[A])
+  def query[A](using schema: Schema[A]): LiveParamsCodec[Unit, A] =
+    fromSchemaQuery(SchemaQuery.fields(schema))
 
   /** Combines route path values with parameters handled by a ZIO HTTP query codec.
     *
@@ -145,6 +152,22 @@ object LiveParamsCodec:
         try
           val (pathParams, queryParams) = combiner.separate(params)
           Right(Encoded(pathParams, codec.encodeRequest(queryParams).url.queryParams))
+        catch
+          case scala.util.control.NonFatal(cause) =>
+            Left(LiveLocation.EncodeError.Query(cause))
+
+  private[scalive] def fromSchemaQuery[PathParams, QueryParams](
+    query: SchemaQuery[QueryParams]
+  )(using combiner: Combiner[PathParams, QueryParams]
+  ): LiveParamsCodec[PathParams, combiner.Out] =
+    new LiveParamsCodec[PathParams, combiner.Out]:
+      def decode(pathParams: PathParams, url: URL) =
+        query.decode(url.queryParams).map(queryParams => combiner.combine(pathParams, queryParams))
+
+      def encode(params: combiner.Out) =
+        try
+          val (pathParams, queryParams) = combiner.separate(params)
+          Right(Encoded(pathParams, query.encode(queryParams)))
         catch
           case scala.util.control.NonFatal(cause) =>
             Left(LiveLocation.EncodeError.Query(cause))

@@ -73,11 +73,10 @@ object QueryValuesSpec extends ZIOSpecDefault:
         usable    <- get(s"/reset-password?id=$id&code=$code")
         repeated  <- get(s"/reset-password?id=$id&id=$id&code=$code")
       yield assertTrue(
-        Vector(bare, malformed, partial).forall(page =>
+        Vector(bare, malformed, partial, repeated).forall(page =>
           page.response.status == Status.Ok && page.text.contains("This link cannot be used.")
         ),
         usable.text.contains("Choose a new password."),
-        repeated.response.status == Status.BadRequest,
         ResetRoutes.resetPassword.location(ResetLink.Unusable).href == "/reset-password",
         ResetRoutes.resetPassword.location(ResetLink.Usable(id, code)).href ==
           s"/reset-password?id=$id&code=$code"

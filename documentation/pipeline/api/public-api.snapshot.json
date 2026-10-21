@@ -9402,6 +9402,10 @@
         {
           "id" : "def:scalive.flash.apply:41b5c40c3e7121e8",
           "signature" : "def apply[A](kind: FlashKind[A])(project: A => HtmlElement[Nothing]): Mod.Content[Nothing]"
+        },
+        {
+          "id" : "def:scalive.flash.apply:c97321ee8a8a396c",
+          "signature" : "def apply[A](kind: FlashKind[A])(project: (A, Int) => HtmlElement[Nothing]): Mod.Content[Nothing]"
         }
       ]
     },

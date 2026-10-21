@@ -35,7 +35,7 @@ final private[scalive] class RootTurnJournal private (
   val ownerEpoch: Epoch,
   val navigation: Ref[Option[NavigationRequest]],
   val hooks: Ref[RootHookRegistry[Any, Any]],
-  val flash: Ref[Map[FlashKey, String]],
+  val flash: Ref[Map[FlashKey, FlashValue]],
   val clientEvents: Ref[Vector[ClientEffect]],
   val componentUpdates: Ref[Vector[ComponentUpdateRequest]],
   val resourceOperations: Ref[Vector[ResourceOperation]],
@@ -102,7 +102,7 @@ end RootTurnJournal
 /** The flash values, uploads, and streams of one LiveView or component, as one render reads them.
   */
 final private[connection] case class OwnerRenderState(
-  flash: Map[FlashKey, String],
+  flash: Map[FlashKey, FlashValue],
   uploads: UploadRegistry,
   owner: OwnerId,
   ownerEpoch: Epoch,
@@ -122,7 +122,7 @@ private[scalive] object RootTurnJournal:
   def make[Msg, Model](
     owner: OwnerId,
     registry: RootHookRegistry[Msg, Model],
-    initialFlash: Map[FlashKey, String] = Map.empty,
+    initialFlash: Map[FlashKey, FlashValue] = Map.empty,
     initialClientEvents: Vector[ClientEffect] = Vector.empty,
     initialComponentUpdates: Vector[ComponentUpdateRequest] = Vector.empty,
     initialNavigation: Option[NavigationRequest] = None,
@@ -226,15 +226,17 @@ final private class JournaledFlash(journal: RootTurnJournal) extends Flash:
     ZIO.fail(NullPointerException("flash message must not be null")).when(message == null) *>
       ZIO
         .attempt(kind.encodeValue(message)).flatMap(encoded =>
-          journal.flash.update(_.updated(kind.key, encoded))
+          journal.flash.update(
+            _.updatedWith(kind.key)(shown => Some(FlashValue(encoded, shown.fold(0)(_.put + 1))))
+          )
         )
   def clear(kind: FlashKind[?]): Task[Unit]       = journal.flash.update(_ - kind.key)
   def clearAll: Task[Unit]                        = journal.flash.set(Map.empty)
   def get[A](kind: FlashKind[A]): Task[Option[A]] =
     journal.flash.get.flatMap(_.get(kind.key) match
-      case None          => ZIO.none
-      case Some(encoded) =>
-        kind.decodeValue(encoded) match
+      case None        => ZIO.none
+      case Some(shown) =>
+        kind.decodeValue(shown.encoded) match
           case Some(value) => ZIO.some(value)
           case None        =>
             ZIO

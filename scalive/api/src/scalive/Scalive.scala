@@ -168,7 +168,24 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
       * A stored message that does not decode as `A` renders nothing.
       */
     def apply[A](kind: FlashKind[A])(project: A => HtmlElement[Nothing]): Mod.Content[Nothing] =
-      Mod.Content.Flash(kind.key, encoded => kind.decodeValue(encoded).map(project))
+      Mod.Content.Flash(kind.key, (encoded, _) => kind.decodeValue(encoded).map(project))
+
+    /** Renders the message for `kind` with `project`, and nothing while there is none.
+      *
+      * This form also passes `put`, a number that changes each time `kind` is put while its message
+      * is shown, even with the same message. Put it in the element's `id`, as in `s"saved-$put"`,
+      * so that the browser replaces the element and its hooks mount again, for example to restart a
+      * toast's timer.
+      */
+    def apply[A](
+      kind: FlashKind[A]
+    )(
+      project: (A, Int) => HtmlElement[Nothing]
+    ): Mod.Content[Nothing] =
+      Mod.Content.Flash(
+        kind.key,
+        (encoded, put) => kind.decodeValue(encoded).map(project(_, put))
+      )
 
     /** Clears flash when the element is clicked, without a message to the LiveView.
       *
@@ -182,6 +199,7 @@ package object scalive extends HtmlTags with HtmlAttrs with ComplexHtmlKeys with
       */
     def clearOnClick(kind: FlashKind[?]): Vector[Mod.Attr[Nothing]] =
       Vector(clearOnClick, phx.value("key") := kind.value)
+  end flash
 
   /** Renders the document `<title>` in a root layout, so the LiveView's `pageTitle` can change it.
     *

@@ -13,6 +13,7 @@ import scalive.ComponentRef
 import scalive.ComponentSpec
 import scalive.Escaping
 import scalive.FlashKey
+import scalive.FlashValue
 import scalive.FormEventKind
 import scalive.HtmlElement
 import scalive.JSCommands.JSCommand
@@ -203,7 +204,7 @@ object RenderProgram:
   final private case class FlashTemplate(
     id: TemplateId,
     key: FlashKey,
-    project: String => Option[HtmlElement[Nothing]],
+    project: (String, Int) => Option[HtmlElement[Nothing]],
     compiler: Compiler,
     state: FlashTemplate.State)
       extends NodeTemplate[Nothing]
@@ -353,11 +354,11 @@ object RenderProgram:
 
   private object FlashTemplate:
     final class State:
-      private var retained: Option[(String, ElementTemplate[Nothing])] = None
+      private var retained: Option[(FlashValue, ElementTemplate[Nothing])] = None
 
-      def snapshot: Option[(String, ElementTemplate[Nothing])] = synchronized(retained)
+      def snapshot: Option[(FlashValue, ElementTemplate[Nothing])] = synchronized(retained)
 
-      def assignment(next: Option[(String, ElementTemplate[Nothing])]): () => Unit =
+      def assignment(next: Option[(FlashValue, ElementTemplate[Nothing])]): () => Unit =
         () =>
           synchronized {
             val previous = retained
@@ -1074,13 +1075,13 @@ object RenderProgram:
       */
     def flashProjectionCandidate(
       template: FlashTemplate,
-      message: String
+      message: FlashValue
     ): Either[RenderError, Option[ElementTemplate[Nothing]]] = lock.synchronized {
       template.state.snapshot match
         case Some((retainedMessage, retained)) if retainedMessage == message =>
           Right(Some(retained))
         case retained =>
-          template.project(message) match
+          template.project(message.encoded, message.put) match
             case None          => Right(None)
             case Some(element) =>
               compileElement(element).map { compiled =>
@@ -1257,7 +1258,7 @@ object RenderProgram:
     previous: Option[EvaluatedNode.Element],
     revision: RenderRevision,
     transaction: SignalEvaluation.Transaction,
-    flash: Map[FlashKey, String],
+    flash: Map[FlashKey, FlashValue],
     candidateRows: CandidateRows
   ): Either[
     RenderError,
@@ -1349,7 +1350,7 @@ object RenderProgram:
     previous: Option[EvaluatedNode],
     revision: RenderRevision,
     transaction: SignalEvaluation.Transaction,
-    flash: Map[FlashKey, String],
+    flash: Map[FlashKey, FlashValue],
     bindings: BindingTable.Builder[Msg],
     commitActions: ArrayBuffer[() => Unit],
     candidateRows: CandidateRows,
@@ -1524,7 +1525,8 @@ object RenderProgram:
             case None          => Right(None)
             case Some(message) =>
               for
-                value     <- nonNullString(message, s"flash '${template.key.value}'")
+                _ <- nonNullString(message.encoded, s"flash '${template.key.value}'")
+                value = message
                 projected <- template.compiler.flashProjectionCandidate(template, value)
               yield projected.map(value -> _)
         candidate.flatMap {
@@ -1555,7 +1557,7 @@ object RenderProgram:
     previous: Option[EvaluatedNode],
     revision: RenderRevision,
     transaction: SignalEvaluation.Transaction,
-    flash: Map[FlashKey, String],
+    flash: Map[FlashKey, FlashValue],
     bindings: BindingTable.Builder[Msg],
     commitActions: ArrayBuffer[() => Unit],
     candidateRows: CandidateRows,
@@ -1589,7 +1591,7 @@ object RenderProgram:
     previous: Option[EvaluatedNode],
     revision: RenderRevision,
     transaction: SignalEvaluation.Transaction,
-    flash: Map[FlashKey, String],
+    flash: Map[FlashKey, FlashValue],
     bindings: BindingTable.Builder[Msg],
     commitActions: ArrayBuffer[() => Unit],
     candidateRows: CandidateRows,
@@ -1621,7 +1623,7 @@ object RenderProgram:
     previous: Option[EvaluatedNode],
     revision: RenderRevision,
     transaction: SignalEvaluation.Transaction,
-    flash: Map[FlashKey, String],
+    flash: Map[FlashKey, FlashValue],
     bindings: BindingTable.Builder[Msg],
     commitActions: ArrayBuffer[() => Unit],
     candidateRows: CandidateRows,
@@ -1711,7 +1713,7 @@ object RenderProgram:
     previous: Option[EvaluatedNode],
     revision: RenderRevision,
     transaction: SignalEvaluation.Transaction,
-    flash: Map[FlashKey, String],
+    flash: Map[FlashKey, FlashValue],
     bindings: BindingTable.Builder[Msg],
     commitActions: ArrayBuffer[() => Unit],
     candidateRows: CandidateRows,
@@ -1762,7 +1764,7 @@ object RenderProgram:
     previous: Option[EvaluatedNode],
     revision: RenderRevision,
     transaction: SignalEvaluation.Transaction,
-    flash: Map[FlashKey, String],
+    flash: Map[FlashKey, FlashValue],
     bindings: BindingTable.Builder[Msg],
     commitActions: ArrayBuffer[() => Unit],
     candidateRows: CandidateRows,
@@ -1814,7 +1816,7 @@ object RenderProgram:
     previous: Option[EvaluatedNode],
     revision: RenderRevision,
     transaction: SignalEvaluation.Transaction,
-    flash: Map[FlashKey, String],
+    flash: Map[FlashKey, FlashValue],
     bindings: BindingTable.Builder[Msg],
     commitActions: ArrayBuffer[() => Unit],
     candidateRows: CandidateRows,

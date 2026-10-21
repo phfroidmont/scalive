@@ -452,7 +452,8 @@ object ZioHttp:
                 ZioHttpSecurity
                   .verifyFlash(config, cookie.content).orElseSucceed(Map.empty)
             )
-        typedFlash = initialFlash.view.map((key, value) => FlashKey(key) -> value).toMap
+        typedFlash =
+          initialFlash.view.map((key, value) => FlashKey(key) -> FlashValue(value, 0)).toMap
         turn <- DisconnectedRootTurn.make(
                   lifecycle.hooks,
                   request.url,
@@ -602,7 +603,7 @@ object ZioHttp:
                     sessionName,
                     rootKey,
                     mountClaims,
-                    rendered.finalFlash.view.map((key, value) => key.value -> value).toMap,
+                    rendered.finalFlash.view.map((key, value) => key.value -> value.encoded).toMap,
                     childLifecycles
                   )
         (session, static) = tokens
@@ -1180,7 +1181,7 @@ object ZioHttp:
     request: Request,
     navigation: scalive.runtime.kernel.NavigationRequest
   ): UIO[Response] =
-    val values = navigation.flash.view.map((kind, message) => kind.value -> message).toMap
+    val values = navigation.flash.view.map((kind, message) => kind.value -> message.encoded).toMap
     ZioHttpSecurity.issueFlash(config, values).map { token =>
       val response = Response.seeOther(navigation.destination)
       token match
@@ -1190,7 +1191,7 @@ object ZioHttp:
         case None => response
     }
 
-  final private case class RenderedElement(html: String, finalFlash: Map[FlashKey, String])
+  final private case class RenderedElement(html: String, finalFlash: Map[FlashKey, FlashValue])
 
   private def renderElement[A, Msg](
     view: Signal[A] => HtmlElement[Msg],
@@ -2641,14 +2642,14 @@ object ZioHttp:
     config: ZioHttpConfig,
     join: RootJoin,
     claims: ZioHttpSecurity.RootClaims
-  ): UIO[Map[FlashKey, String]] =
+  ): UIO[Map[FlashKey, FlashValue]] =
     val values =
       if join.redirect.nonEmpty then
         join.flash.fold[UIO[Map[String, String]]](ZIO.succeed(Map.empty))(token =>
           ZioHttpSecurity.verifyFlash(config, token).orElseSucceed(Map.empty)
         )
       else ZIO.succeed(claims.initialFlash)
-    values.map(_.view.map((key, value) => FlashKey(key) -> value).toMap)
+    values.map(_.view.map((key, value) => FlashKey(key) -> FlashValue(value, 0)).toMap)
 
   private[scalive] def joinFailureEnvelope(
     joinRef: PhoenixRef,
@@ -3165,7 +3166,7 @@ object ZioHttp:
   private def flashValues(
     navigation: scalive.runtime.kernel.NavigationOutput
   ): Map[String, String] =
-    navigation.flash.view.map((kind, message) => kind.value -> message).toMap
+    navigation.flash.view.map((kind, message) => kind.value -> message.encoded).toMap
 
   private def offerEvent(
     lifecycles: Ref[Map[String, JoinedLifecycle]],

@@ -544,7 +544,7 @@ object ComponentRuntimeSpec extends ZIOSpecDefault:
           reply      <- sink.take
           flash      <- connection.inspectFlash
         yield assertTrue(
-          flash.get(FlashKind("info").key).contains("from-component"),
+          flash.get(FlashKind("info").key).map(_.encoded).contains("from-component"),
           reply match
             case ConnectionOutput.Reply(`command`, _, effects) =>
               effects.clientEvents.exists(_.name == "component-effect")
@@ -584,7 +584,7 @@ object ComponentRuntimeSpec extends ZIOSpecDefault:
           output <- sink.take
           flash  <- connection.inspectFlash
         yield assertTrue(
-          flash == Map(kind.key -> "retained"),
+          flash == Map(kind.key -> FlashValue("retained", 0)),
           output match
             case ConnectionOutput.Reply(`command`, RenderDelta.Empty, _) => true
             case _                                                     => false

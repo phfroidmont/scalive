@@ -255,11 +255,11 @@ object DisconnectedComponentRendererSpec extends ZIOSpecDefault:
         turn <- DisconnectedRootTurn.make[Unit, Unit](
                   LiveHooks.empty,
                   URL.root,
-                  Map(oldKind.key -> "remove-me")
+                  Map(oldKind.key -> FlashValue("remove-me", 0))
                 )
         consumed <- DisconnectedComponentRenderer.renderTurnWith[Unit, Nothing, (
                       String,
-                      Map[FlashKey, String]
+                      Map[FlashKey, FlashValue]
                     )](
                       _ => div(
                         scalive.flash(oldKind)(message => span(message)),
@@ -272,7 +272,7 @@ object DisconnectedComponentRendererSpec extends ZIOSpecDefault:
         finalFlash <- turn.flash
       yield assertTrue(
         consumed._1 == "root-visible",
-        consumed._2 == Map(newKind.key -> "root-visible"),
+        consumed._2 == Map(newKind.key -> FlashValue("root-visible", 0)),
         finalFlash == consumed._2
       )
     },
@@ -307,7 +307,7 @@ object DisconnectedComponentRendererSpec extends ZIOSpecDefault:
         removed <- DisconnectedComponentRenderer.renderWith[Unit, Nothing, String](
                       _ => div(remove.render(()), scalive.flash(kind)(_ => div(child.render(())))),
                      (),
-                     Map(kind.key -> "show")
+                     Map(kind.key -> FlashValue("show", 0))
                    )(tree => ZIO.succeed(text(tree.root)))
         finalChildMounts <- childMounts.get
         finalChildAfters <- childAfters.get
@@ -348,7 +348,7 @@ object DisconnectedComponentRendererSpec extends ZIOSpecDefault:
                         scalive.flash(kind)(value => div(retained.render(value)))
                       ),
                       (),
-                      Map(kind.key -> "initial")
+                      Map(kind.key -> FlashValue("initial", 0))
                     )(tree => ZIO.succeed(text(tree.root)))
         mountCount <- mounts.get
         updateProps <- updates.get

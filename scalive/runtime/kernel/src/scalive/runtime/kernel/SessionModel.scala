@@ -18,6 +18,7 @@ import scalive.AsyncKey
 import scalive.BindingPayload
 import scalive.ComponentRef
 import scalive.FlashKey
+import scalive.FlashValue
 import scalive.LifecycleTurnKind
 import scalive.LiveAsyncEvent
 import scalive.LiveAsyncResult
@@ -101,13 +102,13 @@ enum NavigationKind:
 final private[scalive] case class NavigationRequest(
   destination: URL,
   kind: NavigationKind,
-  flash: Map[FlashKey, String] = Map.empty)
+  flash: Map[FlashKey, FlashValue] = Map.empty)
 
 final private[scalive] case class NavigationOutput(
   id: NavigationId,
   destination: URL,
   kind: NavigationKind,
-  flash: Map[FlashKey, String])
+  flash: Map[FlashKey, FlashValue])
 
 final private[scalive] case class ClientEffect(name: String, payload: Json)
 
@@ -655,7 +656,7 @@ final private[scalive] case class PendingNavigation[Msg, Model](
   destination: URL,
   kind: NavigationKind,
   committed: Committed[Msg, Model],
-  flash: Map[FlashKey, String],
+  flash: Map[FlashKey, FlashValue],
   deadline: Instant,
   redirectCount: Int,
   deferred: Vector[DeferredSessionCommand[Msg, Model]],

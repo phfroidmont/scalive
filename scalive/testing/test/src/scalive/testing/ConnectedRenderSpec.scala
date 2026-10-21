@@ -650,6 +650,40 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
         yield assertTrue(shown == "Saved (2)", value.contains(Notice("Saved", 2)))
       }
     },
+    test("each put of a flash value gets a new put number, even with the same value") {
+      val saved = FlashKind("saved")
+
+      ZIO.scoped {
+        for
+          connected <- ConnectedRender.join(new LiveView[Boolean, Unit]:
+                         def mount(ctx: MountContext) = ctx.flash.put(saved, "Saved")
+                         def handleMessage(model: Unit, ctx: MessageContext) =
+                           case true  => ctx.flash.put(saved, "Saved")
+                           case false => ctx.flash.clear(saved)
+                         override def view(model: Signal[Unit]) =
+                           div(
+                             button(dataAttr("save") := "", on.click(true), "Save"),
+                             button(dataAttr("clear") := "", on.click(false), "Clear"),
+                             flash(saved)((message, put) => p(idAttr := s"saved-$put", message)),
+                             flash(saved)(message => span(dataAttr("plain") := "", message))
+                           ))
+          mounted  <- connected.html
+          _        <- connected.click("[data-save]")
+          again    <- connected.html
+          _        <- connected.click("[data-clear]")
+          _        <- connected.click("[data-save]")
+          afterGap <- connected.html
+          plain    <- connected.text("[data-plain]")
+          shown = (html: String) => Jsoup.parseBodyFragment(html).select("p[id^=saved-]")
+        yield assertTrue(
+          shown(mounted).text == "Saved",
+          shown(again).text == "Saved",
+          shown(again).attr("id") != shown(mounted).attr("id"),
+          shown(afterGap).attr("id") == "saved-0",
+          plain == "Saved"
+        )
+      }
+    },
     test("handles keyed and full client flash clearing for root and component targets") {
       val info    = FlashKind("info")
       val error   = FlashKind("error")

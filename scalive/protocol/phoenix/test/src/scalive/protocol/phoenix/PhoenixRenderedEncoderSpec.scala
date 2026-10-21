@@ -1553,7 +1553,7 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
     },
     test("flash insertion points remain transparent across structural updates") {
       val notice = FlashKind("notice")
-      val compiled = RenderProgram.compile[Map[FlashKey, String], Nothing](
+      val compiled = RenderProgram.compile[Map[FlashKey, FlashValue], Nothing](
         _ => div("before", flash(notice)(message => span(message)), "after"),
         RenderState(_)
       )
@@ -1561,7 +1561,7 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
         program <- ZIO.fromEither(compiled)
         absent  <- program.evaluate(Map.empty)
         initial <- ZIO.fromEither(PhoenixRenderedEncoder.initial(absent.tree))
-        present <- program.evaluate(Map(notice.key -> "saved"), Some(absent.commit))
+        present <- program.evaluate(Map(notice.key -> FlashValue("saved", 0)), Some(absent.commit))
         inserted <- ZIO.fromEither(
                       PhoenixRenderedEncoder.update(
                         initial._1,

@@ -61,3 +61,6 @@ private[scalive] object FlashKey:
   def apply(value: String): FlashKey = value
 
   extension (key: FlashKey) def value: String = key
+
+/** A stored flash message and how many times its kind was put while it was shown. */
+final private[scalive] case class FlashValue(encoded: String, put: Int)

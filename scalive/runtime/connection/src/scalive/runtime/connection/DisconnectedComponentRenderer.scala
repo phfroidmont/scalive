@@ -25,7 +25,7 @@ private[scalive] object DisconnectedComponentRenderer:
   def renderWith[Input, Msg, A](
     view: Signal[Input] => HtmlElement[Msg],
     input: Input,
-    flash: Map[FlashKey, String] = Map.empty
+    flash: Map[FlashKey, FlashValue] = Map.empty
   )(
     consume: EvaluatedTree => Task[A]
   ): Task[A] =
@@ -34,9 +34,9 @@ private[scalive] object DisconnectedComponentRenderer:
   def renderWithState[Input, Msg, A](
     view: Signal[Input] => HtmlElement[Msg],
     input: Input,
-    flash: Map[FlashKey, String] = Map.empty
+    flash: Map[FlashKey, FlashValue] = Map.empty
   )(
-    consume: (EvaluatedTree, Map[FlashKey, String]) => Task[A]
+    consume: (EvaluatedTree, Map[FlashKey, FlashValue]) => Task[A]
   ): Task[A] =
     for
       journal <- makeJournal(flash)
@@ -49,7 +49,7 @@ private[scalive] object DisconnectedComponentRenderer:
     turn: DisconnectedRootTurn[?, ?],
     nestedResolver: DisconnectedNestedResolver = DisconnectedNestedResolver.unavailable
   )(
-    consume: (EvaluatedTree, Map[FlashKey, String]) => Task[A]
+    consume: (EvaluatedTree, Map[FlashKey, FlashValue]) => Task[A]
   ): Task[A] = renderWithJournal(view, input, turn.componentJournal, nestedResolver)(consume)
 
   private def renderWithJournal[Input, Msg, A](
@@ -58,7 +58,7 @@ private[scalive] object DisconnectedComponentRenderer:
     journal: RootTurnJournal,
     nestedResolver: DisconnectedNestedResolver = DisconnectedNestedResolver.unavailable
   )(
-    consume: (EvaluatedTree, Map[FlashKey, String]) => Task[A]
+    consume: (EvaluatedTree, Map[FlashKey, FlashValue]) => Task[A]
   ): Task[A] =
     ZIO
       .fromEither(
@@ -74,7 +74,7 @@ private[scalive] object DisconnectedComponentRenderer:
   def renderProgramWith[Input, Msg, A](
     program: RenderProgram[Input, Msg],
     input: Input,
-    flash: Map[FlashKey, String] = Map.empty,
+    flash: Map[FlashKey, FlashValue] = Map.empty,
     nestedResolver: DisconnectedNestedResolver = DisconnectedNestedResolver.unavailable
   )(
     consume: EvaluatedTree => Task[A]
@@ -91,7 +91,7 @@ private[scalive] object DisconnectedComponentRenderer:
     journal: RootTurnJournal,
     nestedResolver: DisconnectedNestedResolver
   )(
-    consume: (EvaluatedTree, Map[FlashKey, String]) => Task[A]
+    consume: (EvaluatedTree, Map[FlashKey, FlashValue]) => Task[A]
   ): Task[A] =
     ZIO.scoped {
       for
@@ -103,7 +103,7 @@ private[scalive] object DisconnectedComponentRenderer:
       yield result
     }
 
-  private def makeJournal(flash: Map[FlashKey, String]): Task[RootTurnJournal] =
+  private def makeJournal(flash: Map[FlashKey, FlashValue]): Task[RootTurnJournal] =
     for
       lifecycle <-
         ZIO
@@ -120,9 +120,9 @@ private[scalive] object DisconnectedComponentRenderer:
     input: Input,
     journal: RootTurnJournal,
     environment: DisconnectedComponentEnvironment,
-    previous: Option[(Vector[DisconnectedComponentIdentity], Map[FlashKey, String])],
+    previous: Option[(Vector[DisconnectedComponentIdentity], Map[FlashKey, FlashValue])],
     iteration: Int
-  ): ZIO[Scope, Throwable, (EvaluatedTree, Map[FlashKey, String])] =
+  ): ZIO[Scope, Throwable, (EvaluatedTree, Map[FlashKey, FlashValue])] =
     if iteration >= 16 then
       ZIO.fail(
         IllegalStateException("disconnected component graph did not stabilize after 16 passes")
@@ -154,7 +154,7 @@ private[scalive] object DisconnectedComponentRenderer:
     journal: RootTurnJournal,
     nestedResolver: DisconnectedNestedResolver
   )(
-    consume: (EvaluatedTree, Map[FlashKey, String]) => Task[A]
+    consume: (EvaluatedTree, Map[FlashKey, FlashValue]) => Task[A]
   ): Task[A] =
     ZIO.scoped {
       for

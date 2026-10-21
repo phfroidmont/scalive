@@ -558,7 +558,7 @@ object Mod:
     private[scalive] case NestedView(spec: NestedViewSpec)         extends Content[Nothing]
     private[scalive] case Flash(
       key: FlashKey,
-      project: String => Option[HtmlElement[Nothing]]) extends Content[Nothing]
+      project: (String, Int) => Option[HtmlElement[Nothing]]) extends Content[Nothing]
   end Content
 
   object Content:

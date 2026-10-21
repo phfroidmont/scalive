@@ -3,6 +3,7 @@ package scalive.runtime.connection
 import zio.json.ast.Json
 
 import scalive.FlashKey
+import scalive.FlashValue
 import scalive.LiveEvent
 import scalive.render.BindingId
 import scalive.render.RenderDelta
@@ -27,7 +28,7 @@ private[connection] def isNamedBrowserEvent(event: LiveEvent): Boolean =
 final private[scalive] case class RootConnectionMetadata(
   staticChanged: Boolean,
   connectParams: Map[String, Json],
-  initialFlash: Map[FlashKey, String] = Map.empty)
+  initialFlash: Map[FlashKey, FlashValue] = Map.empty)
 
 final private[scalive] case class ConnectionConfig private (
   ingressCapacity: Int,

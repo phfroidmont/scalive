@@ -687,7 +687,7 @@ final private[scalive] class RootConnection[Msg, Model] private (
   private[scalive] def inspectTree: IO[ConnectionError, EvaluatedTree] =
     kernel.inspect.map(_.render.tree).mapError(connectionError)
 
-  private[connection] def inspectFlash: IO[ConnectionError, Map[FlashKey, String]] =
+  private[connection] def inspectFlash: IO[ConnectionError, Map[FlashKey, FlashValue]] =
     kernel.inspect.map(_.model.flash).mapError(connectionError)
 
   private[connection] def inspectComponentIds: IO[ConnectionError, Vector[ComponentInstanceId]] =

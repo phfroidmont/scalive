@@ -64,6 +64,7 @@ object E2EApp extends ZIOAppDefault:
       live / "form" / "typed-feedback"                          -> TypedFormFeedbackLiveView(),
       live / "form-unsaved"                                     -> FormUnsavedLiveView(),
       live / "form-unsaved" / "target"                          -> FormUnsavedTargetLiveView(),
+      live / "flash" / "repeat"                                 -> FlashRepeatLiveView(),
       E2ERoutes.portal                                          -> PortalLiveView(),
       (live / "errors").params(ErrorLiveView.QueryParams.codec) -> ErrorLiveView(),
       live / "issues" / "2965"                                  -> Issue2965LiveView(),

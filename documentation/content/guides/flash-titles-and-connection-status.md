@@ -38,6 +38,16 @@ a kind for its own type. `FlashKind.json` stores the value as JSON, and `put`,
 A stored value that no longer decodes, for example one an earlier deployment
 encoded differently, is treated as absent.
 
+Putting the same message again while it is shown changes nothing on the page,
+so a toast whose hook hides it after a delay would not start a new timer. Use
+the form of `flash` that also receives `put`, a number that changes on every
+put while the message is shown, and put it in the element's `id`:
+
+@:sourceRegion(documentation/fixtures/guides/src/feedback/SavedToast.scala, feedback-flash-put-number)
+
+The browser keeps an element whose `id` stays the same and only updates it. A
+new `id` makes it replace the element, so `AutoDismiss` mounts again.
+
 Flash is lifecycle state, not a substitute for model data. Use it for brief
 feedback such as a save result or navigation notice. Keep values free of
 secrets, and put information that must survive arbitrary reloads in durable

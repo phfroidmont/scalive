@@ -139,7 +139,7 @@ object TreeDifferSpec extends ZIOSpecDefault:
     },
     test("diffs flash scalar changes sparsely and structural changes exactly") {
       val notice = FlashKind("notice")
-      val compiled = RenderProgram.compile[Map[FlashKey, String], Nothing](
+      val compiled = RenderProgram.compile[Map[FlashKey, FlashValue], Nothing](
         _ => div(flash(notice) { message =>
           if message.startsWith("!") then strong(dataAttr("message") := message, message)
           else span(dataAttr("message") := message, message)
@@ -150,10 +150,10 @@ object TreeDifferSpec extends ZIOSpecDefault:
       for
         program <- ZIO.fromEither(compiled)
         absent  <- program.evaluate(Map.empty)
-        first   <- program.evaluate(Map(notice.key -> "one"), Some(absent.commit))
-        second  <- program.evaluate(Map(notice.key -> "two"), Some(first.commit))
+        first   <- program.evaluate(Map(notice.key -> FlashValue("one", 0)), Some(absent.commit))
+        second  <- program.evaluate(Map(notice.key -> FlashValue("two", 0)), Some(first.commit))
         removed <- program.evaluate(Map.empty, Some(second.commit))
-        strong  <- program.evaluate(Map(notice.key -> "!three"), Some(removed.commit))
+        strong  <- program.evaluate(Map(notice.key -> FlashValue("!three", 0)), Some(removed.commit))
         scalarDelta = TreeDiffer.diff(first.tree, second.tree)
       yield assertTrue(
         scalarDelta match

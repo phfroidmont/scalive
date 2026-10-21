@@ -960,7 +960,7 @@ object RootConnectionSpec extends ZIOSpecDefault:
           _          <- outputs.take
           afterClear <- connection.inspectFlash
         yield assertTrue(
-          afterPut == Map(notice.key -> "saved"),
+          afterPut == Map(notice.key -> FlashValue("saved", 0)),
           navigation.isInstanceOf[ConnectionOutput.DiffNavigation],
           afterPatch == afterPut,
           afterClear.isEmpty

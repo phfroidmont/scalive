@@ -85,6 +85,16 @@ if (window.location.pathname === "/issues/4325") {
 
 const hooks = {
   ...colocatedHooks,
+  FlashMounts: {
+    mounted() {
+      window.flashMounts = (window.flashMounts ?? 0) + 1
+    }
+  },
+  FixedFlashMounts: {
+    mounted() {
+      window.fixedFlashMounts = (window.fixedFlashMounts ?? 0) + 1
+    }
+  },
   BlurFeedback,
   FormHook: {
     mounted() {

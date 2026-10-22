@@ -2,6 +2,7 @@ package scalive
 
 import zio.*
 import zio.http.*
+import zio.http.codec.PathCodec
 
 import scalive.runtime.kernel.RuntimeLog
 
@@ -29,7 +30,8 @@ final private[scalive] class ErrorPages(
   page: Option[LiveErrorPage]):
 
   // Without a page for 404, an unmatched request is left to the application's other routes.
-  def rendersNotFound: Boolean = page.exists(_.renders(Status.NotFound))
+  def unmatchedPaths: Option[PathCodec[Unit]] =
+    page.filter(_.renders(Status.NotFound)).map(_.unmatchedPaths)
 
   def respond(failure: PageFailure, request: Request): UIO[Response] = failure match
     case PageFailure.Error(status)          => response(status, request)

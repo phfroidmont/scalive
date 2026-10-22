@@ -1,5 +1,6 @@
 package scalive
 
+import zio.http.codec.PathCodec
 import zio.http.{Request, Status}
 
 /** The page Scalive renders when it answers a page request with an error status.
@@ -19,6 +20,14 @@ trait LiveErrorPage:
     * Scalive answers the bare status, for example to keep a `500` independent of the root layout.
     */
   def renders(status: Status): Boolean = true
+
+  /** The paths below which a `GET` request that no route matches answers this page's `404`.
+    *
+    * The default is every path, as a Phoenix router does. Narrow it when the server also serves
+    * other routes, such as another application whose own catch-all must answer the rest, as in
+    * `PathCodec.empty / "app"`. Only applies when the page renders `404`.
+    */
+  def unmatchedPaths: PathCodec[Unit] = PathCodec.empty
 
   /** The document title for `status`, rendered by the root layout's `liveTitle`. */
   def pageTitle(status: Status, request: Request): Option[String] = None

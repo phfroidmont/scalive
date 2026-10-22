@@ -193,14 +193,11 @@ object ZioHttp:
         observerFactory
       )
       // ZIO HTTP prefers literal and parameter segments, so any other route still wins over this.
-      val unmatchedRoutes =
-        if errors.rendersNotFound then
-          Vector(
-            RoutePattern(Method.GET, PathCodec.trailing) -> handler((_: Path, request: Request) =>
-              errors.response(Status.NotFound, request)
-            )
-          )
-        else Vector.empty
+      val unmatchedRoutes = errors.unmatchedPaths.toVector.map(paths =>
+        RoutePattern(Method.GET, paths / PathCodec.trailing) -> handler(
+          (_: Path, request: Request) => errors.response(Status.NotFound, request)
+        )
+      )
       // Pages carry their CSRF token and signed session. An HTTP route may set its own policy.
       val pageCache = HandlerAspect.updateResponse(response =>
         if response.headers.contains(Header.CacheControl.name) then response

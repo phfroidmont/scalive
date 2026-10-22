@@ -1186,6 +1186,31 @@ object ZioHttpSpec extends ZIOSpecDefault:
         unmatchedBody.contains("Error 404")
       )
     },
+    test("an error page answers unmatched requests only below its unmatched paths") {
+      object Home extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext)  = ZIO.unit
+        def view(model: Signal[Unit]) = div("home")
+      object Page extends LiveErrorPage:
+        override def unmatchedPaths                = PathCodec.empty / "app"
+        def view(status: Status, request: Request) = mainTag(s"Error ${status.code}")
+      // Another application on the same server answers everything else.
+      val other  = Routes(Method.GET / PathCodec.trailing -> handler(Response.text("other")))
+      val routes = ZioHttp
+        .routes(scalive.Live.router.withErrorPage(Page)((scalive.live / "app") -> Home), config)
+        .map(_ ++ other)
+
+      for
+        missing     <- run(routes, Request.get(URL.decode("/app/missing").toOption.get))
+        missingBody <- missing.body.asString.orDie
+        outside     <- run(routes, Request.get(URL.decode("/legacy/page").toOption.get))
+        outsideBody <- outside.body.asString.orDie
+      yield assertTrue(
+        missing.status == Status.NotFound,
+        missingBody.contains("Error 404"),
+        outside.status == Status.Ok,
+        outsideBody == "other"
+      )
+    },
     test("a page request with a reload status answers that status once; a forged one answers 500") {
       object Home extends LiveView.Eventless[Unit]:
         def mount(ctx: MountContext) = ZIO.unit

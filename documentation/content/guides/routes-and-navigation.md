@@ -241,7 +241,10 @@ depend on the root layout.
 With an error page installed, a `GET` request that no route of the application
 matches also answers `404` with it. Routes added next to Scalive's, such as
 static assets or health checks, still win, whatever their order, because ZIO HTTP
-prefers literal and parameter segments to a catch-all.
+prefers literal and parameter segments to a catch-all. When another application
+with its own catch-all shares the server, override `unmatchedPaths` with the
+prefix Scalive's pages live under, as in `PathCodec.empty / "app"`, so that each
+catch-all answers only its own paths.
 
 When the record a URL names does not exist, fail `mount` or `handleParams` with
 @:apiSymbol(class:scalive.LiveNotFound)`LiveNotFound`@:@:

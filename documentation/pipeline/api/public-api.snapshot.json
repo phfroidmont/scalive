@@ -6218,6 +6218,18 @@
       ]
     },
     {
+      "id" : "def:scalive.LiveErrorPage.unmatchedPaths",
+      "ownerId" : "trait:scalive.LiveErrorPage",
+      "qualifiedName" : "scalive.LiveErrorPage.unmatchedPaths",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveErrorPage.unmatchedPaths:32d9ef4b60c5e3fa",
+          "signature" : "def unmatchedPaths: zio.http.codec.PathCodec[Unit]"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.LiveErrorPage.view",
       "ownerId" : "trait:scalive.LiveErrorPage",
       "qualifiedName" : "scalive.LiveErrorPage.view",

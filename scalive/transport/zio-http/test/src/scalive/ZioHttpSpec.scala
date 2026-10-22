@@ -1091,6 +1091,46 @@ object ZioHttpSpec extends ZIOSpecDefault:
         !item.isLiveDestination(URL.decode("/items/report.txt").toOption.get)
       )
     },
+    test("live navigation resolves a URL to the route that a page request gets") {
+      object Item extends LiveView.Routed.Eventless[String, String]:
+        def mount(id: String, ctx: MountContext) = ZIO.succeed(id)
+        def view(model: Signal[String]) = div(model)
+      object NewItem extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        def view(model: Signal[Unit]) = div("new item")
+      object Upload extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        def view(model: Signal[Unit]) = div("upload")
+      val application = scalive.Live.router(
+        (scalive.live / "items" / PathCodec.string("id")) -> Item,
+        (scalive.live / "items" / "new") -> NewItem,
+        (scalive.live / "files" / PathCodec.string("name")).http((_, _) =>
+          ZIO.succeed(Response.text("file"))
+        ),
+        (scalive.live / "files" / "upload") -> Upload
+      )
+      val routes                  = ZioHttp.validate(application).fold(throw _, identity)
+      val Vector(item, newItem, upload) = routes: @unchecked
+      val get = (path: String) =>
+        run(ZioHttp.routes(application, config), Request.get(URL.decode(path).toOption.get))
+          .flatMap(_.body.asString.orDie)
+      val at = (path: String) => URL.decode(path).toOption.get
+
+      for
+        newPage    <- get("/items/new")
+        uploadPage <- get("/files/upload")
+        file       <- get("/files/report.txt")
+      yield assertTrue(
+        newPage.contains("new item"),
+        uploadPage.contains("upload"),
+        file == "file",
+        newItem.isLiveDestination(at("/items/new")),
+        !item.isLiveDestination(at("/items/new")),
+        item.isLiveDestination(at("/items/7")),
+        upload.isLiveDestination(at("/files/upload")),
+        !upload.isLiveDestination(at("/files/report.txt"))
+      )
+    },
     test("an HTTP route and a LiveView on the same path fail assembly") {
       object View extends LiveView.Eventless[Unit]:
         def mount(ctx: MountContext) = ZIO.unit

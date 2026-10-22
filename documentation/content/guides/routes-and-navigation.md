@@ -287,8 +287,10 @@ parameters:
 @:sourceRegion(documentation/fixtures/guides/src/routing/HttpRoutes.scala, routing-http-route-link)
 
 Live navigation to an HTTP route, through `link.pushNavigate` for example, falls
-back to an ordinary page request, which is also what starts a download. HTTP
-routes answer only `GET`; a form that changes state posts to a ZIO HTTP route,
+back to an ordinary page request, which is also what starts a download. When
+several routes match a URL, the more specific one answers it, as ZIO HTTP picks,
+whatever their order: `/items/new` wins over `/items/{id}`, for page requests
+and live navigation alike. HTTP routes answer only `GET`; a form that changes state posts to a ZIO HTTP route,
 as [Ordinary HTTP forms and redirects](http-forms-and-redirects.md) shows.
 
 ## Build locations from route declarations {#build-locations-from-route-declarations}

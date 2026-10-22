@@ -221,7 +221,11 @@ object ZioHttp:
           if !route.definition.isInstanceOf[LiveRouteDefinition.Http[?, ?, ?, ?, ?, ?]] =>
         sessionName -> route
     }
-    // A patch must resolve to the route already mounted, as live navigation would resolve it.
+    // Live navigation and patches must mount the route a page request would get.
+    lazy val servingRoute = pageRouteResolver(
+      catalog.map(_.pathCodec),
+      httpDefinitions(application).map(_.pathCodec)
+    )
     lazy val catalog: Vector[CompiledRoute[R]] =
       declarations.zipWithIndex.map { case ((sessionName, route), index) =>
         CompiledRoute.erase(
@@ -230,8 +234,7 @@ object ZioHttp:
           route.definition,
           application.layouts,
           application.rootLayout,
-          httpDefinitions(application).map(_.pathCodec),
-          url => catalog.find(_.isLiveDestination(url)).map(_.index)
+          url => servingRoute(url)
         )
       }
     // PathCodec does not expose structural equality. RoutePattern.toString is ZIO HTTP's stable
@@ -264,6 +267,32 @@ object ZioHttp:
       case route: LiveRegistration[R] @unchecked => Vector(None -> route)
       case session: LiveSession[R] @unchecked    => session.routes.map(Some(session.name) -> _)
     }
+
+  // The index of the LiveView route that ZIO HTTP serves a GET for a URL with, or None when an HTTP
+  // route or no route answers it. ZIO HTTP prefers the more specific route whatever the order of
+  // declaration, and only its router knows its rules, so this asks a router whose handlers name
+  // their route. They answer at once, so running one does not block.
+  private def pageRouteResolver(
+    livePaths: Vector[PathCodec[?]],
+    httpPaths: Vector[PathCodec[?]]
+  ): URL => Option[Int] =
+    val names = livePaths.zipWithIndex.map((path, index) => path -> index.toString) ++
+      httpPaths.map(_ -> "http")
+    val router = Routes.fromIterable(
+      names.map((path, name) =>
+        RoutePattern(Method.GET, path) -> Handler.fromResponse(
+          Response.ok.addHeader(ServingRouteHeader, name)
+        )
+      )
+    )
+    url =>
+      val response = Unsafe.unsafe(implicit unsafe =>
+        Runtime.default.unsafe
+          .run(ZIO.scoped(router.runZIO(Request.get(url)))).getOrThrowFiberFailure()
+      )
+      response.rawHeader(ServingRouteHeader).flatMap(_.toIntOption)
+
+  private val ServingRouteHeader = "x-scalive-serving-route"
 
   private def httpDefinitions[R](
     application: LiveApplication[R]
@@ -387,12 +416,12 @@ object ZioHttp:
 
     final def matches(url: URL): Boolean = pathCodec.decode(url.path).isRight
 
-    // Whether an HTTP route of the application answers `url`, so live navigation to it falls back to
-    // a page request, whatever ZIO HTTP would pick between the two.
-    protected def servedOverHttp(url: URL): Boolean
+    // The index of the LiveView route that a page request for `url` gets, if any.
+    protected def servingRoute(url: URL): Option[Int]
 
     /** Whether live navigation or a patch to `url` can mount this route. */
-    final def isLiveDestination(url: URL): Boolean = matches(url) && !servedOverHttp(url)
+    final def isLiveDestination(url: URL): Boolean =
+      matches(url) && servingRoute(url).contains(index)
 
     final def getRoute(
       config: ZioHttpConfig,
@@ -748,7 +777,6 @@ object ZioHttp:
       definition: LiveRouteDefinition[A],
       applicationLayouts: Vector[LiveLayout[Any, Any]],
       applicationRootLayout: LiveRootLayout[Any, Any],
-      httpPaths: Vector[PathCodec[?]],
       resolveRoute: URL => Option[Int]
     ): CompiledRoute[R] = definition match
       case route: LiveRouteDefinition.Route[rc, rf, A, p, in, ctx] =>
@@ -758,7 +786,6 @@ object ZioHttp:
           route,
           applicationLayouts,
           applicationRootLayout,
-          httpPaths,
           resolveRoute
         ).asInstanceOf[CompiledRoute[R]]
       case _: LiveRouteDefinition.Http[?, ?, ?, ?, ?, ?] =>
@@ -770,15 +797,13 @@ object ZioHttp:
       definition: LiveRouteDefinition.Route[RC, RF, A, P, In, Ctx],
       applicationLayouts: Vector[LiveLayout[Any, Any]],
       applicationRoot: LiveRootLayout[Any, Any],
-      httpPaths: Vector[PathCodec[?]],
       resolveRoute: URL => Option[Int]
     ): CompiledRoute[RC & RF] = new CompiledRoute[RC & RF]:
       type PathParams = A
       type Msg        = Any
       type Model      = Any
 
-      protected def servedOverHttp(url: URL): Boolean =
-        httpPaths.exists(_.decode(url.path).isRight)
+      protected def servingRoute(url: URL): Option[Int] = resolveRoute(url)
 
       private val codec = definition.pathCodec
 
@@ -820,9 +845,7 @@ object ZioHttp:
                           )
                         case view: LiveView[?, ?] =>
                           RootLifecycle.ordinary(view.asInstanceOf[LiveView[Any, Any]], url, guard)
-        yield lifecycle.copy(acceptsPatch =
-          destination => resolveRoute(destination).contains(index)
-        )
+        yield lifecycle.copy(acceptsPatch = isLiveDestination)
 
       protected def disconnectedLifecycle(path: A, request: Request) =
         LiveLogAnnotations

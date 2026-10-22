@@ -34,7 +34,7 @@ enum Connection[+Connected]:
     case Disconnected            => ZIO.unit
     case Connected(capabilities) => effect(capabilities).unit
 
-/** Metadata supplied by a connected client. Values in `connectParams` are untrusted. */
+/** Metadata supplied by a connected client. Its values are untrusted. */
 trait ConnectedMetadata:
   /** Whether the running server's document tracks an asset the browser has not loaded.
     *

@@ -118,7 +118,7 @@ object LiveUploadAccept:
 end LiveUploadAccept
 
 /** Determines which entries count toward an upload's maximum entry capacity. */
-enum LiveUploadMaxEntriesMode:
+enum LiveUploadMaxEntriesMode derives CanEqual:
   /** Only currently selected entries count. Consumed entries free capacity. */
   case Selected
 

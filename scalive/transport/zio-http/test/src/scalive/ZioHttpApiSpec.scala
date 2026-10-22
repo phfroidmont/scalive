@@ -4,6 +4,18 @@ import zio.test.*
 
 object ZioHttpApiSpec extends ZIOSpecDefault:
   def spec = suite("ZIO HTTP public API")(
+    test("its enums whose cases carry no data compare under strict equality") {
+      val errors = scala.compiletime.testing.typeCheckErrors("""
+        import scala.language.strictEquality
+        import scalive.*
+
+        def noStore(cache: PageCache)                 = cache == PageCache.NoStore
+        def immutable(policy: StaticAssetCachePolicy) = policy == StaticAssetCachePolicy.Immutable
+        def packaged(client: LiveClient)              = client == LiveClient.Packaged
+      """)
+
+      assertTrue(errors.isEmpty)
+    },
     test("requires an explicit validated config") {
       val errors = scala.compiletime.testing.typeCheckErrors("""
         import java.time.Duration

@@ -96,7 +96,7 @@ final case class LifecycleJoinAttempt(
   def isRetry: Boolean = attempts.exists(_ > 0L)
 
 /** Source of work processed by one connected lifecycle turn. */
-enum LifecycleTurnKind:
+enum LifecycleTurnKind derives CanEqual:
   /** The first turn of a connected lifecycle, which mounts the LiveView and renders it. */
   case Bootstrap
 
@@ -130,7 +130,7 @@ enum LifecycleTurnKind:
 end LifecycleTurnKind
 
 /** Stable stage classification for failed lifecycle work. */
-enum LifecycleFailureStage:
+enum LifecycleFailureStage derives CanEqual:
   /** The `mount` of the LiveView failed. */
   case Mount
 
@@ -242,7 +242,7 @@ final case class LifecycleError(
   cause: Option[Throwable] = None)
 
 /** Bounded runtime queue observed by Scalive. */
-enum LifecycleQueue:
+enum LifecycleQueue derives CanEqual:
   /** The connection queue of incoming commands for one lifecycle, such as browser events, before
     * they reach its mailbox. Scalive samples its depth after each accepted command.
     */

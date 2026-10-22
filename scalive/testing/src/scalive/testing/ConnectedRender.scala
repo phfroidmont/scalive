@@ -199,7 +199,7 @@ enum ConnectedJoinFailure:
 end ConnectedJoinFailure
 
 /** The semantic result of one connected browser or server-message action. */
-enum ConnectedAction:
+enum ConnectedAction derives CanEqual:
   /** The action completed without terminal navigation. */
   case Rendered
 

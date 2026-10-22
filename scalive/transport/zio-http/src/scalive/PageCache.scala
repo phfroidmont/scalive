@@ -9,7 +9,7 @@ import zio.http.Header
   * `Cache-Control` of their own. Scalive's browser files keep their own headers. A page carries its
   * CSRF token and signed session, so no case lets a shared cache keep it.
   */
-enum PageCache:
+enum PageCache derives CanEqual:
   /** `private, max-age=0, must-revalidate`, as Phoenix sends by default: only the browser may keep
     * the page, and it asks the server again before reusing it.
     */

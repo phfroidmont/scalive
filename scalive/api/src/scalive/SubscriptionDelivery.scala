@@ -4,7 +4,7 @@ package scalive
   * component. Interruption discards pending messages; restarting a dormant component's stream does
   * not replay messages from its previous run.
   */
-enum SubscriptionDelivery:
+enum SubscriptionDelivery derives CanEqual:
   /** Delivers every message in order while the subscription remains active. */
   case Lossless
 

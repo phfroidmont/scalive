@@ -5,7 +5,7 @@ package scalive
   * Scalive always serves its navigation-guard runtime and adds it to every page. See [client
   * setup](https://scalive.dev/guides/static-assets-and-client-setup).
   */
-enum LiveClient:
+enum LiveClient derives CanEqual:
   /** Scalive serves the Phoenix 1.8.15 and Phoenix LiveView 1.2.12 clients it packages, adds them
     * to every page, and connects a `LiveSocket` after the page's own scripts have run.
     *

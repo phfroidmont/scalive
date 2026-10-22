@@ -1158,6 +1158,16 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
         yield assertTrue(before == "none", after.contains("typed"), joined)
       }
     },
+    test("a connected action compares under strict equality") {
+      val errors = scala.compiletime.testing.typeCheckErrors("""
+        import scala.language.strictEquality
+        import scalive.testing.ConnectedAction
+
+        def rendered(action: ConnectedAction) = action == ConnectedAction.Rendered
+      """)
+
+      assertTrue(errors.isEmpty)
+    },
     test("clicking a patch link patches the LiveView, as a browser does") {
       val search = scalive.live.queryOptional[String]("q")
       val view   = new LiveView.Routed.Eventless[Option[String], Option[String]]:

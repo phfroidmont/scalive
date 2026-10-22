@@ -183,7 +183,7 @@ object StaticAssetCache:
   )
 
 /** The cache behavior for a served asset path. */
-enum StaticAssetCachePolicy:
+enum StaticAssetCachePolicy derives CanEqual:
   /** The path is pinned to its startup digest and may be cached without revalidation. */
   case Immutable
 

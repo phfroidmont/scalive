@@ -28,7 +28,7 @@ object ConnectParam:
     new ConnectParam(name, decoder)
 
 /** Whether a connected LiveView is joining for the first time or again. */
-enum ConnectedJoin:
+enum ConnectedJoin derives CanEqual:
   /** The first join of this page view, including after live navigation to it. */
   case First
 

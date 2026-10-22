@@ -130,6 +130,23 @@ object BrowserFilesSpec extends ZIOSpecDefault:
         unrelated.isRight
       )
     },
+    test("an HTTP route that matches a browser file fails assembly") {
+      val shadowing = live / "_scalive" / "assets" / PathCodec.string("hash") /
+        PathCodec.string("file")
+      for error <- ZioHttp
+                     .routes(
+                       Live.router(
+                         live -> Page,
+                         shadowing.http((_, _) => ZIO.succeed(Response.text("shadow")))
+                       ),
+                       config
+                     ).flip
+      yield assertTrue(
+        error.getMessage ==
+          "route path overlaps Scalive's browser files below /_scalive: " +
+          "GET /_scalive/assets/{hash}/{file}"
+      )
+    },
     test("a custom client gets only the navigation guard") {
       val application = Live.router.withRootLayout(RootLayout())(live -> Page)
       for

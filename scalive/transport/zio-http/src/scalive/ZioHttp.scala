@@ -173,8 +173,9 @@ object ZioHttp:
       clientPath <- ZIO
                       .fromEither(application.clientPath.format(()))
                       .mapError(error => AssemblyException(s"invalid client path: $error"))
-      browser        <- BrowserFiles.load(client, socketPath.encode, clientPath)
-      _              <- ZIO.fromEither(rejectBrowserFileRoutes(catalog, browser, clientPath))
+      browser <- BrowserFiles.load(client, socketPath.encode, clientPath)
+      routePaths = catalog.map(_.pathCodec) ++ httpDefinitions(application).map(_.pathCodec)
+      _              <- ZIO.fromEither(rejectBrowserFileRoutes(routePaths, browser, clientPath))
       browserStatics <- ZIO
                           .foreach(browser.leading ++ browser.trailing)(trackedStatics)
                           .map(_.flatten)
@@ -338,19 +339,19 @@ object ZioHttp:
     }
 
   // A route that matches one of Scalive's browser files would either hide it or never be reached.
-  private def rejectBrowserFileRoutes[R](
-    catalog: Vector[CompiledRoute[R]],
+  private def rejectBrowserFileRoutes(
+    routePaths: Vector[PathCodec[?]],
     browser: BrowserFiles,
     clientPath: Path
   ): Either[AssemblyException, Unit] =
     val overlapping =
-      catalog.filter(route => browser.paths.exists(path => route.matches(URL(path))))
+      routePaths.filter(route => browser.paths.exists(path => route.decode(path).isRight))
     if overlapping.isEmpty then Right(())
     else
       Left(
         AssemblyException(
           s"route path overlaps Scalive's browser files below ${clientPath.encode}: " +
-            overlapping.map(_.pathDescription).sorted.mkString(", ")
+            overlapping.map(RoutePattern(Method.GET, _).toString).sorted.mkString(", ")
         )
       )
 

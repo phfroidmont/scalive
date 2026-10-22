@@ -220,7 +220,7 @@ test("full redirect performs HTTP navigation and transfers flash", async ({ page
   expect(documents.some(url => url.endsWith("/nav/c"))).toBe(true)
 })
 
-test("dirty guard rejects live navigation and live patch", async ({ page }) => {
+test("dirty guard scoped to any navigation rejects live navigation and live patch", async ({ page }) => {
   await page.goto("/navigation-guard")
   await expect(page.getByRole("heading", { name: "Navigation guard" })).toBeVisible()
   await waitForGuardConnected(page)

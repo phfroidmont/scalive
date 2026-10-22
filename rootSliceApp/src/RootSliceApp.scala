@@ -411,7 +411,11 @@ final class NavigationGuardLiveView(patch: LiveLocation, target: LiveLocation)
       p(idAttr := "guard-step", model.map(_.step.getOrElse("base"))),
       form(
         idAttr := "navigation-guard-form",
-        navigation.guardWhen(model.map(_.note.nonEmpty), "Discard unsaved changes?"),
+        navigation.guardWhen(
+          model.map(_.note.nonEmpty),
+          "Discard unsaved changes?",
+          NavigationGuardScope.AnyNavigation
+        ),
         on.change(params => Msg.Change(params.getOrElse("note", ""))),
         label(forId  := "guard-note", "Unsaved note"),
         input(idAttr := "guard-note", nameAttr := "note", value := note)

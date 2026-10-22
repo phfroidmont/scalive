@@ -38,10 +38,23 @@ object ConnectedRender:
     * first test](https://scalive.dev/learn/testing-your-liveview).
     */
   def join[Msg, Model](liveView: LiveView[Msg, Model]): RIO[Scope, ConnectedView[Msg]] =
+    join(liveView, Map.empty)
+
+  /** Renders a page, then connects to it as a browser would, and returns the connected view.
+    *
+    * This form mounts one LiveView at the root route, like `join(liveView)`, and joins with
+    * `connectParams`, the params of the browser's `LiveSocket`, as in
+    * `ConnectedRender.join(view, Map("timeZone" -> Json.Str("Europe/Brussels")))`.
+    */
+  def join[Msg, Model](
+    liveView: LiveView[Msg, Model],
+    connectParams: Map[String, Json]
+  ): RIO[Scope, ConnectedView[Msg]] =
     join(
       Live.router(scalive.live -> liveView),
       DefaultConfig,
-      Request.get(URL.root)
+      Request.get(URL.root),
+      connectParams
     ).map(_.asInstanceOf[ConnectedView[Msg]])
 
   /** Renders a page, then connects to it as a browser would, and returns the connected view.
@@ -55,13 +68,26 @@ object ConnectedRender:
     route: LiveRoute[A, Params],
     liveView: LiveView.Routed[Msg, Model, Params],
     params: Params
+  ): RIO[Scope, ConnectedView[Msg]] = join(route, liveView, params, Map.empty)
+
+  /** Renders a page, then connects to it as a browser would, and returns the connected view.
+    *
+    * This form mounts a routed LiveView on `route` at the URL that `params` encode, like
+    * `join(route, liveView, params)`, and joins with `connectParams`, the params of the browser's
+    * `LiveSocket`.
+    */
+  def join[A, Params, Msg, Model](
+    route: LiveRoute[A, Params],
+    liveView: LiveView.Routed[Msg, Model, Params],
+    params: Params,
+    connectParams: Map[String, Json]
   ): RIO[Scope, ConnectedView[Msg]] =
     for
       location <- ZIO
                     .fromEither(route.locationEither(params))
                     .mapError(new LiveLocation.EncodingException(_))
       url  <- ZIO.fromEither(URL.decode(location.href))
-      view <- join(Live.router(route -> liveView), DefaultConfig, Request.get(url))
+      view <- join(Live.router(route -> liveView), DefaultConfig, Request.get(url), connectParams)
     yield view.asInstanceOf[ConnectedView[Msg]]
 
   /** Renders a page, then connects to it as a browser would, and returns the connected view.

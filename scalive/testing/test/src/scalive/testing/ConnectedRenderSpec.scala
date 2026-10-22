@@ -1168,6 +1168,30 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
 
       assertTrue(errors.isEmpty)
     },
+    test("a LiveView joined alone or on its route receives the given connect params") {
+      val zone = ConnectParam[String]("timeZone")
+      def read(ctx: scalive.MountContext[?, ?]) = ctx.connection match
+        case Connection.Connected(connected) => connected.connectParam(zone).getOrElse("none")
+        case Connection.Disconnected         => "disconnected"
+      val alone = new LiveView[Unit, String]:
+        def mount(ctx: MountContext)                          = ZIO.succeed(read(ctx))
+        def handleMessage(model: String, ctx: MessageContext) = _ => ZIO.succeed(model)
+        override def view(model: Signal[String])              = p(idAttr := "zone", model)
+      val route  = scalive.live.queryOptional[String]("q")
+      val routed = new LiveView.Routed.Eventless[String, Option[String]]:
+        def mount(params: Option[String], ctx: MountContext) = ZIO.succeed(read(ctx))
+        def view(model: Signal[String])                      = p(idAttr := "zone", model)
+      val params = Map("timeZone" -> Json.Str("Europe/Brussels"))
+
+      ZIO.scoped {
+        for
+          first       <- ConnectedRender.join(alone, params)
+          aloneZone   <- first.text("#zone")
+          second      <- ConnectedRender.join(route, routed, None, params)
+          routedZone  <- second.text("#zone")
+        yield assertTrue(aloneZone == "Europe/Brussels", routedZone == "Europe/Brussels")
+      }
+    },
     test("clicking a patch link patches the LiveView, as a browser does") {
       val search = scalive.live.queryOptional[String]("q")
       val view   = new LiveView.Routed.Eventless[Option[String], Option[String]]:

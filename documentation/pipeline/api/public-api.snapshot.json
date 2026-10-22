@@ -10080,12 +10080,20 @@
           "signature" : "def join[Msg, Model](liveView: LiveView[Msg, Model]): zio.package.RIO[zio.Scope, testing.ConnectedView[Msg]]"
         },
         {
+          "id" : "def:scalive.testing.ConnectedRender.join:2d171622d36cbcc9",
+          "signature" : "def join[Msg, Model](liveView: LiveView[Msg, Model], connectParams: Map[String, zio.json.ast.Json]): zio.package.RIO[zio.Scope, testing.ConnectedView[Msg]]"
+        },
+        {
           "id" : "def:scalive.testing.ConnectedRender.join:5d428f0a6cf79600",
           "signature" : "def join[A, Params, Msg, Model](route: LiveRoute[A, Params], liveView: LiveView.Routed[Msg, Model, Params], params: Params): zio.package.RIO[zio.Scope, testing.ConnectedView[Msg]]"
         },
         {
           "id" : "def:scalive.testing.ConnectedRender.join:9272546112018a13",
           "signature" : "def join[R](application: LiveApplication[R], config: ZioHttpConfig, request: zio.http.Request, connectParams: Map[String, zio.json.ast.Json] = ...): zio.ZIO[&[R, zio.Scope], Throwable, testing.ConnectedView[Nothing]]"
+        },
+        {
+          "id" : "def:scalive.testing.ConnectedRender.join:f0418882cd489548",
+          "signature" : "def join[A, Params, Msg, Model](route: LiveRoute[A, Params], liveView: LiveView.Routed[Msg, Model, Params], params: Params, connectParams: Map[String, zio.json.ast.Json]): zio.package.RIO[zio.Scope, testing.ConnectedView[Msg]]"
         }
       ]
     },

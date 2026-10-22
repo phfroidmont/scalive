@@ -48,6 +48,10 @@ put while the message is shown, and put it in the element's `id`:
 The browser keeps an element whose `id` stays the same and only updates it. A
 new `id` makes it replace the element, so `AutoDismiss` mounts again.
 
+When the view already knows the text, the message needs no value.
+`FlashKind.unit("saved")` declares a kind that holds nothing:
+`ctx.flash.put(kind, ())` shows it, and the put number tells puts apart.
+
 Flash is lifecycle state, not a substitute for model data. Use it for brief
 feedback such as a save result or navigation notice. Keep values free of
 secrets, and put information that must survive arbitrary reloads in durable

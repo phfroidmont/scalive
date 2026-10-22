@@ -836,6 +836,30 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
         yield assertTrue(shown == "Saved (2)", value.contains(Notice("Saved", 2)))
       }
     },
+    test("a flash kind without a value shows on each put, told apart by its put number") {
+      val saved = FlashKind.unit("saved")
+
+      ZIO.scoped {
+        for
+          read <- Ref.make(Option.empty[Unit])
+          view = new LiveView[Unit, Unit]:
+                   def mount(ctx: MountContext) = ZIO.unit
+                   def handleMessage(model: Unit, ctx: MessageContext) = _ =>
+                     ctx.flash.put(saved, ()) *> ctx.flash.get(saved).flatMap(read.set)
+                   override def view(model: Signal[Unit]) =
+                     div(
+                       button(dataAttr("save") := "", on.click(()), "Save"),
+                       flash(saved)((_, put) => p(idAttr := s"saved-$put", "Saved"))
+                     )
+          connected <- ConnectedRender.join(view)
+          _         <- connected.click("[data-save]")
+          first     <- connected.selectOne("p").map(_.attribute("id"))
+          _         <- connected.click("[data-save]")
+          second    <- connected.selectOne("p").map(_.attribute("id"))
+          value     <- read.get
+        yield assertTrue(first != second, value.contains(()))
+      }
+    },
     test("each put of a flash value gets a new put number, even with the same value") {
       val saved = FlashKind("saved")
 

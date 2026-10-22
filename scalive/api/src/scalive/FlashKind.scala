@@ -6,8 +6,8 @@ import zio.json.*
   *
   * The same kind is used to put, retrieve, clear, render, and transfer a flash message across
   * navigation. Declare each kind once and reuse the value, like an [[AsyncKey]]:
-  * `FlashKind("saved")` holds text, and `FlashKind.json[Notice]("notice")` holds a `Notice` encoded
-  * as JSON.
+  * `FlashKind("saved")` holds text, `FlashKind.json[Notice]("notice")` holds a `Notice` encoded as
+  * JSON, and `FlashKind.unit("saved")` holds nothing.
   */
 final class FlashKind[A] private (
   private[scalive] val key: FlashKey,
@@ -40,6 +40,14 @@ object FlashKind:
     */
   def apply(value: String): FlashKind[String] =
     new FlashKind(FlashKey(value), identity, Some(_))
+
+  /** Creates a flash kind that carries no value, for a message whose text the view knows.
+    *
+    * Use it for feedback such as "Saved": `ctx.flash.put(kind, ())` shows the message, and the put
+    * number that `flash(kind)((_, put) => ...)` receives tells one put from the next.
+    */
+  def unit(value: String): FlashKind[Unit] =
+    new FlashKind(FlashKey(value), _ => "", _ => Some(()))
 
   /** Creates a flash kind for values of type `A`, stored as JSON.
     *

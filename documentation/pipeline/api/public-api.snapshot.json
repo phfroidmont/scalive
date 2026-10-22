@@ -2890,6 +2890,18 @@
       ]
     },
     {
+      "id" : "def:scalive.FlashKind.unit",
+      "ownerId" : "object:scalive.FlashKind",
+      "qualifiedName" : "scalive.FlashKind.unit",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.FlashKind.unit:7af3753420a6e921",
+          "signature" : "def unit(value: String): FlashKind[Unit]"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.FlashKind.value",
       "ownerId" : "class:scalive.FlashKind",
       "qualifiedName" : "scalive.FlashKind.value",

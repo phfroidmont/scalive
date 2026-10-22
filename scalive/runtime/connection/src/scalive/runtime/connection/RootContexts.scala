@@ -35,7 +35,7 @@ final private[scalive] class RootTurnJournal private (
   val ownerEpoch: Epoch,
   val navigation: Ref[Option[NavigationRequest]],
   val hooks: Ref[RootHookRegistry[Any, Any]],
-  val flash: Ref[Map[FlashKey, FlashValue]],
+  val flash: Ref[FlashState],
   val clientEvents: Ref[Vector[ClientEffect]],
   val componentUpdates: Ref[Vector[ComponentUpdateRequest]],
   val resourceOperations: Ref[Vector[ResourceOperation]],
@@ -54,7 +54,9 @@ final private[scalive] class RootTurnJournal private (
   )
 
   def navigationWithFlash: UIO[Option[NavigationRequest]] =
-    navigation.get.zipWith(flash.get)((request, values) => request.map(_.copy(flash = values)))
+    navigation.get.zipWith(flash.get)((request, values) =>
+      request.map(_.copy(flash = values.shown))
+    )
 
   def record(operation: ResourceOperation): UIO[Unit] =
     resourceOperations.update(_ :+ operation)
@@ -69,7 +71,7 @@ final private[scalive] class RootTurnJournal private (
       flashValues <- flash.get
       registry    <- uploads.get
       store       <- streams.get
-    yield OwnerRenderState(flashValues, registry, owner, ownerEpoch, store)
+    yield OwnerRenderState(flashValues.shown, registry, owner, ownerEpoch, store)
 
   def recordUploadCommit(plan: UploadRetirementPlan): UIO[Unit] =
     uploadCommit.update(_ ++ plan)
@@ -122,7 +124,7 @@ private[scalive] object RootTurnJournal:
   def make[Msg, Model](
     owner: OwnerId,
     registry: RootHookRegistry[Msg, Model],
-    initialFlash: Map[FlashKey, FlashValue] = Map.empty,
+    initialFlash: FlashState = FlashState.empty,
     initialClientEvents: Vector[ClientEffect] = Vector.empty,
     initialComponentUpdates: Vector[ComponentUpdateRequest] = Vector.empty,
     initialNavigation: Option[NavigationRequest] = None,
@@ -226,14 +228,12 @@ final private class JournaledFlash(journal: RootTurnJournal) extends Flash:
     ZIO.fail(NullPointerException("flash message must not be null")).when(message == null) *>
       ZIO
         .attempt(kind.encodeValue(message)).flatMap(encoded =>
-          journal.flash.update(
-            _.updatedWith(kind.key)(shown => Some(FlashValue(encoded, shown.fold(0)(_.put + 1))))
-          )
+          journal.flash.update(_.put(kind.key, encoded))
         )
-  def clear(kind: FlashKind[?]): Task[Unit]       = journal.flash.update(_ - kind.key)
-  def clearAll: Task[Unit]                        = journal.flash.set(Map.empty)
+  def clear(kind: FlashKind[?]): Task[Unit]       = journal.flash.update(_.clear(kind.key))
+  def clearAll: Task[Unit]                        = journal.flash.update(_.clearAll)
   def get[A](kind: FlashKind[A]): Task[Option[A]] =
-    journal.flash.get.flatMap(_.get(kind.key) match
+    journal.flash.get.flatMap(_.shown.get(kind.key) match
       case None        => ZIO.none
       case Some(shown) =>
         kind.decodeValue(shown.encoded) match

@@ -120,7 +120,7 @@ final private[connection] case class RootState[Msg, Model](
   model: Model,
   url: URL,
   hooks: RootHookRegistry[Msg, Model],
-  flash: Map[FlashKey, FlashValue] = Map.empty,
+  flash: FlashState = FlashState.empty,
   pageTitle: Option[String] = None,
   streams: StreamStore = StreamStore.empty,
   uploads: UploadRegistry = UploadRegistry.empty)

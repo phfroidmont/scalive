@@ -688,7 +688,7 @@ final private[scalive] class RootConnection[Msg, Model] private (
     kernel.inspect.map(_.render.tree).mapError(connectionError)
 
   private[connection] def inspectFlash: IO[ConnectionError, Map[FlashKey, FlashValue]] =
-    kernel.inspect.map(_.model.flash).mapError(connectionError)
+    kernel.inspect.map(_.model.flash.shown).mapError(connectionError)
 
   private[connection] def inspectComponentIds: IO[ConnectionError, Vector[ComponentInstanceId]] =
     kernel.inspect.map(_.components.values.map(_.id)).mapError(connectionError)
@@ -1234,7 +1234,7 @@ private[scalive] object RootConnection:
                            signal => lifecycle.view(signal.map(state => state.model -> state.url)),
                            state =>
                              OwnerRenderState(
-                               state.flash,
+                               state.flash.shown,
                                state.uploads,
                                rootOwner,
                                Epoch.initial,
@@ -1272,7 +1272,7 @@ private[scalive] object RootConnection:
                       journal <- RootTurnJournal.make(
                                    rootOwner,
                                    initialHooks,
-                                   metadata.initialFlash,
+                                   FlashState.of(metadata.initialFlash),
                                    ownerEpoch = Epoch.initial
                                  )
                       mountContext = RootMountContext.connected[Msg, Model](

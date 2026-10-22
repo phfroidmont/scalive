@@ -29,7 +29,7 @@ final private[connection] class ConnectedComponentEnvironment[RootMsg, RootModel
     state: ComponentEnvironmentState
   ): RenderState =
     OwnerRenderState(
-      draft.model.flash,
+      draft.model.flash.shown,
       draft.model.uploads,
       OwnerId.Component(lifecycle, id),
       ownerEpoch,

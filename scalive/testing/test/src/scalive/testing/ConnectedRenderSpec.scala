@@ -865,9 +865,31 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
           shown(mounted).text == "Saved",
           shown(again).text == "Saved",
           shown(again).attr("id") != shown(mounted).attr("id"),
-          shown(afterGap).attr("id") == "saved-0",
+          shown(afterGap).text == "Saved",
           plain == "Saved"
         )
+      }
+    },
+    test("clearing and putting a flash in one turn still gives it a new put number") {
+      val saved = FlashKind("saved")
+
+      ZIO.scoped {
+        for
+          connected <- ConnectedRender.join(new LiveView[Unit, Unit]:
+                         def mount(ctx: MountContext) = ctx.flash.put(saved, "Saved")
+                         def handleMessage(model: Unit, ctx: MessageContext) =
+                           _ => ctx.flash.clear(saved) *> ctx.flash.put(saved, "Saved")
+                         override def view(model: Signal[Unit]) =
+                           div(
+                             button(on.click(()), "Save"),
+                             flash(saved)((message, put) => p(idAttr := s"saved-$put", message))
+                           ))
+          mounted <- connected.selectOne("p").map(_.attribute("id"))
+          _       <- connected.click("button")
+          first   <- connected.selectOne("p").map(_.attribute("id"))
+          _       <- connected.click("button")
+          second  <- connected.selectOne("p").map(_.attribute("id"))
+        yield assertTrue(Set(mounted, first, second).size == 3)
       }
     },
     test("handles keyed and full client flash clearing for root and component targets") {

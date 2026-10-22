@@ -111,7 +111,7 @@ private[scalive] object DisconnectedComponentRenderer:
       journal <- RootTurnJournal.make(
                    OwnerId.Root(lifecycle),
                    RootHookRegistry.fromStatic(LiveHooks.empty[Any, Any]),
-                   flash
+                   FlashState.of(flash)
                  )
     yield journal
 
@@ -133,7 +133,7 @@ private[scalive] object DisconnectedComponentRenderer:
         candidate   <- ZIO.acquireRelease(program.evaluate(input -> state))(_.discard)
         _           <- environment.validateRequirements(candidate, journal.streams)
         resolutions <- environment.reconcile(candidate.componentRequirements)
-        finalFlash  <- journal.flash.get
+        finalFlash  <- journal.flash.get.map(_.shown)
         identities = candidate.componentRequirements.map(requirement =>
                        DisconnectedComponentIdentity(
                          requirement.definition.asInstanceOf[AnyRef],
@@ -165,7 +165,7 @@ private[scalive] object DisconnectedComponentRenderer:
         resolutions    <- environment.reconcile(candidate.componentRequirements)
         nestedResolved <- environment.resolveNested(candidate)
         resolved       <- ZIO.fromEither(nestedResolved.resolveComponents(resolutions))
-        finalFlash     <- journal.flash.get
+        finalFlash     <- journal.flash.get.map(_.shown)
         result         <- consume(resolved.tree, finalFlash)
       yield result
     }
@@ -417,7 +417,7 @@ final private class DisconnectedComponentLifecycle[P, M, A] private (
       flash    <- root.flash.get
       registry <- root.uploads.get
       store    <- streams.get
-    yield OwnerRenderState(flash, registry, root.owner, root.ownerEpoch, store)
+    yield OwnerRenderState(flash.shown, registry, root.owner, root.ownerEpoch, store)
 
   def updateHooks[P0, M0, A0](
     f: ComponentHookRegistry[P0, M0, A0] => ComponentHookRegistry[P0, M0, A0]

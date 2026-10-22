@@ -112,9 +112,11 @@ object LiveParamsCodec:
     * A field with a fallback (a default value, an `Option`, a collection) takes it when its value
     * is missing or malformed, and logs the malformed value at debug level; a malformed list element
     * is dropped. Only a field without a fallback fails the decode. Encoding leaves out values equal
-    * to their fallback, so a value with every field at its default encodes as no query at all. A
-    * list is a repeated name, an enum whose cases carry no data is its case name (rename one with
-    * `@caseName`), and a nested case class is encoded under its field name, as in `back.days=3`.
+    * to their fallback, so a value with every field at its default encodes as no query at all. An
+    * empty `Option` or list whose default is not empty is written as a blank value, as in `limit=`,
+    * which reads back as empty. A list is a repeated name, an enum whose cases carry no data is its
+    * case name (rename one with `@caseName`), and a nested case class is encoded under its field
+    * name, as in `back.days=3`.
     *
     * @return
     *   a codec with no path values and schema-derived query parameters

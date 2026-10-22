@@ -82,6 +82,22 @@ object FormFieldsSpec extends ZIOSpecDefault:
         selected(data("ids" -> bob.toString, "ids" -> ada.toString)) == List(bob, ada),
         noDefault.exists(_.getMessage.contains("Form field days needs a fallback"))
       )
+    },
+    test("a missing option or collection takes its declared default") {
+      final case class Saved(
+        status: Option[Status] = Some(Status.Open),
+        ids: List[UUID] = List(ada),
+        period: Period = Period(days = 30))
+          derives Schema
+      val decode = SchemaQuery.formFields(Schema[Saved])
+      val status = SchemaQuery.formField("status", Schema[Option[Status]], Some(Some(Status.Paid)))
+
+      assertTrue(
+        decode(data()) == Saved(),
+        decode(data("status" -> "", "ids" -> "", "period.days" -> "7")) ==
+          Saved(None, Nil, Period()),
+        status(data()).contains(Status.Paid)
+      )
     }
   )
 end FormFieldsSpec

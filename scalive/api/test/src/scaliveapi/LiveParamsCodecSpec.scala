@@ -32,6 +32,12 @@ object LiveParamsCodecSpec extends ZIOSpecDefault:
 
   final case class OptionalRange(range: Option[Range]) derives Schema
 
+  final case class Defaults(
+    limit: Option[Int] = Some(3),
+    tags: List[Int] = List(4),
+    range: Range = Range(days = 9))
+      derives Schema
+
   private val first  = UUID.fromString("00000000-0000-0000-0000-000000000001")
   private val second = UUID.fromString("00000000-0000-0000-0000-000000000002")
 
@@ -96,6 +102,33 @@ object LiveParamsCodecSpec extends ZIOSpecDefault:
         codec.encode(Filters(page = 2, back = Range(days = 3))).map(_.queryParams.encode) ==
           Right("?page=2&back.days=3")
       )
+    },
+    test("a missing field takes its declared default, and an empty value is encoded") {
+      val codec   = LiveParamsCodec.query[Defaults]
+      val emptied = Defaults(limit = None, tags = Nil, range = Range())
+      val changed = Defaults(limit = Some(5), tags = List(1, 2), range = Range(9, Some(LocalDate.of(2026, 10, 21))))
+      val roundTrip = (value: Defaults) =>
+        codec.decode((), url(s"/x${codec.encode(value).toOption.get.queryParams.encode}"))
+
+      for
+        missing     <- codec.decode((), url("/x"))
+        defaults    <- roundTrip(Defaults())
+        emptiedBack <- roundTrip(emptied)
+        changedBack <- roundTrip(changed)
+      yield assertTrue(
+        missing == Defaults(),
+        codec.encode(Defaults()).map(_.queryParams.encode) == Right(""),
+        defaults == Defaults(),
+        codec.encode(emptied).map(_.queryParams.encode) == Right("?limit=&tags=&range.days=7"),
+        emptiedBack == emptied,
+        changedBack == changed
+      )
+    },
+    test("a blank value is empty only for an option or list whose default is not") {
+      for
+        defaults <- LiveParamsCodec.query[Defaults].decode((), url("/x?limit=&tags="))
+        filters  <- LiveParamsCodec.query[Filters].decode((), url("/x?q="))
+      yield assertTrue(defaults == Defaults(None, Nil), filters == Filters(q = Some("")))
     },
     test("a field with no fallback still fails when missing or malformed") {
       val codec = LiveParamsCodec.query[Required]

@@ -70,7 +70,9 @@ default is required, and a URL that lacks it or garbles it does not decode.
 
 Encoding leaves out every value equal to its default, so
 `CalendarRoutes.calendar.location(CalendarView())` is the bare `/calendar`, and
-changing one filter adds only that parameter.
+changing one filter adds only that parameter. An empty `Option` or list whose
+default is not empty is written as a blank value, as in `?limit=`, which reads
+back as empty.
 
 A case class field is encoded under its name, which is how a page carries the
 way back to another one. An editor opened from the calendar keeps the

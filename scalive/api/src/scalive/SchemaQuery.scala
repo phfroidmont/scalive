@@ -11,9 +11,10 @@ import zio.schema.annotation.fieldDefaultValue
   *
   * A field takes its fallback (its default value, `None`, or an empty collection) when its value is
   * missing or malformed, and a malformed list element is dropped. Only a field without a fallback
-  * fails the decode. Encoding leaves out values equal to their fallback, so decoding the encoded
-  * query gives the value back. Lists are repeated names, a singleton enum is its case name, and a
-  * nested record is encoded under its field name, as in `back.days=3`.
+  * fails the decode. Encoding leaves out values equal to their fallback and writes an empty option
+  * or list whose default is not empty as a blank value, which reads back as empty, so decoding the
+  * encoded query gives the value back. Lists are repeated names, a singleton enum is its case name,
+  * and a nested record is encoded under its field name, as in `back.days=3`.
   */
 final private[scalive] class SchemaQuery[A] private (root: SchemaQuery.Param):
   import SchemaQuery.*
@@ -101,19 +102,28 @@ private[scalive] object SchemaQuery:
 
   /** A value at a name. `fallback` is the field's declared default. */
   final private case class Param(name: String, node: Node, fallback: Option[Any]):
+    /** What decoding gives when the parameter is missing. Encoding leaves this value out. */
+    lazy val absent: Option[Any] = fallback.orElse(node.empty)
+
     def decode(params: QueryParams): Decoded =
-      val orFallback = fallback.orElse(node.empty)
-      node.decode(name, params) match
-        case value: Decoded.Value     => value
-        case missing: Decoded.Missing =>
-          orFallback.fold(missing)(Decoded.Value(_, Chunk.empty))
-        case malformed: Decoded.Malformed =>
-          orFallback.fold(malformed)(
-            Decoded.Value(_, Chunk(s"${malformed.name}: ${malformed.reason}"))
-          )
+      fallback match
+        // An option, a list or a record has a value of its own when missing; the default wins.
+        case Some(default) if !node.isPresent(name, params) => Decoded.Value(default, Chunk.empty)
+        // How encoding writes an empty option or list that differs from its default.
+        case Some(default) if node.isBlank(name, params) && node.empty.exists(_ != default) =>
+          Decoded.Value(node.empty.get, Chunk.empty)
+        case _ =>
+          node.decode(name, params) match
+            case value: Decoded.Value     => value
+            case missing: Decoded.Missing =>
+              absent.fold(missing)(Decoded.Value(_, Chunk.empty))
+            case malformed: Decoded.Malformed =>
+              absent.fold(malformed)(
+                Decoded.Value(_, Chunk(s"${malformed.name}: ${malformed.reason}"))
+              )
 
     def encode(value: Any): Chunk[(String, String)] =
-      if fallback.contains(value) then Chunk.empty else node.encode(name, value)
+      if absent.contains(value) then Chunk.empty else node.encode(name, value)
 
   private enum Node:
     /** A primitive, or a type that transforms one, read with ZIO HTTP's own value codec. */
@@ -129,12 +139,27 @@ private[scalive] object SchemaQuery:
 
     /** The value of an absent parameter that needs no declared default. */
     def empty: Option[Any] = this match
-      case Optional(_)     => Some(None)
-      case Many(_, schema) => Some(schema.empty)
-      case Scalar(_)       => None
-      case Singletons(_)   => None
-      case Record(_, _)    => None
-      case Mapped(_, _)    => None
+      case Optional(_)            => Some(None)
+      case Many(_, schema)        => Some(schema.empty)
+      case Scalar(_)              => None
+      case Singletons(_)          => None
+      case Record(schema, fields) =>
+        val values = fields.map(_.absent)
+        if values.forall(_.isDefined) then
+          Unsafe.unsafe(schema.construct(values.map(_.get))(using _)).toOption
+        else None
+      case Mapped(record, schema) => record.empty.flatMap(schema.f(_).toOption)
+
+    /** Whether `params` has only a blank value for this option or list. */
+    def isBlank(name: String, params: QueryParams): Boolean = this match
+      case Optional(_) | Many(_, _) =>
+        params.hasQueryParam(name) && params.getAll(name).forall(_.isEmpty)
+      case _ => false
+
+    /** Whether `params` has a value for this node, even a blank one. */
+    def isPresent(name: String, params: QueryParams): Boolean = this match
+      case Record(_, _) | Mapped(_, _) => params.map.keys.exists(_.startsWith(s"$name."))
+      case _                           => params.hasQueryParam(name)
 
     def decode(name: String, params: QueryParams): Decoded = this match
       case Scalar(schema) =>
@@ -177,17 +202,27 @@ private[scalive] object SchemaQuery:
       case Singletons(schema) =>
         Chunk
           .fromIterable(schema.caseOf(value)).map(singletonCase => name -> singletonCase.caseName)
+      // A parameter leaves out its fallback, so an empty value reaching here differs from it.
       case Optional(node) =>
         value match
           case Some(present) => node.encode(name, present)
-          case _             => Chunk.empty
+          case _             => Chunk(name -> "")
       case Many(element, schema) =>
-        schema.toChunk(value).flatMap(element.encode(name, _))
+        val values = schema.toChunk(value)
+        if values.isEmpty then Chunk(name -> "") else values.flatMap(element.encode(name, _))
       case Record(schema, fields) =>
-        val values = Unsafe.unsafe(schema.deconstruct(value)(using _))
-        fields.zip(values).flatMap { case (field, fieldValue) =>
-          fieldValue.fold(Chunk.empty)(field.copy(name = qualified(name, field.name)).encode)
+        val values = fields.zip(Unsafe.unsafe(schema.deconstruct(value)(using _))).collect {
+          case (field, Some(fieldValue)) =>
+            field.copy(name = qualified(name, field.name)) -> fieldValue
         }
+        val encoded = values.flatMap((field, fieldValue) => field.encode(fieldValue))
+        // Every field is at its own fallback, unlike the record's default: write one out, so
+        // that decoding finds the record.
+        if encoded.nonEmpty then encoded
+        else
+          values.headOption.fold(Chunk.empty)((field, fieldValue) =>
+            field.node.encode(field.name, fieldValue)
+          )
       case Mapped(record, schema) =>
         schema.g(value) match
           case Right(unmapped) => record.encode(name, unmapped)

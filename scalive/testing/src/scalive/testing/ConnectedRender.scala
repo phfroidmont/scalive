@@ -344,11 +344,16 @@ final class ConnectedView[-Msg] private[testing] (
 
   private def queryFailed(error: HtmlQueryError) = IllegalArgumentException(error.description)
 
-  /** Dispatches the `phx-click` binding on exactly one matching element. */
+  /** Clicks exactly one matching element, as a browser does.
+    *
+    * It dispatches the element's `phx-click` binding. A live link without one is followed instead:
+    * a `link.pushPatch` link patches this LiveView, and a `link.pushNavigate` link returns a
+    * [[ConnectedAction.LiveNavigation]] to follow.
+    */
   def click(selector: String): Task[ConnectedAction] =
     dispatchClick(ConnectedDom.selectOne(_, selector))
 
-  /** Dispatches the `phx-click` binding on exactly one matching element.
+  /** Clicks exactly one matching element, as a browser does.
     *
     * This form clicks the element with the ID `ref`, which the view also renders.
     */
@@ -615,18 +620,23 @@ final class ConnectedView[-Msg] private[testing] (
   private def dispatchClick(findElement: String => Element): Task[ConnectedAction] =
     for
       current <- html
-      event   <- ZIO.attempt {
-                 val element = findElement(current)
-                 val binding = ConnectedDom.requiredBinding(element, "phx-click")
-                 val cid     = ConnectedDom.eventTarget(element)
-                 RootEvent(
-                   eventType = "click",
-                   event = binding,
-                   value = ConnectedDom.clickValue(element),
-                   cid = cid
-                 )
-               }
-      result <- session.dispatch(state, event)
+      element <- ZIO.attempt(findElement(current))
+      result  <- ConnectedDom.liveLink(element) match
+                  // As in the browser, a binding on the link runs instead of following it.
+                  case Some((kind, href)) if !element.hasAttr("phx-click") =>
+                    if kind == "patch" then session.livePatch(state, href)
+                    else
+                      session.liveNavigation(href, element.attr("data-phx-link-state") == "replace")
+                  case _ =>
+                    ZIO
+                      .attempt(
+                        RootEvent(
+                          eventType = "click",
+                          event = ConnectedDom.requiredBinding(element, "phx-click"),
+                          value = ConnectedDom.clickValue(element),
+                          cid = ConnectedDom.eventTarget(element)
+                        )
+                      ).flatMap(session.dispatch(state, _))
     yield result
 
   private def dispatchForm(
@@ -751,6 +761,13 @@ private object ConnectedDom:
       case name if element.hasAttr(name) => s" $name=\"${element.attr(name)}\""
     }
     s"<${element.tagName}${attributes.mkString}>"
+
+  /** The kind (`patch` or `redirect`) and destination of a live link that `link.*` renders. */
+  def liveLink(element: Element): Option[(String, String)] =
+    Option
+      .when(element.tagName == "a" && element.hasAttr("href"))(element.attr("data-phx-link"))
+      .filter(kind => kind == "patch" || kind == "redirect")
+      .map(_ -> element.attr("href"))
 
   def requiredBinding(element: Element, attribute: String): String =
     Option
@@ -964,6 +981,23 @@ final private class ConnectedSession(
       .catchSome { case _: ZioHttp.InProcessTransportClosed =>
         ZIO.succeed(ConnectedAction.Disconnected)
       }
+
+  /** Sends the patch a browser sends for a patch link, and applies the reply. */
+  def livePatch(state: ConnectedViewState, href: String): Task[ConnectedAction] =
+    request(state.joinRef, state.topic, "live_patch", Json.Obj("url" -> Json.Str(href)))
+      .flatMap(action)
+      .tap(rendered(state))
+      .catchSome { case _: ZioHttp.InProcessTransportClosed =>
+        ZIO.succeed(ConnectedAction.Disconnected)
+      }
+
+  /** A navigate link's live navigation. The browser sends nothing to the current view. */
+  def liveNavigation(href: String, replace: Boolean): Task[ConnectedAction] =
+    decodeUrl(href).map(destination =>
+      ConnectedAction.LiveNavigation(
+        new ConnectedNavigation(destination, replace, followRoot(href, None))
+      )
+    )
 
   def send(state: ConnectedViewState, message: Any): Task[ConnectedAction] =
     (for

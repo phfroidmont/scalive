@@ -36,7 +36,11 @@ browser boundary.
 ## Connected actions {#connected-actions}
 
 `click`, `clickButton`, `changeForm`, and `submitForm` resolve bindings from the
-latest committed HTML and wait for the correlated lifecycle output.
+latest committed HTML and wait for the correlated lifecycle output. Like a
+browser, `click` follows a live link that has no `phx-click`: a
+`link.pushPatch` link patches the view and returns `Rendered` once
+`handleParams` has run, and a `link.pushNavigate` link returns a
+`LiveNavigation` to follow.
 `send(message)` delivers a typed message out of band, because arbitrary Scala
 values have no Phoenix wire representation; its resulting lifecycle output still
 uses the production transport sink. `pushEvent(event, payload)` instead sends what a

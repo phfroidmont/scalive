@@ -1134,6 +1134,69 @@ object ConnectedRenderSpec extends ZIOSpecDefault:
         yield assertTrue(before == "none", after.contains("typed"), joined)
       }
     },
+    test("clicking a patch link patches the LiveView, as a browser does") {
+      val search = scalive.live.queryOptional[String]("q")
+      val view   = new LiveView.Routed.Eventless[Option[String], Option[String]]:
+        def mount(params: Option[String], ctx: MountContext) = ZIO.succeed(params)
+        override def handleParams(
+          model: Option[String],
+          params: Option[String],
+          url: URL,
+          ctx: ParamsContext
+        ) = ZIO.succeed(params)
+        def view(model: Signal[Option[String]]) =
+          div(
+            link.pushPatch(search.location(Some("linked")), idAttr := "patch", "Patch"),
+            span(idAttr := "query", model.map(_.getOrElse("none")))
+          )
+
+      ZIO.scoped {
+        for
+          root   <- ConnectedRender.join(scalive.Live.router(search -> view), config, Request.get(URL.root))
+          action <- root.click("#patch")
+          query  <- root.text("#query")
+          url    <- root.currentUrl
+          joined <- root.isJoined
+        yield assertTrue(
+          action == ConnectedAction.Rendered,
+          query == "linked",
+          url.encode == "/?q=linked",
+          joined
+        )
+      }
+    },
+    test("clicking a navigate link returns the live navigation to follow") {
+      val other = scalive.live / "other"
+      val start = new LiveView[Unit, Unit]:
+        def mount(ctx: MountContext)                        = ZIO.unit
+        def handleMessage(model: Unit, ctx: MessageContext) = _ => ZIO.unit
+        override def view(model: Signal[Unit])              =
+          div(link.replaceNavigate(other.location, idAttr := "navigate", "Other"))
+      val destination = new LiveView[Unit, Unit]:
+        def mount(ctx: MountContext)                        = ZIO.unit
+        def handleMessage(model: Unit, ctx: MessageContext) = _ => ZIO.unit
+        override def view(model: Signal[Unit])              = p(idAttr := "other", "Other page")
+
+      ZIO.scoped {
+        for
+          root <- ConnectedRender.join(
+                    scalive.Live.router(scalive.live -> start, other -> destination),
+                    config,
+                    Request.get(URL.root)
+                  )
+          action     <- root.click("#navigate")
+          navigation <- action match
+                          case ConnectedAction.LiveNavigation(navigation) => ZIO.succeed(navigation)
+                          case other => ZIO.fail(Exception(s"Expected live navigation, got $other."))
+          followed <- navigation.follow
+          text     <- followed.text("#other")
+        yield assertTrue(
+          navigation.destination.encode == "/other",
+          navigation.replace,
+          text == "Other page"
+        )
+      }
+    },
     test("an async task started in the turn that patches the URL delivers its result") {
       final case class Model(selected: Option[String], status: String)
       val selected = scalive.live.queryOptional[String]("selected")

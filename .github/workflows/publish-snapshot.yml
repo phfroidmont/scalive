@@ -30,8 +30,6 @@ jobs:
           git diff --exit-code
       - name: Test repository
         run: nix develop --command mill --ticker false __.test
-      - name: Check allocation and retained-heap regressions
-        run: nix develop --command mill --ticker false benchmarks.checkRegressions
       - name: Check documentation and public API
         run: nix develop --command mill --ticker false documentation.check
       - name: Run root-slice browser gate

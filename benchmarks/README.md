@@ -70,8 +70,10 @@ profiler, measures the retained heap, and compares both with
 [`regression-baseline.txt`](regression-baseline.txt). It fails when an allocation
 (`gc.alloc.rate.norm`, B/op) exceeds its baseline by more than 10% + 256 B, a retained size by more
 than 2%, or when a benchmark is added or removed without updating the baseline. Allocation barely
-depends on the machine or its load, unlike time, so CI runs this check; it takes about two
-minutes. Run-to-run spread is within 5%.
+depends on load, unlike time, so the check can run on a busy machine; it takes about two minutes.
+Run-to-run spread is within 5%. It is not run in CI: shared runners differ from the machine that
+recorded the baseline, so run it locally before merging a change to rendering, encoding or the
+runtime.
 
 After an intended change, including an improvement worth locking in, rewrite the baseline and
 commit it with the change:

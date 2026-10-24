@@ -91,8 +91,7 @@ documentation tools through `ScalaCommon.forkArgs`, which the browser-test apps
 override.
 
 The [snapshot workflow](.github/workflows/publish-snapshot.yml) also runs the
-root-slice and upstream Phoenix LiveView browser suites, and the benchmark
-regression check.
+root-slice and upstream Phoenix LiveView browser suites.
 
 Report bugs, missing behavior, and focused feature requests through
 [GitHub issues](https://github.com/phfroidmont/scalive/issues).

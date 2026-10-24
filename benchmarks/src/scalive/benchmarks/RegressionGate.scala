@@ -12,8 +12,8 @@ import org.openjdk.jmh.runner.options.{OptionsBuilder, TimeValue}
 /** Checks the allocation of every benchmark and the heap retained per row against a baseline.
   *
   * Allocation is JMH's `gc.alloc.rate.norm`, in bytes per operation, at 1,000 rows and 100 cards.
-  * Unlike time, it barely depends on the machine or its load, so it can gate a build. The retained
-  * heap comes from [[RetainedHeap]], in bytes per row.
+  * Unlike time, it barely depends on the machine's load, so it can gate a change. The retained heap
+  * comes from [[RetainedHeap]], in bytes per row.
   *
   * `check` fails when a measurement exceeds its baseline by more than its tolerance, or when the
   * measurements and the baseline do not name the same things. `update` writes the measurements as

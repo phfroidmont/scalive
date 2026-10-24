@@ -393,7 +393,7 @@ final private[scalive] case class ComponentForest[OwnerMsg] private (
         entries.get(id).toVector.flatMap(value => value +: descendants(value.children))
       )
     descendants(roots)
-  private[kernel] def allValues: Vector[MountedComponent[OwnerMsg]] =
+  private[kernel] lazy val allValues: Vector[MountedComponent[OwnerMsg]] =
     entries.values.toVector.sortBy(_.id.value)
   private[kernel] def isDormant(id: ComponentInstanceId): Boolean =
     entries.contains(id) && !values.exists(_.id == id)
@@ -414,7 +414,8 @@ final private[scalive] case class ComponentForest[OwnerMsg] private (
     val removed  = removedIds.toVector.flatMap(entries.get).sortBy(_.id.value)
     val retained = allValues.filterNot(component => removedIds.contains(component.id))
     ComponentForest(roots, retained) -> removed
-  private[kernel] def byKey: Map[ComponentKey, MountedComponent[OwnerMsg]] =
+  // Staging looks up each rendered component here, so it is built once per forest.
+  private[kernel] lazy val byKey: Map[ComponentKey, MountedComponent[OwnerMsg]] =
     entries.valuesIterator.map(component => component.key -> component).toMap
 end ComponentForest
 

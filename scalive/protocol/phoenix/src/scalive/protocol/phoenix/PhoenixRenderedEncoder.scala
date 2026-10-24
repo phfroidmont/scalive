@@ -256,6 +256,27 @@ private[scalive] object PhoenixRenderedEncoder:
     // Components whose CID slot the diff sends again, only so that it reaches them.
     touchedComponents: Set[Int] = Set.empty)
 
+  /** The components one render reaches, with the index its `phx-target` values resolve against. */
+  final private class Components(val byCid: Map[Int, ProjectedComponent]):
+    def apply(cid: Int): ProjectedComponent       = byCid(cid)
+    def get(cid: Int): Option[ProjectedComponent] = byCid.get(cid)
+    def isEmpty: Boolean                          = byCid.isEmpty
+
+    // A target names its component by the component's ref, or by its token or ref identity.
+    private lazy val byRef      = index(component => Vector(component.ref))
+    private lazy val byIdentity = index(component => Vector(component.token, component.refIdentity))
+
+    /** The CID of the one component `target` names, or None when it names none or several. */
+    def targeted(target: ProjectedValue.ComponentTarget): Option[Int] =
+      val cids = byRef.getOrElse(IdentityKey(target.ref), Set.empty) ++
+        byIdentity.getOrElse(IdentityKey(target.identity), Set.empty)
+      Option.when(cids.size == 1)(cids.head)
+
+    private def index(keys: ProjectedComponent => Vector[Object]): Map[IdentityKey, Set[Int]] =
+      byCid.toVector
+        .flatMap((cid, component) => keys(component).map(key => IdentityKey(key) -> cid))
+        .groupMap(_._1)(_._2).view.mapValues(_.toSet).toMap
+
   /** The statics of the nested templates in one comprehension, sent once as its `p`. */
   final private class TemplateTable:
     private val indexes = mutable.LinkedHashMap.empty[Vector[String], Int]
@@ -353,7 +374,7 @@ private[scalive] object PhoenixRenderedEncoder:
     for
       root  <- project(tree.root, None, context)
       state <- finish(root, context, validate = true)
-      html  <- renderHtml(state.root, state.components)
+      html  <- renderHtml(state.root, Components(state.components))
     yield clearPending(None, state) -> html
 
   def update(
@@ -389,7 +410,7 @@ private[scalive] object PhoenixRenderedEncoder:
       yield clearPending(Some(state), next) -> json
 
   private[scalive] def html(state: PhoenixRenderedState): Either[PhoenixEncodingError, String] =
-    renderHtml(state.root, activeComponents(state))
+    renderHtml(state.root, Components(activeComponents(state)))
 
   private val emptyStreamOperations =
     ProjectedStreamOperations(Vector.empty, Vector.empty, reset = false)
@@ -401,6 +422,7 @@ private[scalive] object PhoenixRenderedEncoder:
     previous: Option[PhoenixRenderedState],
     state: PhoenixRenderedState
   ): PhoenixRenderedState =
+    val stateComponents = Components(state.components)
     // Records the stream statics the client now holds, so the next diff can tell if they changed.
     def clearNode(node: ProjectedNode, previous: Option[ProjectedNode]): ProjectedNode =
       if previous.exists(_ eq node) then node
@@ -445,7 +467,7 @@ private[scalive] object PhoenixRenderedEncoder:
                     row.copy(child = clearNode(row.child, previousRows.get(row.domId)))
                   ),
                   operations = emptyStreamOperations,
-                  sentStatics = streamStatics(stream, state.components).toOption
+                  sentStatics = streamStatics(stream, stateComponents).toOption
                 )
               )
             case part => part
@@ -1166,16 +1188,13 @@ private[scalive] object PhoenixRenderedEncoder:
       }
 
     loopProgram(root).flatMap { _ =>
-      val active = seenCids.toSet
+      val active        = seenCids.toSet
+      val activeTargets = Components(components.filter((cid, _) => active.contains(cid)))
       targets
         .result().foldLeft[Either[PhoenixEncodingError, Unit]](Right(())) { (result, target) =>
           result.flatMap { _ =>
-            val matches = active.count { cid =>
-              val component = components(cid)
-              (component.ref eq target.ref) || (component.token eq target.identity) ||
-              (component.refIdentity eq target.identity)
-            }
-            if matches == 1 then Right(()) else Left(PhoenixEncodingError.UnknownComponentTarget)
+            if activeTargets.targeted(target).nonEmpty then Right(())
+            else Left(PhoenixEncodingError.UnknownComponentTarget)
           }
         }.map(_ => active)
     }
@@ -1218,7 +1237,7 @@ private[scalive] object PhoenixRenderedEncoder:
     streamRefs.filter((identity, _) => identities.contains(identity))
 
   private def fullPayload(state: PhoenixRenderedState): Either[PhoenixEncodingError, Json.Obj] =
-    val active = activeComponents(state)
+    val active = Components(activeComponents(state))
     rendered(state.root, active, None, None).flatMap { root =>
       if active.isEmpty then Right(root)
       else componentObject(active, state.activeCids).map(value => root.add("c", value))
@@ -1230,10 +1249,11 @@ private[scalive] object PhoenixRenderedEncoder:
     changed: SparseChanges,
     changedComponents: Map[Int, Option[SparseChanges]]
   ): Either[PhoenixEncodingError, Json.Obj] =
-    val active        = activeComponents(state)
+    val active        = Components(activeComponents(state))
     val activeChanges = changedComponents.view.filterKeys(state.activeCids.contains).toMap
     rendered(state.root, active, Some(changed), None, Some(previous.root)).flatMap { root =>
-      val touches          = componentTouches(active, activeChanges.keySet, root != Json.Obj.empty)
+      val touches =
+        componentTouches(active.byCid, activeChanges.keySet, root != Json.Obj.empty)
       val componentChanges = activeChanges ++ touches.map { case (owner, cids) =>
         owner -> activeChanges
           .get(owner).fold(
@@ -1276,7 +1296,7 @@ private[scalive] object PhoenixRenderedEncoder:
       changes.copy(touchedComponents = changes.touchedComponents ++ cids)
 
   private def componentObject(
-    components: Map[Int, ProjectedComponent],
+    components: Components,
     cids: Set[Int]
   ): Either[PhoenixEncodingError, Json.Obj] =
     traverse(cids.toVector.sorted)(cid =>
@@ -1287,7 +1307,7 @@ private[scalive] object PhoenixRenderedEncoder:
 
   private def componentDiffs(
     previous: PhoenixRenderedState,
-    components: Map[Int, ProjectedComponent],
+    components: Components,
     cids: Map[Int, Option[SparseChanges]]
   ): Either[PhoenixEncodingError, Json.Obj] =
     traverse(cids.toVector.sortBy(_._1)) { case (cid, changes) =>
@@ -1303,7 +1323,7 @@ private[scalive] object PhoenixRenderedEncoder:
     */
   private def rendered(
     root: ProjectedNode,
-    components: Map[Int, ProjectedComponent],
+    components: Components,
     changes: Option[SparseChanges],
     templates: Option[TemplateTable],
     previous: Option[ProjectedNode] = None
@@ -1326,7 +1346,7 @@ private[scalive] object PhoenixRenderedEncoder:
     */
   private def flatten(
     root: ProjectedNode,
-    components: Map[Int, ProjectedComponent],
+    components: Components,
     templates: Option[TemplateTable]
   ): Either[PhoenixEncodingError, (Vector[String], Vector[Json])] =
     val statics  = Vector.newBuilder[String]
@@ -1378,7 +1398,7 @@ private[scalive] object PhoenixRenderedEncoder:
   private def changedDynamics(
     root: ProjectedNode,
     previous: Option[ProjectedNode],
-    components: Map[Int, ProjectedComponent],
+    components: Components,
     changes: SparseChanges,
     templates: Option[TemplateTable]
   ): Either[PhoenixEncodingError, Vector[(String, Json)]] =
@@ -1464,7 +1484,7 @@ private[scalive] object PhoenixRenderedEncoder:
   private def keyedJson(
     keyed: ProjectedKeyed,
     previous: Option[ProjectedKeyed],
-    components: Map[Int, ProjectedComponent],
+    components: Components,
     sparseChanges: Option[SparseChanges],
     templates: Option[TemplateTable]
   ): Either[PhoenixEncodingError, Json.Obj] =
@@ -1543,7 +1563,7 @@ private[scalive] object PhoenixRenderedEncoder:
   private def streamJson(
     stream: ProjectedStream,
     previous: Option[ProjectedStream],
-    components: Map[Int, ProjectedComponent],
+    components: Components,
     sparseChanges: Option[SparseChanges],
     templates: Option[TemplateTable]
   ): Either[PhoenixEncodingError, Json.Obj] =
@@ -1626,7 +1646,7 @@ private[scalive] object PhoenixRenderedEncoder:
 
   private def streamStatics(
     stream: ProjectedStream,
-    components: Map[Int, ProjectedComponent]
+    components: Components
   ): Either[PhoenixEncodingError, Vector[String]] =
     traverse(streamTemplateRows(stream))(row =>
       flatten(row.child, components, Some(TemplateTable()))
@@ -1691,7 +1711,7 @@ private[scalive] object PhoenixRenderedEncoder:
 
   private def renderHtml(
     root: ProjectedNode,
-    components: Map[Int, ProjectedComponent]
+    components: Components
   ): Either[PhoenixEncodingError, String] =
     val output = StringBuilder()
 
@@ -1726,17 +1746,11 @@ private[scalive] object PhoenixRenderedEncoder:
 
   private def renderTarget(
     value: ProjectedValue.ComponentTarget,
-    components: Map[Int, ProjectedComponent]
+    components: Components
   ): Either[PhoenixEncodingError, String] =
-    val matches = components.iterator.collect {
-      case (cid, component)
-          if (component.ref eq value.ref) || (component.token eq value.identity) ||
-            (component.refIdentity eq value.identity) =>
-        cid
-    }.toVector
-    matches match
-      case Vector(cid) => Right(s" ${value.name}=\"$cid\"")
-      case _           => Left(PhoenixEncodingError.UnknownComponentTarget)
+    components.targeted(value) match
+      case Some(cid) => Right(s" ${value.name}=\"$cid\"")
+      case None      => Left(PhoenixEncodingError.UnknownComponentTarget)
 
   private def countTargets(node: ProjectedNode, id: TemplateId): Int =
     if !node.mayHoldId(id) then 0

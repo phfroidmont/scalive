@@ -302,7 +302,7 @@ object RenderProgram:
     item: Any)
 
   /** The committed rows of a collection or a stream, with what evaluating them read. */
-  final private case class EvaluatedRows[+Node, Msg](
+  final private case class EvaluatedRows[+Node <: EvaluatedNode, Msg](
     node: Node,
     signals: SignalEvaluation.RowsEvaluation,
     bindings: BindingTable.Rows[Msg],
@@ -2169,16 +2169,21 @@ object RenderProgram:
     requirements: Requirements[Msg]
   ): Either[RenderError, (EvaluatedNode.Keyed, Map[RowId, EvaluatedRow[Msg]])] =
     val old      = previous.collect { case keyed: EvaluatedNode.Keyed => keyed }
-    val oldRows  = old.toVector.flatMap(_.rows).map(row => row.id -> row.child).toMap
     val lastRows = last.fold(Map.empty[RowId, EvaluatedRow[Msg]])(_.rows)
+    // The committed rows hold the previous nodes when the previous collection is the committed one.
+    val committed = last.exists(rows => old.exists(_ eq rows.node))
+    val oldRows   =
+      if committed then Map.empty[RowId, EvaluatedNode]
+      else old.toVector.flatMap(_.rows).map(row => row.id -> row.child).toMap
     traverse(rows) { (row, item) =>
+      val lastRow = lastRows.get(row.id)
       evaluateRow(
         row.id,
         row.source,
         item,
         row.element,
-        oldRows.get(row.id),
-        lastRows.get(row.id),
+        if committed then lastRow.map(_.node) else oldRows.get(row.id),
+        lastRow,
         revision,
         transaction,
         flash,

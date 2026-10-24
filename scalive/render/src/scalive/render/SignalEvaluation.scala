@@ -154,25 +154,33 @@ object SignalEvaluation:
     final case class CompleteZipped(signal: Signal[?], left: Signal[?], right: Signal[?])
         extends ScopeFrame
 
-  /** What evaluating the rows of one collection read, kept so that the collection can be reused
-    * without evaluating its rows again while none of it changes.
+  /** What evaluating one row read, kept so that the row can be reused without evaluating it again
+    * while none of it changes.
     *
     * @param samples
-    *   the samples of the signals of the rows themselves
+    *   the samples of the signals of the row itself
     * @param outside
-    *   the signals from outside the rows that the rows read, such as a selection the rows compare
-    *   their item with
+    *   the signals from outside the row that it read, such as a selection the row compares its item
+    *   with
     * @param untracked
-    *   whether the rows render something no signal tracks: a component, a nested LiveView, a
+    *   whether the row renders something no signal tracks: a component, a nested LiveView, a
     *   stream, or a flash
     */
-  final private[render] case class RowsEvaluation(
+  final private[render] case class RowSignals(
     samples: SignalCache,
     outside: Vector[Signal[?]],
     untracked: Boolean)
 
+  /** What evaluating the rows of one collection read: each row's, and every signal from outside the
+    * rows that any of them read.
+    */
+  final private[render] case class RowsEvaluation(
+    rows: Map[RowId, RowSignals],
+    outside: Vector[Signal[?]],
+    untracked: Boolean)
+
   private[render] object RowsEvaluation:
-    val empty: RowsEvaluation = RowsEvaluation(SignalCache.empty, Vector.empty, untracked = false)
+    val empty: RowsEvaluation = RowsEvaluation(Map.empty, Vector.empty, untracked = false)
 
   final private[render] class Transaction private (
     previous: SignalEvaluation,
@@ -183,8 +191,8 @@ object SignalEvaluation:
     sources.put(source.signal, source)
 
     // The program, then the rows of each collection being evaluated, outermost first. The signals
-    // of a row scope of depth n belong to level n.
-    private val levels = ArrayBuffer(Level(previous.samples))
+    // of a row scope of depth n belong to level n, and to the row of that level being evaluated.
+    private val levels = ArrayBuffer(Level(Map.empty, previous.samples))
 
     /** Supplies one child-scope source for this candidate only. */
     def bindSource[A](signal: Signal[A], value: A): Either[RenderError, Unit] =
@@ -221,21 +229,49 @@ object SignalEvaluation:
     /** Starts evaluating the rows of a collection, which read their previous samples from
       * `previous`.
       */
-    def enterRows(previous: RowsEvaluation): Unit = levels += Level(previous.samples)
+    def enterRows(previous: RowsEvaluation): Unit =
+      levels += Level(previous.rows, SignalCache.empty)
 
     /** Ends evaluating the rows that the last `enterRows` started. */
     def exitRows(): RowsEvaluation =
       val level = levels.remove(levels.length - 1)
-      RowsEvaluation(
-        SignalCache.empty.appended(level.placed),
-        level.outside.values().asScala.toVector,
-        level.untracked
+      RowsEvaluation(level.rows.toMap, level.outside.values().asScala.toVector, level.untracked)
+
+    /** Starts evaluating row `id` of the collection that the last `enterRows` started. */
+    def enterRow(id: RowId): Unit =
+      val level = levels.last
+      level.current = Some(
+        RowLevel(id, level.previousRows.get(id).fold(SignalCache.empty)(_.samples))
       )
 
-    /** Records that what is being evaluated, and every collection around it, renders something no
-      * signal tracks.
+    /** Ends evaluating the row that the last `enterRow` started, and returns what it read. */
+    def exitRow(): RowSignals =
+      val level = levels.last
+      val row   = level.current.get
+      val read  = RowSignals(
+        SignalCache.empty.appended(row.placed),
+        row.outside.values().asScala.toVector,
+        row.untracked
+      )
+      level.rows.update(row.id, read)
+      level.current = None
+      read
+
+    /** Keeps row `id` of the collection being evaluated as it was, with what it read then. */
+    def keepRow(id: RowId): Unit =
+      val level = levels.last
+      level.rows.update(id, level.previousRows(id))
+
+    /** What row `id` of the collection being evaluated read in the previous evaluation. */
+    def previousRow(id: RowId): Option[RowSignals] = levels.last.previousRows.get(id)
+
+    /** Records that what is being evaluated, and every row and collection around it, renders
+      * something no signal tracks.
       */
-    def markUntracked(): Unit = levels.foreach(_.untracked = true)
+    def markUntracked(): Unit = levels.foreach { level =>
+      level.untracked = true
+      level.current.foreach(_.untracked = true)
+    }
 
     def result: SignalEvaluation =
       SignalEvaluation(
@@ -324,7 +360,8 @@ object SignalEvaluation:
         val last  = math.min(readerDepth, levels.length - 1)
         var level = depth + 1
         while level <= last do
-          levels(level).outside.putIfAbsent(SignalKey(signal), signal): Unit
+          levels(level).outside.putIfAbsent(SignalKey(signal), signal)
+          levels(level).current.foreach(_.outside.putIfAbsent(SignalKey(signal), signal))
           level += 1
 
     private def evaluatedSample[A](signal: Signal[A]): Option[SignalSample[A]] =
@@ -333,7 +370,8 @@ object SignalEvaluation:
     private def putEvaluated[A](signal: Signal[A], sample: SignalSample[A], depth: Int): Unit =
       val packed = PackedSignalValue[SignalSample, A](signal, sample)
       evaluated.put(signal, Evaluated(packed, depth))
-      levels(levelOf(depth)).placed += packed
+      val level = levels(levelOf(depth))
+      level.current.fold(level.placed)(_.placed) += packed
 
     private def changedSample[A](
       signal: Signal[A],
@@ -347,7 +385,8 @@ object SignalEvaluation:
         case _ => SignalSample(value, revision, dependencies)
 
     private def previousSample[A](signal: Signal[A], depth: Int): Option[SignalSample[A]] =
-      levels(levelOf(depth)).previous.get(signal)
+      val level = levels(levelOf(depth))
+      level.current.fold(level.previous)(_.previous).get(signal)
 
     // Constants have depth -1 and belong to the program.
     private def levelOf(depth: Int): Int = math.min(math.max(depth, 0), levels.length - 1)
@@ -357,7 +396,17 @@ object SignalEvaluation:
     val value: PackedSignalValue[SignalSample],
     val depth: Int)
 
-  final private class Level(val previous: SignalCache):
+  // The program has `previous` samples; the rows of a collection have `previousRows`.
+  final private class Level(
+    val previousRows: Map[RowId, RowSignals],
+    val previous: SignalCache):
+    val placed    = ArrayBuffer.empty[PackedSignalValue[SignalSample]]
+    val outside   = java.util.LinkedHashMap[SignalKey, Signal[?]]()
+    var untracked = false
+    val rows      = scala.collection.mutable.LinkedHashMap.empty[RowId, RowSignals]
+    var current   = Option.empty[RowLevel]
+
+  final private class RowLevel(val id: RowId, val previous: SignalCache):
     val placed    = ArrayBuffer.empty[PackedSignalValue[SignalSample]]
     val outside   = java.util.LinkedHashMap[SignalKey, Signal[?]]()
     var untracked = false

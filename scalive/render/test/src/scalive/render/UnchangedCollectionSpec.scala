@@ -122,6 +122,86 @@ object UnchangedCollectionSpec extends ZIOSpecDefault:
           "<div><span>1</span><li>one</li><li>TWO</li><li>three</li></div>"
       )
     },
+    test("keeps the signal values of the rows a changed collection kept") {
+      var ids      = 0
+      val compiled = RenderProgram.compile[Page, Nothing] { page =>
+        val selected = page.map(_.selected)
+        div(page.map(_.rows).splitBy(_.id) { (_, row) =>
+          li(
+            row.map { value =>
+              ids += 1
+              value.id.toString
+            },
+            row.combineWithFn(selected)((row, selected) => if row.id == selected then "*" else "")
+          )
+        })
+      }
+      val changed = rows.updated(1, Row(2, "TWO"))
+
+      for
+        program <- ZIO.fromEither(compiled)
+        first   <- program.evaluate(Page(0, 0, rows))
+        second  <- program.evaluate(Page(0, 0, changed), Some(first.commit))
+        before = ids
+        // Every row reads the selection, so each is evaluated again, from its kept samples.
+        third <- program.evaluate(Page(0, 3, changed), Some(second.commit))
+      yield assertTrue(
+        ids == before,
+        HtmlRenderer.render(third.tree) == "<div><li>1</li><li>2</li><li>3*</li></div>"
+      )
+    },
+    test("reuses a stream whose generation did not change") {
+      final case class Feed(counter: Int, stream: scalive.streams.LiveStream[Row])
+      val identity = scalive.streams.LiveStreamIdentity.fresh()
+      val stream   = scalive.streams.LiveStream(
+        identity,
+        "rows",
+        1L,
+        rows.map(row => scalive.streams.LiveStreamEntry(s"rows-${row.id}", row)),
+        Vector.empty,
+        Vector.empty,
+        reset = false
+      )
+      val compiled = RenderProgram.compile[Feed, Nothing] { feed =>
+        div(span(feed.map(_.counter.toString)), feed.map(_.stream).renderIn(ul)(row => li(row.map(_.label))))
+      }
+      def streamNode(tree: EvaluatedTree) =
+        tree.root.children(1).asInstanceOf[EvaluatedNode.Element].children.head
+
+      for
+        program <- ZIO.fromEither(compiled)
+        first   <- program.evaluate(Feed(0, stream))
+        base = first.commit
+        second <- program.evaluate(Feed(1, stream), Some(base))
+      yield assertTrue(streamNode(second.tree) eq streamNode(base.tree))
+    },
+    test("updates a stream row when a signal it reads from outside changes") {
+      final case class Feed(selected: Int, stream: scalive.streams.LiveStream[Row])
+      val stream = scalive.streams.LiveStream(
+        scalive.streams.LiveStreamIdentity.fresh(),
+        "rows",
+        1L,
+        rows.map(row => scalive.streams.LiveStreamEntry(s"rows-${row.id}", row)),
+        Vector.empty,
+        Vector.empty,
+        reset = false
+      )
+      val compiled = RenderProgram.compile[Feed, Nothing] { feed =>
+        val selected = feed.map(_.selected)
+        div(feed.map(_.stream).renderIn(ul)(row =>
+          li(row.combineWithFn(selected)((row, selected) => if row.id == selected then "*" else ""))
+        ))
+      }
+
+      for
+        program <- ZIO.fromEither(compiled)
+        first   <- program.evaluate(Feed(1, stream))
+        second  <- program.evaluate(Feed(2, stream), Some(first.commit))
+      yield assertTrue(
+        HtmlRenderer.render(second.tree) ==
+          "<div><ul id=\"rows\" phx-update=\"stream\"><li id=\"rows-1\"></li><li id=\"rows-2\">*</li><li id=\"rows-3\"></li></ul></div>"
+      )
+    },
     test("drops the bindings of a collection that is no longer rendered") {
       val compiled = RenderProgram.compile[(Boolean, Vector[Row]), String] { model =>
         div(

@@ -138,6 +138,20 @@ object BindingTable:
       if levels.length == 1 then evaluatedCollections.update(id, rows) else levels.last ++= rows
       rows
 
+    /** Starts collecting the bindings of one row of the collection being collected. */
+    def enterRow(): Unit = levels += mutable.ArrayBuffer.empty
+
+    /** Ends collecting the bindings of the row the last `enterRow` started, and returns them. */
+    def exitRow(): Rows[Msg] =
+      val row = levels.remove(levels.length - 1).toVector
+      levels.last ++= row
+      row
+
+    /** Keeps `row`, the bindings of a row in the previous evaluation, in the collection being
+      * collected. A duplicate among them and the rest is found when the table is built.
+      */
+    def keepRow(row: Rows[Msg]): Unit = levels.last ++= row
+
     /** Keeps the bindings of the rows of collection `id`, reused from the previous evaluation. */
     def reuseRows(id: TemplateId, rows: Rows[Msg]): Either[RenderError, Unit] =
       if levels.length == 1 then

@@ -295,34 +295,48 @@ object RenderProgram:
     element: ElementTemplate[Msg]):
     def retire(): Unit = scope.close()
 
+  /** A committed row, and the bindings it rendered. */
+  final private case class EvaluatedRow[Msg](
+    node: EvaluatedNode.Element,
+    bindings: BindingTable.Rows[Msg],
+    item: Any)
+
+  /** The committed rows of a collection or a stream, with what evaluating them read. */
+  final private case class EvaluatedRows[+Node, Msg](
+    node: Node,
+    signals: SignalEvaluation.RowsEvaluation,
+    bindings: BindingTable.Rows[Msg],
+    rows: Map[RowId, EvaluatedRow[Msg]])
+
   private object StreamTemplate:
     final class State[A, Msg]:
       private var retainedIdentity: Option[LiveStreamIdentity] = None
-      private var retained = Map.empty[String, StreamRowTemplate[A, Msg]]
-      private var signals  = SignalEvaluation.RowsEvaluation.empty
+      private var retained  = Map.empty[String, StreamRowTemplate[A, Msg]]
+      private var evaluated = Option.empty[EvaluatedRows[EvaluatedNode.Stream, Msg]]
 
       def snapshot(identity: LiveStreamIdentity): Map[String, StreamRowTemplate[A, Msg]] =
         synchronized {
           if retainedIdentity.exists(_ eq identity) then retained else Map.empty
         }
 
-      def lastSignals(identity: LiveStreamIdentity): SignalEvaluation.RowsEvaluation =
+      def lastEvaluated(
+        identity: LiveStreamIdentity
+      ): Option[EvaluatedRows[EvaluatedNode.Stream, Msg]] =
         synchronized {
-          if retainedIdentity.exists(_ eq identity) then signals
-          else SignalEvaluation.RowsEvaluation.empty
+          if retainedIdentity.exists(_ eq identity) then evaluated else None
         }
 
       def assignment(
         identity: LiveStreamIdentity,
         next: Map[String, StreamRowTemplate[A, Msg]],
-        rowSignals: SignalEvaluation.RowsEvaluation
+        rows: EvaluatedRows[EvaluatedNode.Stream, Msg]
       ): () => Unit = () =>
         synchronized {
           val old          = retained
           val sameIdentity = retainedIdentity.exists(_ eq identity)
           retainedIdentity = Some(identity)
           retained = next
-          signals = rowSignals
+          evaluated = Some(rows)
           old.foreach { case (domId, row) =>
             if !sameIdentity || !next.get(domId).exists(_.scope eq row.scope) then row.retire()
           }
@@ -332,7 +346,7 @@ object RenderProgram:
         retained.values.foreach(_.retire())
         retained = Map.empty
         retainedIdentity = None
-        signals = SignalEvaluation.RowsEvaluation.empty
+        evaluated = None
       }
     end State
   end StreamTemplate
@@ -369,11 +383,7 @@ object RenderProgram:
       extends NodeTemplate[Msg]
 
   private object SignalKeyedTemplate:
-    /** The committed rows of a collection, with what evaluating them read. */
-    final case class Evaluated[Msg](
-      node: EvaluatedNode.Keyed,
-      signals: SignalEvaluation.RowsEvaluation,
-      bindings: BindingTable.Rows[Msg])
+    type Evaluated[Msg] = EvaluatedRows[EvaluatedNode.Keyed, Msg]
 
     final class State[A, Key, Msg]:
       private var retained  = Map.empty[Key, DynamicKeyedRowTemplate[A, Msg]]
@@ -1587,6 +1597,7 @@ object RenderProgram:
           evaluateSignalStream(
             template,
             sample.value,
+            transaction.unchanged(sample),
             previous,
             revision,
             transaction,
@@ -1653,6 +1664,8 @@ object RenderProgram:
     evaluateStream(
       template.id,
       template.stream,
+      // The view holds this stream, which therefore never changes.
+      unchanged = true,
       template.state,
       previous,
       revision,
@@ -1675,6 +1688,7 @@ object RenderProgram:
   private def evaluateSignalStream[A, Msg](
     template: SignalStreamTemplate[A, Msg],
     stream: LiveStream[A],
+    unchanged: Boolean,
     previous: Option[EvaluatedNode],
     revision: RenderRevision,
     transaction: SignalEvaluation.Transaction,
@@ -1687,6 +1701,7 @@ object RenderProgram:
     evaluateStream(
       template.id,
       stream,
+      unchanged,
       template.state,
       previous,
       revision,
@@ -1703,9 +1718,13 @@ object RenderProgram:
             template.compiler.signalStreamRowCandidate(domId, template.project, candidateRows)
     )
 
+  /** Evaluates a stream, or keeps its committed node when `unchanged`, the stream is the same, and
+    * every signal its rows read from outside them is unchanged too.
+    */
   private def evaluateStream[A, Msg](
     id: TemplateId,
     stream: LiveStream[A],
+    unchanged: Boolean,
     state: StreamTemplate.State[A, Msg],
     previous: Option[EvaluatedNode],
     revision: RenderRevision,
@@ -1720,45 +1739,113 @@ object RenderProgram:
       StreamRowTemplate[A, Msg]
     ]
   ): Either[RenderError, EvaluatedNode.Stream] =
+    val last     = state.lastEvaluated(stream.identity)
+    val old      = previous.collect { case value: EvaluatedNode.Stream => value }
+    val reusable = last match
+      case Some(rows) if unchanged && old.exists(_ eq rows.node) && !rows.signals.untracked =>
+        traverse(rows.signals.outside)(transaction.sample(_))
+          .map(samples => Option.when(samples.forall(transaction.unchanged))(rows))
+      case _ => Right(None)
+
+    reusable.flatMap {
+      case Some(rows) => bindings.reuseRows(id, rows.bindings).map(_ => rows.node)
+      case None       =>
+        bindings.enterRows()
+        val evaluated = evaluateStreamRows(
+          id,
+          stream,
+          state,
+          old,
+          last,
+          revision,
+          transaction,
+          flash,
+          bindings,
+          commitActions,
+          candidateRows,
+          requirements,
+          rowCandidate
+        )
+        val rowBindings = bindings.exitRows(id)
+        evaluated.map { (node, rows, signals, next) =>
+          commitActions += state.assignment(
+            stream.identity,
+            next,
+            EvaluatedRows(node, signals, rowBindings, rows)
+          )
+          node
+        }
+    }
+  end evaluateStream
+
+  private def evaluateStreamRows[A, Msg](
+    id: TemplateId,
+    stream: LiveStream[A],
+    state: StreamTemplate.State[A, Msg],
+    old: Option[EvaluatedNode.Stream],
+    last: Option[EvaluatedRows[EvaluatedNode.Stream, Msg]],
+    revision: RenderRevision,
+    transaction: SignalEvaluation.Transaction,
+    flash: Map[FlashKey, FlashValue],
+    bindings: BindingTable.Builder[Msg],
+    commitActions: ArrayBuffer[() => Unit],
+    candidateRows: CandidateRows,
+    requirements: Requirements[Msg],
+    rowCandidate: (String, A, Option[StreamRowTemplate[A, Msg]]) => Either[
+      RenderError,
+      StreamRowTemplate[A, Msg]
+    ]
+  ): Either[
+    RenderError,
+    (
+      EvaluatedNode.Stream,
+      Map[RowId, EvaluatedRow[Msg]],
+      SignalEvaluation.RowsEvaluation,
+      Map[String, StreamRowTemplate[A, Msg]]
+    )
+  ] =
     val entries          = stream.entries
-    val retainedDomIds   = entries.iterator.map(_.domId).toSet
+    val retainedDomIds   = stream.entryIds
     val operationEntries = stream.inserted.iterator
       .map(_.entry)
       .filterNot(entry => retainedDomIds.contains(entry.domId))
       .toVector
     val renderedEntries = entries ++ operationEntries
+    val lastRows        = last.fold(Map.empty[RowId, EvaluatedRow[Msg]])(_.rows)
     for
       _ <- validateStreamDomIds(renderedEntries)
       retained = state.snapshot(stream.identity)
       templates <- traverse(renderedEntries) { entry =>
                      rowCandidate(entry.domId, entry.value, retained.get(entry.domId))
                    }
-      _ <- traverse(templates.zip(renderedEntries)) { case (row, entry) =>
-             transaction.bindSource(row.source, entry.value)
-           }
-      old     = previous.collect { case value: EvaluatedNode.Stream => value }
       oldRows = old.toVector.flatMap(_.rows).map(row => row.domId -> row.child).toMap
-      evaluatedRows <- withinRows(transaction, state.lastSignals(stream.identity)) {
-                         traverse(templates.zip(renderedEntries)) { case (row, entry) =>
-                           evaluateNode(
-                             row.element,
-                             oldRows.get(entry.domId),
-                             revision,
-                             transaction,
-                             flash,
-                             bindings,
-                             commitActions,
-                             candidateRows,
-                             requirements
-                           ).map(child =>
-                             EvaluatedNode.StreamRow(
-                               entry.domId,
-                               child.asInstanceOf[EvaluatedNode.Element]
-                             )
-                           )
-                         }
-                       }
-      (renderedRows, rowSignals) = evaluatedRows
+      evaluatedRows <-
+        withinRows(
+          transaction,
+          last.fold(SignalEvaluation.RowsEvaluation.empty)(_.signals)
+        ) {
+          traverse(templates.zip(renderedEntries)) { case (row, entry) =>
+            evaluateRow(
+              row.id,
+              row.source,
+              entry.value,
+              row.element,
+              oldRows.get(entry.domId),
+              lastRows.get(row.id),
+              revision,
+              transaction,
+              flash,
+              bindings,
+              commitActions,
+              candidateRows,
+              requirements
+            ).map((child, evaluated) =>
+              EvaluatedNode.StreamRow(entry.domId, child) -> (row.id -> evaluated)
+            )
+          }
+        }
+      (evaluatedWithMemos, rowSignals) = evaluatedRows
+      renderedRows                     = evaluatedWithMemos.map(_._1)
     yield
       val rows     = renderedRows.take(entries.length)
       val rowsById = renderedRows.map(row => row.domId -> row).toMap
@@ -1775,8 +1862,7 @@ object RenderProgram:
       if transientTemplates.nonEmpty then
         commitActions += (() => transientTemplates.foreach(_.retire()))
       val next = Map.from(entries.map(_.domId).zip(retainedTemplates))
-      commitActions += state.assignment(stream.identity, next, rowSignals)
-      old match
+      val node = old match
         case Some(node)
             if node.id == id && (node.identity eq stream.identity) &&
               node.generation == stream.generation &&
@@ -1784,8 +1870,9 @@ object RenderProgram:
           node.copy(rows = rows, operations = operations)
         case _ =>
           EvaluatedNode.Stream(id, stream.identity, stream.generation, rows, operations, revision)
+      (node, evaluatedWithMemos.map(_._2).toMap, rowSignals, next)
     end for
-  end evaluateStream
+  end evaluateStreamRows
 
   private def validateStreamDomIds[A](
     entries: Vector[LiveStreamEntry[A]]
@@ -1845,7 +1932,7 @@ object RenderProgram:
     commitActions: ArrayBuffer[() => Unit],
     candidateRows: CandidateRows,
     requirements: Requirements[Msg]
-  ): Either[RenderError, (EvaluatedNode.Keyed, SignalKeyedTemplate.Evaluated[Msg] => () => Unit)] =
+  ): Either[RenderError, CollectionRows[Msg]] =
     val entries = values.iterator.map(value => template.key(value) -> value).toVector
     for
       _ <- validateEvaluationKeys(entries.map(_._1))
@@ -1860,13 +1947,11 @@ object RenderProgram:
                       candidateRows
                     )
               }
-      _ <- traverse(rows.zip(entries)) { case (row, (_, value)) =>
-             transaction.bindSource(row.source, value)
-           }
-      result <- evaluateKeyedRows(
+      result <- evaluateItemRows(
                   template.id,
-                  rows,
+                  rows.zip(entries.map(_._2)),
                   previous,
+                  template.state.lastEvaluated,
                   revision,
                   transaction,
                   flash,
@@ -1880,7 +1965,11 @@ object RenderProgram:
       val removed = retained.iterator.collect {
         case (key, row) if !next.contains(key) => row
       }.toVector
-      result -> (evaluated => template.state.assignment(next, removed, evaluated))
+      CollectionRows(
+        result._1,
+        result._2,
+        evaluated => template.state.assignment(next, removed, evaluated)
+      )
     end for
   end evaluateSignalKeyedRows
 
@@ -1931,7 +2020,7 @@ object RenderProgram:
     commitActions: ArrayBuffer[() => Unit],
     candidateRows: CandidateRows,
     requirements: Requirements[Msg]
-  ): Either[RenderError, (EvaluatedNode.Keyed, SignalKeyedTemplate.Evaluated[Msg] => () => Unit)] =
+  ): Either[RenderError, CollectionRows[Msg]] =
     val values   = items.iterator.toVector
     val indices  = values.indices.toVector
     val retained = template.state.snapshot
@@ -1946,13 +2035,11 @@ object RenderProgram:
                       candidateRows
                     )
               }
-      _ <- traverse(rows.zip(values)) { case (row, value) =>
-             transaction.bindSource(row.source, value)
-           }
-      result <- evaluateKeyedRows(
+      result <- evaluateItemRows(
                   template.id,
-                  rows,
+                  rows.zip(values),
                   previous,
+                  template.state.lastEvaluated,
                   revision,
                   transaction,
                   flash,
@@ -1966,9 +2053,19 @@ object RenderProgram:
       val removed = retained.iterator.collect {
         case (index, row) if !next.contains(index) => row
       }.toVector
-      result -> (evaluated => template.state.assignment(next, removed, evaluated))
+      CollectionRows(
+        result._1,
+        result._2,
+        evaluated => template.state.assignment(next, removed, evaluated)
+      )
     end for
   end evaluateSignalKeyedByIndexRows
+
+  /** The evaluated rows of a collection, and the commit that keeps them. */
+  final private case class CollectionRows[Msg](
+    node: EvaluatedNode.Keyed,
+    rows: Map[RowId, EvaluatedRow[Msg]],
+    assignment: SignalKeyedTemplate.Evaluated[Msg] => () => Unit)
 
   /** Reuses the committed rows of a collection when nothing they were evaluated from changed, and
     * otherwise evaluates them with `evaluateRows`, which returns the rows and their commit.
@@ -1986,10 +2083,7 @@ object RenderProgram:
     bindings: BindingTable.Builder[Msg],
     commitActions: ArrayBuffer[() => Unit]
   )(
-    evaluateRows: => Either[
-      RenderError,
-      (EvaluatedNode.Keyed, SignalKeyedTemplate.Evaluated[Msg] => () => Unit)
-    ]
+    evaluateRows: => Either[RenderError, CollectionRows[Msg]]
   ): Either[RenderError, EvaluatedNode.Keyed] =
     val reusable = last match
       case Some(rows)
@@ -2008,9 +2102,11 @@ object RenderProgram:
           last.fold(SignalEvaluation.RowsEvaluation.empty)(_.signals)
         )(evaluateRows)
         val rowBindings = bindings.exitRows(id)
-        evaluated.map { case ((node, assignment), signals) =>
-          commitActions += assignment(SignalKeyedTemplate.Evaluated(node, signals, rowBindings))
-          node
+        evaluated.map { (collection, signals) =>
+          commitActions += collection.assignment(
+            EvaluatedRows(collection.node, signals, rowBindings, collection.rows)
+          )
+          collection.node
         }
     }
   end evaluateCollection
@@ -2027,6 +2123,7 @@ object RenderProgram:
     val signals   = transaction.exitRows()
     evaluated.map(_ -> signals)
 
+  /** Evaluates the rows of a plain collection, which share the scope around them. */
   private def evaluateKeyedRows[Msg](
     id: TemplateId,
     templates: Vector[KeyedRowTemplate[Msg]],
@@ -2053,16 +2150,116 @@ object RenderProgram:
         candidateRows,
         requirements
       ).map(node => EvaluatedNode.KeyedRow(row.id, node.asInstanceOf[EvaluatedNode.Element]))
-    }.map { rows =>
-      old match
-        case Some(node) if node.id == id && sameRows(node.rows, rows) => node
-        case Some(node)
-            if node.id == id && node.rows.map(_.id) == rows.map(_.id) &&
-              node.rows.map(_.child.revision) == rows.map(_.child.revision) =>
-          node.copy(rows = rows)
-        case _ => EvaluatedNode.Keyed(id, rows, revision)
+    }.map(rows => keyedNode(id, old, rows, revision))
+
+  /** Evaluates the rows of a signal collection, each from its item. Each row keeps its committed
+    * node when nothing it read changed, given `last`, the committed rows.
+    */
+  private def evaluateItemRows[A, Msg](
+    id: TemplateId,
+    rows: Vector[(DynamicKeyedRowTemplate[A, Msg], A)],
+    previous: Option[EvaluatedNode],
+    last: Option[EvaluatedRows[?, Msg]],
+    revision: RenderRevision,
+    transaction: SignalEvaluation.Transaction,
+    flash: Map[FlashKey, FlashValue],
+    bindings: BindingTable.Builder[Msg],
+    commitActions: ArrayBuffer[() => Unit],
+    candidateRows: CandidateRows,
+    requirements: Requirements[Msg]
+  ): Either[RenderError, (EvaluatedNode.Keyed, Map[RowId, EvaluatedRow[Msg]])] =
+    val old      = previous.collect { case keyed: EvaluatedNode.Keyed => keyed }
+    val oldRows  = old.toVector.flatMap(_.rows).map(row => row.id -> row.child).toMap
+    val lastRows = last.fold(Map.empty[RowId, EvaluatedRow[Msg]])(_.rows)
+    traverse(rows) { (row, item) =>
+      evaluateRow(
+        row.id,
+        row.source,
+        item,
+        row.element,
+        oldRows.get(row.id),
+        lastRows.get(row.id),
+        revision,
+        transaction,
+        flash,
+        bindings,
+        commitActions,
+        candidateRows,
+        requirements
+      ).map(EvaluatedNode.KeyedRow(row.id, _) -> _)
+    }.map { evaluated =>
+      val keyedRows = evaluated.map(_._1)
+      val byId      = evaluated.iterator.map((row, value) => row.id -> value).toMap
+      keyedNode(id, old, keyedRows, revision) -> byId
     }
-  end evaluateKeyedRows
+  end evaluateItemRows
+
+  private def keyedNode(
+    id: TemplateId,
+    old: Option[EvaluatedNode.Keyed],
+    rows: Vector[EvaluatedNode.KeyedRow],
+    revision: RenderRevision
+  ): EvaluatedNode.Keyed =
+    old match
+      case Some(node) if node.id == id && sameRows(node.rows, rows) => node
+      case Some(node)
+          if node.id == id && node.rows.map(_.id) == rows.map(_.id) &&
+            node.rows.map(_.child.revision) == rows.map(_.child.revision) =>
+        node.copy(rows = rows)
+      case _ => EvaluatedNode.Keyed(id, rows, revision)
+
+  /** Evaluates one row from `item`, or keeps its committed node, `last`, when its item and every
+    * signal it read from outside it are unchanged, and it renders nothing that signals do not
+    * track. A kept row keeps its bindings and signal samples.
+    */
+  private def evaluateRow[A, Msg](
+    id: RowId,
+    source: Signal[A],
+    item: A,
+    element: ElementTemplate[Msg],
+    previous: Option[EvaluatedNode],
+    last: Option[EvaluatedRow[Msg]],
+    revision: RenderRevision,
+    transaction: SignalEvaluation.Transaction,
+    flash: Map[FlashKey, FlashValue],
+    bindings: BindingTable.Builder[Msg],
+    commitActions: ArrayBuffer[() => Unit],
+    candidateRows: CandidateRows,
+    requirements: Requirements[Msg]
+  ): Either[RenderError, (EvaluatedNode.Element, EvaluatedRow[Msg])] =
+    val kept = (last, transaction.previousRow(id)) match
+      case (Some(row), Some(read))
+          if previous.exists(_ eq row.node) && !read.untracked && row.item == item =>
+        traverse(read.outside)(transaction.sample(_))
+          .map(outside => Option.when(outside.forall(transaction.unchanged))(row))
+      case _ => Right(None)
+
+    kept.flatMap {
+      case Some(row) =>
+        transaction.keepRow(id)
+        bindings.keepRow(row.bindings)
+        Right(row.node -> row)
+      case None =>
+        transaction.bindSource(source, item).flatMap { _ =>
+          transaction.enterRow(id)
+          bindings.enterRow()
+          val evaluated = evaluateNode(
+            element,
+            previous,
+            revision,
+            transaction,
+            flash,
+            bindings,
+            commitActions,
+            candidateRows,
+            requirements
+          ).map(_.asInstanceOf[EvaluatedNode.Element])
+          transaction.exitRow()
+          val rowBindings = bindings.exitRow()
+          evaluated.map(node => node -> EvaluatedRow(node, rowBindings, item))
+        }
+    }
+  end evaluateRow
 
   private def validateEvaluationKeys[A](keys: Vector[A]): Either[RenderError, Unit] =
     keys

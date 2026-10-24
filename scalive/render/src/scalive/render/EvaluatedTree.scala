@@ -30,6 +30,19 @@ sealed trait EvaluatedNode:
   def id: TemplateId
   def revision: RenderRevision
 
+  /** Whether this subtree holds a component or a nested LiveView, which runtime resolution fills
+    * in. Resolution keeps a subtree without either as it is.
+    */
+  private[render] lazy val holdsResolvable: Boolean = this match
+    case element: EvaluatedNode.Element => element.children.exists(_.holdsResolvable)
+    case flash: EvaluatedNode.Flash     => flash.child.exists(_.holdsResolvable)
+    case choice: EvaluatedNode.Choice   => choice.children.exists(_.holdsResolvable)
+    case keyed: EvaluatedNode.Keyed     => keyed.rows.exists(_.child.holdsResolvable)
+    // Stream operations may insert rows that are not among the rendered ones.
+    case _: EvaluatedNode.Stream                              => true
+    case _: EvaluatedNode.Component | _: EvaluatedNode.Nested => true
+    case _: EvaluatedNode.Text                                => false
+
 object EvaluatedNode:
   final case class Element private[render] (
     id: TemplateId,
@@ -294,6 +307,7 @@ private object CandidateCommit:
 
 object EvaluatedTree:
   private[render] def unresolvedComponents(node: EvaluatedNode): Vector[TemplateId] = node match
+    case _ if !node.holdsResolvable     => Vector.empty
     case element: EvaluatedNode.Element => element.children.flatMap(unresolvedComponents)
     case flash: EvaluatedNode.Flash     => flash.child.toVector.flatMap(unresolvedComponents)
     case choice: EvaluatedNode.Choice   => choice.children.flatMap(unresolvedComponents)
@@ -308,6 +322,7 @@ object EvaluatedTree:
     case _: EvaluatedNode.Text => Vector.empty
 
   private[render] def unresolvedNested(node: EvaluatedNode): Vector[TemplateId] = node match
+    case _ if !node.holdsResolvable     => Vector.empty
     case element: EvaluatedNode.Element => element.children.flatMap(unresolvedNested)
     case flash: EvaluatedNode.Flash     => flash.child.toVector.flatMap(unresolvedNested)
     case choice: EvaluatedNode.Choice   => choice.children.flatMap(unresolvedNested)
@@ -475,6 +490,7 @@ object EvaluatedTree:
     node: EvaluatedNode,
     resolutions: Map[TemplateId, NestedResolution]
   ): Either[RenderError, EvaluatedNode] = node match
+    case _ if !node.holdsResolvable     => Right(node)
     case element: EvaluatedNode.Element =>
       traverseNestedNodes(element.children, resolutions).map(children =>
         element.copy(children = children)
@@ -542,6 +558,7 @@ object EvaluatedTree:
     node: EvaluatedNode,
     resolutions: Map[TemplateId, ComponentResolution]
   ): Either[RenderError, EvaluatedNode] = node match
+    case _ if !node.holdsResolvable     => Right(node)
     case element: EvaluatedNode.Element =>
       traverseNodes(element.children, resolutions).map(children =>
         element.copy(children = children)
@@ -603,6 +620,7 @@ object EvaluatedTree:
     val seen = IdentityHashMap[Object, java.lang.Boolean]()
 
     def loop(node: EvaluatedNode): Either[RenderError, Unit] = node match
+      case _ if !node.holdsResolvable         => Right(())
       case element: EvaluatedNode.Element     => loopAll(element.children)
       case flash: EvaluatedNode.Flash         => loopAll(flash.child.toVector)
       case choice: EvaluatedNode.Choice       => loopAll(choice.children)

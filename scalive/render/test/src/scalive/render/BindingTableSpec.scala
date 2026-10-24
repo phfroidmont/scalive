@@ -49,7 +49,7 @@ object BindingTableSpec extends ZIOSpecDefault:
     entries.foreach((id, message) =>
       builder.add(BindingId.fromEncoded(id), BindingOperation(_ => message))
     )
-    builder.result()
+    builder.result().fold(throw _, identity)
 
   private def message(operation: Option[BindingOperation[Int]]): Option[Int] =
     operation

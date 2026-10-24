@@ -28,8 +28,9 @@ enum RenderDelta:
 
 /** Computes exact render deltas without using hashes as evidence of equality.
   *
-  * Trees from different render programs are always replaced in full. Within one program, retained
-  * revisions skip proven-equal nodes and structural mismatches produce explicit replacements.
+  * Trees from different render programs are always replaced in full. Within one program, a node the
+  * evaluation kept as it was is skipped, retained revisions skip proven-equal nodes, and structural
+  * mismatches produce explicit replacements.
   */
 object TreeDiffer:
   def initial(tree: EvaluatedTree): RenderDelta = RenderDelta.Replace(tree)
@@ -37,12 +38,17 @@ object TreeDiffer:
   def diff(previous: EvaluatedTree, current: EvaluatedTree): RenderDelta =
     if previous.programIdentity != current.programIdentity then RenderDelta.Replace(current)
     else if previous.root.id != current.root.id then RenderDelta.Replace(current)
+    else if previous.root eq current.root then RenderDelta.Empty
     else
       val changes = diffNode(previous.root, current.root)
       if changes.isEmpty then RenderDelta.Empty
       else RenderDelta.Update(current.revision, changes)
 
   private def diffNode(previous: EvaluatedNode, current: EvaluatedNode): Vector[RenderChange] =
+    if previous eq current then Vector.empty
+    else diffDistinct(previous, current)
+
+  private def diffDistinct(previous: EvaluatedNode, current: EvaluatedNode): Vector[RenderChange] =
     (previous, current) match
       case (left: EvaluatedNode.Text, right: EvaluatedNode.Text)
           if left.revision == right.revision =>

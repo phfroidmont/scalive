@@ -972,6 +972,7 @@ object ZioHttp:
         hooks = view.hooks,
         browserEvents = view.browserEvents,
         pageTitle = view.pageTitle,
+        layoutValues = view.layoutValues,
         mount = ctx => view.mount(initialParams, ctx),
         handleMessage = (model, ctx, message) =>
           view.handleMessage(model, RoutedContexts.message(ctx, location))(message),
@@ -1028,13 +1029,21 @@ object ZioHttp:
         request.copy(url = URL(path = url.path, queryParams = url.queryParams))
       )
       val pageTitle    = input.map((model, _) => lifecycle.pageTitle(model))
-      val routeContext =
-        LiveLayoutContext(path, requestSignal, currentUrl, pageTitle, context, connection)
+      val layoutValues = input.map((model, _) => lifecycle.layoutValues(model))
+      val routeContext = LiveLayoutContext(
+        path,
+        requestSignal,
+        currentUrl,
+        pageTitle,
+        layoutValues,
+        context,
+        connection
+      )
       val routed = layouts.foldRight(lifecycle.view(input))((layout, content) =>
         layout.view(content, routeContext)
       )
       val applicationContext =
-        LiveLayoutContext(path, requestSignal, currentUrl, pageTitle, (), connection)
+        LiveLayoutContext(path, requestSignal, currentUrl, pageTitle, layoutValues, (), connection)
       applicationLayouts.foldRight(routed)((layout, content) =>
         layout.view(content, applicationContext)
       ))

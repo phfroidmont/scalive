@@ -563,6 +563,7 @@ object RootConnectionSpec extends ZIOSpecDefault:
               .onParams((model, _, _) => order.update(_ :+ "params").as(LiveHookResult.cont(model + 1)))
               .afterRender((_, _) => renders.update(_ :+ "static")),
             _ => None,
+            _ => LiveLayoutValues.empty,
             ctx => ctx.hooks.afterRender.attach("dynamic")((_, _) => renders.update(_ :+ "dynamic")).as(0),
             (model, _, _) => ZIO.succeed(model),
             _ => ZIO.succeed(
@@ -629,6 +630,7 @@ object RootConnectionSpec extends ZIOSpecDefault:
                             order.update(_ :+ "async").as(LiveHookResult.cont(model)))
                           .afterRender((_, _) => order.update(_ :+ "after-render")),
                         pageTitle = _ => None,
+                        layoutValues = _ => LiveLayoutValues.empty,
                         mount = _ => order.update(_ :+ "mount").as(0),
                         handleMessage = (model, ctx, message) =>
                           order.update(_ :+ s"handler:$message") *>

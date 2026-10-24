@@ -812,8 +812,44 @@
       "kind" : "class",
       "signatures" : [
         {
-          "id" : "class:scalive.LiveLayoutContext:6746c96336c5c745",
-          "signature" : "class LiveLayoutContext[+A, +Ctx](params: Signal[A], request: Signal[zio.http.Request], currentUrl: Signal[zio.http.URL], pageTitle: Signal[Option[String]], context: Ctx, connection: Connection[ConnectedMetadata])"
+          "id" : "class:scalive.LiveLayoutContext:390c0c68524bfb22",
+          "signature" : "class LiveLayoutContext[+A, +Ctx](params: Signal[A], request: Signal[zio.http.Request], currentUrl: Signal[zio.http.URL], pageTitle: Signal[Option[String]], layoutValues: Signal[LiveLayoutValues], context: Ctx, connection: Connection[ConnectedMetadata])"
+        }
+      ]
+    },
+    {
+      "id" : "class:scalive.LiveLayoutKey",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.LiveLayoutKey",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.LiveLayoutKey:d2bf3cbff7274b6b",
+          "signature" : "class LiveLayoutKey[A](name: String)"
+        }
+      ]
+    },
+    {
+      "id" : "class:scalive.LiveLayoutValues",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.LiveLayoutValues",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.LiveLayoutValues:4b30453c80832c24",
+          "signature" : "class LiveLayoutValues"
+        }
+      ]
+    },
+    {
+      "id" : "class:scalive.LiveLayoutValues.Entry",
+      "ownerId" : "object:scalive.LiveLayoutValues",
+      "qualifiedName" : "scalive.LiveLayoutValues.Entry",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.LiveLayoutValues.Entry:345970b0aac602ba",
+          "signature" : "class Entry"
         }
       ]
     },
@@ -6434,6 +6470,54 @@
       ]
     },
     {
+      "id" : "def:scalive.LiveLayoutContext.layoutValue",
+      "ownerId" : "class:scalive.LiveLayoutContext",
+      "qualifiedName" : "scalive.LiveLayoutContext.layoutValue",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveLayoutContext.layoutValue:3901739992f01036",
+          "signature" : "def layoutValue[V](key: LiveLayoutKey[V]): Signal[Option[V]]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LiveLayoutKey.:=",
+      "ownerId" : "class:scalive.LiveLayoutKey",
+      "qualifiedName" : "scalive.LiveLayoutKey.:=",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveLayoutKey.:=:be5328bb8e7de88d",
+          "signature" : "def :=(value: A): LiveLayoutValues.Entry"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LiveLayoutValues.apply",
+      "ownerId" : "object:scalive.LiveLayoutValues",
+      "qualifiedName" : "scalive.LiveLayoutValues.apply",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveLayoutValues.apply:bb78fc99a1781149",
+          "signature" : "def apply(entries: LiveLayoutValues.Entry*): LiveLayoutValues"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LiveLayoutValues.get",
+      "ownerId" : "class:scalive.LiveLayoutValues",
+      "qualifiedName" : "scalive.LiveLayoutValues.get",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveLayoutValues.get:f21fc348c5ff618b",
+          "signature" : "def get[A](key: LiveLayoutKey[A]): Option[A]"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.LiveLocation.EncodeError.message",
       "ownerId" : "enum:scalive.LiveLocation.EncodeError",
       "qualifiedName" : "scalive.LiveLocation.EncodeError.message",
@@ -7982,6 +8066,18 @@
       ]
     },
     {
+      "id" : "def:scalive.LiveView.Routed.layoutValues",
+      "ownerId" : "trait:scalive.LiveView.Routed",
+      "qualifiedName" : "scalive.LiveView.Routed.layoutValues",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveView.Routed.layoutValues:83ecb0d536a3442d",
+          "signature" : "def layoutValues(model: Model): LiveLayoutValues"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.LiveView.Routed.mount",
       "ownerId" : "trait:scalive.LiveView.Routed",
       "qualifiedName" : "scalive.LiveView.Routed.mount",
@@ -8050,6 +8146,18 @@
         {
           "id" : "def:scalive.LiveView.hooks:6e779131f86ee6db",
           "signature" : "def hooks: LiveHooks[Msg, Model]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LiveView.layoutValues",
+      "ownerId" : "trait:scalive.LiveView",
+      "qualifiedName" : "scalive.LiveView.layoutValues",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LiveView.layoutValues:9c5ddd5a92be075b",
+          "signature" : "def layoutValues(model: Model): LiveLayoutValues"
         }
       ]
     },
@@ -13786,6 +13894,18 @@
         {
           "id" : "given:scalive.JSCommands.JSCommand.given_JsonEncoder_JSCommand:9405bfc412e728b1",
           "signature" : "given given_JsonEncoder_JSCommand[Msg]: zio.json.JsonEncoder[JSCommands.JSCommand[Msg]]"
+        }
+      ]
+    },
+    {
+      "id" : "given:scalive.LiveLayoutValues.given_CanEqual_LiveLayoutValues_LiveLayoutValues",
+      "ownerId" : "object:scalive.LiveLayoutValues",
+      "qualifiedName" : "scalive.LiveLayoutValues.given_CanEqual_LiveLayoutValues_LiveLayoutValues",
+      "kind" : "given",
+      "signatures" : [
+        {
+          "id" : "given:scalive.LiveLayoutValues.given_CanEqual_LiveLayoutValues_LiveLayoutValues:7df37396e6fe0c57",
+          "signature" : "given given_CanEqual_LiveLayoutValues_LiveLayoutValues: CanEqual[LiveLayoutValues, LiveLayoutValues]"
         }
       ]
     },
@@ -20930,6 +21050,18 @@
       ]
     },
     {
+      "id" : "object:scalive.LiveLayoutValues",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.LiveLayoutValues",
+      "kind" : "object",
+      "signatures" : [
+        {
+          "id" : "object:scalive.LiveLayoutValues:87daa9d9a31ca38e",
+          "signature" : "object LiveLayoutValues"
+        }
+      ]
+    },
+    {
       "id" : "object:scalive.LiveLocation",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.LiveLocation",
@@ -27217,6 +27349,18 @@
       ]
     },
     {
+      "id" : "val:scalive.LiveLayoutContext.layoutValues",
+      "ownerId" : "class:scalive.LiveLayoutContext",
+      "qualifiedName" : "scalive.LiveLayoutContext.layoutValues",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveLayoutContext.layoutValues:81be8c88ce1c87f0",
+          "signature" : "val layoutValues: Signal[LiveLayoutValues]"
+        }
+      ]
+    },
+    {
       "id" : "val:scalive.LiveLayoutContext.pageTitle",
       "ownerId" : "class:scalive.LiveLayoutContext",
       "qualifiedName" : "scalive.LiveLayoutContext.pageTitle",
@@ -27249,6 +27393,30 @@
         {
           "id" : "val:scalive.LiveLayoutContext.request:fa1b6bdbc21ec4bb",
           "signature" : "val request: Signal[zio.http.Request]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveLayoutKey.name",
+      "ownerId" : "class:scalive.LiveLayoutKey",
+      "qualifiedName" : "scalive.LiveLayoutKey.name",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveLayoutKey.name:81da2bb6fc574443",
+          "signature" : "val name: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LiveLayoutValues.empty",
+      "ownerId" : "object:scalive.LiveLayoutValues",
+      "qualifiedName" : "scalive.LiveLayoutValues.empty",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LiveLayoutValues.empty:599a0c68512b7bc8",
+          "signature" : "val empty: LiveLayoutValues"
         }
       ]
     },

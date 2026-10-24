@@ -60,8 +60,8 @@ section's application does.
 ## Wrap every page in shared navigation {#wrap-pages-in-shared-navigation}
 
 An ordinary layout renders the markup that pages share inside `<body>`. This
-one shows the page title above a navigation bar and marks the link to the
-current section:
+one shows a heading above a navigation bar and marks the link to the current
+section:
 
 @:sourceRegion(documentation/fixtures/guides/src/layouts/AppLayout.scala, layouts-app-layout)
 
@@ -77,9 +77,41 @@ project, while the navigation bar itself stays in place.
 
 `ctx.pageTitle` is the page's
 @:apiSymbol(def:scalive.LiveView.pageTitle)`pageTitle`@:@, the text of the
-document title, and follows the page's model. The project page returns
-`Some(s"Project $project")`, so the header shows it without the route passing
-the title to the layout; pages without a title show the default.
+document title, and follows the page's model. The projects page returns
+`Some("All projects")`, so the header shows it without the route passing the
+title to the layout; pages without a title show the default. A page can also
+give the header a shorter heading, as the next section shows.
+
+## Show page state in a layout {#show-page-state-in-a-layout}
+
+A layout sometimes needs a value from the page's model other than the document
+title: a short heading for a narrow bar, a count, or an unsaved-changes marker.
+The layout declares a
+@:apiSymbol(class:scalive.LiveLayoutKey)`LiveLayoutKey`@:@ for each value, with
+the value's type. `AppLayout` above declares `AppLayout.Heading`, a
+`LiveLayoutKey[String]`, and reads it with
+@:apiSymbol(def:scalive.LiveLayoutContext.layoutValue)`ctx.layoutValue`@:@, a
+`Signal[Option[String]]` that is `None` on pages that provide no heading. The
+header then falls back to the page title.
+
+A page provides values from its model by overriding
+@:apiSymbol(def:scalive.LiveView.layoutValues)`layoutValues`@:@:
+
+@:sourceRegion(documentation/fixtures/guides/src/layouts/Pages.scala, layouts-layout-values)
+
+The browser tab shows **Open issues · Project scalive · Scalive** while the
+header shows **Project scalive**. Like the page title, the values follow the
+model in the first HTML and in every later render. The compiler checks that
+each value has its key's type, so `AppLayout.Heading := 42` does not compile.
+
+Every layout around the page can read every key, including layouts installed
+on the router. Keys are compared by identity, not by name, so keys declared by
+different layouts never clash. Only the page's root LiveView provides values:
+layouts do not wrap nested LiveViews.
+
+When the page needs to put markup of its own in the chrome, such as a button
+that sends it a message, render that part of the chrome from the page's `view`
+instead, with a function shared by the pages that need it.
 
 A layout cannot send messages of its own: its `view` must accept content of any
 message type, so it has no message type to send. For interactive chrome, such
@@ -180,7 +212,8 @@ layout on a session or route.
 Selection uses the context available **where the layout is installed**.
 Appending another mount aspect afterward does not make the layout read the
 final accumulated context. Only the layout's context value is adapted;
-parameters, request, URL, connection, content, and page title are unchanged.
+parameters, request, URL, connection, content, page title, and layout values
+are unchanged.
 Selectors must
 be pure and deterministic: a root layout applies its selector separately for
 `key` and `view`. The default root, used when no root layout is installed, stays

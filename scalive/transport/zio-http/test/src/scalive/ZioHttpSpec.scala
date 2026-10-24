@@ -2158,6 +2158,65 @@ object ZioHttpSpec extends ZIOSpecDefault:
         )
       }
     },
+    test("router and route layouts read the page's layout values and follow its model") {
+      val rename  = BrowserToServerEvent[Json]("rename")
+      val heading = LiveLayoutKey[String]("heading")
+      val view = new LiveView[Unit, Int]:
+        override val browserEvents         = BrowserEvents.on(rename)(_ => ())
+        override def pageTitle(model: Int) = Some(s"Full title $model")
+        override def layoutValues(model: Int) =
+          LiveLayoutValues(heading := s"Heading $model")
+        def mount(ctx: MountContext) = ZIO.succeed(0)
+        def handleMessage(model: Int, ctx: MessageContext): Unit => Task[Int] =
+          _ => ZIO.succeed(model + 1)
+        def view(model: Signal[Int]) = div(idAttr := "view")
+      object Untitled extends LiveView.Eventless[Unit]:
+        override def pageTitle(model: Unit) = Some("Fallback title")
+        def mount(ctx: MountContext)        = ZIO.unit
+        def view(model: Signal[Unit])       = div(idAttr := "view")
+      object Header extends LiveLayout[Any, Any]:
+        def view[Msg](content: HtmlElement[Msg], context: LiveLayoutContext[Any, Any]) =
+          val shown =
+            context.layoutValue(heading).combineWithFn(context.pageTitle)(_.orElse(_))
+          div(h1(idAttr := "heading", shown.map(_.getOrElse("Untitled"))), content)
+      object Aside extends LiveLayout[Any, Any]:
+        def view[Msg](content: HtmlElement[Msg], context: LiveLayoutContext[Any, Any]) =
+          div(
+            p(idAttr := "aside", context.layoutValue(heading).map(_.getOrElse("none"))),
+            content
+          )
+      val application = scalive.Live.router.withLayout(Header)(
+        scalive.live.withLayout(Aside) -> view,
+        (scalive.live / "untitled")    -> Untitled
+      )
+
+      withServer(application) { port =>
+        for
+          disconnected <- Client.batched(
+                            Request.get(URL.decode(s"http://127.0.0.1:$port/").toOption.get)
+                          )
+          body      <- disconnected.body.asString
+          untitled  <- Client.batched(
+                         Request.get(URL.decode(s"http://127.0.0.1:$port/untitled").toOption.get)
+                       )
+          fallback  <- untitled.body.asString
+          page      <- bootstrap(port)
+          socket    <- connect(port, page)
+          joined    <- joinRoot(socket, page)
+          renamed   <- sendEvent(socket, page, "2", rename.value)
+          _         <- socket.close
+        yield assertTrue(
+          body.contains(">Full title 0</title>"),
+          body.contains("<h1 id=\"heading\">Heading 0</h1>"),
+          body.contains("<p id=\"aside\">Heading 0</p>"),
+          fallback.contains("<h1 id=\"heading\">Fallback title</h1>"),
+          joined.payload.toString.contains("Heading 0"),
+          status(renamed) == "ok",
+          response(renamed).toString.contains("Heading 1"),
+          response(renamed).toString.contains("Full title 1")
+        )
+      }
+    },
     test("a component in a layout handles its own events while the page re-renders") {
       val rename = BrowserToServerEvent[Json]("rename")
       val counter = new LiveComponent[Unit, Unit, Int]:

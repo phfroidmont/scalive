@@ -54,6 +54,15 @@ trait LiveView[Msg, Model]:
     */
   def pageTitle(model: Model): Option[String] = None
 
+  /** Returns the values this page passes to its layouts for `model`. Defaults to none.
+    *
+    * A layout reads each value under the [[LiveLayoutKey]] it declares, with
+    * [[LiveLayoutContext.layoutValue]], and follows it as the model changes. Use it for chrome that
+    * shows page state other than the document title, such as a short heading in a narrow bar.
+    * Layouts wrap only the root LiveView of a page, so a nested LiveView's values are not read.
+    */
+  def layoutValues(model: Model): LiveLayoutValues = LiveLayoutValues.empty
+
   /** Builds the initial model.
     *
     * Scalive calls it for the disconnected HTTP render and again for each connected mount,
@@ -135,6 +144,11 @@ object LiveView:
 
     /** Returns the document title for `model`, or `None` to use the root layout's default. */
     def pageTitle(model: Model): Option[String] = None
+
+    /** Returns the values this page passes to its layouts for `model`, like
+      * [[LiveView.layoutValues]]. Defaults to none.
+      */
+    def layoutValues(model: Model): LiveLayoutValues = LiveLayoutValues.empty
 
     /** Mounts this routed view from decoded route parameters and lifecycle capabilities.
       *

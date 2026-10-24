@@ -12,6 +12,7 @@ final private[scalive] case class RootLifecycle[Msg, Model](
   initialUrl: URL,
   hooks: LiveHooks[Msg, Model],
   pageTitle: Model => Option[String],
+  layoutValues: Model => LiveLayoutValues,
   mount: MountContext[Msg, Model] => Task[Model],
   handleMessage: (Model, MessageContext[Msg, Model], Msg) => Task[Model],
   prepareParams: URL => Task[RootParamsHandler[Msg, Model]],
@@ -37,6 +38,7 @@ private[scalive] object RootLifecycle:
       hooks = liveView.hooks,
       browserEvents = liveView.browserEvents,
       pageTitle = liveView.pageTitle,
+      layoutValues = liveView.layoutValues,
       mount = liveView.mount,
       handleMessage = (model, context, message) => liveView.handleMessage(model, context)(message),
       prepareParams =

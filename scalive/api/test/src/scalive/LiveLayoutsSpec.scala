@@ -20,6 +20,7 @@ object LiveLayoutsSpec extends ZIOSpecDefault:
       val request                        = Signal.source[Request](new Object)
       val currentUrl                     = Signal.source[URL](new Object)
       val pageTitle                      = Signal.source[Option[String]](new Object)
+      val layoutValues                   = Signal.source[LiveLayoutValues](new Object)
       val content                        = div[Message]()
       val outerContext                   = OuterContext("selected")
       val connection                     = Connection.Connected(new ConnectedMetadata:
@@ -28,7 +29,15 @@ object LiveLayoutsSpec extends ZIOSpecDefault:
       )
       val rendered: HtmlElement[Message] = adapted.view(
         content,
-        LiveLayoutContext(params, request, currentUrl, pageTitle, outerContext, connection)
+        LiveLayoutContext(
+          params,
+          request,
+          currentUrl,
+          pageTitle,
+          layoutValues,
+          outerContext,
+          connection
+        )
       )
       val passedContext = received.get
 
@@ -38,6 +47,7 @@ object LiveLayoutsSpec extends ZIOSpecDefault:
         passedContext.request eq request,
         passedContext.currentUrl eq currentUrl,
         passedContext.pageTitle eq pageTitle,
+        passedContext.layoutValues eq layoutValues,
         passedContext.context == "selected",
         passedContext.connection eq connection
       )
@@ -132,6 +142,7 @@ object LiveLayoutsSpec extends ZIOSpecDefault:
       val request    = Signal.source[Request](new Object)
       val currentUrl = Signal.source[URL](new Object)
       val pageTitle  = Signal.source[Option[String]](new Object)
+      val values     = Signal.source[LiveLayoutValues](new Object)
       val content    = div()
 
       val identityResult = LiveLayout.identity
@@ -143,16 +154,64 @@ object LiveLayoutsSpec extends ZIOSpecDefault:
             request,
             currentUrl,
             pageTitle,
+            values,
             "unchanged",
             Connection.Disconnected
           )
         )
       val composedResult = composed.view(
         content,
-        LiveLayoutContext(params, request, currentUrl, pageTitle, true, Connection.Disconnected)
+        LiveLayoutContext(
+          params,
+          request,
+          currentUrl,
+          pageTitle,
+          values,
+          true,
+          Connection.Disconnected
+        )
       )
 
       assertTrue(identityResult eq content, composedResult eq content, received == "1")
+    },
+    test("layout values are found by key identity, and a later entry for a key wins") {
+      val heading = LiveLayoutKey[String]("heading")
+      val count   = LiveLayoutKey[Int]("count")
+      val namesake = LiveLayoutKey[String]("heading")
+      val values  = LiveLayoutValues(heading := "Draft", count := 2, heading := "Saved")
+
+      assertTrue(
+        values.get(heading) == Some("Saved"),
+        values.get(count) == Some(2),
+        values.get(namesake).isEmpty,
+        LiveLayoutValues.empty.get(heading).isEmpty,
+        values == LiveLayoutValues(count := 2, heading := "Saved"),
+        values != LiveLayoutValues(namesake := "Saved", count := 2)
+      )
+    },
+    test("a layout key accepts only values of its type, and does not widen") {
+      val rightValue = scala.compiletime.testing.typeCheckErrors("""
+        val heading = LiveLayoutKey[String]("heading")
+        LiveLayoutValues(heading := "Saved")
+      """)
+      val wrongValue = scala.compiletime.testing.typeCheckErrors("""
+        val heading = LiveLayoutKey[String]("heading")
+        LiveLayoutValues(heading := 42)
+      """)
+      val widened = scala.compiletime.testing.typeCheckErrors("""
+        val key: LiveLayoutKey[Any] = LiveLayoutKey[String]("heading")
+      """)
+      val strictEquality = scala.compiletime.testing.typeCheckErrors("""
+        import scala.language.strictEquality
+        def same(left: LiveLayoutValues, right: LiveLayoutValues) = left == right
+      """)
+
+      assertTrue(
+        rightValue.isEmpty,
+        wrongValue.nonEmpty,
+        widened.nonEmpty,
+        strictEquality.isEmpty
+      )
     }
   )
 end LiveLayoutsSpec

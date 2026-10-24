@@ -14,6 +14,9 @@ import zio.http.{Request, URL}
   * @param pageTitle
   *   The page LiveView's [[LiveView.pageTitle pageTitle]], the document title, as a signal that
   *   follows its model.
+  * @param layoutValues
+  *   The page LiveView's [[LiveView.layoutValues layoutValues]], as a signal that follows its
+  *   model. Read one value with [[layoutValue]].
   * @param context
   *   The context produced by the session's or route's mount aspects, or the part of it selected
   *   with [[LiveLayout.forContext]].
@@ -27,8 +30,13 @@ final case class LiveLayoutContext[+A, +Ctx](
   request: Signal[Request],
   currentUrl: Signal[URL],
   pageTitle: Signal[Option[String]],
+  layoutValues: Signal[LiveLayoutValues],
   context: Ctx,
-  connection: Connection[ConnectedMetadata])
+  connection: Connection[ConnectedMetadata]):
+  /** The page's value for `key`, as a signal that follows its model. It is `None` while the page
+    * provides no value for `key`, for example on pages that do not know the key.
+    */
+  def layoutValue[V](key: LiveLayoutKey[V]): Signal[Option[V]] = layoutValues.map(_.get(key))
 
 /** Value-backed inputs available while rendering a root document.
   *
@@ -58,8 +66,10 @@ final case class LiveRootLayoutContext[+A, +Ctx](
   *
   * Scalive calls `view` once per LiveView lifecycle, like [[LiveView.view]]. Route parameters,
   * request, and URL are signals, so the layout follows live patches and navigation without being
-  * rebuilt. Because `view` accepts content of any message type, the layout cannot send messages of
-  * its own; use links, nested LiveViews, or browser hooks for interactive chrome.
+  * rebuilt. The page title and the values the page provides with [[LiveView.layoutValues]] are
+  * signals too, and follow the page's model. Because `view` accepts content of any message type,
+  * the layout cannot send messages of its own; use links, nested LiveViews, or browser hooks for
+  * interactive chrome.
   *
   * The disconnected HTML and each connected lifecycle render the layout separately, and
   * `context.connection` tells them apart. A connected layout can, for example, offer a reload when
@@ -78,8 +88,8 @@ trait LiveLayout[-A, -Ctx]:
   /** Adapts this layout to another context type by selecting the context it needs.
     *
     * The selector must be pure and deterministic. It changes only this layout's input, not the
-    * route or session context; parameters, request, URL, connection, and content are forwarded
-    * unchanged.
+    * route or session context; parameters, request, URL, page title, layout values, connection, and
+    * content are forwarded unchanged.
     */
   final def forContext[NewContext](select: NewContext => Ctx): LiveLayout[A, NewContext] =
     new LiveLayout[A, NewContext]:

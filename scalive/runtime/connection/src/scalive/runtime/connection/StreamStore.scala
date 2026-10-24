@@ -81,7 +81,7 @@ final private[scalive] case class StreamStore private (
     val entry   = prepare(definition, List(item)).head
     val base    = next(current)
     val updated =
-      if updateOnly && !current.entries.exists(_.domId == entry.domId) then base
+      if updateOnly && !current.entryIds.contains(entry.domId) then base
       else applyInsertion(base, entry, at, definition.limit, updateOnly)
     install(definition, updated)
 
@@ -130,14 +130,18 @@ final private[scalive] case class StreamStore private (
     domId: String
   ): Replacement[A] =
     val current = requireCurrent(definition)
-    val updated = LiveStream(
+    val updated = LiveStream.indexed(
       current.identity,
       current.name,
       nextGeneration(current.generation),
-      current.entries.filterNot(_.domId == domId),
-      current.inserted.filterNot(_.entry.domId == domId),
+      if current.entryIds.contains(domId) then current.entries.filterNot(_.domId == domId)
+      else current.entries,
+      if current.insertedIds.contains(domId) then current.inserted.filterNot(_.entry.domId == domId)
+      else current.inserted,
       current.deleted.filterNot(_ == domId) :+ domId,
-      current.reset
+      current.reset,
+      current.entryIds - domId,
+      current.insertedIds - domId
     )
     install(definition, updated)
 
@@ -208,14 +212,16 @@ private[scalive] object StreamStore:
       )
 
   private def next[A](stream: LiveStream[A]): LiveStream[A] =
-    LiveStream(
+    LiveStream.indexed(
       stream.identity,
       stream.name,
       nextGeneration(stream.generation),
       stream.entries,
       stream.inserted,
       stream.deleted,
-      stream.reset
+      stream.reset,
+      stream.entryIds,
+      stream.insertedIds
     )
 
   private def nextGeneration(generation: Long): Long =
@@ -240,25 +246,42 @@ private[scalive] object StreamStore:
     limit: Option[StreamLimit],
     updateOnly: Boolean
   ): LiveStream[A] =
-    val existing        = stream.entries.indexWhere(_.domId == entry.domId)
+    // Only an id already present needs a search: a new one is placed at its position.
     val insertedEntries =
-      if existing >= 0 then stream.entries.updated(existing, entry)
+      if stream.entryIds.contains(entry.domId) then
+        stream.entries.updated(stream.entries.indexWhere(_.domId == entry.domId), entry)
       else
         at match
           case StreamAt.First        => entry +: stream.entries
           case StreamAt.Last         => stream.entries :+ entry
           case StreamAt.Index(value) => stream.entries.patch(value, Vector(entry), 0)
-    val bounded   = applyLimit(insertedEntries, limit)
+    val bounded  = applyLimit(insertedEntries, limit)
+    val pruned   = insertedEntries.length - bounded.length
+    val entryIds =
+      if pruned == 0 then stream.entryIds + entry.domId
+      else
+        // A limit prunes at most the entries beyond it, from the side it does not keep.
+        val removed = limit match
+          case Some(StreamLimit.KeepFirst(_)) => insertedEntries.takeRight(pruned)
+          case _                              => insertedEntries.take(pruned)
+        stream.entryIds + entry.domId -- removed.iterator.map(_.domId)
     val operation = LiveStreamInsert(entry, at, limit, updateOnly)
-    LiveStream(
+    val inserted  =
+      if stream.insertedIds.contains(entry.domId) then
+        stream.inserted.filterNot(_.entry.domId == entry.domId) :+ operation
+      else stream.inserted :+ operation
+    LiveStream.indexed(
       stream.identity,
       stream.name,
       stream.generation,
       bounded,
-      stream.inserted.filterNot(_.entry.domId == entry.domId) :+ operation,
+      inserted,
       stream.deleted,
-      stream.reset
+      stream.reset,
+      entryIds,
+      stream.insertedIds + entry.domId
     )
+  end applyInsertion
 
   private def applyLimit[A](
     entries: Vector[LiveStreamEntry[A]],
@@ -270,13 +293,15 @@ private[scalive] object StreamStore:
       case Some(StreamLimit.KeepLast(count))  => entries.takeRight(count)
 
   private def pruneHandle[A](stream: LiveStream[A]): LiveStream[A] =
-    LiveStream(
+    LiveStream.indexed(
       stream.identity,
       stream.name,
       stream.generation,
       stream.entries,
       inserted = Vector.empty,
       deleted = Vector.empty,
-      reset = false
+      reset = false,
+      stream.entryIds,
+      insertedIds = Set.empty
     )
 end StreamStore

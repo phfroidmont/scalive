@@ -142,6 +142,12 @@ abstract private[scalive] class LiveStream[+A]:
   private[scalive] def deleted: Vector[String]               = unsupported
   private[scalive] def reset: Boolean                        = unsupported
 
+  /** The DOM ids of [[entries]], and those of [[inserted]], so that an operation finds an id
+    * without scanning the stream.
+    */
+  private[scalive] def entryIds: Set[String]    = unsupported
+  private[scalive] def insertedIds: Set[String] = unsupported
+
   private def unsupported: Nothing =
     throw UnsupportedOperationException("LiveStream was not created by the managed stream runtime")
 
@@ -171,7 +177,31 @@ private[scalive] object LiveStream:
     deleted: Vector[String],
     reset: Boolean
   ): LiveStream[A] =
-    Impl(identity, name, generation, entries, inserted, deleted, reset)
+    indexed(
+      identity,
+      name,
+      generation,
+      entries,
+      inserted,
+      deleted,
+      reset,
+      entries.iterator.map(_.domId).toSet,
+      inserted.iterator.map(_.entry.domId).toSet
+    )
+
+  /** A stream whose `entryIds` and `insertedIds` are the DOM ids of `entries` and `inserted`. */
+  def indexed[A](
+    identity: LiveStreamIdentity,
+    name: String,
+    generation: Long,
+    entries: Vector[LiveStreamEntry[A]],
+    inserted: Vector[LiveStreamInsert[A]],
+    deleted: Vector[String],
+    reset: Boolean,
+    entryIds: Set[String],
+    insertedIds: Set[String]
+  ): LiveStream[A] =
+    Impl(identity, name, generation, entries, inserted, deleted, reset, entryIds, insertedIds)
 
   final private case class Impl[+A](
     override val identity: LiveStreamIdentity,
@@ -180,8 +210,11 @@ private[scalive] object LiveStream:
     override val entries: Vector[LiveStreamEntry[A]],
     override val inserted: Vector[LiveStreamInsert[A]],
     override val deleted: Vector[String],
-    override val reset: Boolean)
+    override val reset: Boolean,
+    override val entryIds: Set[String],
+    override val insertedIds: Set[String])
       extends LiveStream[A]
+end LiveStream
 
 object api:
   export _root_.scalive.streams.{LiveStreamDef, StreamAt, StreamLimit}

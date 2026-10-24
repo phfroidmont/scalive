@@ -38,6 +38,29 @@ object StreamStoreSpec extends ZIOSpecDefault:
         created.store.get(streamDef).contains(created.stream)
       )
     },
+    test("keeps the ids it looks up equal to the ids of its entries and operations") {
+      def indexed(stream: LiveStream[Item]): Boolean =
+        stream.entryIds == stream.entries.map(_.domId).toSet &&
+          stream.insertedIds == stream.inserted.map(_.entry.domId).toSet
+      val streamDef = definition(limit = Some(StreamLimit.KeepLast(3)))
+      val created   = StreamStore.empty.create(streamDef, (1 to 5).map(i => Item(s"i$i", i)))
+      val first     = created.store.insert(streamDef, Item("new", 0), StreamAt.First)
+      val updated   = first.store.insert(streamDef, Item("i5", 50))
+      val deleted   = updated.store.delete(streamDef, "i4")
+      val settled   = deleted.store.settle.insertAll(streamDef, List(Item("x", 1), Item("i4", 4)))
+      val ignored   = settled.store.insert(streamDef, Item("gone", 0), updateOnly = true)
+      val reset     = ignored.store.reset(streamDef, List(Item("r", 1)))
+      val unlimited = definition("unlimited")
+      val bulk      = StreamStore.empty.create(unlimited, (1 to 5000).map(i => Item(s"b$i", i)))
+
+      assertTrue(
+        Vector(created, first, updated, deleted, settled, ignored, reset, bulk)
+          .forall(replacement => indexed(replacement.stream)),
+        values(first.stream) == Vector("i3" -> 3, "i4" -> 4, "i5" -> 5),
+        values(settled.stream) == Vector("i5" -> 50, "x" -> 1, "i4" -> 4),
+        bulk.stream.entries.size == 5000
+      )
+    },
     test("new ids use positions while existing ids update without moving") {
       val streamDef = definition()
       val created = StreamStore.empty.create(streamDef, List(Item("a", 1), Item("b", 2)))

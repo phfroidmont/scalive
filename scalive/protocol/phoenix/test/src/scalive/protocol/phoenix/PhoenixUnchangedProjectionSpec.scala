@@ -59,7 +59,55 @@ object PhoenixUnchangedProjectionSpec extends ZIOSpecDefault:
                 }
     yield (initial._1, result._2, result._3)
 
+  object Badge extends LiveComponent.Eventless[String, Unit]:
+    def mount(props: String, ctx: MountContext) = ZIO.unit
+    def view(props: Signal[String], model: Signal[Unit]): HtmlElement[Nothing] = span(props)
+
   override def spec = suite("PhoenixUnchangedProjectionSpec")(
+    test("keeps the component state when a diff changes no component") {
+      val rootCompiled = RenderProgram.compile[Int, Nothing](counter =>
+        div(
+          span(counter.map(_.toString)),
+          component(Badge, "first").render("first"),
+          component(Badge, "second").render("second")
+        )
+      )
+      val childCompiled = RenderProgram.compile[String, Nothing](label => span(label))
+      def resolved(root: RenderCandidate[Nothing], children: Vector[CommittedRender[Nothing]]) =
+        ZIO.fromEither(
+          root.resolveComponents(
+            root.componentRequirements.zip(children).map { (requirement, child) =>
+              requirement.resolve(
+                ComponentRef.runtime[requirement.Message](child),
+                child,
+                child.asInstanceOf[CommittedRender[requirement.Message]]
+              )
+            }
+          )
+        )
+
+      for
+        rootProgram  <- ZIO.fromEither(rootCompiled)
+        childProgram <- ZIO.fromEither(childCompiled)
+        first        <- childProgram.evaluate("first").map(_.commit)
+        second       <- childProgram.evaluate("second").map(_.commit)
+        before       <- rootProgram.evaluate(0).flatMap(resolved(_, Vector(first, second)))
+        committed = before.commit
+        after   <- rootProgram
+                     .evaluate(1, Some(committed)).flatMap(resolved(_, Vector(first, second)))
+        initial <- ZIO.fromEither(PhoenixRenderedEncoder.initial(before.tree))
+        updated <- ZIO.fromEither(
+                     PhoenixRenderedEncoder
+                       .update(initial._1, TreeDiffer.diff(committed.tree, after.tree))
+                   )
+        (state, payload) = updated
+      yield assertTrue(
+        payload == Json.Obj("0" -> Json.Str("1")),
+        state.components eq initial._1.components,
+        state.activeCids eq initial._1.activeCids,
+        state.tokenCids eq initial._1.tokenCids
+      )
+    },
     test("keeps the projection of a collection when something else changes") {
       for
         encoded <- encode(Page(0, rows), Page(1, rows))

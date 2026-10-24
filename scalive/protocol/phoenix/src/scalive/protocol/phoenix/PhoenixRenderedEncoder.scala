@@ -41,6 +41,8 @@ final private[scalive] class PhoenixRenderedState private[phoenix] (
   private[phoenix] val root: PhoenixRenderedEncoder.ProjectedNode,
   private[phoenix] val components: Map[Int, PhoenixRenderedEncoder.ProjectedComponent],
   private[phoenix] val activeCids: Set[Int],
+  // The CID of the component holding each active component; the root holds those it lacks.
+  private[phoenix] val owners: Map[Int, Int],
   private[phoenix] val tokenCids: Map[PhoenixRenderedEncoder.IdentityKey, Int],
   private[phoenix] val nextCid: Long,
   private[phoenix] val streamRefs: Map[PhoenixRenderedEncoder.IdentityKey, String],
@@ -65,6 +67,7 @@ final private[scalive] class PhoenixRenderedState private[phoenix] (
       root,
       components,
       activeCids,
+      owners,
       tokenCids,
       nextCid,
       streamRefs,
@@ -90,6 +93,7 @@ final private[scalive] class PhoenixRenderedState private[phoenix] (
       root,
       retained,
       activeCids -- deletedSet,
+      owners,
       retainedTokenCids,
       nextCid,
       retainedStreamRefs,
@@ -268,7 +272,9 @@ private[scalive] object PhoenixRenderedEncoder:
 
   /** The components one render reaches, with the index its `phx-target` values resolve against. */
   final private class Components(
-    val byCid: Map[Int, ProjectedComponent],
+    all: Map[Int, ProjectedComponent],
+    // The CIDs the render reaches. The other components wait for the browser to destroy them.
+    active: Set[Int],
     // Stream rows flattened on their own, shared by the payload and the record of what it sent.
     private val streamRows: StreamRows = StreamRows()):
     /** `row` flattened on its own, which only shapes the statics its stream shares. */
@@ -282,9 +288,9 @@ private[scalive] object PhoenixRenderedEncoder:
             flattened
           }
 
-    def apply(cid: Int): ProjectedComponent       = byCid(cid)
-    def get(cid: Int): Option[ProjectedComponent] = byCid.get(cid)
-    def isEmpty: Boolean                          = byCid.isEmpty
+    def apply(cid: Int): ProjectedComponent       = get(cid).get
+    def get(cid: Int): Option[ProjectedComponent] = all.get(cid).filter(_ => active.contains(cid))
+    def isEmpty: Boolean                          = active.isEmpty
 
     // A target names its component by the component's ref, or by its token or ref identity.
     private lazy val byRef      = index(component => Vector(component.ref))
@@ -297,8 +303,8 @@ private[scalive] object PhoenixRenderedEncoder:
       Option.when(cids.size == 1)(cids.head)
 
     private def index(keys: ProjectedComponent => Vector[Object]): Map[IdentityKey, Set[Int]] =
-      byCid.toVector
-        .flatMap((cid, component) => keys(component).map(key => IdentityKey(key) -> cid))
+      active.toVector
+        .flatMap(cid => keys(all(cid)).map(key => IdentityKey(key) -> cid))
         .groupMap(_._1)(_._2).view.mapValues(_.toSet).toMap
   end Components
 
@@ -323,9 +329,9 @@ private[scalive] object PhoenixRenderedEncoder:
   final private class ProjectionContext(
     state: Option[PhoenixRenderedState],
     initialCsrfToken: Option[String] = None):
-    val components: mutable.Map[Int, ProjectedComponent] = mutable.Map.from(
-      state.fold(Map.empty[Int, ProjectedComponent])(_.components)
-    )
+    // The state's components with those this update projects or changes, which `changedCids` lists.
+    private var currentComponents     = state.fold(Map.empty[Int, ProjectedComponent])(_.components)
+    val changedCids: mutable.Set[Int] = mutable.Set.empty
     val projectedCids: mutable.Set[Int]                         = mutable.Set.empty
     val allocatedCids: mutable.Set[Int]                         = mutable.Set.empty
     val componentDiffs: mutable.Map[Int, Option[SparseChanges]] = mutable.Map.empty
@@ -341,6 +347,15 @@ private[scalive] object PhoenixRenderedEncoder:
 
     def nextCid: Long       = next
     def nextStreamRef: Long = nextStream
+
+    def components: Map[Int, ProjectedComponent] = currentComponents
+
+    def updateComponent(cid: Int, component: ProjectedComponent): Unit =
+      currentComponents = currentComponents.updated(cid, component)
+      changedCids += cid
+
+    def tokenCids: Map[IdentityKey, Int] =
+      if newlyAllocated.isEmpty then existing else existing ++ newlyAllocated
 
     /** The CID of `token` when it has one, without allocating one. */
     def knownCid(token: Object): Option[Int] =
@@ -391,10 +406,10 @@ private[scalive] object PhoenixRenderedEncoder:
     val context = ProjectionContext(None, csrfToken)
     for
       root  <- project(tree.root, None, context)
-      state <- finish(root, context, validate = true)
+      state <- finish(root, context, validate = true, None)
       streamRows = StreamRows()
       json <- fullPayload(state, streamRows)
-    yield clearPending(None, state, streamRows) -> json
+    yield clearPending(None, state, context.changedCids, streamRows) -> json
 
   /** Projects a disconnected render with fresh connection-local CIDs and inlines components. */
   private[scalive] def fullHtml(
@@ -404,9 +419,9 @@ private[scalive] object PhoenixRenderedEncoder:
     val context = ProjectionContext(None, csrfToken)
     for
       root  <- project(tree.root, None, context)
-      state <- finish(root, context, validate = true)
-      html  <- renderHtml(state.root, Components(state.components))
-    yield clearPending(None, state, StreamRows()) -> html
+      state <- finish(root, context, validate = true, None)
+      html  <- renderHtml(state.root, Components(state.components, state.activeCids))
+    yield clearPending(None, state, context.changedCids, StreamRows()) -> html
 
   def update(
     state: PhoenixRenderedState,
@@ -417,10 +432,10 @@ private[scalive] object PhoenixRenderedEncoder:
       val context = ProjectionContext(Some(state))
       for
         root <- project(tree.root, None, context)
-        next <- finish(root, context, validate = true)
+        next <- finish(root, context, validate = true, Some(state))
         streamRows = StreamRows()
         json <- fullPayload(next, streamRows)
-      yield clearPending(Some(state), next, streamRows) -> json
+      yield clearPending(Some(state), next, context.changedCids, streamRows) -> json
 
     case update: RenderDelta.Update =>
       val context    = ProjectionContext(Some(state))
@@ -429,7 +444,7 @@ private[scalive] object PhoenixRenderedEncoder:
         result <- applyDelta(state.root, update, None, context)
         // A sparse update changes only what its diff reaches, which the differ derives from the
         // validated tree it follows; the whole graph is validated again when it is resent.
-        next <- finish(result.root, context, validate = result.structural)
+        next <- finish(result.root, context, validate = result.structural, Some(state))
         json <-
           if result.structural then fullPayload(next, streamRows)
           else
@@ -440,10 +455,10 @@ private[scalive] object PhoenixRenderedEncoder:
               if state.pendingDeletionCids.contains(cid) then cid -> None else cid -> changes
             }
             sparsePayload(state, next, result.changes, diffs, streamRows)
-      yield clearPending(Some(state), next, streamRows) -> json
+      yield clearPending(Some(state), next, context.changedCids, streamRows) -> json
 
   private[scalive] def html(state: PhoenixRenderedState): Either[PhoenixEncodingError, String] =
-    renderHtml(state.root, Components(activeComponents(state)))
+    renderHtml(state.root, Components(state.components, state.activeCids))
 
   private val emptyStreamOperations =
     ProjectedStreamOperations(Vector.empty, Vector.empty, reset = false)
@@ -454,9 +469,10 @@ private[scalive] object PhoenixRenderedEncoder:
   private def clearPending(
     previous: Option[PhoenixRenderedState],
     state: PhoenixRenderedState,
+    changedCids: Iterable[Int],
     streamRows: StreamRows
   ): PhoenixRenderedState =
-    val stateComponents = Components(state.components, streamRows)
+    val stateComponents = Components(state.components, state.components.keySet, streamRows)
     // Records the stream statics the client now holds, so the next diff can tell if they changed.
     // What has nothing to clear keeps its instance, and with it its summary.
     def clearNode(node: ProjectedNode, previous: Option[ProjectedNode]): ProjectedNode =
@@ -531,16 +547,23 @@ private[scalive] object PhoenixRenderedEncoder:
         val cleared = clearNode(child(row), previousChild)
         if cleared eq child(row) then row else withChild(row, cleared)
       }
-    val root       = clearNode(state.root, previous.map(_.root))
-    val components = state.components.map { (cid, component) =>
+    val root = clearNode(state.root, previous.map(_.root))
+    // The other components are as they were when the payload that sent them was made.
+    val components = changedCids.foldLeft(state.components) { (all, cid) =>
+      val component         = all(cid)
       val previousComponent = previous.flatMap(_.components.get(cid))
-      if previousComponent.exists(_ eq component) then cid -> component
-      else cid -> component.copy(root = clearNode(component.root, previousComponent.map(_.root)))
+      if previousComponent.exists(_ eq component) then all
+      else
+        all.updated(
+          cid,
+          component.copy(root = clearNode(component.root, previousComponent.map(_.root)))
+        )
     }
     PhoenixRenderedState(
       root,
       components,
       state.activeCids,
+      state.owners,
       state.tokenCids,
       state.nextCid,
       state.streamRefs,
@@ -656,7 +679,7 @@ private[scalive] object PhoenixRenderedEncoder:
           yield
             val ref         = resolution.ref.asInstanceOf[Object]
             val refIdentity = resolution.ref.asInstanceOf[ComponentTarget].identity
-            context.components.update(
+            context.updateComponent(
               cid,
               ProjectedComponent(resolution.instanceToken, ref, refIdentity, child)
             )
@@ -913,7 +936,7 @@ private[scalive] object PhoenixRenderedEncoder:
         case Some(cid) =>
           val component = context.components(cid)
           applyDelta(component.root, delta, Some(cid), context).map { update =>
-            context.components.update(cid, component.copy(root = update.root))
+            context.updateComponent(cid, component.copy(root = update.root))
             val ownChange =
               update.structural || update.changedSlots.nonEmpty || update.changedStreams.nonEmpty ||
                 update.changedKeyedTargets.nonEmpty || update.replaced.nonEmpty
@@ -1208,57 +1231,82 @@ private[scalive] object PhoenixRenderedEncoder:
       case _                            => Iterator.empty
     }
 
+  /** The state after an update of `previous` that ends at `root`. The components the root and the
+    * changed components reach are read again only when one of those programs holds other CIDs.
+    */
   private def finish(
     root: ProjectedNode,
     context: ProjectionContext,
-    validate: Boolean
+    validate: Boolean,
+    previous: Option[PhoenixRenderedState]
   ): Either[PhoenixEncodingError, PhoenixRenderedState] =
-    val retained = context.components.toMap
+    val components = context.components
+
+    def sameCids(before: ProjectedNode, after: ProjectedNode): Boolean =
+      (before eq after) || before.summary.cids == after.summary.cids
+    def sameGraph(state: PhoenixRenderedState): Boolean =
+      sameCids(state.root, root) && context.changedCids.forall(cid =>
+        state.components
+          .get(cid).exists(component => sameCids(component.root, components(cid).root))
+      )
+    val graph = previous match
+      case _ if validate                   => validateGraph(root, components)
+      case Some(state) if sameGraph(state) => Right(ComponentGraph(state.activeCids, state.owners))
+      case _                               => reachableCids(root, components)
     for
-      reachable <-
-        if validate then validateGraph(root, retained) else reachableCids(root, retained)
-      tokens =
-        retained.iterator.map { case (cid, component) => IdentityKey(component.token) -> cid }.toMap
-      streams    = root.summary.streams ++ retained.valuesIterator.flatMap(_.root.summary.streams)
+      reachable <- graph
+      streams    = root.summary.streams ++ components.valuesIterator.flatMap(_.root.summary.streams)
       streamRefs = streams.iterator.map(stream => IdentityKey(stream.identity) -> stream.ref).toMap
     yield PhoenixRenderedState(
       root,
-      retained,
-      reachable,
-      tokens,
+      components,
+      reachable.active,
+      reachable.owners,
+      context.tokenCids,
       context.nextCid,
       streamRefs,
       context.nextStreamRef,
       context.csrfToken,
-      context.pendingDeletionCids -- reachable
+      context.pendingDeletionCids -- reachable.active
     )
+  end finish
+
+  /** The components a render reaches, and the CID of the component holding each of them. */
+  final private case class ComponentGraph(active: Set[Int], owners: Map[Int, Int])
 
   /** The CIDs reachable from `root`, read from the summaries of the programs that hold them. */
   private def reachableCids(
     root: ProjectedNode,
     components: Map[Int, ProjectedComponent]
-  ): Either[PhoenixEncodingError, Set[Int]] =
-    val seen = mutable.HashSet.empty[Int]
-    def loop(program: ProjectedNode): Either[PhoenixEncodingError, Unit] =
+  ): Either[PhoenixEncodingError, ComponentGraph] =
+    val seen   = mutable.HashSet.empty[Int]
+    val owners = Map.newBuilder[Int, Int]
+    def loop(program: ProjectedNode, owner: Option[Int]): Either[PhoenixEncodingError, Unit] =
       program.summary.cids.foldLeft[Either[PhoenixEncodingError, Unit]](Right(())) { (result, cid) =>
         result.flatMap { _ =>
           components.get(cid) match
-            case Some(component) if seen.add(cid) => loop(component.root)
+            case Some(component) if seen.add(cid) =>
+              owner.foreach(value => owners += cid -> value)
+              loop(component.root, Some(cid))
             case _ => Left(PhoenixEncodingError.DuplicateComponentRoot(cid))
         }
       }
-    loop(root).map(_ => seen.toSet)
+    loop(root, None).map(_ => ComponentGraph(seen.toSet, owners.result()))
 
   private def validateGraph(
     root: ProjectedNode,
     components: Map[Int, ProjectedComponent]
-  ): Either[PhoenixEncodingError, Set[Int]] =
+  ): Either[PhoenixEncodingError, ComponentGraph] =
     val seenCids    = mutable.HashSet.empty[Int]
+    val owners      = Map.newBuilder[Int, Int]
     val seenTokens  = mutable.HashSet.empty[IdentityKey]
     val seenStreams = mutable.HashSet.empty[IdentityKey]
     val targets     = Vector.newBuilder[ProjectedValue.ComponentTarget]
 
-    def loopProgram(program: ProjectedNode): Either[PhoenixEncodingError, Unit] =
+    def loopProgram(
+      program: ProjectedNode,
+      owner: Option[Int]
+    ): Either[PhoenixEncodingError, Unit] =
       val streams = Vector.newBuilder[ProjectedStream]
       val cids    = Vector.newBuilder[Int]
       validateProgram(program, ProgramContents(streams, targets, cids)).flatMap { _ =>
@@ -1274,21 +1322,23 @@ private[scalive] object PhoenixRenderedEncoder:
                   if !seenCids.add(cid) then Left(PhoenixEncodingError.DuplicateComponentRoot(cid))
                   else if !seenTokens.add(IdentityKey(component.token)) then
                     Left(PhoenixEncodingError.DuplicateComponentToken)
-                  else loopProgram(component.root)
+                  else
+                    owner.foreach(value => owners += cid -> value)
+                    loopProgram(component.root, Some(cid))
             }
           }
       }
 
-    loopProgram(root).flatMap { _ =>
+    loopProgram(root, None).flatMap { _ =>
       val active        = seenCids.toSet
-      val activeTargets = Components(components.filter((cid, _) => active.contains(cid)))
+      val activeTargets = Components(components, active)
       targets
         .result().foldLeft[Either[PhoenixEncodingError, Unit]](Right(())) { (result, target) =>
           result.flatMap { _ =>
             if activeTargets.targeted(target).nonEmpty then Right(())
             else Left(PhoenixEncodingError.UnknownComponentTarget)
           }
-        }.map(_ => active)
+        }.map(_ => ComponentGraph(active, owners.result()))
     }
   end validateGraph
 
@@ -1344,11 +1394,6 @@ private[scalive] object PhoenixRenderedEncoder:
     loop(root).toLeft(())
   end validateProgram
 
-  private def activeComponents(
-    state: PhoenixRenderedState
-  ): Map[Int, ProjectedComponent] =
-    state.components.view.filterKeys(state.activeCids.contains).toMap
-
   private[phoenix] def retainStreamRefs(
     root: ProjectedNode,
     components: Map[Int, ProjectedComponent],
@@ -1363,7 +1408,7 @@ private[scalive] object PhoenixRenderedEncoder:
     state: PhoenixRenderedState,
     streamRows: StreamRows
   ): Either[PhoenixEncodingError, Json.Obj] =
-    val active = Components(activeComponents(state), streamRows)
+    val active = Components(state.components, state.activeCids, streamRows)
     rendered(state.root, active, None, None).flatMap { root =>
       if active.isEmpty then Right(root)
       else componentObject(active, state.activeCids).map(value => root.add("c", value))
@@ -1376,11 +1421,11 @@ private[scalive] object PhoenixRenderedEncoder:
     changedComponents: Map[Int, Option[SparseChanges]],
     streamRows: StreamRows
   ): Either[PhoenixEncodingError, Json.Obj] =
-    val active        = Components(activeComponents(state), streamRows)
+    val active        = Components(state.components, state.activeCids, streamRows)
     val activeChanges = changedComponents.view.filterKeys(state.activeCids.contains).toMap
     rendered(state.root, active, Some(changed), None, Some(previous.root)).flatMap { root =>
       val touches =
-        componentTouches(active.byCid, activeChanges.keySet, root != Json.Obj.empty)
+        componentTouches(state.owners, activeChanges.keySet, root != Json.Obj.empty)
       val componentChanges = activeChanges ++ touches.map { case (owner, cids) =>
         owner -> activeChanges
           .get(owner).fold(
@@ -1399,13 +1444,10 @@ private[scalive] object PhoenixRenderedEncoder:
     * there to a changed one has to be reached. Keyed by the CID of the component holding each slot.
     */
   private def componentTouches(
-    components: Map[Int, ProjectedComponent],
+    owners: Map[Int, Int],
     changed: Set[Int],
     rootRenders: Boolean
   ): Map[Int, Set[Int]] =
-    val owners = components.flatMap { case (owner, component) =>
-      component.root.summary.cids.map(_ -> owner)
-    }
     // The components around a component, innermost first.
     def around(cid: Int): List[Int] = owners.get(cid).fold(Nil)(owner => owner :: around(owner))
 

@@ -17,8 +17,10 @@ Maintained Scala 3/JMH fixtures cover the Scalive render pipeline:
   inserted into it. It measures evaluation, semantic diff, and Phoenix encoding, and creating the
   stream.
 - `ComponentTurnBenchmark`: a click on the root of a page holding 100 or 1,000 card components,
-  each holding two child components, none of which the click changes. It runs the turn through a
-  root connection and the session kernel, then encodes it for Phoenix.
+  each holding two child components, none of which the click changes. The cards are written in the
+  view (`layout=static`) or rendered from a list in the root model through `splitBy`
+  (`layout=splitBy`). It runs the turn through a root connection and the session kernel, then
+  encodes it for Phoenix.
 - `StreamAndLifecycleBenchmark`: a 10,000-row stream snapshot with one inserted-row patch, 32
   resolved components retaining eight child templates each, and a duplicate key at the final
   candidate row to measure late failure and rollback.

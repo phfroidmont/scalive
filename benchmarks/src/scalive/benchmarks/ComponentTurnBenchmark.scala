@@ -31,14 +31,24 @@ object ComponentTurnBenchmark:
         component(Leaf, props.map(i => s"leaf-$i-b")).render(props)
       )
 
-  def page(cardCount: Int): LiveView[Msg, Int] = new LiveView[Msg, Int]:
-    def mount(ctx: MountContext)                       = ZIO.succeed(0)
-    def handleMessage(model: Int, ctx: MessageContext) = _ => ZIO.succeed(model + 1)
-    override def view(model: Signal[Int])              =
-      div(
-        button(on.click(Msg.Tick), model.map(_.toString)),
-        div((0 until cardCount).map(i => component(Card, s"card-$i").render(i))*)
-      )
+  final case class Page(clicks: Int, cards: Vector[Int])
+
+  /** A page of `cardCount` cards, written in the view (`static`) or rendered from a list in the
+    * model through `splitBy` (`splitBy`).
+    */
+  def page(cardCount: Int, layout: String): LiveView[Msg, Page] = new LiveView[Msg, Page]:
+    def mount(ctx: MountContext) = ZIO.succeed(Page(0, Vector.range(0, cardCount)))
+    def handleMessage(model: Page, ctx: MessageContext) =
+      _ => ZIO.succeed(model.copy(clicks = model.clicks + 1))
+    override def view(model: Signal[Page]) =
+      val cards = layout match
+        case "static"  => div((0 until cardCount).map(i => component(Card, s"card-$i").render(i))*)
+        case "splitBy" =>
+          div(model.map(_.cards).splitBy(identity) { (i, card) =>
+            div(component(Card, s"card-$i").render(card))
+          })
+        case other => throw IllegalArgumentException(s"unknown layout $other")
+      div(button(on.click(Msg.Tick), model.map(_.clicks.toString)), cards)
 
   def clickBinding(node: EvaluatedNode): Option[String] = node match
     case element: EvaluatedNode.Element =>
@@ -59,11 +69,15 @@ class ComponentTurnState:
   @Param(Array("100", "1000"))
   var cardCount: Int = 0
 
-  var scope: zio.Scope.Closeable           = null
-  var connection: RootConnection[Msg, Int] = null
-  var outputs: Queue[ConnectionOutput]     = null
-  var binding: Option[BindingId]           = None
-  var phoenixState: PhoenixRenderedState   = null
+  // Whether the cards are written in the view or rendered from the model through `splitBy`.
+  @Param(Array("static", "splitBy"))
+  var layout: String = ""
+
+  var scope: zio.Scope.Closeable            = null
+  var connection: RootConnection[Msg, Page] = null
+  var outputs: Queue[ConnectionOutput]      = null
+  var binding: Option[BindingId]            = None
+  var phoenixState: PhoenixRenderedState    = null
 
   @Setup(Level.Trial)
   def setup(): Unit =
@@ -74,7 +88,7 @@ class ComponentTurnState:
     outputs = run(Queue.unbounded[ConnectionOutput])
     connection = run(
       RootConnection
-        .start(config, metadata, page(cardCount), output => outputs.offer(output).unit)
+        .start(config, metadata, page(cardCount, layout), output => outputs.offer(output).unit)
         .provideEnvironment(ZEnvironment(scope))
     )
     run(outputs.take)

@@ -191,6 +191,48 @@ object ComponentKernelSpec extends ZIOSpecDefault:
         )
       }
     },
+    test("a turn keeps the components it leaves unchanged as they were committed") {
+      ZIO.scoped {
+        val events = ConcurrentLinkedQueue[String]()
+        val first  = component(componentDefinition(events), "first")
+        val second = component(componentDefinition(events), "second")
+        val parent = new LiveComponent[Int, Int, Int]:
+          def mount(props: Int, ctx: MountContext) = ZIO.succeed(props)
+          def handleMessage(props: Int, model: Int, ctx: MessageContext) = message =>
+            ZIO.succeed(model + message)
+          def view(props: Signal[Int], model: Signal[Int]) =
+            div(model.map(value => s"parent $value"), first.render(props), second.render(props))
+        val instance = component(parent, "parent")
+        def named(state: Committed[Int, Int], name: String) =
+          state.components.values.find(_.key.applicationId == name).get
+        for
+          seen    <- Ref.make(Vector.empty[Int])
+          program <- ZIO.fromEither(
+                       RenderProgram.compile[Int, Int](model =>
+                         div(model.map(_.toString), instance.render(1))
+                       )
+                     )
+          kernel  <- SessionKernel.start(config, logic(seen), program, Outbound(), FakeEnvironment(events))
+          before  <- kernel.inspect
+          _       <- ZIO.succeed(events.clear())
+          _       <- kernel.submit(SessionCommand.Message(kernel.epoch, 1))
+          root    <- kernel.inspect
+          rootEvents = events.asScala.toVector
+          _       <- kernel.submitComponent(named(root, "first").id, 2)
+          clicked <- kernel.inspect
+        yield assertTrue(
+          rootEvents.isEmpty,
+          Vector("parent", "first", "second").forall(name =>
+            (named(root, name).render eq named(before, name).render) &&
+              (named(root, name).environmentState.value eq named(before, name).environmentState.value)
+          ),
+          !(named(clicked, "first").render eq named(root, "first").render),
+          !(named(clicked, "parent").render eq named(root, "parent").render),
+          named(clicked, "second").render eq named(root, "second").render,
+          textValues(clicked.render.tree.root) == Vector("1", "parent 1", "3", "1")
+        )
+      }
+    },
     test("send-update props survive unrelated parent renders") {
       ZIO.scoped {
         val events     = ConcurrentLinkedQueue[String]()

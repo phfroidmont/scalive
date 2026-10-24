@@ -269,6 +269,60 @@ object UnchangedCollectionSpec extends ZIOSpecDefault:
         committed.bindings.ids == base.bindings.ids
       )
     },
+    test("tells which inputs render a committed render again without evaluating it") {
+      final case class Feed(counter: Int, stream: scalive.streams.LiveStream[Row])
+      val stream = scalive.streams.LiveStream(
+        scalive.streams.LiveStreamIdentity.fresh(),
+        "rows",
+        1L,
+        Vector.empty,
+        Vector.empty,
+        Vector.empty,
+        reset = false
+      )
+      val plain = RenderProgram.compile[Page, Nothing] { page =>
+        div(span(page.map(_.counter.toString)))
+      }
+      val withComponent = RenderProgram.compile[Page, Nothing] { page =>
+        div(component(Badge, "badge").render(page.map(_.counter.toString)))
+      }
+      val withStream = RenderProgram.compile[Feed, Nothing] { feed =>
+        div(feed.map(_.stream).renderIn(ul)(row => li(row.map(_.label))))
+      }
+      val childCompiled = RenderProgram.compile[Unit, Nothing](_ => span("badge"))
+
+      for
+        plainProgram     <- ZIO.fromEither(plain)
+        plainRender      <- plainProgram.evaluate(Page(0, 0, rows)).map(_.commit)
+        componentProgram <- ZIO.fromEither(withComponent)
+        childProgram     <- ZIO.fromEither(childCompiled)
+        unresolved       <- componentProgram.evaluate(Page(0, 0, rows))
+        child            <- childProgram.evaluate(())
+        token = Object()
+        resolved <- ZIO.fromEither(
+                      unresolved.resolveComponents(
+                        Vector(
+                          unresolved.componentRequirements.head
+                            .resolve(ComponentRef.runtime(token), token, child)
+                        )
+                      )
+                    )
+        componentRender = resolved.commit
+        streamProgram <- ZIO.fromEither(withStream)
+        streamRender  <- streamProgram.evaluate(Feed(0, stream)).map(_.commit)
+        again         <- plainProgram.evaluate(Page(0, 0, rows), Some(plainRender))
+        closed        <- plainProgram.evaluate(Page(0, 0, rows)).map(_.commit)
+        _             <- closed.close
+      yield assertTrue(
+        plainProgram.rendersAgain(Page(0, 0, rows), plainRender),
+        again.tree eq plainRender.tree,
+        !plainProgram.rendersAgain(Page(1, 0, rows), plainRender),
+        !plainProgram.rendersAgain(Page(0, 0, rows), closed),
+        componentProgram.rendersAgain(Page(0, 0, rows), componentRender),
+        !componentProgram.rendersAgain(Page(1, 0, rows), componentRender),
+        !streamProgram.rendersAgain(Feed(0, stream), streamRender)
+      )
+    },
     test("evaluates a render with an unchanged input when it holds a component") {
       val compiled = RenderProgram.compile[Page, Nothing] { page =>
         div(component(Badge, "badge").render(page.map(_.counter.toString)))

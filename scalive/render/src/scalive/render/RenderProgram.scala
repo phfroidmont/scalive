@@ -109,6 +109,16 @@ final class RenderProgram[Input, Msg] private (
     }
   end evaluateIn
 
+  /** Whether evaluating `input` after `committed` would render `committed` again, as `evaluateIn`
+    * then does: `input` equals the input `committed` rendered, and `committed` read nothing that
+    * signals do not track. The runtime keeps such a render, and what it resolved into it, without
+    * evaluating it.
+    */
+  private[scalive] def rendersAgain(input: Input, committed: CommittedRender[Msg]): Boolean =
+    committed.programIdentity == identity && !committed.scope.isClosed &&
+      !committed.signalEvaluation.untracked && rootScope.validate(source).isRight &&
+      committed.signalEvaluation.samples.get(source).exists(_.value == input)
+
   // The same input renders the same again when the render read nothing that signals do not track.
   // Its requirements are kept, so that its components are staged and resolved into it again.
   private def reuse(

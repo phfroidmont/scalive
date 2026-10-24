@@ -27,6 +27,14 @@ sealed trait ComponentRequirement[+OwnerMsg]:
   ): ComponentResolution =
     ComponentResolution.Value(location, applicationId, ref, instanceToken, child.tree)
 
+  /** Resolves this declaration to a render the runtime kept as it was committed. */
+  final def resolve(
+    ref: ComponentRef[Message],
+    instanceToken: Object,
+    child: CommittedRender[Message]
+  ): ComponentResolution =
+    ComponentResolution.Value(location, applicationId, ref, instanceToken, child.tree)
+
 object ComponentRequirement:
   final private[render] case class Plain[Props0, Message0, Model0](
     location: TemplateId,

@@ -27,6 +27,12 @@ frequently. They require more explicit ownership than keyed rendering, so they
 are not a general replacement for a `Vector` in the model, a database, or another
 source of truth.
 
+A stream does not save server memory. Scalive keeps every row of a stream on the
+server, with what it rendered, so that a row keeps following the signals it reads,
+where Phoenix LiveView forgets a stream row once it has sent it. A stream costs
+about as much memory as keyed rendering of the same rows; bound it with
+[`keepFirst` or `keepLast`](#define-stable-identity-and-retention).
+
 ## Separate domain state from stream state {#separate-domain-state-from-stream-state}
 
 Scalive keeps a stream's rows and sends each turn's inserts and deletes when

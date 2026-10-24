@@ -280,10 +280,10 @@ final class StaticAssets private (
       .fromIterable(
         List(
           Method.GET / Path.toPathCodec(config.mountPath) / PathCodec.trailing -> handler {
-            (assetPath: Path, _: Request) => serve(assetPath, includeBody = true)
+            (assetPath: Path, request: Request) => serve(assetPath, request, includeBody = true)
           },
           Method.HEAD / Path.toPathCodec(config.mountPath) / PathCodec.trailing -> handler {
-            (assetPath: Path, _: Request) => serve(assetPath, includeBody = false)
+            (assetPath: Path, request: Request) => serve(assetPath, request, includeBody = false)
           }
         )
       ).handleErrorZIO(error => ZIO.logErrorCause(Cause.fail(error)).as(Response.notFound))
@@ -292,7 +292,7 @@ final class StaticAssets private (
     val encodedPath = StaticAssets.encodeRelativePath(servedPath)
     if mountPrefix.isEmpty then s"/$encodedPath" else s"$mountPrefix/$encodedPath"
 
-  private def serve(assetPath: Path, includeBody: Boolean): UIO[Response] =
+  private def serve(assetPath: Path, request: Request, includeBody: Boolean): UIO[Response] =
     val served = StaticAssets
       .requestRelativePath(assetPath)
       .flatMap(manifest.served(_, StaticAssets.serveOriginals(config.source)))
@@ -327,8 +327,11 @@ final class StaticAssets private (
                     case StaticAssetCachePolicy.Immutable  => config.cache.immutable
                     case StaticAssetCachePolicy.Revalidate => config.cache.revalidating
                   val headers = StaticAssets.headers(currentEntry, cacheControl)
-                  val body    = if includeBody then Body.fromArray(bytes) else Body.empty
-                  ZIO.succeed(Response(status = Status.Ok, headers = headers, body = body))
+                  if StaticAssets.holds(request, currentEntry.digest) then
+                    ZIO.succeed(Response(status = Status.NotModified, headers = headers))
+                  else
+                    val body = if includeBody then Body.fromArray(bytes) else Body.empty
+                    ZIO.succeed(Response(status = Status.Ok, headers = headers, body = body))
             }
           )
     end match
@@ -658,6 +661,17 @@ object StaticAssets:
   private def mountPrefix(path: Path): String =
     val encoded = URL(path = path.addLeadingSlash.dropTrailingSlash).encode
     if encoded == "/" then "" else encoded
+
+  /** Whether `request` says the browser holds the bytes whose ETag is `digest`.
+    *
+    * `If-None-Match` lists entity tags, or is `*`, and compares them weakly, as RFC 9110 requires.
+    */
+  private def holds(request: Request, digest: String): Boolean =
+    request.rawHeader("If-None-Match").exists { value =>
+      value.split(',').iterator.map(_.trim).exists { tag =>
+        tag == "*" || tag.stripPrefix("W/") == s"\"$digest\""
+      }
+    }
 
   private def headers(entry: StaticAssetEntry, cacheControl: Header.CacheControl): Headers =
     Headers(

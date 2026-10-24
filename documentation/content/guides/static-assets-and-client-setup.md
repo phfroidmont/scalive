@@ -136,7 +136,8 @@ Their digests are pinned when assets load. An in-place file mutation makes its
 immutable URL return `404` until the assets are loaded again. Original paths
 return `404` by default; set `serveOriginals = true` only when unversioned
 access is required. Originals serve current bytes with a current `ETag` and
-`no-cache`.
+`no-cache`. A request whose `If-None-Match` names the current `ETag` gets
+`304 Not Modified` without the bytes.
 
 ## Add routes and resolve paths {#add-static-routes-and-resolve-paths}
 

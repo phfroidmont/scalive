@@ -42,9 +42,14 @@ object StaticAssetsSpec extends ZIOSpecDefault:
       )
     )
 
-  private def request(routes: Routes[Any, Nothing], path: String, method: Method = Method.GET) =
+  private def request(
+    routes: Routes[Any, Nothing],
+    path: String,
+    method: Method = Method.GET,
+    headers: Headers = Headers.empty
+  ) =
     ZIO.fromEither(URL.decode(path)).orDie.flatMap(url =>
-      ZIO.scoped(routes.runZIO(Request(method = method, url = url)))
+      ZIO.scoped(routes.runZIO(Request(method = method, url = url, headers = headers)))
     )
 
   private def temporaryDirectory: ZIO[Scope, Throwable, java.nio.file.Path] =
@@ -100,6 +105,30 @@ object StaticAssetsSpec extends ZIOSpecDefault:
         head.status == Status.Ok,
         head.header(Header.ETag).contains(Header.ETag.Strong(assets.entry("test-asset.js").digest)),
         body.isEmpty
+      )
+    },
+    test("answers a request for the copy the browser holds with Not Modified") {
+      def ifNoneMatch(value: String) = Headers(Header.Custom("If-None-Match", value))
+      for
+        assets <- loadAssets(serveOriginals = true)
+        digest = assets.entry("test-asset.js").digest
+        held      <- request(assets.routes, "/assets/test-asset.js", headers = ifNoneMatch(s"\"$digest\""))
+        weak      <- request(assets.routes, "/assets/test-asset.js", headers = ifNoneMatch(s"W/\"$digest\""))
+        listed    <- request(assets.routes, "/assets/test-asset.js", headers = ifNoneMatch(s"\"other\", \"$digest\""))
+        any       <- request(assets.routes, "/assets/test-asset.js", headers = ifNoneMatch("*"))
+        stale     <- request(assets.routes, "/assets/test-asset.js", headers = ifNoneMatch("\"other\""))
+        heldBody  <- held.body.asString
+        staleBody <- stale.body.asString
+      yield assertTrue(
+        held.status == Status.NotModified,
+        heldBody.isEmpty,
+        held.header(Header.ETag).contains(Header.ETag.Strong(digest)),
+        held.header(Header.CacheControl).contains(StaticAssetCache.default.revalidating),
+        weak.status == Status.NotModified,
+        listed.status == Status.NotModified,
+        any.status == Status.NotModified,
+        stale.status == Status.Ok,
+        staleBody.contains("scaliveTestAsset")
       )
     },
     test("normalizes lookups and rejects traversal") {

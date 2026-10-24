@@ -80,8 +80,21 @@ private[scalive] object Escaping:
     if pos < len then s.write(charsArray, pos, len - pos)
   end escape
 
+  /** `text` escaped, or `text` itself when it has nothing to escape, as most text has. */
   def escape(text: String): String =
-    val s = new StringWriter
-    escape(text, s)
-    s.toString
+    if !needsEscaping(text) then text
+    else
+      val s = new StringWriter
+      escape(text, s)
+      s.toString
+
+  private def needsEscaping(text: String): Boolean =
+    var i = 0
+    while i < text.length do
+      val c = text.charAt(i)
+      if c == '<' || c == '>' || c == '&' || c == '"' ||
+        (c < ' ' && c != '\n' && c != '\r' && c != '\t')
+      then return true
+      i += 1
+    false
 end Escaping

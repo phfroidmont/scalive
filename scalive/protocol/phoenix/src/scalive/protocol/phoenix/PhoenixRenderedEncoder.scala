@@ -516,6 +516,23 @@ private[scalive] object PhoenixRenderedEncoder:
     )
   end clearPending
 
+  final private case class TagParts(open: ProjectedPart, close: ProjectedPart)
+
+  // Every element of a tag opens and closes the same way, so its elements share these parts
+  // rather than each holding its own copy. An application names a bounded set of tags, but
+  // `HtmlTag` takes any name, so the cache stops growing at a size no page should reach.
+  private val tagPartsCache = java.util.concurrent.ConcurrentHashMap[String, TagParts]()
+  private val maxCachedTags = 1024
+  private val endOfOpeningTag: ProjectedPart = ProjectedPart.Static(">")
+
+  private def tagParts(tag: String): TagParts =
+    val cached = tagPartsCache.get(tag)
+    if cached != null then cached
+    else
+      val parts = TagParts(ProjectedPart.Static(s"<$tag"), ProjectedPart.Static(s"</$tag>"))
+      if tagPartsCache.size < maxCachedTags then tagPartsCache.putIfAbsent(tag, parts)
+      parts
+
   private def project(
     node: EvaluatedNode,
     componentRootCid: Option[Int],
@@ -529,7 +546,8 @@ private[scalive] object PhoenixRenderedEncoder:
       Right(ProjectedNode(text.id, Vector(part)))
     case element: EvaluatedNode.Element =>
       val opening = Vector.newBuilder[ProjectedPart]
-      opening += ProjectedPart.Static(s"<${element.tag}")
+      val tag     = tagParts(element.tag)
+      opening += tag.open
       val csrfMarker = element.attributes.exists(attribute =>
         attribute.name == "data-scalive-csrf" &&
           attribute.value.contains(AttributeValue.Text("true"))
@@ -541,7 +559,7 @@ private[scalive] object PhoenixRenderedEncoder:
         componentRootCid.foreach(cid =>
           opening += ProjectedPart.Static(s" data-phx-component=\"$cid\"")
         )
-        opening += ProjectedPart.Static(">")
+        opening += endOfOpeningTag
         if csrfMarker then
           context.csrfToken.foreach(token =>
             opening += ProjectedPart.Static(
@@ -550,7 +568,7 @@ private[scalive] object PhoenixRenderedEncoder:
           )
         traverse(element.children)(child => project(child, None, context)).map { children =>
           children.foreach(child => opening += ProjectedPart.Node(child))
-          if !element.void then opening += ProjectedPart.Static(s"</${element.tag}>")
+          if !element.void then opening += tag.close
           ProjectedNode(element.id, opening.result())
         }
       }

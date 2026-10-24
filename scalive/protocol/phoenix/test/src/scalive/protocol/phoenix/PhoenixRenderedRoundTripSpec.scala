@@ -61,6 +61,7 @@ object PhoenixRenderedRoundTripSpec extends ZIOSpecDefault:
         .map(_.open).when(
           p("inner ", component(Label, "inner").render(page.map(_.title)))
         ),
+      component(Label, "wrap").render(page.map(_.title)),
       page.map(_.mode).choose(0 -> em("zero"), 1 -> b(page.map(_.title)))
     )
 
@@ -70,32 +71,39 @@ object PhoenixRenderedRoundTripSpec extends ZIOSpecDefault:
       value.map(_.startsWith("b")).when(em("starts with b"))
     )
 
-  private val tokens = Map("outer" -> Object(), "inner" -> Object())
+  // Shows nothing of its own, so only the component it holds changes.
+  private def wrapView(value: Signal[String]): HtmlElement[Nothing] =
+    div(cls := "wrap", component(Label, "nested").render(value))
+
+  private val views =
+    Map("outer" -> labelView, "inner" -> labelView, "wrap" -> wrapView, "nested" -> labelView)
+
+  private val tokens = views.map((id, _) => id -> Object())
 
   private def resolveComponents(
     root: RenderCandidate[Nothing],
-    child: RenderProgram[String, Nothing],
+    programs: Map[String, RenderProgram[String, Nothing]],
     committed: Map[String, CommittedRender[Nothing]]
   ): ZIO[Any, Any, (RenderCandidate[Nothing], Map[String, CommittedRender[Nothing]])] =
     ZIO
-      .foreach(root.componentRequirements) { requirement =>
-        val id = requirement.applicationId
-        child
-          .evaluate(requirement.props.asInstanceOf[String], committed.get(id))
-          .map { candidate =>
-            val token      = tokens(id)
-            val ref        = ComponentRef.runtime[requirement.Message](token)
-            val resolution = requirement.resolve(
-              ref,
+      .foldLeft(root.componentRequirements)((Vector.empty[ComponentResolution], committed)) {
+        case ((resolutions, committed), requirement) =>
+          val id = requirement.applicationId
+          for
+            candidate <-
+              programs(id).evaluate(requirement.props.asInstanceOf[String], committed.get(id))
+            resolved <- resolveComponents(candidate, programs, committed)
+          yield
+            val (child, committedChildren) = resolved
+            val token                      = tokens(id)
+            val resolution                 = requirement.resolve(
+              ComponentRef.runtime[requirement.Message](token),
               token,
-              candidate.asInstanceOf[RenderCandidate[requirement.Message]]
+              child.asInstanceOf[RenderCandidate[requirement.Message]]
             )
-            resolution -> (id -> candidate.commit)
-          }
-      }.flatMap { resolved =>
-        ZIO
-          .fromEither(root.resolveComponents(resolved.map(_._1)))
-          .map(_ -> (committed ++ resolved.map(_._2)))
+            (resolutions :+ resolution, committedChildren.updated(id, child.commit))
+      }.flatMap { case (resolutions, committed) =>
+        ZIO.fromEither(root.resolveComponents(resolutions)).map(_ -> committed)
       }
 
   // The client renders each component's root with its CID, which the server tree leaves out.
@@ -131,7 +139,7 @@ object PhoenixRenderedRoundTripSpec extends ZIOSpecDefault:
                            candidate <- program.evaluate(next, Some(committed))
                            delta = TreeDiffer.diff(committed.tree, candidate.tree)
                            encoded <- ZIO.fromEither(PhoenixRenderedEncoder.update(state, delta))
-                           _ = client.merge(encoded._2)
+                           _ = client.patch(encoded._2)
                          yield (
                            candidate.commit,
                            encoded._1,
@@ -145,9 +153,11 @@ object PhoenixRenderedRoundTripSpec extends ZIOSpecDefault:
       check(Gen.listOfBounded(1, 6)(page)) { pages =>
         for
           program <- ZIO.fromEither(RenderProgram.compile[Page, Nothing](withComponents))
-          child   <- ZIO.fromEither(RenderProgram.compile[String, Nothing](labelView))
+          programs <- ZIO.foreach(views)((id, view) =>
+                        ZIO.fromEither(RenderProgram.compile[String, Nothing](view)).map(id -> _)
+                      )
           root    <- program.evaluate(pages.head)
-          first   <- resolveComponents(root, child, Map.empty)
+          first   <- resolveComponents(root, programs, Map.empty)
           initial <- ZIO.fromEither(PhoenixRenderedEncoder.initial(first._1.tree))
           client = PhoenixClient.join(initial._2)
           joined = withoutCids(client.html) == HtmlRenderer.render(first._1.tree)
@@ -156,10 +166,10 @@ object PhoenixRenderedRoundTripSpec extends ZIOSpecDefault:
                        case ((committed, children, state, results), next) =>
                          for
                            candidate <- program.evaluate(next, Some(committed))
-                           resolved  <- resolveComponents(candidate, child, children)
+                           resolved  <- resolveComponents(candidate, programs, children)
                            delta = TreeDiffer.diff(committed.tree, resolved._1.tree)
                            encoded <- ZIO.fromEither(PhoenixRenderedEncoder.update(state, delta))
-                           _ = client.merge(encoded._2)
+                           _ = client.patch(encoded._2)
                            rendered = withoutCids(client.html)
                          yield (
                            resolved._1.commit,

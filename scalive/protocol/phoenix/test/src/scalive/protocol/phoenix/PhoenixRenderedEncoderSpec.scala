@@ -1649,6 +1649,145 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
         )
       )
     },
+    test("sends a changed component's slot only where the browser would skip it") {
+      val rootCompiled = RenderProgram.compile[Int, Nothing](count =>
+        div(
+          p(count.map(_.toString)),
+          count.map(_ >= 0).when(div(component(TestComponent, "child").render("child")))
+        )
+      )
+      val childCompiled = RenderProgram.compile[String, Nothing](value => span(value))
+      val token         = Object()
+      val ref           = ComponentRef.runtime[String](token)
+
+      for
+        rootProgram  <- ZIO.fromEither(rootCompiled)
+        childProgram <- ZIO.fromEither(childCompiled)
+        root         <- rootProgram.evaluate(0)
+        child        <- childProgram.evaluate("before")
+        first <- ZIO.fromEither(
+                   root.resolveComponents(
+                     Vector(resolve(root.componentRequirements.head, ref, token, child))
+                   )
+                 )
+        initial  <- ZIO.fromEither(PhoenixRenderedEncoder.initial(first.tree))
+        bumped   <- rootProgram.evaluate(1, Some(first.commit))
+        changed  <- childProgram.evaluate("after", Some(child.commit))
+        secondTree <- ZIO.fromEither(
+                        bumped.resolveComponents(
+                          Vector(resolve(bumped.componentRequirements.head, ref, token, changed))
+                        )
+                      )
+        withPage <- ZIO.fromEither(
+                      PhoenixRenderedEncoder.update(
+                        initial._1,
+                        TreeDiffer.diff(first.tree, secondTree.tree)
+                      )
+                    )
+        same     <- rootProgram.evaluate(1, Some(secondTree.commit))
+        again    <- childProgram.evaluate("again", Some(changed.commit))
+        thirdTree <- ZIO.fromEither(
+                       same.resolveComponents(
+                         Vector(resolve(same.componentRequirements.head, ref, token, again))
+                       )
+                     )
+        alone <- ZIO.fromEither(
+                   PhoenixRenderedEncoder.update(
+                     withPage._1,
+                     TreeDiffer.diff(secondTree.tree, thirdTree.tree)
+                   )
+                 )
+      yield assertTrue(
+        // The page renders the branch, and the component in it, again.
+        withPage._2 == Json.Obj(
+          "0" -> Json.Str("1"),
+          "c" -> Json.Obj("1" -> Json.Obj("0" -> Json.Str("after")))
+        ),
+        // A diff of components alone patches them in place.
+        alone._2 == Json.Obj("c" -> Json.Obj("1" -> Json.Obj("0" -> Json.Str("again"))))
+      )
+    },
+    test("reaches a changed component inside an unchanged one when the diff renders the page") {
+      val rootCompiled = RenderProgram.compile[Int, Nothing](count =>
+        div(p(count.map(_.toString)), component(TestComponent, "outer").render("outer"))
+      )
+      val outerCompiled = RenderProgram.compile[Unit, Nothing](_ =>
+        div(component(TestComponent, "inner").render("inner"))
+      )
+      val innerCompiled = RenderProgram.compile[String, Nothing](value => span(value))
+      val outerToken    = Object()
+      val innerToken    = Object()
+      val outerRef      = ComponentRef.runtime[String](outerToken)
+      val innerRef      = ComponentRef.runtime[String](innerToken)
+
+      def render(
+        rootProgram: RenderProgram[Int, Nothing],
+        outerProgram: RenderProgram[Unit, Nothing],
+        count: Int,
+        inner: RenderCandidate[Nothing],
+        previous: Option[(CommittedRender[Nothing], CommittedRender[Nothing])]
+      ) =
+        for
+          root  <- rootProgram.evaluate(count, previous.map(_._1))
+          outer <- outerProgram.evaluate((), previous.map(_._2))
+          resolvedOuter <- ZIO.fromEither(
+                             outer.resolveComponents(
+                               Vector(
+                                 resolve(outer.componentRequirements.head, innerRef, innerToken, inner)
+                               )
+                             )
+                           )
+          resolvedRoot <- ZIO.fromEither(
+                            root.resolveComponents(
+                              Vector(
+                                resolve(
+                                  root.componentRequirements.head,
+                                  outerRef,
+                                  outerToken,
+                                  resolvedOuter
+                                )
+                              )
+                            )
+                          )
+        yield (resolvedRoot, resolvedOuter)
+
+      for
+        rootProgram  <- ZIO.fromEither(rootCompiled)
+        outerProgram <- ZIO.fromEither(outerCompiled)
+        innerProgram <- ZIO.fromEither(innerCompiled)
+        before       <- innerProgram.evaluate("before")
+        first        <- render(rootProgram, outerProgram, 0, before, None)
+        initial      <- ZIO.fromEither(PhoenixRenderedEncoder.initial(first._1.tree))
+        firstCommits = (first._1.commit, first._2.commit)
+        after  <- innerProgram.evaluate("after", Some(before.commit))
+        second <- render(rootProgram, outerProgram, 1, after, Some(firstCommits))
+        withPage <- ZIO.fromEither(
+                      PhoenixRenderedEncoder.update(
+                        initial._1,
+                        TreeDiffer.diff(first._1.tree, second._1.tree)
+                      )
+                    )
+        secondCommits = (second._1.commit, second._2.commit)
+        again <- innerProgram.evaluate("again", Some(after.commit))
+        third <- render(rootProgram, outerProgram, 1, again, Some(secondCommits))
+        alone <- ZIO.fromEither(
+                   PhoenixRenderedEncoder.update(
+                     withPage._1,
+                     TreeDiffer.diff(second._1.tree, third._1.tree)
+                   )
+                 )
+      yield assertTrue(
+        withPage._2 == Json.Obj(
+          "0" -> Json.Str("1"),
+          "c" -> Json.Obj(
+            // The browser would otherwise skip the outer component, keeping the inner one in it.
+            "1" -> Json.Obj("0" -> Json.Num(2)),
+            "2" -> Json.Obj("0" -> Json.Str("after"))
+          )
+        ),
+        alone._2 == Json.Obj("c" -> Json.Obj("2" -> Json.Obj("0" -> Json.Str("again"))))
+      )
+    },
     test("projects repeated dynamic composite modifiers through one sparse slot") {
       val compiled = RenderProgram.compile[String, Nothing] { model =>
         div(cls := "base", cls := model)
@@ -1766,9 +1905,9 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
                    )
         client = PhoenixClient.join(initial._2)
         joined = client.html
-        _      = client.merge(inserted._2)
+        _      = client.patch(inserted._2)
         shown  = client.html
-        _      = client.merge(deleted._2)
+        _      = client.patch(deleted._2)
         hidden = client.html
       yield assertTrue(
         joined == "<div>beforeafter</div>",

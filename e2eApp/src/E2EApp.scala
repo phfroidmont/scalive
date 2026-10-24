@@ -66,6 +66,7 @@ object E2EApp extends ZIOAppDefault:
         live / "form-unsaved"            -> FormUnsavedLiveView(),
         live / "form-unsaved" / "target" -> FormUnsavedTargetLiveView(),
         live / "flash" / "repeat"        -> FlashRepeatLiveView(),
+        live / "nested-component-update" -> NestedComponentUpdateLiveView(),
         MissingItems.list                -> MissingItemsLiveView(),
         MissingItems.item                -> MissingItemLiveView(),
         live / "external-redirect"       -> ExternalRedirectLiveView(),

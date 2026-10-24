@@ -171,7 +171,9 @@ private[scalive] object PhoenixRenderedEncoder:
     streams: Set[TemplateId],
     keyedTargets: Set[TemplateId] = Set.empty,
     // Nodes the browser has to receive again in full.
-    replaced: Set[TemplateId] = Set.empty)
+    replaced: Set[TemplateId] = Set.empty,
+    // Components whose CID slot the diff sends again, only so that it reaches them.
+    touchedComponents: Set[Int] = Set.empty)
 
   /** The statics of the nested templates in one comprehension, sent once as its `p`. */
   final private class TemplateTable:
@@ -1032,12 +1034,50 @@ private[scalive] object PhoenixRenderedEncoder:
     changed: SparseChanges,
     changedComponents: Map[Int, Option[SparseChanges]]
   ): Either[PhoenixEncodingError, Json.Obj] =
-    val active = activeComponents(state)
+    val active        = activeComponents(state)
+    val activeChanges = changedComponents.view.filterKeys(state.activeCids.contains).toMap
     rendered(state.root, active, Some(changed), None).flatMap { root =>
-      val activeChanges = changedComponents.view.filterKeys(state.activeCids.contains).toMap
-      if activeChanges.isEmpty then Right(root)
-      else componentDiffs(active, activeChanges).map(value => root.add("c", value))
+      val touches          = componentTouches(active, activeChanges.keySet, root != Json.Obj.empty)
+      val componentChanges = activeChanges ++ touches.map { case (owner, cids) =>
+        owner -> activeChanges
+          .get(owner).fold(
+            Some(SparseChanges(Set.empty, Set.empty).touching(cids))
+          )(_.map(_.touching(cids)))
+      }
+      if componentChanges.isEmpty then Right(root)
+      else componentDiffs(active, componentChanges).map(value => root.add("c", value))
     }
+
+  /** The CID slots each component sends again, so that the diff reaches every changed component.
+    *
+    * The browser skips a component that a diff does not reach and keeps what is in the page, which
+    * would drop a change to a component inside it. It starts rendering at the root when the diff
+    * changes the root, and otherwise at each outermost changed component, so every component from
+    * there to a changed one has to be reached. Keyed by the CID of the component holding each slot.
+    */
+  private def componentTouches(
+    components: Map[Int, ProjectedComponent],
+    changed: Set[Int],
+    rootRenders: Boolean
+  ): Map[Int, Set[Int]] =
+    val owners = components.flatMap { case (owner, component) =>
+      componentCids(component.root).map(_ -> owner)
+    }
+    // The components around a component, innermost first.
+    def around(cid: Int): List[Int] = owners.get(cid).fold(Nil)(owner => owner :: around(owner))
+
+    changed.toVector
+      .flatMap { cid =>
+        val enclosing = around(cid)
+        val reached   =
+          if rootRenders then enclosing.length else enclosing.lastIndexWhere(changed.contains) + 1
+        // Each component holds the slot of the one just inside it.
+        enclosing.zip(cid :: enclosing).take(reached)
+      }.groupMap(_._1)(_._2).view.mapValues(_.toSet).toMap
+
+  extension (changes: SparseChanges)
+    private def touching(cids: Set[Int]): SparseChanges =
+      changes.copy(touchedComponents = changes.touchedComponents ++ cids)
 
   private def componentObject(
     components: Map[Int, ProjectedComponent],
@@ -1133,7 +1173,7 @@ private[scalive] object PhoenixRenderedEncoder:
             keyedJson(keyed, components, changes, templates).map(nested(_, changes))
           )
         case (result, ProjectedPart.Component(cid)) =>
-          result.map(_ => dynamic(changes.isEmpty, Json.Num(cid)))
+          result.map(_ => dynamic(changes.forall(_.touchedComponents.contains(cid)), Json.Num(cid)))
         case (result, ProjectedPart.StreamDomId(value)) =>
           result.map(_ => dynamic(changes.isEmpty, Json.Str(value)))
         case (result, ProjectedPart.Stream(stream)) =>
@@ -1162,15 +1202,21 @@ private[scalive] object PhoenixRenderedEncoder:
       if sparseChanges.isEmpty then
         keyed.rows.map(_ => Some(ProjectedKeyedRowUpdate(None, None, full = true)))
       else keyed.updates.padTo(keyed.rows.length, None)
+    val touched = sparseChanges.fold(Set.empty[Int])(_.touchedComponents)
     val updates = keyed.rows.zip(explicit).map { case (row, update) =>
-      update.orElse {
-        sparseChanges.collect {
-          case changes if changes.replaced.contains(row.child.id) =>
-            ProjectedKeyedRowUpdate(None, None, full = true)
-          case changes if rowChanged(row.child, changes) =>
-            ProjectedKeyedRowUpdate(None, Some(changes), full = false)
-        }
-      }
+      update match
+        // A row's own diff still has to reach the components it holds.
+        case Some(update) if !update.full && componentCids(row.child).exists(touched.contains) =>
+          val changes = update.changes.getOrElse(SparseChanges(Set.empty, Set.empty))
+          Some(update.copy(changes = Some(changes.touching(touched))))
+        case Some(update) => Some(update)
+        case None         =>
+          sparseChanges.collect {
+            case changes if changes.replaced.contains(row.child.id) =>
+              ProjectedKeyedRowUpdate(None, None, full = true)
+            case changes if rowChanged(row.child, changes) =>
+              ProjectedKeyedRowUpdate(None, Some(changes), full = false)
+          }
     }
     val shouldEmit = sparseChanges.isEmpty || keyed.changed ||
       sparseChanges.exists(_.keyedTargets.contains(keyed.id)) || updates.exists(_.nonEmpty)
@@ -1274,7 +1320,8 @@ private[scalive] object PhoenixRenderedEncoder:
     rowContainsChangedSlot(root, changes.slots) ||
       rowContainsChangedStream(root, changes.streams) ||
       rowContainsChangedKeyed(root, changes.keyedTargets) ||
-      collectIds(root).exists(changes.replaced.contains)
+      collectIds(root).exists(changes.replaced.contains) ||
+      componentCids(root).exists(changes.touchedComponents.contains)
 
   // Rows whose statics the client's stream template must cover.
   private def streamTemplateRows(stream: ProjectedStream): Vector[ProjectedStreamRow] =

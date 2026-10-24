@@ -257,7 +257,21 @@ private[scalive] object PhoenixRenderedEncoder:
     touchedComponents: Set[Int] = Set.empty)
 
   /** The components one render reaches, with the index its `phx-target` values resolve against. */
-  final private class Components(val byCid: Map[Int, ProjectedComponent]):
+  final private class Components(
+    val byCid: Map[Int, ProjectedComponent],
+    // Stream rows flattened on their own, shared by the payload and the record of what it sent.
+    private val streamRows: StreamRows = StreamRows()):
+    /** `row` flattened on its own, which only shapes the statics its stream shares. */
+    def streamRow(row: ProjectedNode)
+      : Either[PhoenixEncodingError, (Vector[String], Vector[Json])] =
+      Option(streamRows.get(row)) match
+        case Some(flattened) => Right(flattened)
+        case None            =>
+          flatten(row, this, Some(TemplateTable())).map { flattened =>
+            streamRows.put(row, flattened)
+            flattened
+          }
+
     def apply(cid: Int): ProjectedComponent       = byCid(cid)
     def get(cid: Int): Option[ProjectedComponent] = byCid.get(cid)
     def isEmpty: Boolean                          = byCid.isEmpty
@@ -276,6 +290,12 @@ private[scalive] object PhoenixRenderedEncoder:
       byCid.toVector
         .flatMap((cid, component) => keys(component).map(key => IdentityKey(key) -> cid))
         .groupMap(_._1)(_._2).view.mapValues(_.toSet).toMap
+  end Components
+
+  // The payload of an update and the record of what it sent each need every row of a stream it
+  // changed flattened on its own, so one update keeps them, by row, to flatten each row once.
+  final private class StreamRows
+      extends java.util.IdentityHashMap[ProjectedNode, (Vector[String], Vector[Json])]
 
   /** The statics of the nested templates in one comprehension, sent once as its `p`. */
   final private class TemplateTable:
@@ -362,8 +382,9 @@ private[scalive] object PhoenixRenderedEncoder:
     for
       root  <- project(tree.root, None, context)
       state <- finish(root, context, validate = true)
-      json  <- fullPayload(state)
-    yield clearPending(None, state) -> json
+      streamRows = StreamRows()
+      json <- fullPayload(state, streamRows)
+    yield clearPending(None, state, streamRows) -> json
 
   /** Projects a disconnected render with fresh connection-local CIDs and inlines components. */
   private[scalive] def fullHtml(
@@ -375,7 +396,7 @@ private[scalive] object PhoenixRenderedEncoder:
       root  <- project(tree.root, None, context)
       state <- finish(root, context, validate = true)
       html  <- renderHtml(state.root, Components(state.components))
-    yield clearPending(None, state) -> html
+    yield clearPending(None, state, StreamRows()) -> html
 
   def update(
     state: PhoenixRenderedState,
@@ -387,18 +408,20 @@ private[scalive] object PhoenixRenderedEncoder:
       for
         root <- project(tree.root, None, context)
         next <- finish(root, context, validate = true)
-        json <- fullPayload(next)
-      yield clearPending(Some(state), next) -> json
+        streamRows = StreamRows()
+        json <- fullPayload(next, streamRows)
+      yield clearPending(Some(state), next, streamRows) -> json
 
     case update: RenderDelta.Update =>
-      val context = ProjectionContext(Some(state))
+      val context    = ProjectionContext(Some(state))
+      val streamRows = StreamRows()
       for
         result <- applyDelta(state.root, update, None, context)
         // A sparse update changes only what its diff reaches, which the differ derives from the
         // validated tree it follows; the whole graph is validated again when it is resent.
         next <- finish(result.root, context, validate = result.structural)
         json <-
-          if result.structural then fullPayload(next)
+          if result.structural then fullPayload(next, streamRows)
           else
             val fullDiffCids = result.changedComponents ++ context.allocatedCids
             val pendingDiffs = fullDiffCids.iterator.map(_ -> Option.empty[SparseChanges]).toMap ++
@@ -406,8 +429,8 @@ private[scalive] object PhoenixRenderedEncoder:
             val diffs = pendingDiffs.map { case (cid, changes) =>
               if state.pendingDeletionCids.contains(cid) then cid -> None else cid -> changes
             }
-            sparsePayload(state, next, result.changes, diffs)
-      yield clearPending(Some(state), next) -> json
+            sparsePayload(state, next, result.changes, diffs, streamRows)
+      yield clearPending(Some(state), next, streamRows) -> json
 
   private[scalive] def html(state: PhoenixRenderedState): Either[PhoenixEncodingError, String] =
     renderHtml(state.root, Components(activeComponents(state)))
@@ -420,9 +443,10 @@ private[scalive] object PhoenixRenderedEncoder:
     */
   private def clearPending(
     previous: Option[PhoenixRenderedState],
-    state: PhoenixRenderedState
+    state: PhoenixRenderedState,
+    streamRows: StreamRows
   ): PhoenixRenderedState =
-    val stateComponents = Components(state.components)
+    val stateComponents = Components(state.components, streamRows)
     // Records the stream statics the client now holds, so the next diff can tell if they changed.
     def clearNode(node: ProjectedNode, previous: Option[ProjectedNode]): ProjectedNode =
       if previous.exists(_ eq node) then node
@@ -1236,8 +1260,11 @@ private[scalive] object PhoenixRenderedEncoder:
       .map(stream => IdentityKey(stream.identity)).toSet
     streamRefs.filter((identity, _) => identities.contains(identity))
 
-  private def fullPayload(state: PhoenixRenderedState): Either[PhoenixEncodingError, Json.Obj] =
-    val active = Components(activeComponents(state))
+  private def fullPayload(
+    state: PhoenixRenderedState,
+    streamRows: StreamRows
+  ): Either[PhoenixEncodingError, Json.Obj] =
+    val active = Components(activeComponents(state), streamRows)
     rendered(state.root, active, None, None).flatMap { root =>
       if active.isEmpty then Right(root)
       else componentObject(active, state.activeCids).map(value => root.add("c", value))
@@ -1247,9 +1274,10 @@ private[scalive] object PhoenixRenderedEncoder:
     previous: PhoenixRenderedState,
     state: PhoenixRenderedState,
     changed: SparseChanges,
-    changedComponents: Map[Int, Option[SparseChanges]]
+    changedComponents: Map[Int, Option[SparseChanges]],
+    streamRows: StreamRows
   ): Either[PhoenixEncodingError, Json.Obj] =
-    val active        = Components(activeComponents(state))
+    val active        = Components(activeComponents(state), streamRows)
     val activeChanges = changedComponents.view.filterKeys(state.activeCids.contains).toMap
     rendered(state.root, active, Some(changed), None, Some(previous.root)).flatMap { root =>
       val touches =
@@ -1590,9 +1618,7 @@ private[scalive] object PhoenixRenderedEncoder:
       val flattened = for
         selected <- traverse(selectedRows)(row => flatten(row.child, components, Some(table)))
         // The other rows only shape the shared statics; what they reference is not sent.
-        others <- traverse(streamTemplateRows(stream))(row =>
-                    flatten(row.child, components, Some(TemplateTable()))
-                  )
+        others <- traverse(streamTemplateRows(stream))(row => components.streamRow(row.child))
       yield selected ++ others
       flattened
         .flatMap(normalizeStreamRows).map { case (statics, rows) =>
@@ -1615,7 +1641,6 @@ private[scalive] object PhoenixRenderedEncoder:
               Vector("k" -> Json.Obj(keyedFields*), "stream" -> metadata)
           Json.Obj((fields ++ sharedTemplates(templates, table))*)
         }
-    end if
   end streamJson
 
   // Only the outermost comprehension sends the table: the browser ignores a nested one's.
@@ -1648,9 +1673,8 @@ private[scalive] object PhoenixRenderedEncoder:
     stream: ProjectedStream,
     components: Components
   ): Either[PhoenixEncodingError, Vector[String]] =
-    traverse(streamTemplateRows(stream))(row =>
-      flatten(row.child, components, Some(TemplateTable()))
-    ).flatMap(normalizeStreamRows).map(_._1)
+    traverse(streamTemplateRows(stream))(row => components.streamRow(row.child))
+      .flatMap(normalizeStreamRows).map(_._1)
 
   private def normalizeStreamRows(
     rows: Vector[(Vector[String], Vector[Json])]

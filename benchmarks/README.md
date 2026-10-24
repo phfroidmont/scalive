@@ -63,6 +63,23 @@ Heap retained per row:
 mill benchmarks.runMain scalive.benchmarks.RetainedHeap
 ```
 
+### Regression check
+
+`mill benchmarks.checkRegressions` runs every benchmark at 1,000 rows and 100 cards with the GC
+profiler, measures the retained heap, and compares both with
+[`regression-baseline.txt`](regression-baseline.txt). It fails when an allocation
+(`gc.alloc.rate.norm`, B/op) exceeds its baseline by more than 10% + 256 B, a retained size by more
+than 2%, or when a benchmark is added or removed without updating the baseline. Allocation barely
+depends on the machine or its load, unlike time, so CI runs this check; it takes about two
+minutes. Run-to-run spread is within 5%.
+
+After an intended change, including an improvement worth locking in, rewrite the baseline and
+commit it with the change:
+
+```sh
+mill benchmarks.updateRegressionBaseline
+```
+
 ### Measurement caveats
 
 - `-f 0` is only for smoke tests; publish measurements from forked runs on an idle, fixed JVM/host.

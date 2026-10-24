@@ -74,6 +74,10 @@ mill documentation.check
 After a public API change, run `mill documentation.pipeline.updateApiSnapshot`
 to accept the new API. After a browser-visible change, run the browser suites
 with `./scripts/e2e-run-upstream.sh` and `./scripts/e2e-run-e2e-app.sh`.
+After a change to rendering, encoding or the runtime, run
+`mill benchmarks.checkRegressions`, which compares allocation and retained heap
+with [a baseline](benchmarks/regression-baseline.txt); run
+`mill benchmarks.updateRegressionBaseline` to accept an intended change.
 
 The Nix shell also provides the hash-pinned Phoenix client resources required by
 the Mill build. Run maintainer builds inside `nix develop`; published artifacts
@@ -87,7 +91,8 @@ documentation tools through `ScalaCommon.forkArgs`, which the browser-test apps
 override.
 
 The [snapshot workflow](.github/workflows/publish-snapshot.yml) also runs the
-root-slice and upstream Phoenix LiveView browser suites.
+root-slice and upstream Phoenix LiveView browser suites, and the benchmark
+regression check.
 
 Report bugs, missing behavior, and focused feature requests through
 [GitHub issues](https://github.com/phfroidmont/scalive/issues).

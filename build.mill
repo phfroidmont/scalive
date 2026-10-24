@@ -305,6 +305,26 @@ object benchmarks extends ScalaCommon with JmhModule:
   def jmhCoreVersion = "1.37"
   def mvnDeps        = super.mvnDeps() ++ Seq(mvn"org.openjdk.jol:jol-core:0.17")
 
+  // Allocation per benchmark and heap retained per row, against `regression-baseline.txt`.
+  def checkRegressions() = Task.Command(exclusive = true)(regressionGate("check")())
+
+  def updateRegressionBaseline() = Task.Command(exclusive = true)(regressionGate("update")())
+
+  private def regressionGate(mode: String) = Task.Anon {
+    val (_, resources) = generateBenchmarkSources()
+    Jvm.callProcess(
+      mainClass = "scalive.benchmarks.RegressionGate",
+      classPath = (runClasspath() ++ generatorDeps()).map(_.path) ++
+        Seq(jmhGeneratedSources().path, resources.path),
+      mainArgs = Seq(mode, (moduleDir / "regression-baseline.txt").toString),
+      jvmArgs = forkArgs(),
+      cwd = Task.dest,
+      stdin = os.Inherit,
+      stdout = os.Inherit
+    )
+    ()
+  }
+
 object e2eApp extends ScalaCommon with NpmAssets:
   def moduleDeps = Seq(scalive) ++ scalive.bundledModuleDeps
   def mvnDeps    = Seq(mvn"dev.zio::zio-logging:2.5.3")

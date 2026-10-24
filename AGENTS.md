@@ -21,6 +21,8 @@ Some example commands you can use:
 - `mill --ticker false documentation.check` (includes the public API check)
 - `mill --ticker false documentation.pipeline.updateApiSnapshot` (after public API changes)
 - `./scripts/e2e-run-upstream.sh` and `./scripts/e2e-run-e2e-app.sh` (after browser-visible changes)
+- `mill --ticker false benchmarks.checkRegressions` (after render, encoder or runtime changes)
+- `mill --ticker false benchmarks.updateRegressionBaseline` (after an intended allocation or memory change)
 
 When an API change breaks callers, migrate all of them in the same change: repository code,
 Scaladoc, the guides in `documentation/content`, fixtures, examples, and the API snapshot.

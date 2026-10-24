@@ -2,6 +2,8 @@ package scalive.render
 
 import java.util.Locale
 import scala.collection.mutable.ArrayBuffer
+import scala.util.boundary
+import scala.util.boundary.break
 import scala.util.control.NonFatal
 
 import zio.IO
@@ -1360,7 +1362,7 @@ object RenderProgram:
                       transaction,
                       bindings
                     )
-      children <- traverse(template.children.zipWithIndex) { case (child, index) =>
+      children <- traverseIndexed(template.children) { (child, index) =>
                     val previousChild = previous.flatMap(_.children.lift(index))
                     evaluateNode(
                       child,
@@ -1392,11 +1394,10 @@ object RenderProgram:
     transaction: SignalEvaluation.Transaction,
     bindings: BindingTable.Builder[Msg]
   ): Either[RenderError, Vector[EvaluatedAttribute]] =
-    val indexed = template.attributes.zipWithIndex
     // Phoenix gates form recovery on the old and new phx-change values matching exactly.
     val formIdIndex = Option
       .when(template.tag.equalsIgnoreCase("form"))(
-        indexed.indexWhere((attribute, _) => attribute.name.equalsIgnoreCase("id"))
+        template.attributes.indexWhere(_.name.equalsIgnoreCase("id"))
       ).filter(_ >= 0)
 
     val evaluatedFormId = formIdIndex match
@@ -1413,7 +1414,7 @@ object RenderProgram:
 
     evaluatedFormId.flatMap { evaluatedId =>
       val formId = evaluatedId.flatMap(_._3)
-      traverse(indexed) { case (attribute, index) =>
+      traverseIndexed(template.attributes) { (attribute, index) =>
         evaluatedId match
           case Some((idIndex, value, _)) if index == idIndex => Right(value)
           case _                                             =>
@@ -1454,10 +1455,8 @@ object RenderProgram:
                           transaction,
                           bindings
                         )
-          children <- traverse(element.children.zipWithIndex) { case (child, index) =>
-                        val previousChild = previous
-                          .collect { case node: EvaluatedNode.Element => node }
-                          .flatMap(_.children.lift(index))
+          children <- traverseIndexed(element.children) { (child, index) =>
+                        val previousChild = previousElement.flatMap(_.children.lift(index))
                         evaluateNode(
                           child,
                           previousChild,
@@ -1486,7 +1485,7 @@ object RenderProgram:
                                .getOrElse(Vector.empty)
           children <- template.branches.find(_._1 == selected.value) match
                         case Some((_, branch)) =>
-                          traverse(branch.zipWithIndex) { (node, index) =>
+                          traverseIndexed(branch) { (node, index) =>
                             evaluateNode(
                               node,
                               previousChildren.lift(index),
@@ -1505,8 +1504,7 @@ object RenderProgram:
               if old.id == template.id && sameInstances(old.children, children) =>
             old
           case Some(old: EvaluatedNode.Choice)
-              if old.id == template.id &&
-                old.children.map(_.revision) == children.map(_.revision) =>
+              if old.id == template.id && sameBy(old.children, children)(_.revision) =>
             old.copy(children = children)
           case _ => EvaluatedNode.Choice(template.id, children, revision)
       case template: KeyedTemplate[Msg] =>
@@ -1866,7 +1864,7 @@ object RenderProgram:
         case Some(node)
             if node.id == id && (node.identity eq stream.identity) &&
               node.generation == stream.generation &&
-              node.rows.map(_.child.revision) == rows.map(_.child.revision) =>
+              sameBy(node.rows, rows)(_.child.revision) =>
           node.copy(rows = rows, operations = operations)
         case _ =>
           EvaluatedNode.Stream(id, stream.identity, stream.generation, rows, operations, revision)
@@ -2208,8 +2206,8 @@ object RenderProgram:
     old match
       case Some(node) if node.id == id && sameRows(node.rows, rows) => node
       case Some(node)
-          if node.id == id && node.rows.map(_.id) == rows.map(_.id) &&
-            node.rows.map(_.child.revision) == rows.map(_.child.revision) =>
+          if node.id == id && sameBy(node.rows, rows)(_.id) &&
+            sameBy(node.rows, rows)(_.child.revision) =>
         node.copy(rows = rows)
       case _ => EvaluatedNode.Keyed(id, rows, revision)
 
@@ -2534,8 +2532,8 @@ object RenderProgram:
         node
       case Some(node)
           if node.id == template.id && node.tag == template.tag && node.void == template.void &&
-            node.attributes.map(_.revision) == attributes.map(_.revision) &&
-            node.children.map(_.revision) == children.map(_.revision) =>
+            sameBy(node.attributes, attributes)(_.revision) &&
+            sameBy(node.children, children)(_.revision) =>
         node.copy(attributes = attributes, children = children)
       case _ =>
         EvaluatedNode.Element(
@@ -2546,6 +2544,17 @@ object RenderProgram:
           children,
           revision
         )
+
+  // Inline, so comparing ids or revisions neither boxes them nor maps the vectors to compare.
+  private inline def sameBy[A, B](
+    previous: Vector[A],
+    current: Vector[A]
+  )(
+    inline key: A => B
+  ): Boolean =
+    previous.length == current.length && previous.indices.forall(index =>
+      key(previous(index)) == key(current(index))
+    )
 
   // Keeping the previous instance of an unchanged node lets the differ skip it by identity.
   private def sameInstances[A <: AnyRef](previous: Vector[A], current: Vector[A]): Boolean =
@@ -2561,18 +2570,29 @@ object RenderProgram:
       previous(index).id == current(index).id && (previous(index).child eq current(index).child)
     )
 
+  private def traverseIndexed[A, B](
+    values: Vector[A]
+  )(
+    f: (A, Int) => Either[RenderError, B]
+  ): Either[RenderError, Vector[B]] =
+    var index = -1
+    traverse(values) { value =>
+      index += 1
+      f(value, index)
+    }
+
   private def traverse[A, B](
     values: Vector[A]
   )(
     f: A => Either[RenderError, B]
   ): Either[RenderError, Vector[B]] =
-    val results  = Vector.newBuilder[B]
-    val iterator = values.iterator
-    while iterator.hasNext do
-      f(iterator.next()) match
-        case Right(value) => results += value
-        case Left(error)  => return Left(error)
-    Right(results.result())
+    // Mapping allocates only the results, where a builder would allocate room for 32 of them.
+    boundary:
+      Right(values.map { value =>
+        f(value) match
+          case Right(result) => result
+          case Left(error)   => break(Left(error))
+      })
 
   private def compositeTokens(value: String): Vector[String] =
     val tokens     = Vector.newBuilder[String]

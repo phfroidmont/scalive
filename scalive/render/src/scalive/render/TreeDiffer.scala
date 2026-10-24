@@ -79,7 +79,7 @@ object TreeDiffer:
             diffNode(oldChild, newChild)
           case _ => Vector(RenderChange.Replace(left.id, right))
       case (left: EvaluatedNode.Choice, right: EvaluatedNode.Choice) if left.id == right.id =>
-        if left.children.map(_.id) == right.children.map(_.id) then
+        if sameBy(left.children, right.children)(_.id) then
           left.children.zip(right.children).flatMap(diffNode)
         else Vector(RenderChange.Replace(left.id, right))
       case (left: EvaluatedNode.Keyed, right: EvaluatedNode.Keyed) if left.id == right.id =>
@@ -90,7 +90,7 @@ object TreeDiffer:
               KeyedRowChange.Retain(newRow.id, diffNode(oldRow.child, newRow.child))
             case None => KeyedRowChange.Insert(newRow)
         }
-        val sameOrder     = left.rows.map(_.id) == right.rows.map(_.id)
+        val sameOrder     = sameBy(left.rows, right.rows)(_.id)
         val unchangedRows = rows.forall {
           case KeyedRowChange.Retain(_, changes) => changes.isEmpty
           case KeyedRowChange.Insert(_)          => false
@@ -142,9 +142,18 @@ object TreeDiffer:
     current: EvaluatedNode.Element
   ): Boolean =
     previous.id == current.id && previous.tag == current.tag && previous.void == current.void &&
-      previous.attributes.length == current.attributes.length &&
-      previous.attributes.zip(current.attributes).forall { case (left, right) =>
-        left.name == right.name && left.slot == right.slot
-      } && previous.children.length == current.children.length &&
-      previous.children.zip(current.children).forall { case (left, right) => left.id == right.id }
+      sameBy(previous.attributes, current.attributes)(_.name) &&
+      sameBy(previous.attributes, current.attributes)(_.slot) &&
+      sameBy(previous.children, current.children)(_.id)
+
+  // Inline, so comparing ids neither boxes them nor maps the vectors to compare.
+  private inline def sameBy[A, B](
+    previous: Vector[A],
+    current: Vector[A]
+  )(
+    inline key: A => B
+  ): Boolean =
+    previous.length == current.length && previous.indices.forall(index =>
+      key(previous(index)) == key(current(index))
+    )
 end TreeDiffer

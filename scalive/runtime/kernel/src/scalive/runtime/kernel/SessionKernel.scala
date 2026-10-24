@@ -1748,9 +1748,10 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                               ResourceIndex.empty[ManagedResource]
                             ),
                           reconciledDraft.resourceOperations,
-                          nestedComponents.forest.components.map(_.id).toSet,
-                          previous.toVector.flatMap(_.components.allValues.map(_.id)).toSet ++
-                            nestedComponents.forest.components.map(_.id),
+                          finalComponentIds,
+                          id =>
+                            finalComponentIds(id) ||
+                              previous.exists(_.components.contains(id)),
                           auxiliaryScope
                         )
                       reservation <- reserve(auxiliaryScope, awaitOutput)
@@ -2284,7 +2285,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
           requirement.applicationId
         )
         val actionPriority = action.exists { case (target, _) =>
-          previous.byKey.get(key).exists(_.id == target)
+          previous.byKey(key).exists(_.id == target)
         }
         if actionPriority then -2
         else if pendingUpdates.contains(key) then -1
@@ -2334,7 +2335,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
           )
         )
       else
-        val previous = previousForest.byKey.get(key)
+        val previous = previousForest.byKey(key)
         unchangedSubtree(requirement, previous, previousForest, action, draft, updates).flatMap {
           case Some(subtree) => keep(requirement, subtree, identities, staged)
           case None          =>
@@ -2739,9 +2740,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                                     finalChildResult.map(_._1),
                                     after.state,
                                     postChildRequest,
-                                    requirement.outputMapper.map(mapper =>
-                                      (value: O) => mapper(value).asInstanceOf[Msg]
-                                    ),
+                                    requirement.outputMapper.map(_.asInstanceOf[O => Msg]),
                                     erasedPrevious,
                                     discardEnvironmentCandidate(id, old, after.state) *>
                                       ZIO.when(old.isEmpty)(program.close).unit
@@ -2893,8 +2892,8 @@ final private[scalive] class SessionKernel[Msg, Model] private (
   private def prepareManagedResources(
     initial: ResourceIndex[ManagedResource],
     operations: Vector[ResourceOperation],
-    activeComponents: Set[ComponentInstanceId],
-    retainedComponents: Set[ComponentInstanceId],
+    activeComponents: ComponentInstanceId => Boolean,
+    retainedComponents: ComponentInstanceId => Boolean,
     candidateScope: CandidateScope
   ): ZIO[Any, SessionFailure, ManagedPreparation] =
     val activeOperations = operations.filter {
@@ -3058,11 +3057,12 @@ final private[scalive] class SessionKernel[Msg, Model] private (
       }
   end prepareManagedResources
 
-  private def ownerIsActive(owner: OwnerId, activeComponents: Set[ComponentInstanceId]): Boolean =
+  private def ownerIsActive(owner: OwnerId, activeComponents: ComponentInstanceId => Boolean)
+    : Boolean =
     owner match
       case OwnerId.Root(ownerLifecycle)                 => ownerLifecycle == lifecycle
       case OwnerId.Component(ownerLifecycle, component) =>
-        ownerLifecycle == lifecycle && activeComponents.contains(component)
+        ownerLifecycle == lifecycle && activeComponents(component)
 
   private def prepareAsyncResource(
     token: ResourceToken,
@@ -3363,15 +3363,12 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                     candidate.render.commit.retiring(committed.render, now)
                   )
                 )
-      activeIds = components.iterator.map(_.id).toSet
-      retained  =
+      retained =
         previous
           .map(_.components).getOrElse(ComponentForest.empty.asInstanceOf[ComponentForest[Msg]])
-      acted   = candidate.components.dormantAction.map(_.component)
-      dormant = acted
-                  .fold(retained)(retained.updated).allValues
-                  .filterNot(component => activeIds.contains(component.id))
-      forest    = ComponentForest(candidate.components.roots, components ++ dormant)
+      // A dormant component that handled the action, unless the page renders it again.
+      acted     = candidate.components.dormantAction.map(_.component)
+      forest    = retained.committing(candidate.components.roots, acted.toVector ++ components)
       published = if publish then render.tree else previous.fold(render.tree)(_.published)
       next      = Committed(
                candidate.draft.model,
@@ -3486,7 +3483,9 @@ final private[scalive] class SessionKernel[Msg, Model] private (
 
     ZIO.uninterruptible(commitTail.exit).flatMap {
       case Exit.Success(result) =>
-        ZIO.uninterruptible(retire(previous, result.value) *> candidate.topology.retire).as(result)
+        ZIO
+          .uninterruptible(retire(previous, result.value, candidate) *> candidate.topology.retire)
+          .as(result)
       case Exit.Failure(cause) =>
         val candidateCleanup = RuntimeCleanup.all(
           Vector(
@@ -3510,32 +3509,34 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     }
   end commit
 
+  /** Closes what `candidate` replaced: the previous root render and auxiliary scope, and the render
+    * and environment state each component it committed no longer holds. A commit removes no
+    * component, so the others are as they were.
+    */
   private def retire(
     previous: Option[Committed[Msg, Model]],
-    next: Committed[Msg, Model]
+    next: Committed[Msg, Model],
+    candidate: TurnCandidate[Msg, Model]
   ): ZIO[Any, SessionFailure, Unit] =
     ZIO.foreachDiscard(previous) { committed =>
       val rootEffects = Vector[UIO[Unit]](
         committed.render.close,
         committed.auxiliaryScope.closeFromOwner
       )
-      val componentEffects = committed.components.allValues.flatMap { component =>
-        val retained      = next.components.get(component.id)
-        val renderEffects = retained match
-          // A kept component, or a dormant one that handled an event, keeps its render.
-          case Some(value) if value.render eq component.render => Vector.empty
-          case _                                               => Vector(component.render.close)
-        val ownershipEffects = retained match
-          case Some(value) if value.environmentState.value eq component.environmentState.value =>
-            Vector.empty
-          case Some(_) =>
-            Vector(componentEnvironment.discard(component.id, component.environmentState))
-          case None =>
-            Vector(
-              component.program.close,
-              componentEnvironment.close(component.id, component.environmentState)
-            )
-        renderEffects ++ ownershipEffects
+      val turnComponents = candidate.components.dormantAction.map(_.component.id).toVector ++
+        candidate.components.components.map(_.id)
+      val componentEffects = turnComponents.flatMap { id =>
+        (committed.components.get(id), next.components.get(id)) match
+          case (Some(replaced), Some(value)) if !(replaced eq value) =>
+            // A kept component, or a dormant one that handled an event, keeps its render.
+            val renderEffects =
+              if value.render eq replaced.render then Vector.empty
+              else Vector(replaced.render.close)
+            val ownershipEffects =
+              if value.environmentState.value eq replaced.environmentState.value then Vector.empty
+              else Vector(componentEnvironment.discard(id, replaced.environmentState))
+            renderEffects ++ ownershipEffects
+          case _ => Vector.empty
       }
       ZIO.foreach(rootEffects ++ componentEffects)(_.exit).flatMap { exits =>
         val failures = exits.collect { case Exit.Failure(cause) => cause }
@@ -3648,7 +3649,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
       case value: ComponentDispatch.OutputInstance[?, ?, ?, ?] =>
         value.instance.component -> value.instance.id
     val key = ComponentKey(ComponentDefinitionIdentity(definition), applicationId)
-    forest.byKey.get(key).map(_.id).toRight(SessionRejection.UnknownComponentTarget)
+    forest.byKey(key).map(_.id).toRight(SessionRejection.UnknownComponentTarget)
 
   private def stageCandidateNavigation(
     state: SessionState.Active[Msg, Model],
@@ -4212,7 +4213,9 @@ final private[scalive] class SessionKernel[Msg, Model] private (
       ZIO.succeed(_)
     )
 
-  private def closeCommitted(committed: Committed[Msg, Model]): UIO[Unit] =
+  // Every commit installs the close of its state, which runs only if the session ends while that state
+  // is current, so its effects are built then.
+  private def closeCommitted(committed: Committed[Msg, Model]): UIO[Unit] = ZIO.suspendSucceed {
     val componentCleanup = committed.components.allValues.map { component =>
       RuntimeCleanup.all(
         Vector(
@@ -4230,6 +4233,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
         committed.auxiliaryScope.closeFromOwner
       ) ++ componentCleanup
     )
+  }
 
   private def retireUploads(plan: UploadRetirementPlan): UIO[Unit] =
     logic

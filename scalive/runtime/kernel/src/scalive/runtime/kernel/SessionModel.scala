@@ -401,7 +401,12 @@ final private[kernel] case class MountedComponentValue[OwnerMsg, Props0, Message
     program.rendersAgain((props, model, state), render)
 
   def declaredBy(requirement: ComponentRequirement[?]): MountedComponent[OwnerMsg] =
-    copy(outputMapper = requirement.outputMapper.map(_.asInstanceOf[Output0 => OwnerMsg]))
+    val declared = requirement.outputMapper.map(_.asInstanceOf[Output0 => OwnerMsg])
+    // A template declares a component with the same mapper each time it renders.
+    val same = (outputMapper, declared) match
+      case (Some(current), Some(next)) => current eq next
+      case (current, next)             => current.isEmpty && next.isEmpty
+    if same then this else copy(outputMapper = declared)
 
   def retiringBindingsOf(
     previous: MountedComponent[OwnerMsg],
@@ -411,10 +416,15 @@ final private[kernel] case class MountedComponentValue[OwnerMsg, Props0, Message
     copy(render = render.retiring(previous.render.asInstanceOf[CommittedRender[Message0]], now))
 end MountedComponentValue
 
+/** The components of a page, by id, including those it no longer renders but the browser has not
+  * destroyed yet. A commit replaces the components its turn rendered or kept and adds the new ones;
+  * only a destruction removes one, so a turn costs what it changed, not what the page holds.
+  */
 final private[scalive] case class ComponentForest[OwnerMsg] private (
   roots: Vector[ComponentInstanceId],
   private val entries: Map[ComponentInstanceId, MountedComponent[OwnerMsg]],
-  private val refs: Map[AnyRef, ComponentInstanceId]):
+  private val refs: Map[AnyRef, ComponentInstanceId],
+  private val keys: Map[ComponentKey, ComponentInstanceId]):
   def get(id: ComponentInstanceId): Option[MountedComponent[OwnerMsg]] = entries.get(id)
   def values: Vector[MountedComponent[OwnerMsg]]                       =
     def descendants(ids: Vector[ComponentInstanceId]): Vector[MountedComponent[OwnerMsg]] =
@@ -422,12 +432,36 @@ final private[scalive] case class ComponentForest[OwnerMsg] private (
         entries.get(id).toVector.flatMap(value => value +: descendants(value.children))
       )
     descendants(roots)
+  private[kernel] def contains(id: ComponentInstanceId): Boolean         = entries.contains(id)
   private[kernel] lazy val allValues: Vector[MountedComponent[OwnerMsg]] =
     entries.values.toVector.sortBy(_.id.value)
+  private[kernel] def byKey(key: ComponentKey): Option[MountedComponent[OwnerMsg]] =
+    keys.get(key).flatMap(entries.get)
   private[kernel] def isDormant(id: ComponentInstanceId): Boolean =
     entries.contains(id) && !values.exists(_.id == id)
+
+  /** This forest after a turn that renders `roots` and commits `components`. */
+  private[kernel] def committing(
+    roots: Vector[ComponentInstanceId],
+    components: Iterable[MountedComponent[OwnerMsg]]
+  ): ComponentForest[OwnerMsg] =
+    var nextEntries = entries
+    var nextRefs    = refs
+    var nextKeys    = keys
+    components.foreach { component =>
+      entries.get(component.id) match
+        case Some(current) if current eq component => ()
+        case Some(_)                               =>
+          nextEntries = nextEntries.updated(component.id, component)
+        case None =>
+          nextEntries = nextEntries.updated(component.id, component)
+          nextRefs = nextRefs.updated(component.ref.asInstanceOf[AnyRef], component.id)
+          nextKeys = nextKeys.updated(component.key, component.id)
+    }
+    ComponentForest(roots, nextEntries, nextRefs, nextKeys)
+
   private[kernel] def updated(value: MountedComponent[OwnerMsg]): ComponentForest[OwnerMsg] =
-    ComponentForest(roots, entries.updated(value.id, value), refs)
+    committing(roots, Vector(value))
   private[kernel] def removeDormant(
     tokens: Set[AnyRef]
   ): (ComponentForest[OwnerMsg], Vector[MountedComponent[OwnerMsg]]) =
@@ -443,22 +477,16 @@ final private[scalive] case class ComponentForest[OwnerMsg] private (
     val removed  = removedIds.toVector.flatMap(entries.get).sortBy(_.id.value)
     val retained = allValues.filterNot(component => removedIds.contains(component.id))
     ComponentForest(roots, retained) -> removed
-  // Staging looks up each rendered component here, so it is built once per forest.
-  private[kernel] lazy val byKey: Map[ComponentKey, MountedComponent[OwnerMsg]] =
-    entries.valuesIterator.map(component => component.key -> component).toMap
 end ComponentForest
 
 private[scalive] object ComponentForest:
-  val empty: ComponentForest[Nothing] = ComponentForest(Vector.empty, Map.empty, Map.empty)
+  val empty: ComponentForest[Nothing] =
+    ComponentForest(Vector.empty, Map.empty, Map.empty, Map.empty)
   private[kernel] def apply[OwnerMsg](
     roots: Vector[ComponentInstanceId],
     values: Vector[MountedComponent[OwnerMsg]]
   ): ComponentForest[OwnerMsg] =
-    ComponentForest(
-      roots,
-      values.iterator.map(value => value.id -> value).toMap,
-      values.iterator.map(value => value.ref.asInstanceOf[AnyRef] -> value.id).toMap
-    )
+    ComponentForest.empty.asInstanceOf[ComponentForest[OwnerMsg]].committing(roots, values)
 
 /** Opaque candidate-owned connection context and dynamic-hook state. */
 opaque type ComponentEnvironmentState = AnyRef

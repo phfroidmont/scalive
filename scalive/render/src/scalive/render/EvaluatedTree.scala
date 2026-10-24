@@ -33,15 +33,51 @@ sealed trait EvaluatedNode:
   /** Whether this subtree holds a component or a nested LiveView, which runtime resolution fills
     * in. Resolution keeps a subtree without either as it is.
     */
-  private[render] lazy val holdsResolvable: Boolean = this match
-    case element: EvaluatedNode.Element => element.children.exists(_.holdsResolvable)
-    case flash: EvaluatedNode.Flash     => flash.child.exists(_.holdsResolvable)
-    case choice: EvaluatedNode.Choice   => choice.children.exists(_.holdsResolvable)
-    case keyed: EvaluatedNode.Keyed     => keyed.rows.exists(_.child.holdsResolvable)
+  private[render] def holdsResolvable: Boolean = resolvability != Resolvability.Static
+
+  /** Whether this subtree holds a component or a nested LiveView that is not resolved yet, here or
+    * within what is resolved in it.
+    */
+  private[render] def holdsUnresolved: Boolean = resolvability == Resolvability.Unresolved
+
+  // Computed once per node. A render kept across turns keeps its nodes, so checking that it is
+  // finalized again costs only the nodes the turn made.
+  private[render] lazy val resolvability: Resolvability = this match
+    case element: EvaluatedNode.Element => Resolvability.of(element.children)
+    case flash: EvaluatedNode.Flash     => Resolvability.of(flash.child)
+    case choice: EvaluatedNode.Choice   => Resolvability.of(choice.children)
+    case keyed: EvaluatedNode.Keyed     => Resolvability.of(keyed.rows.view.map(_.child))
     // Stream operations may insert rows that are not among the rendered ones.
-    case _: EvaluatedNode.Stream                              => true
-    case _: EvaluatedNode.Component | _: EvaluatedNode.Nested => true
-    case _: EvaluatedNode.Text                                => false
+    case stream: EvaluatedNode.Stream =>
+      Resolvability.Resolved.max(Resolvability.of(stream.rows.view.map(_.child)))
+    case component: EvaluatedNode.Component =>
+      component.resolution.fold(Resolvability.Unresolved)(value =>
+        Resolvability.Resolved.max(value.child.root.resolvability)
+      )
+    case nested: EvaluatedNode.Nested =>
+      nested.resolution.fold(Resolvability.Unresolved)(value =>
+        Resolvability.Resolved.max(Resolvability.of(value.child.map(_.root)))
+      )
+    case _: EvaluatedNode.Text => Resolvability.Static
+end EvaluatedNode
+
+/** What resolution has left to fill in a subtree, in increasing order. */
+private[render] enum Resolvability:
+  // Nothing: the subtree holds no component and no nested LiveView.
+  case Static
+  // Components or nested LiveViews, all of them resolved.
+  case Resolved
+  case Unresolved
+
+  def max(other: Resolvability): Resolvability = if other.ordinal > ordinal then other else this
+
+private[render] object Resolvability:
+  def of(nodes: Iterable[EvaluatedNode]): Resolvability =
+    val iterator = nodes.iterator
+    var result   = Static
+    while result != Unresolved && iterator.hasNext do
+      result = result.max(iterator.next().resolvability)
+    result
 
 object EvaluatedNode:
   final case class Element private[render] (
@@ -310,7 +346,7 @@ private object CandidateCommit:
 
 object EvaluatedTree:
   private[render] def unresolvedComponents(node: EvaluatedNode): Vector[TemplateId] = node match
-    case _ if !node.holdsResolvable     => Vector.empty
+    case _ if !node.holdsUnresolved     => Vector.empty
     case element: EvaluatedNode.Element => element.children.flatMap(unresolvedComponents)
     case flash: EvaluatedNode.Flash     => flash.child.toVector.flatMap(unresolvedComponents)
     case choice: EvaluatedNode.Choice   => choice.children.flatMap(unresolvedComponents)
@@ -325,7 +361,7 @@ object EvaluatedTree:
     case _: EvaluatedNode.Text => Vector.empty
 
   private[render] def unresolvedNested(node: EvaluatedNode): Vector[TemplateId] = node match
-    case _ if !node.holdsResolvable     => Vector.empty
+    case _ if !node.holdsUnresolved     => Vector.empty
     case element: EvaluatedNode.Element => element.children.flatMap(unresolvedNested)
     case flash: EvaluatedNode.Flash     => flash.child.toVector.flatMap(unresolvedNested)
     case choice: EvaluatedNode.Choice   => choice.children.flatMap(unresolvedNested)

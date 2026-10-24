@@ -628,6 +628,63 @@ object EvaluatedTree:
       }
       Right(resolved.fold(nodes)(_.result()))
 
+  /** Whether `node` is `evaluated`, or what resolving components and nested LiveViews into
+    * `evaluated` made of it. Resolution keeps a node that holds neither as it is, and replaces one
+    * that does by a copy that differs only in what it holds and in their resolutions.
+    */
+  private[render] def resolvedFrom(node: EvaluatedNode, evaluated: EvaluatedNode): Boolean =
+    if node eq evaluated then true
+    else if !evaluated.holdsResolvable || node.id != evaluated.id ||
+      node.revision != evaluated.revision
+    then false
+    else
+      (node, evaluated) match
+        case (node: EvaluatedNode.Element, evaluated: EvaluatedNode.Element) =>
+          (node.attributes eq evaluated.attributes) &&
+          pairwise(node.children, evaluated.children)(resolvedFrom)
+        case (node: EvaluatedNode.Flash, evaluated: EvaluatedNode.Flash) =>
+          (node.child, evaluated.child) match
+            case (Some(child), Some(evaluatedChild)) => resolvedFrom(child, evaluatedChild)
+            case _                                   => false
+        case (node: EvaluatedNode.Choice, evaluated: EvaluatedNode.Choice) =>
+          pairwise(node.children, evaluated.children)(resolvedFrom)
+        case (node: EvaluatedNode.Keyed, evaluated: EvaluatedNode.Keyed) =>
+          pairwise(node.rows, evaluated.rows)((row, evaluatedRow) =>
+            row.id == evaluatedRow.id && resolvedFrom(row.child, evaluatedRow.child)
+          )
+        case (node: EvaluatedNode.Stream, evaluated: EvaluatedNode.Stream) =>
+          (node.identity eq evaluated.identity) && node.generation == evaluated.generation &&
+          (node.operations.deletes eq evaluated.operations.deletes) &&
+          node.operations.reset == evaluated.operations.reset &&
+          pairwise(node.rows, evaluated.rows)(streamRowResolvedFrom) &&
+          pairwise(node.operations.inserts, evaluated.operations.inserts)(
+            (insert, evaluatedInsert) =>
+              insert.at == evaluatedInsert.at && insert.limit == evaluatedInsert.limit &&
+                insert.updateOnly == evaluatedInsert.updateOnly &&
+                streamRowResolvedFrom(insert.row, evaluatedInsert.row)
+          )
+        case (node: EvaluatedNode.Component, evaluated: EvaluatedNode.Component) =>
+          node.applicationId == evaluated.applicationId
+        case (node: EvaluatedNode.Nested, evaluated: EvaluatedNode.Nested) =>
+          node.applicationId == evaluated.applicationId
+        case _ => false
+
+  private def streamRowResolvedFrom(
+    row: EvaluatedNode.StreamRow,
+    evaluated: EvaluatedNode.StreamRow
+  ): Boolean =
+    row.domId == evaluated.domId && resolvedFrom(row.child, evaluated.child)
+
+  private inline def pairwise[A](
+    nodes: Vector[A],
+    evaluated: Vector[A]
+  )(
+    inline same: (A, A) => Boolean
+  ): Boolean =
+    nodes.length == evaluated.length && nodes.indices.forall(index =>
+      same(nodes(index), evaluated(index))
+    )
+
   private def validateUniqueComponentTokens(root: EvaluatedNode): Either[RenderError, Unit] =
     val seen = IdentityHashMap[Object, java.lang.Boolean]()
 

@@ -45,6 +45,9 @@ object UnchangedCollectionSpec extends ZIOSpecDefault:
   private def instances: IO[RenderError, Instances] =
     ZIO.fromEither(badgeChild).flatMap(_.evaluate(())).map(child => Instances(child.commit))
 
+  private def declared(candidate: RenderCandidate[?]): Vector[(String, Any)] =
+    candidate.componentRequirements.map(requirement => requirement.applicationId -> requirement.props)
+
   override def spec = suite("UnchangedCollectionSpec")(
     test("reuses a collection whose items and outside signals did not change") {
       val compiled = RenderProgram.compile[Page, String] { page =>
@@ -404,6 +407,146 @@ object UnchangedCollectionSpec extends ZIOSpecDefault:
         resolved   <- program.evaluate(Page(0, 0, rows)).flatMap(resolution.resolve)
         again      <- resolution.resolve(resolved)
       yield assertTrue(again.tree.root eq resolved.tree.root)
+    },
+    test("reuses the rows of a collection that hold components when nothing they read changed") {
+      var labels   = 0
+      val compiled = RenderProgram.compile[Page, Nothing] { page =>
+        div(
+          span(page.map(_.counter.toString)),
+          component(Badge, "first").render(page.map(_.counter.toString)),
+          page.map(_.rows).splitBy(_.id) { (id, row) =>
+            li(component(Badge, s"badge-$id").render(row.map { value =>
+              labels += 1
+              value.label
+            }))
+          },
+          component(Badge, "last").render("last")
+        )
+      }
+      val changed = rows.updated(1, Row(2, "TWO"))
+      def row(tree: EvaluatedTree, index: Int) = keyed(tree, 2).rows(index).child
+
+      for
+        program    <- ZIO.fromEither(compiled)
+        resolution <- instances
+        base       <- program.evaluate(Page(0, 0, rows)).flatMap(resolution.resolve).map(_.commit)
+        before = labels
+        unrelated <- program.evaluate(Page(1, 0, rows), Some(base)).flatMap(resolution.resolve)
+        afterUnrelated = labels
+        committed      = unrelated.commit
+        updated <- program.evaluate(Page(1, 0, changed), Some(committed))
+        afterUpdated = labels
+        fresh <- program.evaluate(Page(1, 0, changed))
+      yield assertTrue(
+        afterUnrelated == before,
+        keyed(unrelated.tree, 2) eq keyed(base.tree, 2),
+        declared(unrelated) == Vector(
+          "first"   -> "1",
+          "badge-1" -> "one",
+          "badge-2" -> "two",
+          "badge-3" -> "three",
+          "last"    -> "last"
+        ),
+        afterUpdated - afterUnrelated == 1,
+        row(updated.tree, 0) eq row(committed.tree, 0),
+        !(row(updated.tree, 1) eq row(committed.tree, 1)),
+        row(updated.tree, 2) eq row(committed.tree, 2),
+        declared(updated) == declared(fresh),
+        declared(updated)(2) == "badge-2" -> "TWO"
+      )
+    },
+    test("evaluates the rows holding components again when a signal they read from outside changes") {
+      val compiled = RenderProgram.compile[Page, Nothing] { page =>
+        val selected = page.map(_.selected)
+        div(page.map(_.rows).splitBy(_.id) { (id, row) =>
+          li(component(Badge, s"badge-$id").render(row.combineWithFn(selected) { (row, selected) =>
+            if row.id == selected then s"${row.label}*" else row.label
+          }))
+        })
+      }
+
+      for
+        program    <- ZIO.fromEither(compiled)
+        resolution <- instances
+        base       <- program.evaluate(Page(0, 1, rows)).flatMap(resolution.resolve).map(_.commit)
+        selected   <- program.evaluate(Page(0, 2, rows), Some(base))
+      yield assertTrue(
+        declared(selected) == Vector("badge-1" -> "one", "badge-2" -> "two*", "badge-3" -> "three")
+      )
+    },
+    test("declares the components of kept nested rows where evaluating them would") {
+      final case class Group(id: Int, rows: Vector[Row])
+      final case class Groups(counter: Int, groups: Vector[Group])
+      val compiled = RenderProgram.compile[Groups, Nothing] { model =>
+        div(
+          component(Badge, "counter").render(model.map(_.counter.toString)),
+          model.map(_.groups).splitBy(_.id) { (groupId, group) =>
+            ul(
+              component(Badge, s"group-$groupId").render("group"),
+              group.map(_.rows).splitBy(_.id) { (id, row) =>
+                li(component(Badge, s"badge-$id").render(row.map(_.label)))
+              }
+            )
+          }
+        )
+      }
+      val groups  = Vector(Group(1, rows.take(2)), Group(2, rows.drop(2)))
+      val changed = groups.updated(0, Group(1, Vector(Row(1, "ONE"), Row(2, "two"))))
+      def group(tree: EvaluatedTree, index: Int) = keyed(tree, 1).rows(index).child
+
+      for
+        program    <- ZIO.fromEither(compiled)
+        resolution <- instances
+        base <- program.evaluate(Groups(0, groups)).flatMap(resolution.resolve).map(_.commit)
+        unrelated <- program.evaluate(Groups(1, groups), Some(base)).flatMap(resolution.resolve)
+        committed = unrelated.commit
+        updated <- program.evaluate(Groups(1, changed), Some(committed))
+        fresh   <- program.evaluate(Groups(1, changed))
+      yield assertTrue(
+        keyed(unrelated.tree, 1) eq keyed(base.tree, 1),
+        declared(unrelated).map(_._1) ==
+          Vector("counter", "group-1", "badge-1", "badge-2", "group-2", "badge-3"),
+        group(updated.tree, 1) eq group(committed.tree, 1),
+        declared(updated) == declared(fresh),
+        declared(updated)(2) == "badge-1" -> "ONE"
+      )
+    },
+    test("reuses a stream whose rows hold components") {
+      final case class Feed(counter: Int, stream: scalive.streams.LiveStream[Row])
+      val stream = scalive.streams.LiveStream(
+        scalive.streams.LiveStreamIdentity.fresh(),
+        "rows",
+        1L,
+        rows.map(row => scalive.streams.LiveStreamEntry(s"rows-${row.id}", row)),
+        Vector.empty,
+        Vector.empty,
+        reset = false
+      )
+      val compiled = RenderProgram.compile[Feed, Nothing] { feed =>
+        div(
+          component(Badge, "counter").render(feed.map(_.counter.toString)),
+          feed.map(_.stream).renderIn(ul) { row =>
+            li(component(Badge, row.map(row => s"badge-${row.id}")).render(row.map(_.label)))
+          }
+        )
+      }
+      def streamNode(tree: EvaluatedTree) =
+        tree.root.children(1).asInstanceOf[EvaluatedNode.Element].children.head
+
+      for
+        program    <- ZIO.fromEither(compiled)
+        resolution <- instances
+        base      <- program.evaluate(Feed(0, stream)).flatMap(resolution.resolve).map(_.commit)
+        unrelated <- program.evaluate(Feed(1, stream), Some(base)).flatMap(resolution.resolve)
+      yield assertTrue(
+        streamNode(unrelated.tree) eq streamNode(base.tree),
+        declared(unrelated) == Vector(
+          "counter" -> "1",
+          "badge-1" -> "one",
+          "badge-2" -> "two",
+          "badge-3" -> "three"
+        )
+      )
     }
   )
 end UnchangedCollectionSpec

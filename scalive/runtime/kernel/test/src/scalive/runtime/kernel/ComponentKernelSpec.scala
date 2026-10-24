@@ -233,6 +233,48 @@ object ComponentKernelSpec extends ZIOSpecDefault:
         )
       }
     },
+    test("a root turn keeps the rows of a collection that hold components") {
+      ZIO.scoped {
+        val events     = ConcurrentLinkedQueue[String]()
+        val definition = componentDefinition(events)
+        def cards(state: Committed[Int, Int]) =
+          state.render.tree.root.children(1).asInstanceOf[EvaluatedNode.Keyed].rows.map(_.child)
+        def card(state: Committed[Int, Int], id: Int) =
+          state.components.values.find(_.key.applicationId == s"card-$id").get
+        for
+          seen    <- Ref.make(Vector.empty[Int])
+          program <- ZIO.fromEither(
+                       RenderProgram.compile[Int, Int](model =>
+                         div(
+                           model.map(_.toString),
+                           model.map(_ => Vector(1, 2, 3)).splitBy(identity) { (id, item) =>
+                             li(item.map(_.toString), component(definition, s"card-$id").render(item))
+                           }
+                         )
+                       )
+                     )
+          kernel <- SessionKernel.start(config, logic(seen), program, Outbound(), FakeEnvironment(events))
+          before <- kernel.inspect
+          _      <- ZIO.succeed(events.clear())
+          _    <- kernel.submit(SessionCommand.Message(kernel.epoch, 1))
+          root <- kernel.inspect
+          rootEvents    = events.asScala.toVector
+          _       <- kernel.submitComponent(card(root, 2).id, 2)
+          clicked <- kernel.inspect
+        yield assertTrue(
+          rootEvents.isEmpty,
+          cards(root).zip(cards(before)).forall(_ eq _),
+          Vector(1, 2, 3).forall(id => card(root, id).render eq card(before, id).render),
+          cards(clicked)(0) eq cards(root)(0),
+          !(cards(clicked)(1) eq cards(root)(1)),
+          cards(clicked)(2) eq cards(root)(2),
+          !(card(clicked, 2).render eq card(root, 2).render),
+          card(clicked, 1).render eq card(root, 1).render,
+          card(clicked, 3).render eq card(root, 3).render,
+          textValues(clicked.render.tree.root) == Vector("1", "1", "1", "2", "4", "3", "3")
+        )
+      }
+    },
     test("send-update props survive unrelated parent renders") {
       ZIO.scoped {
         val events     = ConcurrentLinkedQueue[String]()

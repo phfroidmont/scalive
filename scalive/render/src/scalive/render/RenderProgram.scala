@@ -311,18 +311,22 @@ object RenderProgram:
     element: ElementTemplate[Msg]):
     def retire(): Unit = scope.close()
 
-  /** A committed row, and the bindings it rendered. */
+  /** A committed row, with the bindings it rendered and the components it declared, in order. */
   final private case class EvaluatedRow[Msg](
     node: EvaluatedNode.Element,
     bindings: BindingTable.Rows[Msg],
-    item: Any)
+    item: Any,
+    components: Vector[ComponentRequirement[Msg]])
 
-  /** The committed rows of a collection or a stream, with what evaluating them read. */
+  /** The committed rows of a collection or a stream, with what evaluating them read, the bindings
+    * they rendered and the components they declared, in order.
+    */
   final private case class EvaluatedRows[+Node <: EvaluatedNode, Msg](
     node: Node,
     signals: SignalEvaluation.RowsEvaluation,
     bindings: BindingTable.Rows[Msg],
-    rows: Map[RowId, EvaluatedRow[Msg]])
+    rows: Map[RowId, EvaluatedRow[Msg]],
+    components: Vector[ComponentRequirement[Msg]])
 
   private object StreamTemplate:
     final class State[A, Msg]:
@@ -451,6 +455,10 @@ object RenderProgram:
     val components = ArrayBuffer.empty[ComponentRequirement[Msg]]
     val nested     = ArrayBuffer.empty[NestedRequirement]
     val streams    = ArrayBuffer.empty[StreamRequirement[Msg]]
+
+    /** The components declared since `count` of them were. */
+    def componentsSince(count: Int): Vector[ComponentRequirement[Msg]] =
+      if count == components.length then Vector.empty else components.view.drop(count).toVector
 
   private object FlashTemplate:
     final class State:
@@ -1558,8 +1566,9 @@ object RenderProgram:
           candidateRows,
           requirements
         )
+      // Signals track a component's declaration. A kept row or collection declares its components
+      // again from what it recorded, and the runtime resolves them into it on every turn.
       case template: ComponentTemplate[Msg] =>
-        transaction.markComponent()
         evaluateComponentRequirement(template.id, template.spec, transaction).map { requirement =>
           requirements.components += requirement
           EvaluatedNode.Component(
@@ -1731,7 +1740,8 @@ object RenderProgram:
     )
 
   /** Evaluates a stream, or keeps its committed node when `unchanged`, the stream is the same, and
-    * every signal its rows read from outside them is unchanged too.
+    * every signal its rows read from outside them is unchanged too. A kept stream declares the
+    * components of its rows again.
     */
   private def evaluateStream[A, Msg](
     id: TemplateId,
@@ -1753,15 +1763,22 @@ object RenderProgram:
   ): Either[RenderError, EvaluatedNode.Stream] =
     val last     = state.lastEvaluated(stream.identity)
     val old      = previous.collect { case value: EvaluatedNode.Stream => value }
-    val reusable = last match
-      case Some(rows) if unchanged && old.exists(_ eq rows.node) && !rows.signals.untracked =>
+    val reusable = (last, old) match
+      case (Some(rows), Some(committed))
+          if unchanged && !rows.signals.untracked &&
+            EvaluatedTree.resolvedFrom(committed, rows.node) =>
         traverse(rows.signals.outside)(transaction.sample(_))
-          .map(samples => Option.when(samples.forall(transaction.unchanged))(rows))
+          .map(samples => Option.when(samples.forall(transaction.unchanged))(rows -> committed))
       case _ => Right(None)
 
     reusable.flatMap {
-      case Some(rows) => bindings.reuseRows(id, rows.bindings).map(_ => rows.node)
-      case None       =>
+      case Some((rows, committed)) =>
+        bindings.reuseRows(id, rows.bindings).map { _ =>
+          requirements.components ++= rows.components
+          committed
+        }
+      case None =>
+        val declared = requirements.components.length
         bindings.enterRows()
         val evaluated = evaluateStreamRows(
           id,
@@ -1783,7 +1800,7 @@ object RenderProgram:
           commitActions += state.assignment(
             stream.identity,
             next,
-            EvaluatedRows(node, signals, rowBindings, rows)
+            EvaluatedRows(node, signals, rowBindings, rows, requirements.componentsSince(declared))
           )
           node
         }
@@ -1916,7 +1933,8 @@ object RenderProgram:
         previous,
         transaction,
         bindings,
-        commitActions
+        commitActions,
+        requirements
       )(
         evaluateSignalKeyedRows(
           template,
@@ -2004,7 +2022,8 @@ object RenderProgram:
         previous,
         transaction,
         bindings,
-        commitActions
+        commitActions,
+        requirements
       )(
         evaluateSignalKeyedByIndexRows(
           template,
@@ -2084,7 +2103,7 @@ object RenderProgram:
     *
     * Nothing changed when the collection's items and every signal its rows read from outside them
     * are unchanged, and its rows render nothing that signals do not track. The reused rows keep
-    * their node, bindings, and signal samples.
+    * their node, bindings, and signal samples, and declare their components again.
     */
   private def evaluateCollection[Msg](
     id: TemplateId,
@@ -2093,21 +2112,28 @@ object RenderProgram:
     previous: Option[EvaluatedNode],
     transaction: SignalEvaluation.Transaction,
     bindings: BindingTable.Builder[Msg],
-    commitActions: ArrayBuffer[() => Unit]
+    commitActions: ArrayBuffer[() => Unit],
+    requirements: Requirements[Msg]
   )(
     evaluateRows: => Either[RenderError, CollectionRows[Msg]]
   ): Either[RenderError, EvaluatedNode.Keyed] =
-    val reusable = last match
-      case Some(rows)
-          if previous.exists(_ eq rows.node) && !rows.signals.untracked &&
-            transaction.unchanged(items) =>
+    val old      = previous.collect { case keyed: EvaluatedNode.Keyed => keyed }
+    val reusable = (last, old) match
+      case (Some(rows), Some(committed))
+          if !rows.signals.untracked && transaction.unchanged(items) &&
+            EvaluatedTree.resolvedFrom(committed, rows.node) =>
         traverse(rows.signals.outside)(transaction.sample(_))
-          .map(samples => Option.when(samples.forall(transaction.unchanged))(rows))
+          .map(samples => Option.when(samples.forall(transaction.unchanged))(rows -> committed))
       case _ => Right(None)
 
     reusable.flatMap {
-      case Some(rows) => bindings.reuseRows(id, rows.bindings).map(_ => rows.node)
-      case None       =>
+      case Some((rows, committed)) =>
+        bindings.reuseRows(id, rows.bindings).map { _ =>
+          requirements.components ++= rows.components
+          committed
+        }
+      case None =>
+        val declared = requirements.components.length
         bindings.enterRows()
         val evaluated = withinRows(
           transaction,
@@ -2116,7 +2142,13 @@ object RenderProgram:
         val rowBindings = bindings.exitRows(id)
         evaluated.map { (collection, signals) =>
           commitActions += collection.assignment(
-            EvaluatedRows(collection.node, signals, rowBindings, collection.rows)
+            EvaluatedRows(
+              collection.node,
+              signals,
+              rowBindings,
+              collection.rows,
+              requirements.componentsSince(declared)
+            )
           )
           collection.node
         }
@@ -2225,9 +2257,11 @@ object RenderProgram:
         node.copy(rows = rows)
       case _ => EvaluatedNode.Keyed(id, rows, revision)
 
-  /** Evaluates one row from `item`, or keeps its committed node, `last`, when its item and every
-    * signal it read from outside it are unchanged, and it renders nothing that signals do not
-    * track. A kept row keeps its bindings and signal samples.
+  /** Evaluates one row from `item`, or keeps its committed node, `previous`, when its item and
+    * every signal it read from outside it are unchanged, and it renders nothing that signals do not
+    * track. `last` is what the row's last evaluation recorded, and `previous` that evaluation's
+    * node as resolution filled in its components. A kept row keeps its bindings and signal samples,
+    * and declares its components again.
     */
   private def evaluateRow[A, Msg](
     id: RowId,
@@ -2244,20 +2278,27 @@ object RenderProgram:
     candidateRows: CandidateRows,
     requirements: Requirements[Msg]
   ): Either[RenderError, (EvaluatedNode.Element, EvaluatedRow[Msg])] =
-    val kept = (last, transaction.previousRow(id)) match
-      case (Some(row), Some(read))
-          if previous.exists(_ eq row.node) && !read.untracked && row.item == item =>
+    val kept = (last, transaction.previousRow(id), previous) match
+      case (Some(row), Some(read), Some(committed: EvaluatedNode.Element))
+          if !read.untracked && row.item == item &&
+            EvaluatedTree.resolvedFrom(committed, row.node) =>
         traverse(read.outside)(transaction.sample(_))
-          .map(outside => Option.when(outside.forall(transaction.unchanged))(row))
+          .map(outside =>
+            Option.when(outside.forall(transaction.unchanged))(
+              if committed eq row.node then row else row.copy(node = committed)
+            )
+          )
       case _ => Right(None)
 
     kept.flatMap {
       case Some(row) =>
         transaction.keepRow(id)
         bindings.keepRow(row.bindings)
+        requirements.components ++= row.components
         Right(row.node -> row)
       case None =>
         transaction.bindSource(source, item).flatMap { _ =>
+          val declared = requirements.components.length
           transaction.enterRow(id)
           bindings.enterRow()
           val evaluated = evaluateNode(
@@ -2273,7 +2314,9 @@ object RenderProgram:
           ).map(_.asInstanceOf[EvaluatedNode.Element])
           transaction.exitRow()
           val rowBindings = bindings.exitRow()
-          evaluated.map(node => node -> EvaluatedRow(node, rowBindings, item))
+          evaluated.map(node =>
+            node -> EvaluatedRow(node, rowBindings, item, requirements.componentsSince(declared))
+          )
         }
     }
   end evaluateRow

@@ -34,7 +34,6 @@ private[scalive] object RuntimeLog:
   val Upload       = "upload"
   val UploadEntry  = "upload_entry"
   val Operation    = "operation"
-  val Asset        = "asset"
   val RuntimeEvent = "runtime_event"
   val Epoch        = "epoch"
   val Component    = "component_id"
@@ -45,4 +44,3 @@ private[scalive] object RuntimeLog:
   def failure(value: LifecycleFailure): LogAnnotation = value match
     case LifecycleFailure.Stage(stage) => LogAnnotation(Stage, label(stage))
     case other                         => LogAnnotation(Failure, label(other))
-end RuntimeLog

@@ -258,7 +258,7 @@ object StaticAssetsSpec extends ZIOSpecDefault:
         unsupported.isFailure
       )
     },
-    test("revalidates changed originals but rejects changed immutable versions") {
+    test("serves the bytes loaded at startup after their file changes") {
       ZIO.scoped {
         for
           root <- temporaryDirectory
@@ -272,18 +272,82 @@ object StaticAssetsSpec extends ZIOSpecDefault:
                         assets = Some(Seq("mutable.txt"))
                       )
                     )
-          originalBefore <- request(assets.routes, "/assets/mutable.txt")
-          etagBefore = originalBefore.header(Header.ETag)
           _             <- ZIO.attemptBlocking(Files.writeString(file, "second"))
           immutable     <- request(assets.routes, assets.path("mutable.txt"))
-          originalAfter <- request(assets.routes, "/assets/mutable.txt")
-          body          <- originalAfter.body.asString
+          original      <- request(assets.routes, "/assets/mutable.txt")
+          immutableBody <- immutable.body.asString
+          originalBody  <- original.body.asString
         yield assertTrue(
-          immutable.status == Status.NotFound,
-          originalAfter.status == Status.Ok,
-          originalAfter.header(Header.CacheControl).contains(StaticAssetCache.default.revalidating),
-          originalAfter.header(Header.ETag) != etagBefore,
-          body == "second"
+          immutable.status == Status.Ok,
+          immutableBody == "first",
+          original.status == Status.Ok,
+          original.header(Header.CacheControl).contains(StaticAssetCache.default.revalidating),
+          original.header(Header.ETag).contains(Header.ETag.Strong(assets.entry("mutable.txt").digest)),
+          originalBody == "first"
+        )
+      }
+    },
+    test("serves a precompressed copy next to an asset to a browser that accepts it") {
+      def accepting(value: String) = Headers(Header.Custom("Accept-Encoding", value))
+      def encoding(response: Response) = response.rawHeader("Content-Encoding")
+      def vary(response: Response)     = response.rawHeader("Vary")
+      ZIO.scoped {
+        for
+          root <- temporaryDirectory
+          _    <- ZIO.attemptBlocking(Files.writeString(root.resolve("app.js"), "plain"))
+          _    <- ZIO.attemptBlocking(Files.writeString(root.resolve("app.js.br"), "brotli"))
+          _    <- ZIO.attemptBlocking(Files.writeString(root.resolve("app.js.gz"), "gzip"))
+          _    <- ZIO.attemptBlocking(Files.writeString(root.resolve("alone.js"), "alone"))
+          assets <- StaticAssets.load(
+                      StaticAssetConfig.directory(
+                        root,
+                        mountPath = Path.empty / "assets",
+                        assets = Some(Seq("app.js", "alone.js"))
+                      )
+                    )
+          path = assets.path("app.js")
+          brotli    <- request(assets.routes, path, headers = accepting("gzip, deflate, br"))
+          gzip      <- request(assets.routes, path, headers = accepting("gzip"))
+          refused   <- request(assets.routes, path, headers = accepting("br;q=0, gzip;q=0.5"))
+          identity  <- request(assets.routes, path)
+          alone     <- request(assets.routes, assets.path("alone.js"), headers = accepting("br"))
+          brotliTag  = brotli.header(Header.ETag).map(_.renderedValue).getOrElse("")
+          held      <- request(
+                         assets.routes,
+                         path,
+                         headers = accepting("br") ++ Headers(Header.Custom("If-None-Match", brotliTag))
+                       )
+          otherCopy <- request(
+                         assets.routes,
+                         path,
+                         headers = Headers(Header.Custom("If-None-Match", brotliTag))
+                       )
+          head          <- request(assets.routes, path, Method.HEAD, accepting("br"))
+          brotliBody    <- brotli.body.asString
+          gzipBody      <- gzip.body.asString
+          refusedBody   <- refused.body.asString
+          identityBody  <- identity.body.asString
+          aloneBody     <- alone.body.asString
+          headBody      <- head.body.asString
+        yield assertTrue(
+          brotliBody == "brotli",
+          encoding(brotli).contains("br"),
+          gzipBody == "gzip",
+          encoding(gzip).contains("gzip"),
+          refusedBody == "gzip",
+          identityBody == "plain",
+          encoding(identity).isEmpty,
+          List(brotli, gzip, identity).forall(vary(_).contains("Accept-Encoding")),
+          brotli.header(Header.ETag) != identity.header(Header.ETag),
+          brotli.header(Header.ETag) != gzip.header(Header.ETag),
+          held.status == Status.NotModified,
+          otherCopy.status == Status.Ok,
+          head.status == Status.Ok,
+          encoding(head).contains("br"),
+          headBody.isEmpty,
+          aloneBody == "alone",
+          encoding(alone).isEmpty,
+          vary(alone).isEmpty
         )
       }
     },

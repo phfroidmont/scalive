@@ -89,10 +89,10 @@ location, schema version, and `immutable` or `revalidate` cache values. Then
 check that every output appears as a `file` value, every final file exists, and
 no path traversal or conflicting cache declaration is present.
 
-An immutable file is pinned to the digest read at startup. Replacing it in place
-makes its route return `404` until `StaticAssets` is loaded again; publish a new
-content-addressed filename instead. A revalidating file may change at the same
-path and receives a current `ETag`. Return to the
+Assets are served from the bytes read at startup. Replacing a file in place has
+no effect until `StaticAssets` is loaded again; publish a new content-addressed
+filename instead, so that browsers holding the old immutable file fetch the new
+one. Return to the
 [quick-start asset wiring](../learn/quick-start.md#start-the-server) for a minimal
 known shape.
 

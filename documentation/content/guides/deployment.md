@@ -172,9 +172,10 @@ caching to application HTML or mutable asset URLs. Scalive marks its pages
 `private` or `no-store`, following the `pageCache` setting in
 [Configuration](configuration.md#current-configuration-contract), so a shared
 cache that respects `Cache-Control` never keeps one. Immutable manifest entries
-must have content-addressed or otherwise stable URLs. An immutable file replaced
-in place returns `404` until the application reloads its asset description;
-publish a new final path instead. See
+must have content-addressed or otherwise stable URLs. A file replaced in place
+keeps being served as it was loaded until the application loads its assets
+again, and browsers keep an immutable one for a year; publish a new final path
+instead. See
 [Client setup and static assets](static-assets-and-client-setup.md#serve-versioned-paths)
 for versioned trees and
 [deployment manifests](static-assets-and-client-setup.md#load-a-deployment-manifest)

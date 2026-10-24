@@ -132,12 +132,22 @@ changing any file moves every URL; see
 [what a deployment invalidates](deployment.md#know-what-a-deployment-invalidates).
 
 Versioned responses default to `public`, a one-year `max-age`, and `immutable`.
-Their digests are pinned when assets load. An in-place file mutation makes its
-immutable URL return `404` until the assets are loaded again. Original paths
-return `404` by default; set `serveOriginals = true` only when unversioned
-access is required. Originals serve current bytes with a current `ETag` and
-`no-cache`. A request whose `If-None-Match` names the current `ETag` gets
-`304 Not Modified` without the bytes.
+Original paths return `404` by default; set `serveOriginals = true` only when
+unversioned access is required. Originals use `no-cache`. A request whose
+`If-None-Match` names the response's `ETag` gets `304 Not Modified` without the
+bytes.
+
+Loading reads every asset once and keeps its bytes in memory, so the server
+never reads an asset file again: a file changed in place is served as it was
+loaded until `StaticAssets` is loaded again, usually by the next deployment.
+Size the heap for the asset tree.
+
+When a precompressed copy is stored next to an asset, such as `app.js.br` or
+`app.js.gz`, it is loaded with it and sent, with `Content-Encoding`, to a
+browser whose `Accept-Encoding` accepts it. Brotli is preferred to gzip. Each
+copy has its own `ETag`, and responses for an asset with copies carry
+`Vary: Accept-Encoding`. Scalive does not compress assets itself; produce the
+copies in the asset build.
 
 ## Add routes and resolve paths {#add-static-routes-and-resolve-paths}
 
@@ -419,9 +429,9 @@ content-addressed or otherwise stable final paths, and retain old outputs while
 active clients or cached pages may request them, including through dynamic
 imports. By default, `immutable` responses are public with a one-year `max-age`,
 while `revalidate` responses use `no-cache`; both include a strong per-file
-`ETag`. An immutable file is pinned to its startup digest and returns `404`
-after an in-place mutation until assets are reloaded. A `revalidate` file serves
-its current bytes with a current `ETag` at its stable final path.
+`ETag`. Both serve the bytes read at startup until assets are loaded again, and
+both send a precompressed copy declared next to the file, such as
+`built/app-a1b2.js.br`, to a browser that accepts it.
 
 ## Related tasks {#related-tasks}
 

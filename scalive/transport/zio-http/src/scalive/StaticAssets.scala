@@ -13,8 +13,6 @@ import zio.http.codec.PathCodec
 import zio.json.*
 import zio.json.ast.Json
 
-import scalive.runtime.kernel.RuntimeLog
-
 /** Configuration used to load and serve an ordinary asset tree or deployment manifest.
   *
   * @param source
@@ -217,9 +215,20 @@ final case class StaticAssetEntry(
   mediaType: MediaType,
   cachePolicy: StaticAssetCachePolicy)
 
+/** Bytes an asset is served as, with the strong ETag that identifies them. */
+final private[scalive] case class StaticAssetBytes(bytes: Chunk[Byte], etag: String)
+
+/** The bytes of an asset as loaded, and the precompressed copies found next to it by content
+  * coding, the preferred first.
+  */
+final private[scalive] case class StaticAssetContent(
+  loaded: StaticAssetBytes,
+  encoded: Vector[(String, StaticAssetBytes)])
+
 final private[scalive] case class ServedStaticAsset(
   entry: StaticAssetEntry,
-  cachePolicy: StaticAssetCachePolicy)
+  cachePolicy: StaticAssetCachePolicy,
+  content: StaticAssetContent)
 
 final private[scalive] case class StaticAssetManifest(
   entries: Map[String, StaticAssetEntry],
@@ -299,48 +308,29 @@ final class StaticAssets private (
     served match
       case None         => ZIO.succeed(Response.notFound)
       case Some(served) =>
-        val entry = served.entry
-        StaticAssets
-          .read(config.source, entry.sourcePath).foldCauseZIO(
-            cause =>
-              ZIO
-                .logAnnotate(RuntimeLog.Asset, entry.sourcePath)(
-                  ZIO.logErrorCause("Could not read static asset", cause)
-                ).as(Response.notFound),
-            {
-              case None        => ZIO.succeed(Response.notFound)
-              case Some(bytes) =>
-                val currentDigest = StaticAssets.sha256(bytes)
-                if served.cachePolicy == StaticAssetCachePolicy.Immutable &&
-                  currentDigest != entry.digest
-                then
-                  ZIO
-                    .logAnnotate(RuntimeLog.Asset, entry.sourcePath)(
-                      ZIO
-                        .logError("Immutable static asset changed after its description was loaded")
-                    ).as(Response.notFound)
-                else
-                  val currentEntry =
-                    if currentDigest == entry.digest then entry
-                    else entry.copy(digest = currentDigest, size = bytes.length.toLong)
-                  val cacheControl = served.cachePolicy match
-                    case StaticAssetCachePolicy.Immutable  => config.cache.immutable
-                    case StaticAssetCachePolicy.Revalidate => config.cache.revalidating
-                  val headers = StaticAssets.headers(currentEntry, cacheControl)
-                  if StaticAssets.holds(request, currentEntry.digest) then
-                    ZIO.succeed(Response(status = Status.NotModified, headers = headers))
-                  else
-                    val body = if includeBody then Body.fromArray(bytes) else Body.empty
-                    ZIO.succeed(Response(status = Status.Ok, headers = headers, body = body))
-            }
-          )
-    end match
-  end serve
+        val content = served.content
+        val coding  = content.encoded.find((coding, _) => StaticAssets.accepts(request, coding))
+        val bytes   = coding.fold(content.loaded)(_._2)
+        val cacheControl = served.cachePolicy match
+          case StaticAssetCachePolicy.Immutable  => config.cache.immutable
+          case StaticAssetCachePolicy.Revalidate => config.cache.revalidating
+        val headers = StaticAssets.headers(served.entry, cacheControl, bytes.etag) ++
+          coding.fold(Headers.empty)((name, _) => Headers("Content-Encoding", name)) ++
+          (if content.encoded.isEmpty then Headers.empty else Headers("Vary", "Accept-Encoding"))
+        if StaticAssets.holds(request, bytes.etag) then
+          ZIO.succeed(Response(status = Status.NotModified, headers = headers))
+        else
+          val body = if includeBody then Body.fromChunk(bytes.bytes) else Body.empty
+          ZIO.succeed(Response(status = Status.Ok, headers = headers, body = body))
 end StaticAssets
 
 /** The startup loader for [[StaticAssets]]. */
 object StaticAssets:
-  final private case class LoadedAsset(path: String, bytes: Array[Byte], digest: String)
+  final private case class LoadedAsset(path: String, digest: String, content: StaticAssetContent)
+
+  // The content codings a precompressed copy may be stored in, next to its asset with this
+  // extension, the preferred first.
+  private val precompressed = Vector("br" -> ".br", "gzip" -> ".gz")
 
   final private case class DeploymentManifestAsset(file: String, cache: String) derives JsonDecoder
 
@@ -356,8 +346,8 @@ object StaticAssets:
 
   /** Loads and validates the configured asset description.
     *
-    * Bytes are read again for each request. Immutable paths reject bytes that differ from their
-    * load-time digest; revalidating paths serve current bytes with a current ETag.
+    * Every asset is read once, here, and served from memory, along with the precompressed copies
+    * found next to it (`app.js.br`, `app.js.gz`), which are sent to browsers that accept them.
     */
   def load(config: StaticAssetConfig): Task[StaticAssets] =
     config.source match
@@ -369,8 +359,9 @@ object StaticAssets:
     for
       assets <- list(config.source)
       loaded <- ZIO.foreach(assets)(loadAsset(config.source, _))
-      version = assetSetDigest(loaded)
-      entries = loaded.map { asset =>
+      version  = assetSetDigest(loaded)
+      contents = loaded.map(asset => asset.path -> asset.content).toMap
+      entries  = loaded.map { asset =>
                   entry(
                     logicalPath = asset.path,
                     sourcePath = asset.path,
@@ -382,12 +373,20 @@ object StaticAssets:
       byLogical = entries.map(entry => entry.logicalPath -> entry).toMap
       served    = entries
                  .map(entry =>
-                   entry.servedPath -> ServedStaticAsset(entry, StaticAssetCachePolicy.Immutable)
+                   entry.servedPath -> ServedStaticAsset(
+                     entry,
+                     StaticAssetCachePolicy.Immutable,
+                     contents(entry.sourcePath)
+                   )
                  ).toMap
       originals =
         entries
           .map(entry =>
-            entry.sourcePath -> ServedStaticAsset(entry, StaticAssetCachePolicy.Revalidate)
+            entry.sourcePath -> ServedStaticAsset(
+              entry,
+              StaticAssetCachePolicy.Revalidate,
+              contents(entry.sourcePath)
+            )
           ).toMap
     yield new StaticAssets(
       config,
@@ -461,7 +460,13 @@ object StaticAssets:
       byLogical = entries.map(entry => entry.logicalPath -> entry).toMap
       served    = entries
                  .groupBy(_.servedPath).view.mapValues(_.head).toMap
-                 .map { case (path, entry) => path -> ServedStaticAsset(entry, entry.cachePolicy) }
+                 .map { case (path, entry) =>
+                   path -> ServedStaticAsset(
+                     entry,
+                     entry.cachePolicy,
+                     loadedByPath(entry.sourcePath).content
+                   )
+                 }
     yield new StaticAssets(config, StaticAssetManifest(byLogical, served, Map.empty))
 
   private def deploymentManifestPath(source: StaticAssetSource): Task[String] =
@@ -523,8 +528,18 @@ object StaticAssets:
 
   private def loadAsset(source: StaticAssetSource, relativePath: String): Task[LoadedAsset] =
     read(source, relativePath).flatMap {
-      case Some(bytes) => ZIO.succeed(LoadedAsset(relativePath, bytes, sha256(bytes)))
-      case None        =>
+      case Some(bytes) =>
+        val digest = sha256(bytes)
+        ZIO
+          .foreach(precompressed) { (coding, extension) =>
+            read(source, relativePath + extension).map(
+              _.map(copy => coding -> StaticAssetBytes(Chunk.fromArray(copy), sha256(copy)))
+            )
+          }.map { copies =>
+            val loaded = StaticAssetBytes(Chunk.fromArray(bytes), digest)
+            LoadedAsset(relativePath, digest, StaticAssetContent(loaded, copies.flatten))
+          }
+      case None =>
         ZIO.fail(new IllegalArgumentException(s"Static asset not found: $relativePath"))
     }
 
@@ -618,7 +633,7 @@ object StaticAssets:
       sourcePath = sourcePath,
       servedPath = servedPath,
       digest = asset.digest,
-      size = asset.bytes.length.toLong,
+      size = asset.content.loaded.bytes.length.toLong,
       mediaType = mediaType(sourcePath),
       cachePolicy = cachePolicy
     )
@@ -673,11 +688,28 @@ object StaticAssets:
       }
     }
 
-  private def headers(entry: StaticAssetEntry, cacheControl: Header.CacheControl): Headers =
+  /** Whether `request` accepts the content coding `coding`: `Accept-Encoding` names it without a
+    * zero quality value, as RFC 9110 defines.
+    */
+  private def accepts(request: Request, coding: String): Boolean =
+    request.rawHeader("Accept-Encoding").exists { value =>
+      value.split(',').iterator.map(_.split(';').map(_.trim)).exists { parts =>
+        parts.head.equalsIgnoreCase(coding) && !parts.tail.exists { parameter =>
+          val lower = parameter.toLowerCase
+          lower.startsWith("q=") && lower.drop(2).toDoubleOption.contains(0.0)
+        }
+      }
+    }
+
+  private def headers(
+    entry: StaticAssetEntry,
+    cacheControl: Header.CacheControl,
+    etag: String
+  ): Headers =
     Headers(
       Header.ContentType(entry.mediaType),
       cacheControl,
-      Header.ETag.Strong(entry.digest)
+      Header.ETag.Strong(etag)
     )
 
   private def mediaType(relativePath: String): MediaType =

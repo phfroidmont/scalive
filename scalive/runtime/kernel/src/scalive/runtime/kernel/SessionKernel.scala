@@ -2157,7 +2157,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                           .mapError(error => failed(error.getMessage))
                           .map(component.withRenderCandidate)
                       }
-      finalStaged <- ZIO.foreach(nestedStaged)(rebuildComponent(_, nestedStaged, failed))
+      finalStaged <- rebuildComponents(nestedStaged, failed)
       rebuilt         = finalStaged.map(component => component.id -> component).toMap
       rootResolutions = nestedRoot.componentRequirements.zip(components.forest.roots).map {
                           case (requirement, id) => rebuilt(id).resolutionFor(requirement)
@@ -2174,30 +2174,45 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     end for
   end prepareNestedTopology
 
-  private def rebuildComponent(
-    component: StagedComponent[Msg],
-    all: Vector[StagedComponent[Msg]],
+  /** `staged` with the children of each component resolved into its render. */
+  private def rebuildComponents(
+    staged: Vector[StagedComponent[Msg]],
     failed: String => SessionFailure
-  ): ZIO[Any, SessionFailure, StagedComponent[Msg]] =
-    for
-      childResolutions <-
-        ZIO.foreach(
-          component.renderCandidate.componentRequirements.zip(component.children)
-        ) { case (requirement, childId) =>
-          ZIO
-            .fromOption(
-              all.find(_.id == childId)
-            ).orElseFail(
-              failed(
-                s"component '${component.key.applicationId}' child graph is inconsistent"
-              )
-            ).flatMap(rebuildComponent(_, all, failed))
-            .map(_.resolutionFor(requirement))
-        }
-      candidate <- ZIO
-                     .fromEither(component.renderCandidate.resolveComponents(childResolutions))
-                     .mapError(error => failed(error.getMessage))
-    yield component.withRenderCandidate(candidate)
+  ): ZIO[Any, SessionFailure, Vector[StagedComponent[Msg]]] =
+    ZIO.suspendSucceed {
+      val byId = staged.map(component => component.id -> component).toMap
+      // A component is reached from each of its ancestors as well, so it is rebuilt once.
+      val rebuilt =
+        scala.collection.mutable.HashMap.empty[ComponentInstanceId, StagedComponent[Msg]]
+
+      def rebuild(component: StagedComponent[Msg]): ZIO[Any, SessionFailure, StagedComponent[Msg]] =
+        rebuilt.get(component.id) match
+          case Some(done) => ZIO.succeed(done)
+          case None       =>
+            for
+              childResolutions <-
+                ZIO.foreach(
+                  component.renderCandidate.componentRequirements.zip(component.children)
+                ) { case (requirement, childId) =>
+                  ZIO
+                    .fromOption(byId.get(childId))
+                    .orElseFail(
+                      failed(
+                        s"component '${component.key.applicationId}' child graph is inconsistent"
+                      )
+                    ).flatMap(rebuild)
+                    .map(_.resolutionFor(requirement))
+                }
+              candidate <-
+                ZIO
+                  .fromEither(component.renderCandidate.resolveComponents(childResolutions))
+                  .mapError(error => failed(error.getMessage))
+              next = component.withRenderCandidate(candidate)
+              _ <- ZIO.succeed(rebuilt.update(component.id, next))
+            yield next
+
+      ZIO.foreach(staged)(rebuild)
+    }
 
   private def removeStagedComponents(
     roots: Set[ComponentInstanceId],

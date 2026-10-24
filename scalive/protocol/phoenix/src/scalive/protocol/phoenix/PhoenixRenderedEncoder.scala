@@ -1815,17 +1815,29 @@ private[scalive] object PhoenixRenderedEncoder:
       if own >= 0 then node.copy(parts = node.parts.updated(own, ProjectedPart.Keyed(replacement)))
       else mapChildren(node)(replaceKeyed(_, id, replacement))
 
+  // A collection's rows are built from other templates than the collection's own, so a search
+  // that finds the collection does not look through its rows.
   private def findKeyed(node: ProjectedNode, id: TemplateId): Vector[ProjectedKeyed] =
     if !node.mayHoldId(id) then Vector.empty
     else
-      node.parts.collect { case ProjectedPart.Keyed(keyed) if keyed.id == id => keyed } ++
-        programChildren(node).flatMap(findKeyed(_, id))
+      node.parts.flatMap {
+        case ProjectedPart.Keyed(keyed) if keyed.id == id => Vector(keyed)
+        case ProjectedPart.Keyed(keyed)   => keyed.rows.flatMap(row => findKeyed(row.child, id))
+        case ProjectedPart.Stream(stream) => stream.rows.flatMap(row => findKeyed(row.child, id))
+        case ProjectedPart.Node(child)    => findKeyed(child, id)
+        case _                            => Vector.empty
+      }
 
   private def findStreams(node: ProjectedNode, id: TemplateId): Vector[ProjectedStream] =
     if !node.mayHoldId(id) then Vector.empty
     else
-      node.parts.collect { case ProjectedPart.Stream(stream) if stream.id == id => stream } ++
-        programChildren(node).flatMap(findStreams(_, id))
+      node.parts.flatMap {
+        case ProjectedPart.Stream(stream) if stream.id == id => Vector(stream)
+        case ProjectedPart.Stream(stream) => stream.rows.flatMap(row => findStreams(row.child, id))
+        case ProjectedPart.Keyed(keyed)   => keyed.rows.flatMap(row => findStreams(row.child, id))
+        case ProjectedPart.Node(child)    => findStreams(child, id)
+        case _                            => Vector.empty
+      }
 
   private def componentCids(root: ProjectedNode): Vector[Int] =
     root.parts.flatMap {

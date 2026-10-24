@@ -79,7 +79,9 @@ final class BindingTable[+Msg] private (
   private[scalive] def retiring[M >: Msg](previous: BindingTable[M], now: Instant)
     : BindingTable[M] =
     val droppedOperations =
-      if base eq previous then dropped.iterator
+      // A reused render keeps its table, which dropped nothing since.
+      if previous eq this then Iterator.empty
+      else if base eq previous then dropped.iterator
       else previous.entries.iterator.filterNot((id, _) => entries.contains(id))
     val newlyRetired =
       droppedOperations.map((id, operation) => id -> BindingTable.Retired(operation, now))

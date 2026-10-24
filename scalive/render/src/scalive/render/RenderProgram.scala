@@ -82,44 +82,93 @@ final class RenderProgram[Input, Msg] private (
         candidate <-
           ZIO.fromEither(RenderRevision.next(signalState.revision)).flatMap { revision =>
             val transaction = SignalEvaluation.begin(signalState, revision, source, input)
-            ZIO
-              .attempt {
-                val state = resolveState(input)
-                val flash = if state == null then null else state.flash
-                if flash == null then
-                  Left(RenderError.InvalidHtml("render state resolver returned null"))
-                else
-                  RenderProgram.evaluateElement(
-                    template,
-                    previousRoot,
-                    previousBindings,
-                    revision,
-                    transaction,
-                    flash,
-                    candidateRows
+            val unchanged   = previous match
+              case Some(committed) if !committed.signalEvaluation.untracked =>
+                transaction
+                  .sample(source).map(sample =>
+                    Option.when(transaction.unchanged(sample))(committed)
                   )
-              }
-              .mapError(RenderError.EvaluationFailed.apply).flatMap(ZIO.fromEither(_)).flatMap {
-                case (root, bindings, requirements, commit) =>
-                  ZIO
-                    .fromEither(candidateScope.completeEvaluation()).as(
-                      RenderCandidate(
-                        EvaluatedTree(root, identity),
-                        bindings,
-                        transaction.result,
-                        requirements.components.toVector,
-                        requirements.nested.toVector,
-                        requirements.streams.toVector,
-                        candidateScope,
-                        identity,
-                        commit
-                      )
-                    )
-              }
+              case _ => Right(None)
+            ZIO.fromEither(unchanged).flatMap {
+              case Some(committed) => reuse(committed, candidateScope)
+              case None            =>
+                evaluateCandidate(
+                  input,
+                  previousRoot,
+                  previousBindings,
+                  revision,
+                  transaction,
+                  candidateScope,
+                  candidateRows
+                )
+            }
           }
       yield candidate).onError(_ => ZIO.succeed(candidateRows.rollback()) *> candidateScope.discard)
     }
   end evaluateIn
+
+  // The same input renders the same again when the render read nothing that signals do not track.
+  private def reuse(
+    committed: CommittedRender[Msg],
+    candidateScope: CandidateScope
+  ): IO[RenderError, RenderCandidate[Msg]] =
+    ZIO
+      .fromEither(candidateScope.completeEvaluation()).as(
+        RenderCandidate(
+          committed.tree,
+          committed.bindings,
+          committed.signalEvaluation,
+          Vector.empty,
+          Vector.empty,
+          Vector.empty,
+          candidateScope,
+          identity,
+          CandidateCommit(Array.empty)
+        )
+      )
+
+  private def evaluateCandidate(
+    input: Input,
+    previousRoot: Option[EvaluatedNode.Element],
+    previousBindings: BindingTable[Msg],
+    revision: RenderRevision,
+    transaction: SignalEvaluation.Transaction,
+    candidateScope: CandidateScope,
+    candidateRows: RenderProgram.CandidateRows
+  ): IO[RenderError, RenderCandidate[Msg]] =
+    ZIO
+      .attempt {
+        val state = resolveState(input)
+        val flash = if state == null then null else state.flash
+        if flash == null then Left(RenderError.InvalidHtml("render state resolver returned null"))
+        else
+          RenderProgram.evaluateElement(
+            template,
+            previousRoot,
+            previousBindings,
+            revision,
+            transaction,
+            flash,
+            candidateRows
+          )
+      }
+      .mapError(RenderError.EvaluationFailed.apply).flatMap(ZIO.fromEither(_)).flatMap {
+        case (root, bindings, requirements, commit) =>
+          ZIO
+            .fromEither(candidateScope.completeEvaluation()).as(
+              RenderCandidate(
+                EvaluatedTree(root, identity),
+                bindings,
+                transaction.result,
+                requirements.components.toVector,
+                requirements.nested.toVector,
+                requirements.streams.toVector,
+                candidateScope,
+                identity,
+                commit
+              )
+            )
+      }
 end RenderProgram
 
 object RenderProgram:

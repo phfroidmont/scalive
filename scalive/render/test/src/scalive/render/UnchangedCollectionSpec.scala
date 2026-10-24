@@ -164,6 +164,55 @@ object UnchangedCollectionSpec extends ZIOSpecDefault:
         duplicate <- program.evaluate((true, rows), Some(base)).either
       yield assertTrue(duplicate.left.exists(_.isInstanceOf[RenderError.DuplicateBinding]))
     },
+    test("reuses a whole render when its input did not change") {
+      var samples  = 0
+      val compiled = RenderProgram.compile[Page, String] { page =>
+        div(
+          button(on.click("go"), page.map { value =>
+            samples += 1
+            value.counter.toString
+          })
+        )
+      }
+      val now = Instant.EPOCH
+
+      for
+        program <- ZIO.fromEither(compiled)
+        first   <- program.evaluate(Page(0, 0, rows))
+        base = first.commit
+        before = samples
+        same <- program.evaluate(Page(0, 0, rows), Some(base))
+        committed = same.commit.retiring(base, now)
+      yield assertTrue(
+        same.tree eq base.tree,
+        samples == before,
+        committed.bindings.ids == base.bindings.ids
+      )
+    },
+    test("evaluates a render with an unchanged input when it holds a component") {
+      val compiled = RenderProgram.compile[Page, Nothing] { page =>
+        div(component(Badge, "badge").render(page.map(_.counter.toString)))
+      }
+      val childCompiled = RenderProgram.compile[Unit, Nothing](_ => span("badge"))
+
+      for
+        program      <- ZIO.fromEither(compiled)
+        childProgram <- ZIO.fromEither(childCompiled)
+        first        <- program.evaluate(Page(0, 0, rows))
+        child        <- childProgram.evaluate(())
+        token = Object()
+        resolved <- ZIO.fromEither(
+                      first.resolveComponents(
+                        Vector(
+                          first.componentRequirements.head
+                            .resolve(ComponentRef.runtime(token), token, child)
+                        )
+                      )
+                    )
+        base = resolved.commit
+        same <- program.evaluate(Page(0, 0, rows), Some(base))
+      yield assertTrue(same.componentRequirements.size == 1)
+    },
     test("keeps a subtree without components when resolving components") {
       val compiled = RenderProgram.compile[Page, Nothing] { page =>
         div(

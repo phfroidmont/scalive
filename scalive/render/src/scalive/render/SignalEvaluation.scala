@@ -83,10 +83,14 @@ final case class SignalSample[+A] private[render] (
   */
 final case class SignalEvaluation private[render] (
   revision: RenderRevision,
-  private[render] val samples: SignalEvaluation.SignalCache)
+  private[render] val samples: SignalEvaluation.SignalCache,
+  // Whether the render read anything no signal tracks: a component, a nested LiveView, a stream,
+  // or a flash. A render that did not is the same render again for the same input.
+  private[render] val untracked: Boolean)
 
 object SignalEvaluation:
-  val empty: SignalEvaluation = SignalEvaluation(RenderRevision.initial, SignalCache.empty)
+  val empty: SignalEvaluation =
+    SignalEvaluation(RenderRevision.initial, SignalCache.empty, untracked = true)
 
   private[render] def begin[A](
     previous: SignalEvaluation,
@@ -228,11 +232,17 @@ object SignalEvaluation:
         level.untracked
       )
 
-    /** Records that the rows being evaluated render something no signal tracks. */
-    def markUntracked(): Unit = levels.iterator.drop(1).foreach(_.untracked = true)
+    /** Records that what is being evaluated, and every collection around it, renders something no
+      * signal tracks.
+      */
+    def markUntracked(): Unit = levels.foreach(_.untracked = true)
 
     def result: SignalEvaluation =
-      SignalEvaluation(revision, SignalCache.empty.appended(levels.head.placed))
+      SignalEvaluation(
+        revision,
+        SignalCache.empty.appended(levels.head.placed),
+        levels.head.untracked
+      )
 
     private def evaluate[A](signal: Signal[A]): Either[RenderError, Unit] =
       val stack = ArrayDeque[EvaluationFrame](EvaluationFrame.Visit(signal))

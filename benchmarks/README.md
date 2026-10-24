@@ -8,6 +8,9 @@ Maintained Scala 3/JMH fixtures cover the Scalive render pipeline:
 - `BindingsAndSignalsBenchmark`: five event bindings per row and complete binding-table lookup; a
   changed model whose two signal projections and rendered values remain equal (validated as an empty
   semantic diff).
+- `UnrelatedChangeBenchmark`: a counter changes next to a keyed list of 0, 1,000, or 10,000 rows
+  that does not. It measures evaluation, semantic diff, and Phoenix encoding, none of which should
+  grow with the row count.
 - `StreamAndLifecycleBenchmark`: a 10,000-row stream snapshot with one inserted-row patch, 32
   resolved components retaining eight child templates each, and a duplicate key at the final
   candidate row to measure late failure and rollback.

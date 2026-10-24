@@ -110,6 +110,7 @@ final class RenderProgram[Input, Msg] private (
   end evaluateIn
 
   // The same input renders the same again when the render read nothing that signals do not track.
+  // Its requirements are kept, so that its components are staged and resolved into it again.
   private def reuse(
     committed: CommittedRender[Msg],
     candidateScope: CandidateScope
@@ -120,9 +121,9 @@ final class RenderProgram[Input, Msg] private (
           committed.tree,
           committed.bindings,
           committed.signalEvaluation,
-          Vector.empty,
-          Vector.empty,
-          Vector.empty,
+          committed.componentRequirements,
+          committed.nestedRequirements,
+          committed.streamRequirements,
           candidateScope,
           identity,
           CandidateCommit(Array.empty),
@@ -1548,7 +1549,7 @@ object RenderProgram:
           requirements
         )
       case template: ComponentTemplate[Msg] =>
-        transaction.markUntracked()
+        transaction.markComponent()
         evaluateComponentRequirement(template.id, template.spec, transaction).map { requirement =>
           requirements.components += requirement
           EvaluatedNode.Component(

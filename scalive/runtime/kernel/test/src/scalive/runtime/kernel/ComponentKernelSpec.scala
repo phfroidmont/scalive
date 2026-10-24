@@ -155,6 +155,42 @@ object ComponentKernelSpec extends ZIOSpecDefault:
         yield assertTrue(mounted == 1, afterRoot == 1, afterChange == 2, afterSame == 2)
       }
     },
+    test("a component holding a child keeps its render while its input is unchanged") {
+      ZIO.scoped {
+        val events = ConcurrentLinkedQueue[String]()
+        val child  = component(componentDefinition(events), "child")
+        val parent = new LiveComponent[Int, Int, Int]:
+          def mount(props: Int, ctx: MountContext) = ZIO.succeed(props)
+          def handleMessage(props: Int, model: Int, ctx: MessageContext) = message =>
+            ZIO.succeed(model + message)
+          def view(props: Signal[Int], model: Signal[Int]) =
+            div(model.map(value => s"parent $value"), child.render(props))
+        val instance = component(parent, "parent")
+        def parentOf(state: Committed[Int, Int]) =
+          state.components.values.find(_.key.applicationId == "parent").get
+        for
+          seen    <- Ref.make(Vector.empty[Int])
+          program <- ZIO.fromEither(
+                       RenderProgram.compile[Int, Int](model =>
+                         div(model.map(_.toString), instance.render(1))
+                       )
+                     )
+          kernel  <- SessionKernel.start(config, logic(seen), program, Outbound(), FakeEnvironment(events))
+          before  <- kernel.inspect
+          _       <- kernel.submit(SessionCommand.Message(kernel.epoch, 1))
+          root    <- kernel.inspect
+          childId  = root.components.values.find(_.key.applicationId == "child").get.id
+          _       <- kernel.submitComponent(childId, 2)
+          clicked <- kernel.inspect
+        yield assertTrue(
+          parentOf(root).render.signalEvaluation eq parentOf(before).render.signalEvaluation,
+          parentOf(clicked).render.signalEvaluation eq parentOf(before).render.signalEvaluation,
+          textValues(parentOf(root).render.tree.root) == Vector("parent 1", "1"),
+          textValues(parentOf(clicked).render.tree.root) == Vector("parent 1", "3"),
+          textValues(clicked.render.tree.root) == Vector("1", "parent 1", "3")
+        )
+      }
+    },
     test("send-update props survive unrelated parent renders") {
       ZIO.scoped {
         val events     = ConcurrentLinkedQueue[String]()

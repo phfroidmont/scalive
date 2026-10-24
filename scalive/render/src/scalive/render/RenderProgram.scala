@@ -2561,12 +2561,13 @@ object RenderProgram:
   )(
     f: A => Either[RenderError, B]
   ): Either[RenderError, Vector[B]] =
-    values.foldLeft[Either[RenderError, Vector[B]]](Right(Vector.empty)) { (result, value) =>
-      for
-        accumulated <- result
-        next        <- f(value)
-      yield accumulated :+ next
-    }
+    val results  = Vector.newBuilder[B]
+    val iterator = values.iterator
+    while iterator.hasNext do
+      f(iterator.next()) match
+        case Right(value) => results += value
+        case Left(error)  => return Left(error)
+    Right(results.result())
 
   private def compositeTokens(value: String): Vector[String] =
     val tokens     = Vector.newBuilder[String]

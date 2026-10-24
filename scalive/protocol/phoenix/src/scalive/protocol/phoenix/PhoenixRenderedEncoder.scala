@@ -1919,7 +1919,11 @@ private[scalive] object PhoenixRenderedEncoder:
   )(
     f: A => Either[PhoenixEncodingError, B]
   ): Either[PhoenixEncodingError, Vector[B]] =
-    values.foldLeft[Either[PhoenixEncodingError, Vector[B]]](Right(Vector.empty)) { (result, value) =>
-      result.flatMap(acc => f(value).map(acc :+ _))
-    }
+    val results  = Vector.newBuilder[B]
+    val iterator = values.iterator
+    while iterator.hasNext do
+      f(iterator.next()) match
+        case Right(value) => results += value
+        case Left(error)  => return Left(error)
+    Right(results.result())
 end PhoenixRenderedEncoder

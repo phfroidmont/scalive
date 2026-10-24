@@ -2,6 +2,7 @@ package scalive.render
 
 import java.time.Instant
 
+import zio.IO
 import zio.Task
 import zio.ZIO
 import zio.test.*
@@ -24,6 +25,25 @@ object UnchangedCollectionSpec extends ZIOSpecDefault:
   private def changeCount(delta: RenderDelta): Int = delta match
     case RenderDelta.Update(_, changes) => changes.size
     case _                              => -1
+
+  private val badgeChild = RenderProgram.compile[Unit, Nothing](_ => span("badge"))
+
+  /** Resolves the components of a render as the runtime does for components it keeps: each
+    * application id to the same instance, rendering `child`.
+    */
+  final private class Instances(child: CommittedRender[Nothing]):
+    private val refs = scala.collection.mutable.Map.empty[String, ComponentRef[Nothing]]
+
+    def resolve[Msg](candidate: RenderCandidate[Msg]): IO[RenderError, RenderCandidate[Msg]] =
+      ZIO.fromEither(
+        candidate.resolveComponents(candidate.componentRequirements.map { requirement =>
+          val ref = refs.getOrElseUpdate(requirement.applicationId, ComponentRef.runtime(Object()))
+          requirement.resolve(ref, ref.asInstanceOf[Object], child)
+        })
+      )
+
+  private def instances: IO[RenderError, Instances] =
+    ZIO.fromEither(badgeChild).flatMap(_.evaluate(())).map(child => Instances(child.commit))
 
   override def spec = suite("UnchangedCollectionSpec")(
     test("reuses a collection whose items and outside signals did not change") {
@@ -369,6 +389,21 @@ object UnchangedCollectionSpec extends ZIOSpecDefault:
                       )
                     )
       yield assertTrue(keyed(resolved.tree, 1) eq keyed(candidate.tree, 1))
+    },
+    test("keeps a render whose components resolve again to the instances and renders they hold") {
+      val compiled = RenderProgram.compile[Page, Nothing] { page =>
+        div(
+          span(page.map(_.counter.toString)),
+          page.map(_.rows).splitBy(_.id)((id, _) => li(component(Badge, s"badge-$id").render("")))
+        )
+      }
+
+      for
+        program    <- ZIO.fromEither(compiled)
+        resolution <- instances
+        resolved   <- program.evaluate(Page(0, 0, rows)).flatMap(resolution.resolve)
+        again      <- resolution.resolve(resolved)
+      yield assertTrue(again.tree.root eq resolved.tree.root)
     }
   )
 end UnchangedCollectionSpec

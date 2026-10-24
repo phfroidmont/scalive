@@ -3,6 +3,9 @@ package scalive.render
 import java.time.Instant
 import java.util.IdentityHashMap
 import java.util.concurrent.atomic.AtomicReference
+import scala.collection.immutable.VectorBuilder
+import scala.util.boundary
+import scala.util.boundary.break
 
 import zio.Exit
 import zio.Scope
@@ -529,131 +532,101 @@ object EvaluatedTree:
     node: EvaluatedNode,
     resolutions: Map[TemplateId, NestedResolution]
   ): Either[RenderError, EvaluatedNode] = node match
-    case _ if !node.holdsResolvable     => Right(node)
-    case element: EvaluatedNode.Element =>
-      traverseNestedNodes(element.children, resolutions).map(children =>
-        element.copy(children = children)
-      )
-    case flash: EvaluatedNode.Flash =>
-      flash.child match
-        case Some(child) =>
-          resolveNestedNode(child, resolutions).map(value =>
-            flash.copy(child = Some(value.asInstanceOf[EvaluatedNode.Element]))
-          )
-        case None => Right(flash)
-    case choice: EvaluatedNode.Choice =>
-      traverseNestedNodes(choice.children, resolutions).map(children =>
-        choice.copy(children = children)
-      )
-    case keyed: EvaluatedNode.Keyed =>
-      keyed.rows
-        .foldLeft[Either[RenderError, Vector[EvaluatedNode.KeyedRow]]](Right(Vector.empty)) {
-          (result, row) =>
-            for
-              accumulated <- result
-              child       <- resolveNestedNode(row.child, resolutions)
-            yield accumulated :+ row.copy(child = child.asInstanceOf[EvaluatedNode.Element])
-        }.map(rows => keyed.copy(rows = rows))
-    case stream: EvaluatedNode.Stream =>
-      stream.rows
-        .foldLeft[Either[RenderError, Vector[EvaluatedNode.StreamRow]]](Right(Vector.empty)) {
-          (result, row) =>
-            for
-              accumulated <- result
-              child       <- resolveNestedNode(row.child, resolutions)
-            yield accumulated :+ row.copy(child = child.asInstanceOf[EvaluatedNode.Element])
-        }.map { rows =>
-          val byId = rows.map(row => row.domId -> row).toMap
-          stream.copy(
-            rows = rows,
-            operations = stream.operations.copy(inserts =
-              stream.operations.inserts
-                .map(insert => insert.copy(row = byId.getOrElse(insert.row.domId, insert.row)))
-            )
-          )
-        }
+    case _ if !node.holdsResolvable   => Right(node)
     case nested: EvaluatedNode.Nested =>
       resolutions
         .get(nested.id).map(value => nested.copy(resolution = Some(value))).toRight(
           RenderError.UnresolvedNested(Vector(nested.id))
         )
-    // A component child is a separate finalized render program.
-    case component: EvaluatedNode.Component => Right(component)
-    case text: EvaluatedNode.Text           => Right(text)
-
-  private def traverseNestedNodes(
-    nodes: Vector[EvaluatedNode],
-    resolutions: Map[TemplateId, NestedResolution]
-  ): Either[RenderError, Vector[EvaluatedNode]] =
-    nodes.foldLeft[Either[RenderError, Vector[EvaluatedNode]]](Right(Vector.empty)) {
-      (result, node) =>
-        for
-          accumulated <- result
-          resolved    <- resolveNestedNode(node, resolutions)
-        yield accumulated :+ resolved
-    }
+    // A component's child is a separate finalized render program, which this keeps as it is.
+    case other => resolveContents(other, resolveNestedNode(_, resolutions))
 
   private def resolveNode(
     node: EvaluatedNode,
     resolutions: Map[TemplateId, ComponentResolution]
   ): Either[RenderError, EvaluatedNode] = node match
-    case _ if !node.holdsResolvable     => Right(node)
+    case _ if !node.holdsResolvable         => Right(node)
+    case component: EvaluatedNode.Component =>
+      resolutions.get(component.id) match
+        case Some(value) if component.resolution.exists(sameResolution(_, value)) =>
+          Right(component)
+        case Some(value) => Right(component.copy(resolution = Some(value)))
+        case None        => Left(RenderError.UnresolvedComponents(Vector(component.id)))
+    case other => resolveContents(other, resolveNode(_, resolutions))
+
+  // A component the runtime kept resolves to the instance and the committed render it held.
+  private def sameResolution(held: ComponentResolution, next: ComponentResolution): Boolean =
+    (held.instanceToken eq next.instanceToken) && (held.child eq next.child) &&
+      held.ref == next.ref && held.location == next.location &&
+      held.applicationId == next.applicationId
+
+  /** `node` with each node it contains resolved by `resolve`. A node whose contents all resolve to
+    * themselves stays as it is, so that resolving a render again keeps what it does not change.
+    */
+  private def resolveContents(
+    node: EvaluatedNode,
+    resolve: EvaluatedNode => Either[RenderError, EvaluatedNode]
+  ): Either[RenderError, EvaluatedNode] = node match
     case element: EvaluatedNode.Element =>
-      traverseNodes(element.children, resolutions).map(children =>
-        element.copy(children = children)
+      resolveEach(element.children)(resolve).map(children =>
+        if children eq element.children then element else element.copy(children = children)
       )
     case flash: EvaluatedNode.Flash =>
       flash.child match
         case Some(child) =>
-          resolveNode(child, resolutions)
-            .map(value => flash.copy(child = Some(value.asInstanceOf[EvaluatedNode.Element])))
+          resolve(child).map(value =>
+            if value eq child then flash
+            else flash.copy(child = Some(value.asInstanceOf[EvaluatedNode.Element]))
+          )
         case None => Right(flash)
     case choice: EvaluatedNode.Choice =>
-      traverseNodes(choice.children, resolutions).map(children => choice.copy(children = children))
+      resolveEach(choice.children)(resolve).map(children =>
+        if children eq choice.children then choice else choice.copy(children = children)
+      )
     case keyed: EvaluatedNode.Keyed =>
-      keyed.rows
-        .foldLeft[Either[RenderError, Vector[EvaluatedNode.KeyedRow]]](Right(Vector.empty)) {
-          (result, row) =>
-            for
-              accumulated <- result
-              child       <- resolveNode(row.child, resolutions)
-            yield accumulated :+ row.copy(child = child.asInstanceOf[EvaluatedNode.Element])
-        }.map(rows => keyed.copy(rows = rows))
+      resolveEach(keyed.rows) { row =>
+        resolve(row.child).map(child =>
+          if child eq row.child then row
+          else row.copy(child = child.asInstanceOf[EvaluatedNode.Element])
+        )
+      }.map(rows => if rows eq keyed.rows then keyed else keyed.copy(rows = rows))
     case stream: EvaluatedNode.Stream =>
-      stream.rows
-        .foldLeft[Either[RenderError, Vector[EvaluatedNode.StreamRow]]](Right(Vector.empty)) {
-          (result, row) =>
-            for
-              accumulated <- result
-              child       <- resolveNode(row.child, resolutions)
-            yield accumulated :+ row.copy(child = child.asInstanceOf[EvaluatedNode.Element])
-        }.map { rows =>
+      resolveEach(stream.rows) { row =>
+        resolve(row.child).map(child =>
+          if child eq row.child then row
+          else row.copy(child = child.asInstanceOf[EvaluatedNode.Element])
+        )
+      }.map { rows =>
+        if rows eq stream.rows then stream
+        else
           val byId       = rows.map(row => row.domId -> row).toMap
           val operations = stream.operations.copy(inserts =
             stream.operations.inserts
               .map(insert => insert.copy(row = byId.getOrElse(insert.row.domId, insert.row)))
           )
           stream.copy(rows = rows, operations = operations)
-        }
-    case component: EvaluatedNode.Component =>
-      resolutions
-        .get(component.id)
-        .map(value => component.copy(resolution = Some(value))).toRight(
-          RenderError.UnresolvedComponents(Vector(component.id))
-        )
+      }
     case other => Right(other)
 
-  private def traverseNodes(
-    nodes: Vector[EvaluatedNode],
-    resolutions: Map[TemplateId, ComponentResolution]
-  ): Either[RenderError, Vector[EvaluatedNode]] =
-    nodes.foldLeft[Either[RenderError, Vector[EvaluatedNode]]](Right(Vector.empty)) {
-      (result, node) =>
-        for
-          accumulated <- result
-          resolved    <- resolveNode(node, resolutions)
-        yield accumulated :+ resolved
-    }
+  /** `nodes`, each resolved by `resolve`; `nodes` itself when each resolves to itself. */
+  private def resolveEach[A <: AnyRef](
+    nodes: Vector[A]
+  )(
+    resolve: A => Either[RenderError, A]
+  ): Either[RenderError, Vector[A]] =
+    boundary:
+      // Empty until a node resolves to another one, then the nodes resolved so far.
+      var resolved = Option.empty[VectorBuilder[A]]
+      nodes.indices.foreach { index =>
+        val node = nodes(index)
+        val next = resolve(node) match
+          case Right(value) => value
+          case Left(error)  => break(Left(error))
+        if resolved.isEmpty && !(next eq node) then
+          resolved = Some(VectorBuilder[A]().addAll(nodes.view.take(index)))
+        resolved.foreach(_.addOne(next))
+      }
+      Right(resolved.fold(nodes)(_.result()))
 
   private def validateUniqueComponentTokens(root: EvaluatedNode): Either[RenderError, Unit] =
     val seen = IdentityHashMap[Object, java.lang.Boolean]()

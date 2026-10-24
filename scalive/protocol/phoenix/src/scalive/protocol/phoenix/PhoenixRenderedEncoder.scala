@@ -125,7 +125,13 @@ private[scalive] object PhoenixRenderedEncoder:
     case Stream(value: ProjectedStream)
     case StreamDomId(value: String)
 
-  final private[phoenix] case class ProjectedNode(id: TemplateId, parts: Vector[ProjectedPart])
+  /** A projected node. One with `ownStatics` is sent within its parent as a nested rendered object
+    * with statics of its own, so replacing it resends that object and nothing around it.
+    */
+  final private[phoenix] case class ProjectedNode(
+    id: TemplateId,
+    parts: Vector[ProjectedPart],
+    ownStatics: Boolean = false)
   final private[phoenix] case class ProjectedComponent(
     token: Object,
     ref: Object,
@@ -163,7 +169,22 @@ private[scalive] object PhoenixRenderedEncoder:
   final private[phoenix] case class SparseChanges(
     slots: Set[TemplateSlotId],
     streams: Set[TemplateId],
-    keyedTargets: Set[TemplateId] = Set.empty)
+    keyedTargets: Set[TemplateId] = Set.empty,
+    // Nodes the browser has to receive again in full.
+    replaced: Set[TemplateId] = Set.empty)
+
+  /** The statics of the nested templates in one comprehension, sent once as its `p`. */
+  final private class TemplateTable:
+    private val indexes = mutable.LinkedHashMap.empty[Vector[String], Int]
+
+    def reference(statics: Vector[String]): Int = indexes.getOrElseUpdate(statics, indexes.size)
+
+    def toJson: Option[Json.Obj] =
+      if indexes.isEmpty then None
+      else
+        Some(Json.Obj(indexes.toVector.map { case (statics, index) =>
+          index.toString -> Json.Arr(statics.map(Json.Str(_))*)
+        }*))
 
   final private class ProjectionContext(
     state: Option[PhoenixRenderedState],
@@ -219,7 +240,10 @@ private[scalive] object PhoenixRenderedEncoder:
     structural: Boolean,
     changedComponents: Set[Int],
     changedStreams: Set[TemplateId] = Set.empty,
-    changedKeyedTargets: Set[TemplateId] = Set.empty)
+    changedKeyedTargets: Set[TemplateId] = Set.empty,
+    replaced: Set[TemplateId] = Set.empty):
+    def changes: SparseChanges =
+      SparseChanges(changedSlots, changedStreams, changedKeyedTargets, replaced)
 
   def initial(
     tree: EvaluatedTree,
@@ -271,15 +295,7 @@ private[scalive] object PhoenixRenderedEncoder:
             val diffs = pendingDiffs.map { case (cid, changes) =>
               if state.pendingDeletionCids.contains(cid) then cid -> None else cid -> changes
             }
-            sparsePayload(
-              next,
-              SparseChanges(
-                result.changedSlots,
-                result.changedStreams,
-                result.changedKeyedTargets
-              ),
-              diffs
-            )
+            sparsePayload(next, result.changes, diffs)
       yield clearPending(next) -> json
 
   private[scalive] def html(state: PhoenixRenderedState): Either[PhoenixEncodingError, String] =
@@ -366,13 +382,14 @@ private[scalive] object PhoenixRenderedEncoder:
           ProjectedNode(element.id, opening.result())
         }
       }
+    // What can take another shape has statics of its own, as a Phoenix conditional does.
     case flash: EvaluatedNode.Flash =>
       traverse(flash.child.toVector)(child => project(child, None, context)).map(children =>
-        ProjectedNode(flash.id, children.map(ProjectedPart.Node(_)))
+        ProjectedNode(flash.id, children.map(ProjectedPart.Node(_)), ownStatics = true)
       )
     case choice: EvaluatedNode.Choice =>
       traverse(choice.children)(child => project(child, None, context)).map(children =>
-        ProjectedNode(choice.id, children.map(ProjectedPart.Node(_)))
+        ProjectedNode(choice.id, children.map(ProjectedPart.Node(_)), ownStatics = true)
       )
     case keyed: EvaluatedNode.Keyed =>
       traverse(keyed.rows)(row =>
@@ -430,7 +447,8 @@ private[scalive] object PhoenixRenderedEncoder:
               nested.id,
               Vector(ProjectedPart.Static(opening.result())) ++
                 children.map(ProjectedPart.Nested(_)) :+
-                ProjectedPart.Static("</div>")
+                ProjectedPart.Static("</div>"),
+              ownStatics = true
             )
           }
     case stream: EvaluatedNode.Stream =>
@@ -601,11 +619,13 @@ private[scalive] object PhoenixRenderedEncoder:
         val previouslyProjected = context.projectedCids.toSet
         project(node, replacementRootCid, context).map { replacement =>
           val newlyProjected = context.projectedCids.toSet -- previouslyProjected
-          current.copy(
+          val updated        = current.copy(
             root = replaceTarget(current.root, id, replacement),
-            structural = true,
             changedComponents = current.changedComponents ++ newlyProjected
           )
+          resentTemplate(current.root, id, replacement) match
+            case Some(template) => updated.copy(replaced = updated.replaced + template)
+            case None           => updated.copy(structural = true)
         }
     case RenderChange.Keyed(id, rows) =>
       val targets = collectKeyed(current.root).filter(_.id == id)
@@ -618,7 +638,8 @@ private[scalive] object PhoenixRenderedEncoder:
               changedSlots = current.changedSlots ++ update.changedSlots,
               changedComponents = current.changedComponents ++ update.changedComponents,
               changedStreams = current.changedStreams ++ update.changedStreams,
-              changedKeyedTargets = current.changedKeyedTargets ++ update.changedKeyedTargets + id
+              changedKeyedTargets = current.changedKeyedTargets ++ update.changedKeyedTargets + id,
+              replaced = current.replaced ++ update.replaced
             )
           }
         case _ => Left(PhoenixEncodingError.DuplicateTarget(id))
@@ -652,19 +673,11 @@ private[scalive] object PhoenixRenderedEncoder:
             context.components.update(cid, component.copy(root = update.root))
             val ownChange =
               update.structural || update.changedSlots.nonEmpty || update.changedStreams.nonEmpty ||
-                update.changedKeyedTargets.nonEmpty
+                update.changedKeyedTargets.nonEmpty || update.replaced.nonEmpty
             if ownChange then
               context.componentDiffs.update(
                 cid,
-                if update.structural then None
-                else
-                  Some(
-                    SparseChanges(
-                      update.changedSlots,
-                      update.changedStreams,
-                      update.changedKeyedTargets
-                    )
-                  )
+                if update.structural then None else Some(update.changes)
               )
             if update.structural then
               update.changedComponents.foreach(nested =>
@@ -676,7 +689,47 @@ private[scalive] object PhoenixRenderedEncoder:
             )
           }
         case _ => Left(PhoenixEncodingError.DuplicateComponentToken)
-      end match
+
+  /** The node to send again in full when the node at `id` becomes `replacement`, or None for the
+    * whole program.
+    *
+    * The browser keeps every static outside that node. It is the replaced node itself when that has
+    * statics of its own, or holds nothing but a component CID, and otherwise the nearest template
+    * around it: a node with statics of its own or a comprehension row.
+    */
+  private def resentTemplate(
+    root: ProjectedNode,
+    id: TemplateId,
+    replacement: ProjectedNode
+  ): Option[TemplateId] =
+    def holdsOnlyComponent(node: ProjectedNode): Boolean = node.parts match
+      case Vector(ProjectedPart.Component(_)) => true
+      case _                                  => false
+
+    def search(
+      node: ProjectedNode,
+      enclosing: Option[TemplateId],
+      template: Boolean
+    ): Option[(ProjectedNode, Option[TemplateId])] =
+      if node.id == id then Some(node -> enclosing)
+      else
+        val around = if template then Some(node.id) else enclosing
+        node.parts.iterator
+          .flatMap {
+            case ProjectedPart.Node(child)  => search(child, around, child.ownStatics)
+            case ProjectedPart.Keyed(keyed) =>
+              keyed.rows.iterator.flatMap(row => search(row.child, around, template = true))
+            case ProjectedPart.Stream(stream) =>
+              stream.rows.iterator.flatMap(row => search(row.child, around, template = true))
+            case _ => None
+          }.nextOption()
+
+    search(root, None, template = false).flatMap { case (target, enclosing) =>
+      val keepsOwnStatics = target.ownStatics && replacement.ownStatics
+      val swapsComponent  = holdsOnlyComponent(target) && holdsOnlyComponent(replacement)
+      if keepsOwnStatics || swapsComponent then Some(replacement.id) else enclosing
+    }
+  end resentTemplate
 
   private def projectStreamOperations(
     operations: EvaluatedNode.StreamOperations,
@@ -743,22 +796,15 @@ private[scalive] object PhoenixRenderedEncoder:
                     val newIndex = rows.length
                     val moved    = oldIndex != newIndex
                     val changed  = update.structural || update.changedSlots.nonEmpty ||
-                      update.changedStreams.nonEmpty || update.changedKeyedTargets.nonEmpty
+                      update.changedStreams.nonEmpty || update.changedKeyedTargets.nonEmpty ||
+                      update.replaced.nonEmpty
                     val rowUpdate =
                       if !moved && !changed then None
                       else
                         Some(
                           ProjectedKeyedRowUpdate(
                             if moved then Some(oldIndex) else None,
-                            if changed && !update.structural then
-                              Some(
-                                SparseChanges(
-                                  update.changedSlots,
-                                  update.changedStreams,
-                                  update.changedKeyedTargets
-                                )
-                              )
-                            else None,
+                            if changed && !update.structural then Some(update.changes) else None,
                             full = update.structural
                           )
                         )
@@ -770,7 +816,8 @@ private[scalive] object PhoenixRenderedEncoder:
                         changedComponents = aggregate.changedComponents ++ update.changedComponents,
                         changedStreams = aggregate.changedStreams ++ update.changedStreams,
                         changedKeyedTargets = aggregate.changedKeyedTargets ++
-                          update.changedKeyedTargets
+                          update.changedKeyedTargets,
+                        replaced = aggregate.replaced ++ update.replaced
                       )
                     )
                   }
@@ -975,7 +1022,7 @@ private[scalive] object PhoenixRenderedEncoder:
 
   private def fullPayload(state: PhoenixRenderedState): Either[PhoenixEncodingError, Json.Obj] =
     val active = activeComponents(state)
-    full(state.root, active).flatMap { root =>
+    rendered(state.root, active, None, None).flatMap { root =>
       if active.isEmpty then Right(root)
       else componentObject(active, state.activeCids).map(value => root.add("c", value))
     }
@@ -986,7 +1033,7 @@ private[scalive] object PhoenixRenderedEncoder:
     changedComponents: Map[Int, Option[SparseChanges]]
   ): Either[PhoenixEncodingError, Json.Obj] =
     val active = activeComponents(state)
-    sparse(state.root, changed, active).flatMap { root =>
+    rendered(state.root, active, Some(changed), None).flatMap { root =>
       val activeChanges = changedComponents.view.filterKeys(state.activeCids.contains).toMap
       if activeChanges.isEmpty then Right(root)
       else componentDiffs(active, activeChanges).map(value => root.add("c", value))
@@ -997,7 +1044,7 @@ private[scalive] object PhoenixRenderedEncoder:
     cids: Set[Int]
   ): Either[PhoenixEncodingError, Json.Obj] =
     traverse(cids.toVector.sorted)(cid =>
-      full(components(cid).root, components).map(value =>
+      rendered(components(cid).root, components, None, None).map(value =>
         cid.toString -> value.add("r", Json.Num(1))
       )
     ).map(fields => Json.Obj(fields*))
@@ -1006,87 +1053,110 @@ private[scalive] object PhoenixRenderedEncoder:
     components: Map[Int, ProjectedComponent],
     cids: Map[Int, Option[SparseChanges]]
   ): Either[PhoenixEncodingError, Json.Obj] =
-    traverse(cids.toVector.sortBy(_._1)) { case (cid, slots) =>
-      slots match
-        case None =>
-          full(components(cid).root, components).map(value =>
-            cid.toString -> value.add("r", Json.Num(1))
-          )
-        case Some(changed) =>
-          sparse(components(cid).root, changed, components).map(value => cid.toString -> value)
+    traverse(cids.toVector.sortBy(_._1)) { case (cid, changes) =>
+      rendered(components(cid).root, components, changes, None).map { value =>
+        cid.toString -> (if changes.isEmpty then value.add("r", Json.Num(1)) else value)
+      }
     }.map(fields => Json.Obj(fields*))
 
-  private def full(
+  /** Encodes `root` as a rendered object: in full when `changes` is None, and otherwise only what
+    * changed. In full, its statics are a reference into `templates` when there is one.
+    */
+  private def rendered(
     root: ProjectedNode,
-    components: Map[Int, ProjectedComponent]
-  ): Either[PhoenixEncodingError, Json.Obj] = flatten(root, components, None).map {
-    case (statics, dynamics) =>
-      val fields = Vector("s" -> Json.Arr(statics.map(Json.Str(_))*)) ++
-        dynamics.zipWithIndex.map { case ((_, value), index) => index.toString -> value }
-      Json.Obj(fields*)
-  }
+    components: Map[Int, ProjectedComponent],
+    changes: Option[SparseChanges],
+    templates: Option[TemplateTable]
+  ): Either[PhoenixEncodingError, Json.Obj] =
+    flatten(root, components, changes, templates).map { case (statics, dynamics) =>
+      val sent = dynamics.zipWithIndex.collect { case ((true, value), index) =>
+        index.toString -> value
+      }
+      changes match
+        case Some(_) => Json.Obj(sent*)
+        case None    =>
+          val encodedStatics = templates match
+            case Some(table) => Json.Num(table.reference(statics))
+            case None        => Json.Arr(statics.map(Json.Str(_))*)
+          Json.Obj((("s" -> encodedStatics) +: sent)*)
+    }
 
-  private def sparse(
-    root: ProjectedNode,
-    changed: SparseChanges,
-    components: Map[Int, ProjectedComponent]
-  ): Either[PhoenixEncodingError, Json.Obj] = flatten(root, components, Some(changed)).map {
-    case (_, dynamics) =>
-      Json.Obj(dynamics.zipWithIndex.collect {
-        case ((Some(slot), value), index) if changed.slots.contains(slot) => index.toString -> value
-        case ((None, value: Json.Obj), index) if value != Json.Obj.empty  => index.toString -> value
-      }*)
-  }
-
+  /** Splits `root` into its statics and dynamics, each dynamic paired with whether a diff of
+    * `changes` sends it. A node with statics of its own is one dynamic: a nested rendered object.
+    * Everything in a node of `changes.replaced` is sent in full.
+    */
   private def flatten(
     root: ProjectedNode,
     components: Map[Int, ProjectedComponent],
-    sparseChanges: Option[SparseChanges]
-  ): Either[PhoenixEncodingError, (Vector[String], Vector[(Option[TemplateSlotId], Json)])] =
+    changes: Option[SparseChanges],
+    templates: Option[TemplateTable]
+  ): Either[PhoenixEncodingError, (Vector[String], Vector[(Boolean, Json)])] =
     val statics  = Vector.newBuilder[String]
-    val dynamics = Vector.newBuilder[(Option[TemplateSlotId], Json)]
+    val dynamics = Vector.newBuilder[(Boolean, Json)]
     val current  = StringBuilder()
 
-    def dynamic(slot: Option[TemplateSlotId], value: Json): Unit =
+    def dynamic(sent: Boolean, value: Json): Unit =
       statics += current.result()
       current.clear()
-      dynamics += slot -> value
+      dynamics += sent -> value
 
-    def loop(node: ProjectedNode): Either[PhoenixEncodingError, Unit] =
+    def nested(value: Json.Obj, changes: Option[SparseChanges]): Unit =
+      dynamic(changes.isEmpty || value != Json.Obj.empty, value)
+
+    def loop(
+      node: ProjectedNode,
+      changes: Option[SparseChanges]
+    ): Either[PhoenixEncodingError, Unit] =
       node.parts.foldLeft[Either[PhoenixEncodingError, Unit]](Right(())) {
         case (result, ProjectedPart.Static(value)) =>
           result.map(_ => current.append(value)).map(_ => ())
         case (result, ProjectedPart.Dynamic(slot, ProjectedValue.Text(value), _)) =>
-          result.map(_ => dynamic(Some(slot), Json.Str(value)))
+          result.map(_ => dynamic(changes.forall(_.slots.contains(slot)), Json.Str(value)))
         case (result, ProjectedPart.Dynamic(slot, value: ProjectedValue.ComponentTarget, _)) =>
           result.flatMap(_ =>
-            renderTarget(value, components).map(text => dynamic(Some(slot), Json.Str(text)))
+            renderTarget(value, components).map(text =>
+              dynamic(changes.forall(_.slots.contains(slot)), Json.Str(text))
+            )
           )
         case (result, ProjectedPart.Target(value)) =>
           result.flatMap(_ => renderTarget(value, components).map(current.append).map(_ => ()))
-        case (result, ProjectedPart.Node(child))   => result.flatMap(_ => loop(child))
-        case (result, ProjectedPart.Nested(child)) => result.flatMap(_ => loop(child))
+        case (result, ProjectedPart.Node(child)) =>
+          val childChanges = changes.filterNot(_.replaced.contains(child.id))
+          if child.ownStatics then
+            result.flatMap(_ =>
+              rendered(child, components, childChanges, templates).map(nested(_, childChanges))
+            )
+          else result.flatMap(_ => loop(child, childChanges))
+        case (result, ProjectedPart.Nested(child)) => result.flatMap(_ => loop(child, changes))
         case (result, ProjectedPart.Keyed(keyed))  =>
-          result.flatMap(_ => keyedJson(keyed, components, sparseChanges).map(dynamic(None, _)))
-        case (result, ProjectedPart.Component(cid)) => result.map(_ => dynamic(None, Json.Num(cid)))
+          result.flatMap(_ =>
+            keyedJson(keyed, components, changes, templates).map(nested(_, changes))
+          )
+        case (result, ProjectedPart.Component(cid)) =>
+          result.map(_ => dynamic(changes.isEmpty, Json.Num(cid)))
         case (result, ProjectedPart.StreamDomId(value)) =>
-          result.map(_ => dynamic(None, Json.Str(value)))
+          result.map(_ => dynamic(changes.isEmpty, Json.Str(value)))
         case (result, ProjectedPart.Stream(stream)) =>
           result.flatMap(_ =>
-            streamJson(stream, components, sparseChanges).map(value => dynamic(None, value))
+            streamJson(stream, components, changes, templates).map(nested(_, changes))
           )
       }
 
-    loop(root).map { _ =>
+    loop(root, changes).map { _ =>
       statics += current.result()
       statics.result() -> dynamics.result()
     }
   end flatten
 
+  /** Encodes a keyed comprehension. Its rows need not share statics, so each row is a nested
+    * rendered object, and the outermost comprehension sends each distinct row template once in its
+    * `p`. Comprehensions nested in the rows share that table, as the browser resolves them from it.
+    */
   private def keyedJson(
     keyed: ProjectedKeyed,
     components: Map[Int, ProjectedComponent],
-    sparseChanges: Option[SparseChanges]
+    sparseChanges: Option[SparseChanges],
+    templates: Option[TemplateTable]
   ): Either[PhoenixEncodingError, Json.Obj] =
     val explicit =
       if sparseChanges.isEmpty then
@@ -1094,27 +1164,28 @@ private[scalive] object PhoenixRenderedEncoder:
       else keyed.updates.padTo(keyed.rows.length, None)
     val updates = keyed.rows.zip(explicit).map { case (row, update) =>
       update.orElse {
-        sparseChanges
-          .filter(changes =>
-            rowContainsChangedSlot(row.child, changes.slots) ||
-              collectStreams(row.child).exists(stream => changes.streams.contains(stream.id)) ||
-              rowContainsChangedKeyed(row.child, changes.keyedTargets)
-          ).map(changes => ProjectedKeyedRowUpdate(None, Some(changes), full = false))
+        sparseChanges.collect {
+          case changes if changes.replaced.contains(row.child.id) =>
+            ProjectedKeyedRowUpdate(None, None, full = true)
+          case changes if rowChanged(row.child, changes) =>
+            ProjectedKeyedRowUpdate(None, Some(changes), full = false)
+        }
       }
     }
     val shouldEmit = sparseChanges.isEmpty || keyed.changed ||
       sparseChanges.exists(_.keyedTargets.contains(keyed.id)) || updates.exists(_.nonEmpty)
     if !shouldEmit then Right(Json.Obj.empty)
     else
+      val table = templates.getOrElse(TemplateTable())
       traverse(keyed.rows.zip(updates).zipWithIndex) { case ((row, update), index) =>
         update match
           case None         => Right(None)
           case Some(change) =>
             val child =
-              if change.full then full(row.child, components)
+              if change.full then rendered(row.child, components, None, Some(table))
               else
                 change.changes match
-                  case Some(changes) => sparse(row.child, changes, components)
+                  case Some(changes) => rendered(row.child, components, Some(changes), Some(table))
                   case None          => Right(Json.Obj.empty)
             child.map { payload =>
               val boxed       = Json.Obj("0" -> payload)
@@ -1132,48 +1203,42 @@ private[scalive] object PhoenixRenderedEncoder:
                         Vector("s" -> Json.Arr(Json.Str(""), Json.Str("")))
                       else Vector.empty) :+
           ("k" -> Json.Obj(keyedFields*))
-        Json.Obj(fields*)
+        Json.Obj((fields ++ sharedTemplates(templates, table))*)
       }
     end if
   end keyedJson
 
+  /** Encodes a stream as a comprehension whose rows share its statics. The browser keeps no stream
+    * row once rendered, so every row it receives is whole.
+    */
   private def streamJson(
     stream: ProjectedStream,
     components: Map[Int, ProjectedComponent],
-    sparseChanges: Option[SparseChanges]
+    sparseChanges: Option[SparseChanges],
+    templates: Option[TemplateTable]
   ): Either[PhoenixEncodingError, Json.Obj] =
     val selectedRows = sparseChanges match
-      case None => stream.rows.map(_ -> Option.empty[SparseChanges])
+      case None                                                 => stream.rows
       case Some(changes) if changes.streams.contains(stream.id) =>
         val inserted    = stream.operations.inserts.map(_.row)
         val insertedIds = inserted.map(_.domId).toSet
-        inserted.map(_ -> Option.empty[SparseChanges]) ++
-          stream.rows.collect {
-            case row
-                if !insertedIds.contains(row.domId) &&
-                  (rowContainsChangedSlot(row.child, changes.slots) ||
-                    rowContainsChangedStream(row.child, changes.streams) ||
-                    rowContainsChangedKeyed(row.child, changes.keyedTargets)) =>
-              row -> Some(changes)
-          }
-      case Some(changes) =>
-        stream.rows.collect {
-          case row
-              if rowContainsChangedSlot(row.child, changes.slots) ||
-                rowContainsChangedStream(row.child, changes.streams) ||
-                rowContainsChangedKeyed(row.child, changes.keyedTargets) =>
-            row -> Some(changes)
-        }
+        inserted ++ stream.rows.filter(row =>
+          !insertedIds.contains(row.domId) && rowChanged(row.child, changes)
+        )
+      case Some(changes) => stream.rows.filter(row => rowChanged(row.child, changes))
 
     val shouldEmit = sparseChanges.isEmpty || selectedRows.nonEmpty ||
       sparseChanges.exists(_.streams.contains(stream.id))
     if !shouldEmit then Right(Json.Obj.empty)
     else
-      val templateRows =
-        selectedRows ++ streamTemplateRows(stream).map(_ -> Option.empty[SparseChanges])
-      val flattened = traverse(templateRows) { case (row, rowChanges) =>
-        flatten(row.child, components, rowChanges)
-      }
+      val table     = templates.getOrElse(TemplateTable())
+      val flattened = for
+        selected <- traverse(selectedRows)(row => flatten(row.child, components, None, Some(table)))
+        // The other rows only shape the shared statics; what they reference is not sent.
+        others <- traverse(streamTemplateRows(stream))(row =>
+                    flatten(row.child, components, None, Some(TemplateTable()))
+                  )
+      yield selected ++ others
       flattened
         .flatMap(normalizeStreamRows).map { case (statics, rows) =>
           val selectedCount    = selectedRows.length
@@ -1193,9 +1258,23 @@ private[scalive] object PhoenixRenderedEncoder:
             (if includeStatics then Vector("s" -> Json.Arr(statics.map(Json.Str(_))*))
              else Vector.empty) ++
               Vector("k" -> Json.Obj(keyedFields*), "stream" -> metadata)
-          Right(Json.Obj(fields*))
-        }.flatten
+          Json.Obj((fields ++ sharedTemplates(templates, table))*)
+        }
+    end if
   end streamJson
+
+  // Only the outermost comprehension sends the table: the browser ignores a nested one's.
+  private def sharedTemplates(
+    inherited: Option[TemplateTable],
+    table: TemplateTable
+  ): Vector[(String, Json)] =
+    if inherited.nonEmpty then Vector.empty else table.toJson.map("p" -> _).toVector
+
+  private def rowChanged(root: ProjectedNode, changes: SparseChanges): Boolean =
+    rowContainsChangedSlot(root, changes.slots) ||
+      rowContainsChangedStream(root, changes.streams) ||
+      rowContainsChangedKeyed(root, changes.keyedTargets) ||
+      collectIds(root).exists(changes.replaced.contains)
 
   // Rows whose statics the client's stream template must cover.
   private def streamTemplateRows(stream: ProjectedStream): Vector[ProjectedStreamRow] =
@@ -1205,11 +1284,12 @@ private[scalive] object PhoenixRenderedEncoder:
     stream: ProjectedStream,
     components: Map[Int, ProjectedComponent]
   ): Either[PhoenixEncodingError, Vector[String]] =
-    traverse(streamTemplateRows(stream))(row => flatten(row.child, components, None))
-      .flatMap(normalizeStreamRows).map(_._1)
+    traverse(streamTemplateRows(stream))(row =>
+      flatten(row.child, components, None, Some(TemplateTable()))
+    ).flatMap(normalizeStreamRows).map(_._1)
 
   private def normalizeStreamRows(
-    rows: Vector[(Vector[String], Vector[(Option[TemplateSlotId], Json)])]
+    rows: Vector[(Vector[String], Vector[(Boolean, Json)])]
   ): Either[PhoenixEncodingError, (Vector[String], Vector[Vector[Json]])] =
     rows.headOption match
       case None                                => Right(Vector("") -> Vector.empty)
@@ -1457,6 +1537,14 @@ private[scalive] object PhoenixRenderedEncoder:
     root: ProjectedNode,
     changed: Set[TemplateId]
   ): Boolean = collectKeyed(root).exists(keyed => changed.contains(keyed.id))
+
+  private def collectIds(root: ProjectedNode): Vector[TemplateId] =
+    root.id +: root.parts.flatMap {
+      case ProjectedPart.Node(child)    => collectIds(child)
+      case ProjectedPart.Keyed(keyed)   => keyed.rows.flatMap(row => collectIds(row.child))
+      case ProjectedPart.Stream(stream) => stream.rows.flatMap(row => collectIds(row.child))
+      case _                            => Vector.empty
+    }
 
   private def detectDuplicateChanges(changes: Vector[RenderChange])
     : Either[PhoenixEncodingError, Unit] =

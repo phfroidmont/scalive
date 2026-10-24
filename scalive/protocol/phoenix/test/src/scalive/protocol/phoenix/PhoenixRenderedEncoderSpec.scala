@@ -128,13 +128,16 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
        yield assertTrue(
          html._2 == expected,
          encoded._2 == Json.Obj(
-           "s" -> Json.Arr(
-             Json.Str(
-               "<main><div id=\"child&amp;&quot;\" data-phx-session=\"join&lt;&amp;&quot;\" data-phx-static=\"static&lt;&amp;&quot;\" data-phx-sticky class=\"phx-loading\"><span>"
+           "s" -> Json.Arr(Json.Str("<main>"), Json.Str("</main>")),
+           "0" -> Json.Obj(
+             "s" -> Json.Arr(
+               Json.Str(
+                 "<div id=\"child&amp;&quot;\" data-phx-session=\"join&lt;&amp;&quot;\" data-phx-static=\"static&lt;&amp;&quot;\" data-phx-sticky class=\"phx-loading\"><span>"
+               ),
+               Json.Str("</span></div>")
              ),
-             Json.Str("</span></div></main>")
-           ),
-           "0" -> Json.Str("disconnected &lt;child&gt;")
+             "0" -> Json.Str("disconnected &lt;child&gt;")
+           )
          ),
          !expected.contains("data-phx-parent-id"),
          !expected.contains("lv:child")
@@ -153,11 +156,15 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
                       )
         encoded    <- ZIO.fromEither(PhoenixRenderedEncoder.initial(resolved.tree))
          html       <- ZIO.fromEither(PhoenixRenderedEncoder.fullHtml(resolved.tree))
-         expected =
-           "<div><div id=\"child\" data-phx-parent-id=\"parent\" data-phx-session=\"join-secret\" data-phx-static=\"\"></div></div>"
+         container =
+           "<div id=\"child\" data-phx-parent-id=\"parent\" data-phx-session=\"join-secret\" data-phx-static=\"\"></div>"
+         expected = s"<div>$container</div>"
        yield assertTrue(
          html._2 == expected,
-         encoded._2 == Json.Obj("s" -> Json.Arr(Json.Str(expected))),
+         encoded._2 == Json.Obj(
+           "s" -> Json.Arr(Json.Str("<div>"), Json.Str("</div>")),
+           "0" -> Json.Obj("s" -> Json.Arr(Json.Str(container)))
+         ),
          expected.contains("data-phx-static=\"\""),
         !expected.contains("data-phx-sticky"),
         !expected.contains("phx-loading")
@@ -289,7 +296,7 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
                     )
         encoded <- ZIO.fromEither(PhoenixRenderedEncoder.initial(resolved.tree))
         html    <- ZIO.fromEither(PhoenixRenderedEncoder.fullHtml(resolved.tree))
-        streamPayload = field(encoded._2, "1").asInstanceOf[Json.Obj]
+        streamPayload = field(dynamic(encoded._2), "1").asInstanceOf[Json.Obj]
       yield assertTrue(
         encoded._1.cidForToken(componentToken).contains(1),
         encoded._1.streamRef(identity).contains("0"),
@@ -372,10 +379,12 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
           Left(PhoenixEncodingError.UnresolvedNested(unresolved.tree.root.children.head.id)),
         retainedUpdate._2 == Json.Obj.empty,
         changedUpdate._2 == Json.Obj(
-           "s" -> Json.Arr(
-             Json.Str(
-               "<div><div id=\"child\" data-phx-parent-id=\"parent\" data-phx-session=\"join-secret\" data-phx-static=\"\"></div></div>"
-             )
+          "0" -> Json.Obj(
+            "s" -> Json.Arr(
+              Json.Str(
+                "<div id=\"child\" data-phx-parent-id=\"parent\" data-phx-session=\"join-secret\" data-phx-static=\"\"></div>"
+              )
+            )
           )
         )
       )
@@ -464,7 +473,7 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
         )
       )
     },
-    test("resends stream statics when a row's static structure changes") {
+    test("keeps stream statics when a conditional in a row switches") {
       val identity = LiveStreamIdentity.fresh()
       def handle(generation: Long, item: StreamItem, insert: Boolean) = stream(
         identity,
@@ -481,6 +490,24 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
               item.map(_.label.startsWith("preview")).when(em("details"))
             )
           )
+        )
+      )
+      def inserted(label: String) = Json.Obj(
+        "0" -> Json.Obj(
+          "k" -> Json.Obj(
+            "0" -> Json.Obj(
+              "0" -> Json.Str("a"),
+              "1" -> Json.Str(label),
+              "2" -> Json.Obj("s" -> Json.Num(0))
+            ),
+            "kc" -> Json.Num(1)
+          ),
+          "stream" -> Json.Arr(
+            Json.Str("0"),
+            Json.Arr(Json.Arr(Json.Str("a"), Json.Num(-1), Json.Null, Json.Bool(false))),
+            Json.Arr()
+          ),
+          "p" -> Json.Obj("0" -> Json.Arr(Json.Str("<em>details</em>")))
         )
       )
       for
@@ -504,35 +531,66 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
                          .update(changed._1, TreeDiffer.diff(second.tree, third.tree))
                      )
       yield assertTrue(
-        changed._2 == Json.Obj(
-          "0" -> Json.Obj(
-            "s" -> Json.Arr(
-              Json.Str("<span id=\""),
-              Json.Str("\">"),
-              Json.Str("<em>details</em></span>")
-            ),
-            "k" -> Json.Obj(
-              "0" -> Json.Obj("0" -> Json.Str("a"), "1" -> Json.Str("preview")),
-              "kc" -> Json.Num(1)
-            ),
-            "stream" -> Json.Arr(
-              Json.Str("0"),
-              Json.Arr(Json.Arr(Json.Str("a"), Json.Num(-1), Json.Null, Json.Bool(false))),
-              Json.Arr()
-            )
-          )
+        field(dynamic(encoded._2), "s") == Json.Arr(
+          Json.Str("<span id=\""),
+          Json.Str("\">"),
+          Json.Str(""),
+          Json.Str("</span>")
         ),
-        unchanged._2 == Json.Obj(
-          "0" -> Json.Obj(
-            "k" -> Json.Obj(
-              "0" -> Json.Obj("0" -> Json.Str("a"), "1" -> Json.Str("preview again")),
-              "kc" -> Json.Num(1)
+        changed._2 == inserted("preview"),
+        unchanged._2 == inserted("preview again")
+      )
+    },
+    test("resends stream statics when an inserted row is built differently") {
+      val identity = LiveStreamIdentity.fresh()
+      val first    = stream(identity, 1L, Vector(StreamItem("a", "A")))
+      val next     = stream(
+        identity,
+        2L,
+        Vector(StreamItem("a", "A"), StreamItem("b", "B")),
+        Vector((StreamItem("b", "B"), StreamAt.Last, None, false))
+      )
+      val compiled = RenderProgram.compile[LiveStream[StreamItem], Nothing](model =>
+        div(
+          model.stream((domId, item) =>
+            if domId == "b" then span(idAttr := domId, em(item.map(_.label)))
+            else span(idAttr := domId, item.map(_.label))
+          )
+        )
+      )
+      for
+        program   <- ZIO.fromEither(compiled)
+        candidate <- program.evaluate(first)
+        encoded   <- ZIO.fromEither(PhoenixRenderedEncoder.initial(candidate.tree))
+        second    <- program.evaluate(next, Some(candidate.commit))
+        changed   <- ZIO.fromEither(
+                     PhoenixRenderedEncoder
+                       .update(encoded._1, TreeDiffer.diff(candidate.tree, second.tree))
+                   )
+      yield assertTrue(
+        field(dynamic(encoded._2), "s") ==
+          Json.Arr(Json.Str("<span id=\""), Json.Str("\">"), Json.Str("</span>")),
+        dynamic(changed._2) == Json.Obj(
+          "s" -> Json.Arr(
+            Json.Str("<span id=\""),
+            Json.Str(""),
+            Json.Str(""),
+            Json.Str(""),
+            Json.Str("")
+          ),
+          "k" -> Json.Obj(
+            "0" -> Json.Obj(
+              "0" -> Json.Str("b"),
+              "1" -> Json.Str("\"><em>"),
+              "2" -> Json.Str("B"),
+              "3" -> Json.Str("</em></span>")
             ),
-            "stream" -> Json.Arr(
-              Json.Str("0"),
-              Json.Arr(Json.Arr(Json.Str("a"), Json.Num(-1), Json.Null, Json.Bool(false))),
-              Json.Arr()
-            )
+            "kc" -> Json.Num(1)
+          ),
+          "stream" -> Json.Arr(
+            Json.Str("0"),
+            Json.Arr(Json.Arr(Json.Str("b"), Json.Num(-1), Json.Null, Json.Bool(false))),
+            Json.Arr()
           )
         )
       )
@@ -800,7 +858,9 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
             "k" -> Json.Obj(
               "0" -> Json.Obj(
                 "0" -> Json.Str("group"),
+                // The browser keeps no stream row, so it renders this one from scratch.
                 "1" -> Json.Obj(
+                  "s" -> Json.Arr(Json.Str("<span id=\""), Json.Str("\">"), Json.Str("</span>")),
                   "k" -> Json.Obj(
                     "0" -> Json.Obj("0" -> Json.Str("c"), "1" -> Json.Str("C")),
                     "1" -> Json.Obj("0" -> Json.Str("d"), "1" -> Json.Str("D")),
@@ -1017,12 +1077,9 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
       val compiled = RenderProgram.compile[Vector[(String, String)], Nothing](items =>
         div(items.splitBy(_._1)((_, item) => span(item.map(_._2))))
       )
-      val child = (tag: String, value: String) => Json.Obj(
-        "0" -> Json.Obj(
-          "s" -> Json.Arr(Json.Str(s"<$tag>"), Json.Str(s"</$tag>")),
-          "0" -> Json.Str(value)
-        )
-      )
+      // Rows refer to their template in the comprehension's `p`.
+      val child     = (value: String) => Json.Obj("0" -> Json.Obj("s" -> Json.Num(0), "0" -> Json.Str(value)))
+      val templates = "p" -> Json.Obj("0" -> Json.Arr(Json.Str("<span>"), Json.Str("</span>")))
       def keyed(fields: (String, Json)*): Json.Obj =
         val rows = fields.filterNot(_._1 == "km") :+ ("kc" -> Json.Num(2))
         val move = fields.filter(_._1 == "km")
@@ -1083,10 +1140,11 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
           "0" -> Json.Obj(
             "s" -> Json.Arr(Json.Str(""), Json.Str("")),
             "k" -> Json.Obj(
-              "0" -> child("span", "A"),
-              "1" -> child("span", "B"),
+              "0" -> child("A"),
+              "1" -> child("B"),
               "kc" -> Json.Num(2)
-            )
+            ),
+            templates
           )
         ),
         afterReorder._2 == keyed(
@@ -1103,11 +1161,14 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
           ),
           "km" -> Json.Bool(true)
         ),
-        afterInsertDelete._2 == keyed("1" -> child("span", "C")),
+        afterInsertDelete._2 == Json.Obj(
+          "0" -> Json.Obj("k" -> Json.Obj("1" -> child("C"), "kc" -> Json.Num(2)), templates)
+        ),
         afterEmpty._2 == Json.Obj("0" -> Json.Obj("k" -> Json.Obj("kc" -> Json.Num(0)))),
         afterNonempty._2 == Json.Obj(
           "0" -> Json.Obj(
-            "k" -> Json.Obj("0" -> child("span", "D"), "kc" -> Json.Num(1))
+            "k" -> Json.Obj("0" -> child("D"), "kc" -> Json.Num(1)),
+            templates
           )
         ),
         emptyInitial._2 == Json.Obj(
@@ -1120,7 +1181,7 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
         html == "<div><span>A</span><span>C</span></div>"
       )
     },
-    test("boxes heterogeneous ordinary keyed row templates as dynamic zero") {
+    test("shares a row template whose rows differ only in a conditional") {
       val compiled = RenderProgram.compile[Vector[(String, String, String)], Nothing](items =>
         div(
           items.splitBy(_._1) { (_, item) =>
@@ -1143,14 +1204,20 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
         rows = field(dynamic(encoded._2), "k").asInstanceOf[Json.Obj]
       yield assertTrue(
         field(field(rows, "0").asInstanceOf[Json.Obj], "0") == Json.Obj(
-          "s" -> Json.Arr(Json.Str("<div><span>"), Json.Str("</span></div>")),
-          "0" -> Json.Str("one")
+          "s" -> Json.Num(1),
+          "0" -> Json.Obj("s" -> Json.Num(0), "0" -> Json.Str("one"))
         ),
         field(field(rows, "1").asInstanceOf[Json.Obj], "0") == Json.Obj(
-          "s" -> Json.Arr(Json.Str("<div><button>"), Json.Str("</button></div>")),
-          "0" -> Json.Str("two")
+          "s" -> Json.Num(1),
+          "0" -> Json.Obj("s" -> Json.Num(2), "0" -> Json.Str("two"))
         ),
         field(rows, "kc") == Json.Num(2),
+        field(dynamic(encoded._2), "p") == Json.Obj(
+          "0" -> Json.Arr(Json.Str("<span>"), Json.Str("</span>")),
+          "1" -> Json.Arr(Json.Str("<div>"), Json.Str("</div>")),
+          "2" -> Json.Arr(Json.Str("<button>"), Json.Str("</button>"))
+        ),
+        PhoenixClient.join(encoded._2).html == html,
         html == "<div><div><span>one</span></div><div><button>two</button></div></div>"
       )
     },
@@ -1260,7 +1327,7 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
         )
       )
     },
-    test("selects a stream row whose keyed descendant changed") {
+    test("resends a whole stream row whose keyed descendant changed") {
       val identity = LiveStreamIdentity.fresh()
       def handle(values: Vector[(String, String)]) = LiveStream(
         identity,
@@ -1301,13 +1368,17 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
         row        = field(streamRows, "0").asInstanceOf[Json.Obj]
       yield assertTrue(
         !streamDiff.fields.toMap.contains("s"),
+        // The browser keeps no stream row, so a move within one has nothing to move.
         field(row, "1") == Json.Obj(
+          "s" -> Json.Arr(Json.Str(""), Json.Str("")),
           "k" -> Json.Obj(
-            "0"  -> Json.Num(1),
-            "1"  -> Json.Num(0),
-            "kc" -> Json.Num(2),
-            "km" -> Json.Bool(true)
+            "0"  -> Json.Obj("0" -> Json.Obj("s" -> Json.Num(0), "0" -> Json.Str("B"))),
+            "1"  -> Json.Obj("0" -> Json.Obj("s" -> Json.Num(0), "0" -> Json.Str("A"))),
+            "kc" -> Json.Num(2)
           )
+        ),
+        field(streamDiff, "p") == Json.Obj(
+          "0" -> Json.Arr(Json.Str("<span>"), Json.Str("</span>"))
         )
       )
     },
@@ -1419,7 +1490,7 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
         program   <- ZIO.fromEither(compiled)
         candidate <- program.evaluate(input)
         encoded   <- ZIO.fromEither(PhoenixRenderedEncoder.initial(candidate.tree))
-      yield assertTrue(reconstruct(encoded._2) == HtmlRenderer.render(candidate.tree))
+      yield assertTrue(PhoenixClient.join(encoded._2).html == HtmlRenderer.render(candidate.tree))
     },
     test("choice branches of text and several siblings update sparsely and switch whole") {
       val compiled = RenderProgram.compile[(Boolean, String), Nothing] { model =>
@@ -1453,11 +1524,129 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
                     )
         closedHtml <- ZIO.fromEither(PhoenixRenderedEncoder.html(switched._1))
       yield assertTrue(
-        reconstruct(initial._2) == "<div><strong>Open</strong> by Ada</div>",
+        PhoenixClient.join(initial._2).html == "<div><strong>Open</strong> by Ada</div>",
         !updated._2.toString.contains("\"s\""),
         renamedHtml == "<div><strong>Open</strong> by Grace &lt;3</div>",
         closedHtml == "<div>Closed</div>",
         closedHtml == HtmlRenderer.render(closed.tree)
+      )
+    },
+    test("a branch switch sends only the new branch, not the statics around it") {
+      val compiled = RenderProgram.compile[(Boolean, String), Nothing] { model =>
+        div(
+          h1("Patient record"),
+          model.map(_._1).choose(form(input(nameAttr := "name")), p(model.map(_._2))),
+          p("Footer")
+        )
+      }
+
+      for
+        program  <- ZIO.fromEither(compiled)
+        first    <- program.evaluate((false, "Ada"))
+        initial  <- ZIO.fromEither(PhoenixRenderedEncoder.initial(first.tree))
+        editing  <- program.evaluate((true, "Ada"), Some(first.commit))
+        switched <- ZIO.fromEither(
+                      PhoenixRenderedEncoder.update(
+                        initial._1,
+                        TreeDiffer.diff(first.tree, editing.tree)
+                      )
+                    )
+        back      <- program.evaluate((false, "Grace"), Some(editing.commit))
+        switchedBack <- ZIO.fromEither(
+                          PhoenixRenderedEncoder.update(
+                            switched._1,
+                            TreeDiffer.diff(editing.tree, back.tree)
+                          )
+                        )
+        renamed <- program.evaluate((false, "Linus"), Some(back.commit))
+        updated <- ZIO.fromEither(
+                     PhoenixRenderedEncoder.update(
+                       switchedBack._1,
+                       TreeDiffer.diff(back.tree, renamed.tree)
+                     )
+                   )
+      yield assertTrue(
+        initial._2 == Json.Obj(
+          "s" -> Json.Arr(
+            Json.Str("<div><h1>Patient record</h1>"),
+            Json.Str("<p>Footer</p></div>")
+          ),
+          "0" -> Json.Obj("s" -> Json.Arr(Json.Str("<p>"), Json.Str("</p>")), "0" -> Json.Str("Ada"))
+        ),
+        switched._2 == Json.Obj(
+          "0" -> Json.Obj("s" -> Json.Arr(Json.Str("<form><input name=\"name\"></form>")))
+        ),
+        switchedBack._2 == Json.Obj(
+          "0" -> Json.Obj("s" -> Json.Arr(Json.Str("<p>"), Json.Str("</p>")), "0" -> Json.Str("Grace"))
+        ),
+        updated._2 == Json.Obj("0" -> Json.Obj("0" -> Json.Str("Linus")))
+      )
+    },
+    test("a branch switch leaves the components outside the branch alone") {
+      val rootCompiled = RenderProgram.compile[Boolean, Nothing](shown =>
+        div(component(TestComponent, "child").render("child"), shown.when(span("shown")))
+      )
+      val childCompiled = RenderProgram.compile[String, Nothing](value => span(value))
+      val token         = Object()
+      val ref           = ComponentRef.runtime[String](token)
+      for
+        rootProgram  <- ZIO.fromEither(rootCompiled)
+        childProgram <- ZIO.fromEither(childCompiled)
+        child        <- childProgram.evaluate("child")
+        hidden       <- rootProgram.evaluate(false)
+        resolvedHidden <- ZIO.fromEither(
+                            hidden.resolveComponents(
+                              Vector(resolve(hidden.componentRequirements.head, ref, token, child))
+                            )
+                          )
+        initial <- ZIO.fromEither(PhoenixRenderedEncoder.initial(resolvedHidden.tree))
+        shown   <- rootProgram.evaluate(true, Some(resolvedHidden.commit))
+        resolvedShown <- ZIO.fromEither(
+                           shown.resolveComponents(
+                             Vector(resolve(shown.componentRequirements.head, ref, token, child))
+                           )
+                         )
+        updated <- ZIO.fromEither(
+                     PhoenixRenderedEncoder.update(
+                       initial._1,
+                       TreeDiffer.diff(resolvedHidden.tree, resolvedShown.tree)
+                     )
+                   )
+      yield assertTrue(
+        updated._2 == Json.Obj("1" -> Json.Obj("s" -> Json.Arr(Json.Str("<span>shown</span>"))))
+      )
+    },
+    test("inserted keyed rows share one template") {
+      val compiled = RenderProgram.compile[Vector[String], Nothing](items =>
+        ul(items.splitBy(identity)((_, item) => li(cls := "row", item)))
+      )
+      val row = (value: String) => Json.Obj("0" -> Json.Obj("s" -> Json.Num(0), "0" -> Json.Str(value)))
+
+      for
+        program  <- ZIO.fromEither(compiled)
+        first    <- program.evaluate(Vector.empty)
+        initial  <- ZIO.fromEither(PhoenixRenderedEncoder.initial(first.tree))
+        inserted <- program.evaluate(Vector("a", "b", "c"), Some(first.commit))
+        updated  <- ZIO.fromEither(
+                     PhoenixRenderedEncoder.update(
+                       initial._1,
+                       TreeDiffer.diff(first.tree, inserted.tree)
+                     )
+                   )
+      yield assertTrue(
+        updated._2 == Json.Obj(
+          "0" -> Json.Obj(
+            "k" -> Json.Obj(
+              "0"  -> row("a"),
+              "1"  -> row("b"),
+              "2"  -> row("c"),
+              "kc" -> Json.Num(3)
+            ),
+            "p" -> Json.Obj(
+              "0" -> Json.Arr(Json.Str("<li class=\"row\">"), Json.Str("</li>"))
+            )
+          )
+        )
       )
     },
     test("projects repeated dynamic composite modifiers through one sparse slot") {
@@ -1478,7 +1667,7 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
                    )
         html <- ZIO.fromEither(PhoenixRenderedEncoder.html(updated._1))
       yield assertTrue(
-        reconstruct(initial._2) == "<div class=\"base active\"></div>",
+        PhoenixClient.join(initial._2).html == "<div class=\"base active\"></div>",
         updated._2.fields.map(_._1).toSet == Set("0"),
         html == HtmlRenderer.render(second.tree)
       )
@@ -1523,7 +1712,7 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
         )
       yield assertTrue(
         replaced._2.fields.exists(_._1 == "s"),
-        reconstruct(replaced._2) == HtmlRenderer.render(secondTree.tree)
+        PhoenixClient.join(replaced._2).html == HtmlRenderer.render(secondTree.tree)
       )
     },
     test("a structural replacement targets the previous template id and emits a full map") {
@@ -1548,7 +1737,7 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
         )
       yield assertTrue(
         replaced._2.fields.exists(_._1 == "s"),
-        reconstruct(replaced._2) == HtmlRenderer.render(secondTree.tree)
+        PhoenixClient.join(replaced._2).html == HtmlRenderer.render(secondTree.tree)
       )
     },
     test("flash insertion points remain transparent across structural updates") {
@@ -1575,10 +1764,20 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
                        TreeDiffer.diff(present.tree, removed.tree)
                      )
                    )
+        client = PhoenixClient.join(initial._2)
+        joined = client.html
+        _      = client.merge(inserted._2)
+        shown  = client.html
+        _      = client.merge(deleted._2)
+        hidden = client.html
       yield assertTrue(
-        reconstruct(initial._2) == "<div>beforeafter</div>",
-        reconstruct(inserted._2) == "<div>before<span>saved</span>after</div>",
-        reconstruct(deleted._2) == "<div>beforeafter</div>"
+        joined == "<div>beforeafter</div>",
+        inserted._2 == Json.Obj(
+          "0" -> Json.Obj("s" -> Json.Arr(Json.Str("<span>"), Json.Str("</span>")), "0" -> Json.Str("saved"))
+        ),
+        shown == "<div>before<span>saved</span>after</div>",
+        deleted._2 == Json.Obj("0" -> Json.Obj("s" -> Json.Arr(Json.Str("")))),
+        hidden == "<div>beforeafter</div>"
       )
     },
     test("assigns sibling CIDs in declaration order and isolates state lookups") {
@@ -1828,12 +2027,14 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
                  )
       yield assertTrue(
         initial._1.tokenForCid(1).contains(firstToken),
-        removed._2 == Json.Obj("s" -> Json.Arr(Json.Str("<div></div>"))),
+        removed._2 == Json.Obj("0" -> Json.Obj("s" -> Json.Arr(Json.Str("")))),
         removed._1.tokenForCid(1).contains(firstToken),
         removed._1.cidForToken(firstToken).contains(1),
         reintroduced._2 == Json.Obj(
-          "s" -> Json.Arr(Json.Str("<div><span>"), Json.Str("</span></div>")),
-          "0" -> Json.Num(1),
+          "0" -> Json.Obj(
+            "s" -> Json.Arr(Json.Str("<span>"), Json.Str("</span>")),
+            "0" -> Json.Num(1)
+          ),
           "c" -> Json.Obj(
             "1" -> Json.Obj(
               "s" -> Json.Arr(
@@ -1982,7 +2183,6 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
                     )
       yield assertTrue(
         replaced._2 == Json.Obj(
-          "s" -> Json.Arr(Json.Str("<div>"), Json.Str("</div>")),
           "0" -> Json.Num(2),
           "c" -> Json.Obj(
             "2" -> Json.Obj(
@@ -2087,12 +2287,10 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
         added._2 == Json.Obj(
           "c" -> Json.Obj(
             "1" -> Json.Obj(
-              "s" -> Json.Arr(
-                Json.Str("<div data-phx-component=\"1\"><span>"),
-                Json.Str("</span></div>")
-              ),
-              "0" -> Json.Num(2),
-              "r" -> Json.Num(1)
+              "0" -> Json.Obj(
+                "s" -> Json.Arr(Json.Str("<span>"), Json.Str("</span>")),
+                "0" -> Json.Num(2)
+              )
             ),
             "2" -> Json.Obj(
               "s" -> Json.Arr(
@@ -2106,12 +2304,7 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
         ),
         added._1.cidForToken(innerToken).contains(2),
         removed._2 == Json.Obj(
-          "c" -> Json.Obj(
-            "1" -> Json.Obj(
-              "s" -> Json.Arr(Json.Str("<div data-phx-component=\"1\"></div>")),
-              "r" -> Json.Num(1)
-            )
-          )
+          "c" -> Json.Obj("1" -> Json.Obj("0" -> Json.Obj("s" -> Json.Arr(Json.Str("")))))
         ),
         removed._1.tokenForCid(2).contains(innerToken)
       )
@@ -2260,16 +2453,3 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
       )
     }
   )
-
-  private def reconstruct(rendered: Json.Obj): String =
-    val fields = rendered.fields.toMap
-    fields("s") match
-      case Json.Arr(statics) =>
-        statics.zipWithIndex.map { case (static, index) =>
-          val value = static match
-            case Json.Str(text) => text
-            case _              => throw AssertionError("static segment is not a string")
-          value + fields
-            .get(index.toString).collect { case Json.Str(dynamic) => dynamic }.getOrElse("")
-        }.mkString
-      case _ => throw AssertionError("rendered map has no static array")

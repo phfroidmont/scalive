@@ -23,6 +23,10 @@ Maintained Scala 3/JMH fixtures cover the Scalive render pipeline:
   resolved components retaining eight child templates each, and a duplicate key at the final
   candidate row to measure late failure and rollback.
 
+`RetainedHeap` is not a JMH benchmark: it measures the heap a connection keeps per row of a keyed
+list and of a stream after a turn, split into the model, the render and the Phoenix encoder state.
+It walks the object graph with JOL, so its figures are exact and repeat on the same JVM.
+
 Fixture invariants are checked once in trial setup, not in timed methods. `BenchmarkCounters`
 accumulates output/diff size, expression sample count, render/diff nanoseconds, retained-template
 count, coarse retained-heap lower bound, and lifecycle-resource estimate as JMH event-counter
@@ -51,6 +55,12 @@ for example:
 ```sh
 mill benchmarks.runJmh -prof gc -p rowCount=1000 -p operation=update \
   'scalive.benchmarks.KeyedRowsBenchmark.renderDiffAndEncode'
+```
+
+Heap retained per row:
+
+```sh
+mill benchmarks.runMain scalive.benchmarks.RetainedHeap
 ```
 
 ### Measurement caveats

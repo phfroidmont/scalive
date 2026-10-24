@@ -234,7 +234,10 @@ final case class RenderCandidate[+Msg] private[render] (
   streamRequirements: Vector[StreamRequirement[Msg]],
   private[scalive] val stagedScope: CandidateScope,
   private[render] val programIdentity: RenderProgramId,
-  private val commitTail: CandidateCommit):
+  private val commitTail: CandidateCommit,
+  // Whether the input differs from the committed render's, or there is none: whether the view
+  // rendered, in Phoenix's terms, which runs after-render hooks only then.
+  private[scalive] val inputChanged: Boolean):
   /** Transfers scope ownership to a committed render. A candidate can be committed only once. */
   def commit: CommittedRender[Msg] =
     val unresolvedComponents = EvaluatedTree.unresolvedComponents(tree.root)

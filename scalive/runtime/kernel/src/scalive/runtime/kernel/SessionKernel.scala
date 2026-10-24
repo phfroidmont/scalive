@@ -1751,9 +1751,14 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                           auxiliaryScope
                         )
                       reservation <- reserve(auxiliaryScope, awaitOutput)
-                      finalDraft  <- phase(SessionStage.AfterRender)(
-                                      logic.afterRender(reconciledDraft)
-                                    ).tap(next => uploadRollback.set(next.uploadRollback))
+                      // As in Phoenix, after-render hooks run only when the view rendered: when it is
+                      // new or its state changed, not when only its components did.
+                      finalDraft <-
+                        if render.inputChanged then
+                          phase(SessionStage.AfterRender)(
+                            logic.afterRender(reconciledDraft)
+                          ).tap(next => uploadRollback.set(next.uploadRollback))
+                        else ZIO.succeed(reconciledDraft)
                       _ <- validateContinuations(
                              existingContinuations,
                              finalDraft.continuations.size + nestedComponents.outputs.size +
@@ -2611,18 +2616,23 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                           )
                     resolved = finalCandidate
                     afterDraft <- draft.get
-                    after      <- restore(
-                               phase(SessionStage.ComponentAfterRender)(
-                                 componentEnvironment.afterRender(
-                                   id,
-                                   component,
-                                   postChildProps,
-                                   postChildResult.model,
-                                   postChildResult.state,
-                                   afterDraft
-                                 )
-                               )
-                             )
+                    // As in Phoenix, a component that did not render runs no after-render hook.
+                    after <-
+                      if resolved.inputChanged then
+                        restore(
+                          phase(SessionStage.ComponentAfterRender)(
+                            componentEnvironment.afterRender(
+                              id,
+                              component,
+                              postChildProps,
+                              postChildResult.model,
+                              postChildResult.state,
+                              afterDraft
+                            )
+                          )
+                        )
+                      else
+                        ZIO.succeed(ComponentAfterRenderResult(afterDraft, postChildResult.state))
                     _ <- stateOwner.set(Some(after.state)) *>
                            recordComponentDraft(draft, updates, after.draft)
                     componentId     = id

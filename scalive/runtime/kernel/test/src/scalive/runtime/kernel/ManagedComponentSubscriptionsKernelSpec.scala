@@ -35,8 +35,14 @@ object ManagedComponentSubscriptionsKernelSpec extends ZIOSpecDefault:
     def publish(batch: OutboundBatch[SessionOutput]) = ZIO.unit
     def release                                         = ZIO.unit
 
-  private final class Outbound extends OutboundReservations[SessionOutput]:
-    def reserve  = ZIO.succeed(Reservation())
+  // Reservation is the step after a turn's managed resources are prepared, so failing it
+  // rejects a candidate whose subscriptions are prepared but not yet active.
+  private final class Outbound(fail: UIO[Boolean] = ZIO.succeed(false))
+      extends OutboundReservations[SessionOutput]:
+    def reserve =
+      fail.flatMap(failing =>
+        if failing then ZIO.fail(OutboundReservationError.Shutdown) else ZIO.succeed(Reservation())
+      )
     def awaitCapacity = ZIO.unit
     def take     = ZIO.fail(OutboundReservationError.Shutdown)
     def shutdown = ZIO.unit
@@ -47,7 +53,7 @@ object ManagedComponentSubscriptionsKernelSpec extends ZIOSpecDefault:
     mounts: Ref[Int],
     updates: Ref[Int],
     messages: Ref[Int],
-    failAfterRender: Ref[Boolean]
+    failCandidate: Ref[Boolean]
   ) extends ComponentEnvironment[RootMessage, Boolean]:
     private def start(
       id: ComponentInstanceId,
@@ -162,7 +168,7 @@ object ManagedComponentSubscriptionsKernelSpec extends ZIOSpecDefault:
             )
           )
         case ComponentMessage.StartThenFail(subscription) =>
-          failAfterRender.set(true).as(
+          failCandidate.set(true).as(
             ComponentCallbackResult(
               model,
               draft.copy(resourceOperations = draft.resourceOperations :+ start(id, subscription, replace = false)),
@@ -267,13 +273,13 @@ object ManagedComponentSubscriptionsKernelSpec extends ZIOSpecDefault:
       mounts <- Ref.make(0)
       updates <- Ref.make(0)
       messages <- Ref.make(0)
-      failAfterRender <- Ref.make(false)
+      failCandidate <- Ref.make(false)
     yield (
-      Environment(lifecycle, initial, mounts, updates, messages, failAfterRender),
+      Environment(lifecycle, initial, mounts, updates, messages, failCandidate),
       mounts,
       updates,
       messages,
-      failAfterRender
+      failCandidate
     )
 
   private def retrySaturated[A](
@@ -806,19 +812,14 @@ object ManagedComponentSubscriptionsKernelSpec extends ZIOSpecDefault:
                         case InvalidStart.Duplicate       =>
                           Map(componentDefinition.asInstanceOf[AnyRef] ->
                             Subscription(existingKey, SubscriptionDelivery.Lossless, existingStream))
-            (env, _, _, _, failAfterRender) <- environment(lifecycle, initial)
+            (env, _, _, _, failCandidate) <- environment(lifecycle, initial)
             guards <- Ref.make(0)
             render <- program(instance)
-            afterRender = (draft: TurnDraft[RootMessage, Boolean]) =>
-                            failAfterRender.get.flatMap { fail =>
-                              if fail then ZIO.fail(IllegalStateException("candidate rejected"))
-                              else ZIO.succeed(draft)
-                            }
             kernel <- SessionKernel.start(
                         config,
-                        logic(guards, afterRender),
+                        logic(guards),
                         render,
-                        Outbound(),
+                        Outbound(failCandidate.get),
                         env,
                         providedLifecycle = Some(lifecycle)
                       )

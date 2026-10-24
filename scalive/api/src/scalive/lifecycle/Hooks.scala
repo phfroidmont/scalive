@@ -108,7 +108,9 @@ sealed trait LiveHooks[Msg, Model]:
     ]
   ): LiveHooks[Msg, Model] = LiveHooks.Async(this, hook)
 
-  /** Adds a hook that runs after each render of the view and its components. */
+  /** Adds a hook that runs after each render of the view: when it mounts, and in each turn that
+    * changes what it renders from. A turn that changes only its components does not run it.
+    */
   final def afterRender(
     hook: (Model, AfterRenderContext[Msg, Model]) => Task[Unit]
   ): LiveHooks[Msg, Model] = LiveHooks.AfterRender(this, hook)
@@ -192,7 +194,8 @@ object LiveHooks:
     ]
   ): LiveHooks[Msg, Model] = empty.onAsync(hook)
 
-  /** Adds a hook that runs after each render of the view and its components.
+  /** Adds a hook that runs after each render of the view: when it mounts, and in each turn that
+    * changes what it renders from. A turn that changes only its components does not run it.
     *
     * This form starts the declarations with this hook, like `empty.afterRender`.
     */
@@ -226,10 +229,13 @@ sealed trait ComponentLiveHooks[Props, Msg, Model]:
     ]
   ): ComponentLiveHooks[Props, Msg, Model] = ComponentLiveHooks.Async(this, hook)
 
-  /** Adds a hook that runs after each render of the component. */
+  /** Adds a hook that runs after each render of the component: when it mounts, and in each turn
+    * that changes its props or model.
+    */
   final def afterRender(
     hook: (Props, Model, ComponentAfterRenderContext[Props, Msg, Model]) => Task[Unit]
   ): ComponentLiveHooks[Props, Msg, Model] = ComponentLiveHooks.AfterRender(this, hook)
+end ComponentLiveHooks
 
 /** Constructors for [[ComponentLiveHooks]] declarations. */
 object ComponentLiveHooks:
@@ -292,7 +298,8 @@ object ComponentLiveHooks:
     ]
   ): ComponentLiveHooks[Props, Msg, Model] = empty.onAsync(hook)
 
-  /** Adds a hook that runs after each render of the component.
+  /** Adds a hook that runs after each render of the component: when it mounts, and in each turn
+    * that changes its props or model.
     *
     * This form starts the declarations with this hook, like `empty.afterRender`.
     */
@@ -419,7 +426,7 @@ trait AsyncHooks[Msg, Model]:
 
 /** The dynamic after-render hooks of one LiveView lifecycle. */
 trait AfterRenderHooks[Msg, Model]:
-  /** Attaches `hook` under `id`, to run after each render of the view and its components.
+  /** Attaches `hook` under `id`, to run after each render of the view.
     *
     * Every hook receives the rendered model; it cannot replace the model or halt, and a failure
     * aborts the render. In a connected lifecycle it runs before the changes reach the browser.

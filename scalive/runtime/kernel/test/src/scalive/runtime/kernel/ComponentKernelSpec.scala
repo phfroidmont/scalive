@@ -126,8 +126,33 @@ object ComponentKernelSpec extends ZIOSpecDefault:
           initial == Vector("mount", "update", "render", "after-render"),
           later.count(_ == "update") == 1,
           later.count(_ == "render") == 1,
-          later.count(_ == "after-render") == 2
+          later.count(_ == "after-render") == 1
         )
+      }
+    },
+    test("after-render runs for a component only when it is new or its props or model changed") {
+      ZIO.scoped {
+        val events     = ConcurrentLinkedQueue[String]()
+        val instance   = component(componentDefinition(events), "counter")
+        def afterRenders = events.iterator().asScala.count(_ == "after-render")
+        for
+          seen    <- Ref.make(Vector.empty[Int])
+          program <- ZIO.fromEither(
+                       RenderProgram.compile[Int, Int](model =>
+                         div(model.map(_.toString), instance.render(3))
+                       )
+                     )
+          kernel    <- SessionKernel.start(config, logic(seen), program, Outbound(), FakeEnvironment(events))
+          mounted    = afterRenders
+          _         <- kernel.submit(SessionCommand.Message(kernel.epoch, 1))
+          afterRoot  = afterRenders
+          inspected <- kernel.inspect
+          id         = inspected.components.values.head.id
+          _         <- kernel.submitComponent(id, 2)
+          afterChange = afterRenders
+          _         <- kernel.submitComponent(id, 0)
+          afterSame  = afterRenders
+        yield assertTrue(mounted == 1, afterRoot == 1, afterChange == 2, afterSame == 2)
       }
     },
     test("send-update props survive unrelated parent renders") {
@@ -974,7 +999,12 @@ object ComponentKernelSpec extends ZIOSpecDefault:
                     draft.copy(
                       navigation = Some(NavigationRequest(destination, NavigationKind.PushPatch))
                     )
-                ZIO.succeed(ComponentCallbackResult(model, nextDraft, state))
+                // The component's model changes on the failure path, so that it renders and its
+                // after-render hook, which fails, runs.
+                val nextModel =
+                  if path == ClosePath.ActiveFailure then (model.asInstanceOf[Int] + 1).asInstanceOf[A]
+                  else model
+                ZIO.succeed(ComponentCallbackResult(nextModel, nextDraft, state))
               override def afterRender[P, M, A](id: ComponentInstanceId, component: LiveComponent[P, M, A], props: P, model: A, state: ComponentEnvironmentState, draft: TurnDraft[Int, Int]) =
                 if path == ClosePath.ActiveFailure && draft.model == 1 then
                   ZIO.fail(IllegalStateException("active ownership failure"))
@@ -1119,8 +1149,10 @@ object ComponentKernelSpec extends ZIOSpecDefault:
             def take     = ZIO.fail(OutboundReservationError.Shutdown)
             def shutdown = ZIO.unit
           program <- ZIO.fromEither(
-                       RenderProgram.compile[Int, Int](_ =>
-                         div(producer.render(1, identity), sibling.render(2))
+                       // The sibling's props follow the root model, which the producer's message
+                       // changes, so the sibling renders in that turn and its after-render fails.
+                       RenderProgram.compile[Int, Int](model =>
+                         div(producer.render(1, identity), sibling.render(model.map(_ + 2)))
                        )
                      )
           kernel <- SessionKernel.start(config, logic(seen), program, outbound, environment)

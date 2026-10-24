@@ -91,11 +91,11 @@ declarations add an `on` prefix to the stage name, such as `onRawEvent` for
 | Root | `params` | After mount and each URL change, before routed `handleParams` |
 | Root | `info` | Before non-browser server-message handling, including subscriptions |
 | Root | `async` | Before handling a root-owned managed task completion |
-| Root | `afterRender` | After the complete root tree renders, before a connected diff is emitted |
+| Root | `afterRender` | After the root renders, on mount and when the turn changed what it renders from, before a connected diff is emitted |
 | Component | `rawEvent` | After component routing, before typed component event handling |
 | Component | `event` | After a component binding or declared browser event becomes `Msg`, before `handleMessage` |
 | Component | `async` | Before handling that instance's managed task completion |
-| Component | `afterRender` | After that component subtree renders |
+| Component | `afterRender` | After that component renders, on mount and when the turn changed its props or model |
 
 Components do not have `params` or `info` stages. Root and component hook
 registries are separate even when the stage names match. `params` hooks run on
@@ -267,6 +267,11 @@ After-render hooks run in registration order, but every hook receives the same
 rendered model; they return `Task[Unit]`, cannot thread a replacement model,
 cannot halt, and cannot change the tree already rendered. A failure prevents
 later after-render hooks and aborts the render.
+
+As in Phoenix LiveView, a hook runs only when its owner renders. A turn that
+leaves the view's model and runtime state as they were, for example one that
+changes only a component, does not run the view's after-render hooks, and a
+component whose props and model did not change does not run its own.
 
 Component `ComponentAfterRenderContext` is intentionally narrower: it exposes
 lifecycle metadata and that instance's dynamic hooks, but no client operations,

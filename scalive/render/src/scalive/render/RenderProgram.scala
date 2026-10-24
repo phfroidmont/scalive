@@ -83,26 +83,26 @@ final class RenderProgram[Input, Msg] private (
         (signalState, previousRoot, previousBindings) = previousValues
         candidate <-
           ZIO.fromEither(RenderRevision.next(signalState.revision)).flatMap { revision =>
-            val transaction = SignalEvaluation.begin(signalState, revision, source, input)
-            val unchanged   = previous match
-              case Some(committed) if !committed.signalEvaluation.untracked =>
-                transaction
-                  .sample(source).map(sample =>
-                    Option.when(transaction.unchanged(sample))(committed)
+            val transaction  = SignalEvaluation.begin(signalState, revision, source, input)
+            val inputChanged = previous match
+              case Some(_) =>
+                transaction.sample(source).map(sample => !transaction.unchanged(sample))
+              case None => Right(true)
+            ZIO.fromEither(inputChanged).flatMap { changed =>
+              previous match
+                case Some(committed) if !changed && !committed.signalEvaluation.untracked =>
+                  reuse(committed, candidateScope)
+                case _ =>
+                  evaluateCandidate(
+                    input,
+                    changed,
+                    previousRoot,
+                    previousBindings,
+                    revision,
+                    transaction,
+                    candidateScope,
+                    candidateRows
                   )
-              case _ => Right(None)
-            ZIO.fromEither(unchanged).flatMap {
-              case Some(committed) => reuse(committed, candidateScope)
-              case None            =>
-                evaluateCandidate(
-                  input,
-                  previousRoot,
-                  previousBindings,
-                  revision,
-                  transaction,
-                  candidateScope,
-                  candidateRows
-                )
             }
           }
       yield candidate).onError(_ => ZIO.succeed(candidateRows.rollback()) *> candidateScope.discard)
@@ -125,12 +125,14 @@ final class RenderProgram[Input, Msg] private (
           Vector.empty,
           candidateScope,
           identity,
-          CandidateCommit(Array.empty)
+          CandidateCommit(Array.empty),
+          inputChanged = false
         )
       )
 
   private def evaluateCandidate(
     input: Input,
+    inputChanged: Boolean,
     previousRoot: Option[EvaluatedNode.Element],
     previousBindings: BindingTable[Msg],
     revision: RenderRevision,
@@ -167,7 +169,8 @@ final class RenderProgram[Input, Msg] private (
                 requirements.streams.toVector,
                 candidateScope,
                 identity,
-                commit
+                commit,
+                inputChanged
               )
             )
       }

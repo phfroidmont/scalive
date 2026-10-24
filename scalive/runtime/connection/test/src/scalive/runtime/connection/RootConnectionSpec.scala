@@ -550,7 +550,7 @@ object RootConnectionSpec extends ZIOSpecDefault:
         )
       }
     },
-    test("params hooks precede the callback and after-render hooks run on empty diffs") {
+    test("params hooks precede the callback and after-render hooks skip a turn that renders nothing") {
       ZIO.scoped {
         for
           order <- Ref.make(Vector.empty[String])
@@ -582,7 +582,8 @@ object RootConnectionSpec extends ZIOSpecDefault:
           after <- renders.get
         yield assertTrue(
           seen == Vector("params", "callback"),
-          after == Vector("static", "dynamic", "static", "dynamic"),
+          // Only the bootstrap rendered: the message leaves the model as it was.
+          after == Vector("static", "dynamic"),
           reply.isInstanceOf[ConnectionOutput.Diff]
         )
       }
@@ -997,6 +998,33 @@ object RootConnectionSpec extends ZIOSpecDefault:
           later == Left(ConnectionError.Closed),
           failed.isEmpty
         )
+      }
+    },
+    test("after-render hooks run only for turns that change the view's state") {
+      ZIO.scoped {
+        for
+          renders <- Ref.make(Vector.empty[Int])
+          outputs <- Queue.unbounded[ConnectionOutput]
+          view = new LiveView[Unit, Int]:
+                   override val hooks = LiveHooks.empty[Unit, Int].afterRender((model, _) =>
+                     renders.update(_ :+ model)
+                   )
+                   def mount(ctx: MountContext): Task[Int] = ZIO.succeed(0)
+                   // The model stops at 1, so the second click leaves it as it was.
+                   def handleMessage(model: Int, ctx: MessageContext): Unit => Task[Int] =
+                     _ => ZIO.succeed(math.min(model + 1, 1))
+                   def view(model: Signal[Int]) = button(on.click(()), model.map(_.toString))
+          connection <- RootConnection.start(config, metadata, view, outputs.offer(_).unit)
+          joined     <- outputs.take
+          click = connection.submitEvent(
+                    CommandId.fresh().toOption.get,
+                    bindingFrom(joined),
+                    BindingPayload.Params(Map.empty)
+                  ) *> outputs.take
+          _    <- click
+          _    <- click
+          seen <- renders.get
+        yield assertTrue(seen == Vector(0, 1))
       }
     },
     test("page titles and client events commit in lifecycle order") {

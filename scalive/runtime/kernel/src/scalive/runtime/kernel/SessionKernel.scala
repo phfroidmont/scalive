@@ -1992,7 +1992,9 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     remaining: Int
   ): ZIO[Any, SessionFailure, (RenderCandidate[Msg], StagedComponentsResult)] =
     staging.draftRef.get.flatMap { currentDraft =>
-      if currentDraft == renderedDraft then
+      // The root renders its model alone, so components that change only the rest of the turn
+      // (effects, resources, navigation) leave its render as it is.
+      if currentDraft.model == renderedDraft.model then
         snapshotStagedComponents(staging).map(currentRender -> _)
       else if remaining <= 0 then
         currentRender.discard *>

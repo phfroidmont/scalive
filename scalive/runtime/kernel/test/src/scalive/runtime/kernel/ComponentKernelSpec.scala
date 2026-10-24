@@ -172,6 +172,30 @@ object ComponentKernelSpec extends ZIOSpecDefault:
         )
       }
     },
+    test("a component that changes the turn but not the root model does not render the root again") {
+      ZIO.scoped {
+        val events = ConcurrentLinkedQueue[String]()
+        val environment = new FakeEnvironment(events):
+          override def mount[P, M, A](id: ComponentInstanceId, component: LiveComponent[P, M, A], props: P, draft: TurnDraft[Int, Int]) =
+            super.mount(id, component, props, draft.copy(effects = SessionEffects(pageTitle = Some("Mounted"))))
+        val instance = component(componentDefinition(events), "titled")
+        for
+          seen    <- Ref.make(Vector.empty[Int])
+          program <- ZIO.fromEither(
+                       RenderProgram.compile[Int, Int](model =>
+                         div(
+                           model.map { value =>
+                             events.add("root-render")
+                             value.toString
+                           },
+                           instance.render(1)
+                         )
+                       )
+                     )
+          _ <- SessionKernel.start(config, logic(seen), program, Outbound(), environment)
+        yield assertTrue(events.iterator().asScala.count(_ == "root-render") == 1)
+      }
+    },
     test("component browser events use the component committed binding") {
       ZIO.scoped {
         for

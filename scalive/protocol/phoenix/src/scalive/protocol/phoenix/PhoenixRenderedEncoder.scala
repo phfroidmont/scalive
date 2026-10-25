@@ -113,9 +113,11 @@ private[scalive] object PhoenixRenderedEncoder:
   private[phoenix] object IdentityKey:
     def apply(value: Object): IdentityKey = new IdentityKey(value)
 
-  private[phoenix] enum ProjectedValue:
-    case Text(value: String)
-    case ComponentTarget(ref: Object, identity: Object, name: String)
+  /** What a dynamic holds: its text, kept as it is, or the component a `phx-target` names. */
+  private[phoenix] type ProjectedValue = String | ProjectedValue.ComponentTarget
+
+  private[phoenix] object ProjectedValue:
+    final case class ComponentTarget(ref: Object, identity: Object, name: String)
 
   /** A part of a projected node: a static, a dynamic, or what it holds, such as a child node. */
   sealed private[phoenix] trait ProjectedPart
@@ -682,7 +684,7 @@ private[scalive] object PhoenixRenderedEncoder:
     case text: EvaluatedNode.Text =>
       val value = if text.raw then text.value else Escaping.escape(text.value)
       val part  = text.slot match
-        case Some(slot) => ProjectedPart.Dynamic(slot, ProjectedValue.Text(value), None)
+        case Some(slot) => ProjectedPart.Dynamic(slot, value, None)
         case None       => ProjectedPart.Static(value)
       Right(ProjectedNode(text.id, Vector(part)))
     case element: EvaluatedNode.Element =>
@@ -883,7 +885,7 @@ private[scalive] object PhoenixRenderedEncoder:
       case Some(slot) => Right(ProjectedPart.Dynamic(slot, value, Some(attribute.name)))
       case None       =>
         value match
-          case ProjectedValue.Text(text)              => Right(ProjectedPart.Static(text))
+          case text: String                           => Right(ProjectedPart.Static(text))
           case target: ProjectedValue.ComponentTarget => Right(ProjectedPart.Target(target))
 
   private def projectAttributeValue(
@@ -891,10 +893,9 @@ private[scalive] object PhoenixRenderedEncoder:
     attributeValue: Option[AttributeValue]
   ): ProjectedValue =
     attributeValue match
-      case None                            => ProjectedValue.Text("")
-      case Some(AttributeValue.Presence)   => ProjectedValue.Text(s" $name")
-      case Some(AttributeValue.Text(text)) =>
-        ProjectedValue.Text(s" $name=\"${Escaping.escape(text)}\"")
+      case None                                      => ""
+      case Some(AttributeValue.Presence)             => s" $name"
+      case Some(AttributeValue.Text(text))           => s" $name=\"${Escaping.escape(text)}\""
       case Some(AttributeValue.ComponentTarget(ref)) =>
         ProjectedValue.ComponentTarget(
           ref.asInstanceOf[Object],
@@ -935,7 +936,7 @@ private[scalive] object PhoenixRenderedEncoder:
         current.root,
         slot,
         None,
-        ProjectedValue.Text(if raw then value else Escaping.escape(value))
+        if raw then value else Escaping.escape(value)
       )
         .map(root => current.copy(root = root, changedSlots = current.changedSlots + slot))
     case RenderChange.Attribute(slot, name, value) =>
@@ -1601,7 +1602,7 @@ private[scalive] object PhoenixRenderedEncoder:
           case ProjectedPart.Static(value) =>
             current.append(value)
             None
-          case ProjectedPart.Dynamic(_, ProjectedValue.Text(value), _) =>
+          case ProjectedPart.Dynamic(_, value: String, _) =>
             dynamic(Json.Str(value))
             None
           case ProjectedPart.Dynamic(_, value: ProjectedValue.ComponentTarget, _) =>
@@ -1673,8 +1674,8 @@ private[scalive] object PhoenixRenderedEncoder:
             result.flatMap { _ =>
               val previousPart = previousParts.map(_(position))
               part match
-                case ProjectedPart.Static(_) | ProjectedPart.Target(_)          => Right(())
-                case ProjectedPart.Dynamic(slot, ProjectedValue.Text(value), _) =>
+                case ProjectedPart.Static(_) | ProjectedPart.Target(_) => Right(())
+                case ProjectedPart.Dynamic(slot, value: String, _)     =>
                   next(Option.when(changes.slots.contains(slot))(Json.Str(value)))
                   Right(())
                 case ProjectedPart.Dynamic(slot, value: ProjectedValue.ComponentTarget, _) =>
@@ -1959,7 +1960,7 @@ private[scalive] object PhoenixRenderedEncoder:
       node.parts.foldLeft[Either[PhoenixEncodingError, Unit]](Right(())) {
         case (result, ProjectedPart.Static(value)) =>
           result.map(_ => output.append(value)).map(_ => ())
-        case (result, ProjectedPart.Dynamic(_, ProjectedValue.Text(value), _)) =>
+        case (result, ProjectedPart.Dynamic(_, value: String, _)) =>
           result.map(_ => output.append(value)).map(_ => ())
         case (result, ProjectedPart.Dynamic(_, value: ProjectedValue.ComponentTarget, _)) =>
           result.flatMap(_ => renderTarget(value, components).map(output.append).map(_ => ()))

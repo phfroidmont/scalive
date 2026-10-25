@@ -81,7 +81,7 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
   private def projectedStreamRows(state: PhoenixRenderedState): Vector[String] =
     def loop(node: PhoenixRenderedEncoder.ProjectedNode): Vector[String] =
       node.parts.flatMap {
-        case PhoenixRenderedEncoder.ProjectedPart.Node(child) => loop(child)
+        case child: PhoenixRenderedEncoder.ProjectedNode => loop(child)
         case PhoenixRenderedEncoder.ProjectedPart.Stream(value) => value.rows.map(_.domId)
         case _ => Vector.empty
       }

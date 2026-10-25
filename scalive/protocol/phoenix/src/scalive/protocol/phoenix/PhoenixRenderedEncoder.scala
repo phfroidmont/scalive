@@ -117,27 +117,35 @@ private[scalive] object PhoenixRenderedEncoder:
     case Text(value: String)
     case ComponentTarget(ref: Object, identity: Object, name: String)
 
-  private[phoenix] enum ProjectedPart:
-    case Static(value: String)
-    case Dynamic(slot: TemplateSlotId, value: ProjectedValue, attributeName: Option[String])
-    case Target(value: ProjectedValue.ComponentTarget)
-    case Node(value: ProjectedNode)
+  /** A part of a projected node: a static, a dynamic, or what it holds, such as a child node. */
+  sealed private[phoenix] trait ProjectedPart
+
+  private[phoenix] object ProjectedPart:
+    final case class Static(value: String) extends ProjectedPart
+    final case class Dynamic(
+      slot: TemplateSlotId,
+      value: ProjectedValue,
+      attributeName: Option[String])
+        extends ProjectedPart
+    final case class Target(value: ProjectedValue.ComponentTarget) extends ProjectedPart
 
     /** A finalized disconnected child program. Its template ids and slots have their own namespace.
       */
-    case Nested(value: ProjectedNode)
-    case Component(cid: Int)
-    case Keyed(value: ProjectedKeyed)
-    case Stream(value: ProjectedStream)
-    case StreamDomId(value: String)
+    final case class Nested(value: ProjectedNode)   extends ProjectedPart
+    final case class Component(cid: Int)            extends ProjectedPart
+    final case class Keyed(value: ProjectedKeyed)   extends ProjectedPart
+    final case class Stream(value: ProjectedStream) extends ProjectedPart
+    final case class StreamDomId(value: String)     extends ProjectedPart
 
-  /** A projected node. One with `ownStatics` is sent within its parent as a nested rendered object
-    * with statics of its own, so replacing it resends that object and nothing around it.
+  /** A projected node, which is itself a part of its parent in the same program. One with
+    * `ownStatics` is sent within its parent as a nested rendered object with statics of its own, so
+    * replacing it resends that object and nothing around it.
     */
   final private[phoenix] case class ProjectedNode(
     id: TemplateId,
     parts: Vector[ProjectedPart],
-    ownStatics: Boolean = false):
+    ownStatics: Boolean = false)
+      extends ProjectedPart:
     // Computed once per instance. An update copies only the nodes on the path to what it changes,
     // so the summaries of everything else carry over.
     private[phoenix] lazy val summary: Summary = Summary.of(this)
@@ -183,7 +191,7 @@ private[scalive] object PhoenixRenderedEncoder:
             builder.slotMin = math.min(builder.slotMin, slot.value)
             builder.slotMax = math.max(builder.slotMax, slot.value)
             builder.dynamics += 1
-          case ProjectedPart.Node(child) =>
+          case child: ProjectedNode =>
             builder.include(child, sameProgram = true)
             builder.dynamics += (if child.ownStatics then 1 else child.summary.dynamics)
           case ProjectedPart.Nested(child) =>
@@ -482,10 +490,10 @@ private[scalive] object PhoenixRenderedEncoder:
         val parts         = mapKeepingInstances(node.parts) { (part, position) =>
           val previousPart = previousParts.map(_(position))
           part match
-            case ProjectedPart.Node(child) =>
+            case child: ProjectedNode =>
               val cleared =
-                clearNode(child, previousPart.collect { case ProjectedPart.Node(value) => value })
-              if cleared eq child then part else ProjectedPart.Node(cleared)
+                clearNode(child, previousPart.collect { case value: ProjectedNode => value })
+              cleared
             case ProjectedPart.Nested(child) =>
               val cleared =
                 clearNode(child, previousPart.collect { case ProjectedPart.Nested(value) => value })
@@ -641,7 +649,7 @@ private[scalive] object PhoenixRenderedEncoder:
             )
           )
         traverse(element.children)(child => project(child, None, context)).map { children =>
-          children.foreach(child => opening += ProjectedPart.Node(child))
+          children.foreach(child => opening += child)
           if !element.void then opening += tag.close
           ProjectedNode(element.id, opening.result())
         }
@@ -649,11 +657,11 @@ private[scalive] object PhoenixRenderedEncoder:
     // What can take another shape has statics of its own, as a Phoenix conditional does.
     case flash: EvaluatedNode.Flash =>
       traverse(flash.child.toVector)(child => project(child, None, context)).map(children =>
-        ProjectedNode(flash.id, children.map(ProjectedPart.Node(_)), ownStatics = true)
+        ProjectedNode(flash.id, children, ownStatics = true)
       )
     case choice: EvaluatedNode.Choice =>
       traverse(choice.children)(child => project(child, None, context)).map(children =>
-        ProjectedNode(choice.id, children.map(ProjectedPart.Node(_)), ownStatics = true)
+        ProjectedNode(choice.id, children, ownStatics = true)
       )
     case keyed: EvaluatedNode.Keyed =>
       traverse(keyed.rows)(row =>
@@ -982,7 +990,7 @@ private[scalive] object PhoenixRenderedEncoder:
         val around = if template then Some(node.id) else enclosing
         node.parts.iterator
           .flatMap {
-            case ProjectedPart.Node(child)  => search(child, around, child.ownStatics)
+            case child: ProjectedNode       => search(child, around, child.ownStatics)
             case ProjectedPart.Keyed(keyed) =>
               keyed.rows.iterator.flatMap(row => search(row.child, around, template = true))
             case ProjectedPart.Stream(stream) =>
@@ -1199,12 +1207,10 @@ private[scalive] object PhoenixRenderedEncoder:
       }
       Option.when(rowsChanged)(next)
     val parts = node.parts.map {
-      case part @ ProjectedPart.Node(value) =>
-        val next = update(value)
-        if next eq value then part
-        else
-          changed = true
-          ProjectedPart.Node(next)
+      case child: ProjectedNode =>
+        val next = update(child)
+        if !(next eq child) then changed = true
+        next
       case part @ ProjectedPart.Keyed(keyed) =>
         rows(keyed.rows, _.child)((row, child) => row.copy(child = child)) match
           case None       => part
@@ -1225,7 +1231,7 @@ private[scalive] object PhoenixRenderedEncoder:
   // The child subtrees of a node in its own program, nested LiveViews excluded.
   private def programChildren(node: ProjectedNode): Iterator[ProjectedNode] =
     node.parts.iterator.flatMap {
-      case ProjectedPart.Node(child)    => Iterator(child)
+      case child: ProjectedNode         => Iterator(child)
       case ProjectedPart.Keyed(keyed)   => keyed.rows.iterator.map(_.child)
       case ProjectedPart.Stream(stream) => stream.rows.iterator.map(_.child)
       case _                            => Iterator.empty
@@ -1377,7 +1383,7 @@ private[scalive] object PhoenixRenderedEncoder:
             case ProjectedPart.Component(cid) =>
               contents.cids += cid
               None
-            case ProjectedPart.Node(child)    => loop(child)
+            case child: ProjectedNode         => loop(child)
             case ProjectedPart.Nested(child)  => validateProgram(child, contents).left.toOption
             case ProjectedPart.Keyed(keyed)   => loopRows(keyed.rows.iterator.map(_.child))
             case ProjectedPart.Stream(stream) =>
@@ -1543,7 +1549,7 @@ private[scalive] object PhoenixRenderedEncoder:
             renderTarget(value, components).map(text => dynamic(Json.Str(text))).left.toOption
           case ProjectedPart.Target(value) =>
             renderTarget(value, components).map(text => current.append(text)).left.toOption
-          case ProjectedPart.Node(child) =>
+          case child: ProjectedNode =>
             if child.ownStatics then
               rendered(child, components, None, templates).map(dynamic).left.toOption
             else loop(child)
@@ -1616,9 +1622,9 @@ private[scalive] object PhoenixRenderedEncoder:
                   if changes.slots.contains(slot) then
                     renderTarget(value, components).map(text => next(Some(Json.Str(text))))
                   else Right(next(None))
-                case ProjectedPart.Node(child) =>
+                case child: ProjectedNode =>
                   val previousChild = previousPart.collect {
-                    case ProjectedPart.Node(value) if value.id == child.id => value
+                    case value: ProjectedNode if value.id == child.id => value
                   }
                   if changes.replaced.contains(child.id) then
                     if child.ownStatics then
@@ -1900,7 +1906,7 @@ private[scalive] object PhoenixRenderedEncoder:
           result.flatMap(_ => renderTarget(value, components).map(output.append).map(_ => ()))
         case (result, ProjectedPart.Target(value)) =>
           result.flatMap(_ => renderTarget(value, components).map(output.append).map(_ => ()))
-        case (result, ProjectedPart.Node(child))   => result.flatMap(_ => loop(child))
+        case (result, child: ProjectedNode)        => result.flatMap(_ => loop(child))
         case (result, ProjectedPart.Nested(child)) => result.flatMap(_ => loop(child))
         case (result, ProjectedPart.Keyed(keyed))  =>
           keyed.rows.foldLeft(result)((current, row) => current.flatMap(_ => loop(row.child)))
@@ -1975,7 +1981,7 @@ private[scalive] object PhoenixRenderedEncoder:
         case ProjectedPart.Keyed(keyed) if keyed.id == id => Vector(keyed)
         case ProjectedPart.Keyed(keyed)   => keyed.rows.flatMap(row => findKeyed(row.child, id))
         case ProjectedPart.Stream(stream) => stream.rows.flatMap(row => findKeyed(row.child, id))
-        case ProjectedPart.Node(child)    => findKeyed(child, id)
+        case child: ProjectedNode         => findKeyed(child, id)
         case _                            => Vector.empty
       }
 
@@ -1986,14 +1992,14 @@ private[scalive] object PhoenixRenderedEncoder:
         case ProjectedPart.Stream(stream) if stream.id == id => Vector(stream)
         case ProjectedPart.Stream(stream) => stream.rows.flatMap(row => findStreams(row.child, id))
         case ProjectedPart.Keyed(keyed)   => keyed.rows.flatMap(row => findStreams(row.child, id))
-        case ProjectedPart.Node(child)    => findStreams(child, id)
+        case child: ProjectedNode         => findStreams(child, id)
         case _                            => Vector.empty
       }
 
   private def collectDynamics(root: ProjectedNode): Vector[(TemplateSlotId, ProjectedValue)] =
     root.parts.flatMap {
       case ProjectedPart.Dynamic(slot, value, _) => Vector(slot -> value)
-      case ProjectedPart.Node(child)             => collectDynamics(child)
+      case child: ProjectedNode                  => collectDynamics(child)
       case ProjectedPart.Keyed(keyed)   => keyed.rows.flatMap(row => collectDynamics(row.child))
       case ProjectedPart.Stream(stream) => stream.rows.flatMap(row => collectDynamics(row.child))
       case _                            => Vector.empty
@@ -2003,7 +2009,7 @@ private[scalive] object PhoenixRenderedEncoder:
     root.parts.flatMap {
       case ProjectedPart.Stream(stream) =>
         stream +: stream.rows.flatMap(row => collectStreams(row.child))
-      case ProjectedPart.Node(child)   => collectStreams(child)
+      case child: ProjectedNode        => collectStreams(child)
       case ProjectedPart.Nested(child) => collectStreams(child)
       case ProjectedPart.Keyed(keyed)  => keyed.rows.flatMap(row => collectStreams(row.child))
       case _                           => Vector.empty
@@ -2014,7 +2020,7 @@ private[scalive] object PhoenixRenderedEncoder:
       case ProjectedPart.Keyed(keyed) =>
         keyed +: keyed.rows.flatMap(row => collectKeyed(row.child))
       case ProjectedPart.Stream(stream) => stream.rows.flatMap(row => collectKeyed(row.child))
-      case ProjectedPart.Node(child)    => collectKeyed(child)
+      case child: ProjectedNode         => collectKeyed(child)
       case _                            => Vector.empty
     }
 
@@ -2035,7 +2041,7 @@ private[scalive] object PhoenixRenderedEncoder:
 
   private def collectIds(root: ProjectedNode): Vector[TemplateId] =
     root.id +: root.parts.flatMap {
-      case ProjectedPart.Node(child)    => collectIds(child)
+      case child: ProjectedNode         => collectIds(child)
       case ProjectedPart.Keyed(keyed)   => keyed.rows.flatMap(row => collectIds(row.child))
       case ProjectedPart.Stream(stream) => stream.rows.flatMap(row => collectIds(row.child))
       case _                            => Vector.empty

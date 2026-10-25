@@ -27,7 +27,7 @@ object PhoenixUnchangedProjectionSpec extends ZIOSpecDefault:
 
   private def nodes(node: ProjectedNode): Vector[ProjectedNode] =
     node +: node.parts.flatMap {
-      case ProjectedPart.Node(child)  => nodes(child)
+      case child: ProjectedNode  => nodes(child)
       case ProjectedPart.Keyed(keyed) => keyed.rows.flatMap(row => nodes(row.child))
       case _                          => Vector.empty
     }

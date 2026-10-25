@@ -673,7 +673,7 @@ private[scalive] object PhoenixRenderedEncoder:
     if cached != null then cached
     else
       val parts = TagParts(ProjectedPart.Static(s"<$tag"), ProjectedPart.Static(s"</$tag>"))
-      if tagPartsCache.size < maxCachedTags then tagPartsCache.putIfAbsent(tag, parts)
+      if tagPartsCache.size < maxCachedTags then tagPartsCache.putIfAbsent(tag, parts): Unit
       parts
 
   private def project(

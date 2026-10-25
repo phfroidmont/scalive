@@ -35,6 +35,18 @@ object ComponentRuntimeSpec extends ZIOSpecDefault:
       value.rows.iterator.flatMap(row => componentToken(row.child)).nextOption()
     case _ => None
 
+  /** Whether what `reference` weakly holds is still reachable once the heap is collected: a full
+    * collection clears a weak reference to what nothing else holds.
+    */
+  private def retained(reference: java.lang.ref.WeakReference[?]): UIO[Boolean] =
+    ZIO.succeed {
+      var collections = 0
+      while collections < 5 && Option(reference.get).nonEmpty do
+        java.lang.System.gc()
+        collections += 1
+      Option(reference.get).nonEmpty
+    }
+
   private def renderedText(node: EvaluatedNode): String = node match
     case value: EvaluatedNode.Text    => value.value
     case value: EvaluatedNode.Element => value.children.map(renderedText).mkString
@@ -615,6 +627,52 @@ object ComponentRuntimeSpec extends ZIOSpecDefault:
           _          <- sink.take
           tree       <- connection.inspectComponentTree(id)
         yield assertTrue(tree.exists(value => renderedText(value.root) == "committed flash"))
+      }
+    },
+    test("a component in a kept row does not stay reachable as it rendered before") {
+      ZIO.scoped {
+        // Renders a list until its message makes it render none.
+        val definition = new LiveComponent[Unit, Unit, Boolean]:
+          def mount(props: Unit, ctx: MountContext) = ZIO.succeed(true)
+          def handleMessage(props: Unit, model: Boolean, ctx: MessageContext)
+            : Unit => Task[Boolean] = _ => ZIO.succeed(false)
+          def view(props: Signal[Unit], model: Signal[Boolean]) =
+            div(model.when(ul(li("one"), li("two"))))
+        // A row is kept when another is added, and the rows are kept whole when the counter changes.
+        val view = new LiveView[(Int, Vector[Int]), (Int, Vector[Int])]:
+          def mount(ctx: MountContext) = ZIO.succeed(0 -> Vector(1))
+          def handleMessage(model: (Int, Vector[Int]), ctx: MessageContext)
+            : ((Int, Vector[Int])) => Task[(Int, Vector[Int])] = ZIO.succeed(_)
+          def view(model: Signal[(Int, Vector[Int])]) =
+            div(
+              span(model.map(_._1.toString)),
+              model.map(_._2).splitBy(identity)((id, _) =>
+                li(component(definition, s"row-$id").render(()))
+              )
+            )
+        for
+          sink       <- Queue.unbounded[ConnectionOutput]
+          connection <- RootConnection.start(config, metadata, view, sink.offer(_).unit)
+          _          <- sink.take
+          id         <- connection.inspectComponentIds.map(_.head)
+          _          <- connection.submitInfo(0 -> Vector(1, 2))
+          _          <- sink.take
+          // Only weakly held here, so that the test itself does not keep it.
+          before <- connection
+                      .inspectComponentTree(id).someOrFailException
+                      .map(tree => java.lang.ref.WeakReference(tree.root))
+          held  <- retained(before)
+          _     <- connection.submitComponentMessage(CommandId.fresh().toOption.get, id, ())
+          _     <- sink.take
+          after <- connection.inspectComponentTree(id).someOrFailException
+          _     <- connection.submitInfo(1 -> Vector(1, 2))
+          _     <- sink.take
+          kept  <- retained(before)
+        yield assertTrue(
+          held,
+          renderedText(after.root) == "",
+          !kept
+        )
       }
     },
     test("failed component flash callback does not publish its candidate render") {

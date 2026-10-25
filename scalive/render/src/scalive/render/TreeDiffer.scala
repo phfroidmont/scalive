@@ -124,10 +124,14 @@ object TreeDiffer:
           (operations.inserts.nonEmpty || operations.deletes.nonEmpty || operations.reset)
         val operatedIds =
           if sendsOperations then operations.inserts.map(_.row.domId).toSet else Set.empty[String]
-        val oldRows    = left.rows.map(row => row.domId -> row.child).toMap
+        val deleted = if sendsOperations then operations.deletes.length else 0
+        val oldRows =
+          StreamRowCursor[EvaluatedNode.StreamRow](left.rows, _.domId, operatedIds, deleted)
         val rowChanges = right.rows.flatMap { row =>
           if operatedIds.contains(row.domId) then Vector.empty
-          else oldRows.get(row.domId).toVector.flatMap(diffNode(_, row.child))
+          else
+            val index = oldRows.indexOf(row.domId)
+            if index < 0 then Vector.empty else diffNode(left.rows(index).child, row.child)
         }
         val streamChanges =
           if sendsOperations then

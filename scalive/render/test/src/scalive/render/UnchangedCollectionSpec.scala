@@ -48,6 +48,47 @@ object UnchangedCollectionSpec extends ZIOSpecDefault:
   private def declared(candidate: RenderCandidate[?]): Vector[(String, Any)] =
     candidate.componentRequirements.map(requirement => requirement.applicationId -> requirement.props)
 
+  /** Rows that each hold a component, between two components. */
+  private def badgeRows = RenderProgram.compile[Page, Nothing] { page =>
+    div(
+      component(Badge, "first").render(page.map(_.counter.toString)),
+      page.map(_.rows).splitBy(_.id) { (id, row) =>
+        li(component(Badge, s"badge-$id").render(row.map(_.label)))
+      },
+      component(Badge, "last").render("last")
+    )
+  }
+
+  private def badgeRow(tree: EvaluatedTree, index: Int): EvaluatedNode.Element =
+    keyed(tree, 1).rows(index).child
+
+  /** `badgeRows` with `rowCount` rows, as `Instances` resolves them. */
+  private def badgeHtml(rowCount: Int): String =
+    "<div><span>badge</span>" + "<li><span>badge</span></li>" * rowCount +
+      "<span>badge</span></div>"
+
+  final case class Feed(counter: Int, stream: scalive.streams.LiveStream[Row])
+
+  private def streamEntry(row: Row) = scalive.streams.LiveStreamEntry(s"rows-${row.id}", row)
+
+  private def appended(row: Row) =
+    scalive.streams.LiveStreamInsert(streamEntry(row), scalive.streams.StreamAt.Last, None, false)
+
+  /** Stream rows that each hold a component, after a component. */
+  private def badgeStreamRows = RenderProgram.compile[Feed, Nothing] { feed =>
+    div(
+      component(Badge, "counter").render(feed.map(_.counter.toString)),
+      feed.map(_.stream).renderIn(ul) { row =>
+        li(component(Badge, row.map(row => s"badge-${row.id}")).render(row.map(_.label)))
+      }
+    )
+  }
+
+  private def badgeStream(tree: EvaluatedTree): EvaluatedNode.Stream =
+    tree.root
+      .children(1).asInstanceOf[EvaluatedNode.Element].children.head
+      .asInstanceOf[EvaluatedNode.Stream]
+
   override def spec = suite("UnchangedCollectionSpec")(
     test("reuses a collection whose items and outside signals did not change") {
       val compiled = RenderProgram.compile[Page, String] { page =>
@@ -546,6 +587,127 @@ object UnchangedCollectionSpec extends ZIOSpecDefault:
           "badge-2" -> "two",
           "badge-3" -> "three"
         )
+      )
+    },
+    test("keeps the rows holding components that a collection reorders") {
+      for
+        program    <- ZIO.fromEither(badgeRows)
+        resolution <- instances
+        base       <- program.evaluate(Page(0, 0, rows)).flatMap(resolution.resolve).map(_.commit)
+        reordered = Vector(rows(2), rows(0), rows(1))
+        updated <- program.evaluate(Page(0, 0, reordered), Some(base)).flatMap(resolution.resolve)
+        fresh   <- program.evaluate(Page(0, 0, reordered))
+      yield assertTrue(
+        HtmlRenderer.render(updated.tree) == badgeHtml(3),
+        declared(updated) == declared(fresh),
+        declared(updated).map(_._1) == Vector("first", "badge-3", "badge-1", "badge-2", "last"),
+        badgeRow(updated.tree, 0) eq badgeRow(base.tree, 2),
+        badgeRow(updated.tree, 1) eq badgeRow(base.tree, 0),
+        badgeRow(updated.tree, 2) eq badgeRow(base.tree, 1)
+      )
+    },
+    test("keeps the other rows holding components when a collection removes one") {
+      for
+        program    <- ZIO.fromEither(badgeRows)
+        resolution <- instances
+        base       <- program.evaluate(Page(0, 0, rows)).flatMap(resolution.resolve).map(_.commit)
+        removed = Vector(rows(0), rows(2))
+        updated <- program.evaluate(Page(0, 0, removed), Some(base)).flatMap(resolution.resolve)
+        fresh   <- program.evaluate(Page(0, 0, removed))
+      yield assertTrue(
+        HtmlRenderer.render(updated.tree) == badgeHtml(2),
+        declared(updated) == declared(fresh),
+        declared(updated).map(_._1) == Vector("first", "badge-1", "badge-3", "last"),
+        badgeRow(updated.tree, 0) eq badgeRow(base.tree, 0),
+        badgeRow(updated.tree, 1) eq badgeRow(base.tree, 2)
+      )
+    },
+    test("evaluates a reintroduced row holding a component and keeps the others") {
+      for
+        program    <- ZIO.fromEither(badgeRows)
+        resolution <- instances
+        base       <- program.evaluate(Page(0, 0, rows)).flatMap(resolution.resolve).map(_.commit)
+        removed    <- program
+                     .evaluate(Page(0, 0, Vector(rows(0), rows(2))), Some(base))
+                     .flatMap(resolution.resolve).map(_.commit)
+        reintroduced = rows.updated(1, Row(2, "TWO"))
+        updated <- program
+                     .evaluate(Page(0, 0, reintroduced), Some(removed))
+                     .flatMap(resolution.resolve)
+        fresh <- program.evaluate(Page(0, 0, reintroduced))
+      yield assertTrue(
+        HtmlRenderer.render(updated.tree) == badgeHtml(3),
+        declared(updated) == declared(fresh),
+        declared(updated)(2) == "badge-2" -> "TWO",
+        badgeRow(updated.tree, 0) eq badgeRow(removed.tree, 0),
+        !(badgeRow(updated.tree, 1) eq badgeRow(base.tree, 1)),
+        badgeRow(updated.tree, 2) eq badgeRow(removed.tree, 1)
+      )
+    },
+    test("keeps the rows holding components that a new stream generation leaves unchanged") {
+      val identity = scalive.streams.LiveStreamIdentity.fresh()
+      val stream   = scalive.streams.LiveStream(
+        identity,
+        "rows",
+        1L,
+        rows.map(streamEntry),
+        Vector.empty,
+        Vector.empty,
+        reset = false
+      )
+      val added = Row(4, "four")
+      val next  = scalive.streams.LiveStream(
+        identity,
+        "rows",
+        2L,
+        Vector(rows(0), rows(2), added).map(streamEntry),
+        Vector(appended(added)),
+        Vector("rows-2"),
+        reset = false
+      )
+      def streamRow(tree: EvaluatedTree, index: Int) = badgeStream(tree).rows(index).child
+
+      for
+        program    <- ZIO.fromEither(badgeStreamRows)
+        resolution <- instances
+        base       <- program.evaluate(Feed(0, stream)).flatMap(resolution.resolve).map(_.commit)
+        updated    <- program.evaluate(Feed(0, next), Some(base)).flatMap(resolution.resolve)
+        fresh      <- program.evaluate(Feed(0, next))
+      yield assertTrue(
+        HtmlRenderer.render(updated.tree) ==
+          "<div><span>badge</span><ul id=\"rows\" phx-update=\"stream\">" +
+          Vector(1, 3, 4).map(id => s"<li id=\"rows-$id\"><span>badge</span></li>").mkString +
+          "</ul></div>",
+        declared(updated) == declared(fresh),
+        declared(updated).map(_._1) == Vector("counter", "badge-1", "badge-3", "badge-4"),
+        streamRow(updated.tree, 0) eq streamRow(base.tree, 0),
+        streamRow(updated.tree, 1) eq streamRow(base.tree, 2),
+        badgeStream(updated.tree).operations.inserts.map(_.row.child) ==
+          Vector(streamRow(updated.tree, 2))
+      )
+    },
+    test("evaluates the rows holding components from the committed render after a discard") {
+      val changed = rows.updated(1, Row(2, "TWO")) :+ Row(4, "four")
+
+      for
+        program    <- ZIO.fromEither(badgeRows)
+        resolution <- instances
+        base       <- program.evaluate(Page(0, 0, rows)).flatMap(resolution.resolve).map(_.commit)
+        discarded  <- program.evaluate(Page(0, 0, changed), Some(base)).flatMap(resolution.resolve)
+        _          <- discarded.discard
+        unrelated  <- program.evaluate(Page(1, 0, rows), Some(base)).flatMap(resolution.resolve)
+        _          <- unrelated.discard
+        updated    <- program.evaluate(Page(0, 0, changed), Some(base)).flatMap(resolution.resolve)
+        fresh      <- program.evaluate(Page(0, 0, changed))
+      yield assertTrue(
+        keyed(unrelated.tree, 1) eq keyed(base.tree, 1),
+        HtmlRenderer.render(updated.tree) == badgeHtml(4),
+        declared(updated) == declared(fresh),
+        declared(updated).map(_._1) ==
+          Vector("first", "badge-1", "badge-2", "badge-3", "badge-4", "last"),
+        badgeRow(updated.tree, 0) eq badgeRow(base.tree, 0),
+        !(badgeRow(updated.tree, 1) eq badgeRow(base.tree, 1)),
+        badgeRow(updated.tree, 2) eq badgeRow(base.tree, 2)
       )
     }
   )

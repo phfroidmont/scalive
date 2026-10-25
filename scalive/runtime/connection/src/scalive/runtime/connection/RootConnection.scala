@@ -858,7 +858,7 @@ final private[scalive] class RootConnection[Msg, Model] private (
       RuntimeCorrelation(connectionId, lifecycle, epoch, command = Some(command)),
       s"Runtime command rejected: ${rejection.getClass.getSimpleName}"
     ) *> closing.isDone.flatMap {
-      case true  => complete(command, Left(ConnectionError.Closed))
+      case true  => closingError.flatMap(error => complete(command, Left(error)))
       case false =>
         rejection match
           case _: SessionRejection.UnknownBinding | _: SessionRejection.BindingFailed |
@@ -1040,6 +1040,11 @@ final private[scalive] class RootConnection[Msg, Model] private (
         }
     }
 
+  // What a running command gets once the connection is closing: the failure that closes it, if any,
+  // which it may have caused.
+  private def closingError: UIO[ConnectionError] =
+    pollFailure.map(_.getOrElse(ConnectionError.Closed))
+
   private def complete(command: CommandId, result: Either[ConnectionError, Unit]): UIO[Unit] =
     pending.get.flatMap(_.get(command) match
       case Some(pendingCommand) =>
@@ -1103,7 +1108,7 @@ final private[scalive] class RootConnection[Msg, Model] private (
     error: SerialWriter.Error
   ): UIO[Unit] =
     closing.isDone.flatMap {
-      case true  => complete(command, Left(ConnectionError.Closed))
+      case true  => closingError.flatMap(error => complete(command, Left(error)))
       case false => observeWriterPressure(error) *> terminate(writerFailure(error))
     }
 end RootConnection

@@ -280,12 +280,17 @@ final private[scalive] class ConnectionSupervisor private (
   private var retirements: Map[ConnectedLifecycle, Promise[Nothing, Unit]] = Map.empty
   private var assignedLifecycles: Set[LifecycleId]                         = Set.empty
 
+  // `withPermit` takes an effect already built, so what builds it is suspended: the state it reads
+  // and writes is then read and written holding the permit.
+  private def withGate[E, A](effect: => IO[E, A]): IO[E, A] =
+    gate.withPermit(ZIO.suspendSucceed(effect))
+
   /** Returns an ID this connection has never assigned. A lifecycle keeps the ID issued by its
     * disconnected render only the first time it claims it here; a rejoin after a crash or a live
     * navigation presents the same claim and gets a fresh ID.
     */
   private def assignLifecycle(requested: Option[LifecycleId]): IO[StartError, LifecycleId] =
-    gate.withPermit {
+    withGate {
       ZIO.suspendSucceed {
         val assigned = requested.filterNot(assignedLifecycles.contains) match
           case Some(lifecycle) => Right(lifecycle)
@@ -356,7 +361,7 @@ final private[scalive] class ConnectionSupervisor private (
   def reserveNested(
     claims: NestedCredentialClaims
   ): IO[NestedJoinAdmissionError, NestedJoinReservation] =
-    gate.withPermit(ZIO.succeed(state.closed)).flatMap {
+    withGate(ZIO.succeed(state.closed)).flatMap {
       case true =>
         ZIO.fail(NestedJoinAdmissionError.RegistrationUnavailable(claims.registration))
       case false => topology.reserveJoin(claims)
@@ -493,120 +498,119 @@ final private[scalive] class ConnectionSupervisor private (
     sink: ConnectionOutput => Task[Unit],
     failureNotifier: NestedFailureNotifier
   ): IO[StartError, Option[ConnectedLifecycle]] =
-    gate
-      .withPermit {
-        val registration = reservation.registration
-        if state.closed then ZIO.fail(StartError.Closed)
-        else if !state.entries
-            .get(registration.parentLifecycle).exists(_.handle.epoch == registration.parentEpoch)
-        then
-          ZIO.fail(
-            StartError.ParentUnavailable(registration.parentLifecycle, registration.parentEpoch)
-          )
-        else
-          state.entries.values.collectFirst {
-            case entry @ Entry(
-                  _,
-                  _,
-                  EntryOwnership.DetachedSticky(applicationId, topic, _)
-                ) if applicationId == registration.applicationId && topic == registration.topic =>
-              entry
-          } match
-            case None        => ZIO.none
-            case Some(entry) =>
-              entry.ownership match
-                case EntryOwnership.DetachedSticky(_, _, output) =>
-                  state = state.copy(
-                    entries = state.entries.updated(
-                      entry.handle.lifecycle,
-                      entry.copy(
-                        ownership = EntryOwnership.Reattaching(
-                          registration,
-                          output,
-                          failureNotifier
-                        )
+    withGate {
+      val registration = reservation.registration
+      if state.closed then ZIO.fail(StartError.Closed)
+      else if !state.entries
+          .get(registration.parentLifecycle).exists(_.handle.epoch == registration.parentEpoch)
+      then
+        ZIO.fail(
+          StartError.ParentUnavailable(registration.parentLifecycle, registration.parentEpoch)
+        )
+      else
+        state.entries.values.collectFirst {
+          case entry @ Entry(
+                _,
+                _,
+                EntryOwnership.DetachedSticky(applicationId, topic, _)
+              ) if applicationId == registration.applicationId && topic == registration.topic =>
+            entry
+        } match
+          case None        => ZIO.none
+          case Some(entry) =>
+            entry.ownership match
+              case EntryOwnership.DetachedSticky(_, _, output) =>
+                state = state.copy(
+                  entries = state.entries.updated(
+                    entry.handle.lifecycle,
+                    entry.copy(
+                      ownership = EntryOwnership.Reattaching(
+                        registration,
+                        output,
+                        failureNotifier
                       )
-                    ),
-                    byTopic = state.byTopic.removed(entry.handle.topic)
-                  )
-                  ZIO.some(ReattachSlot(entry, registration, output))
-                case _ => ZIO.none
-        end if
-      }.flatMap {
-        case None       => ZIO.none
-        case Some(slot) =>
-          val entry        = slot.entry
-          val registration = slot.registration
-          val output       = slot.output
-          (for
-            _       <- output.detach
-            failure <- entry.handle.pollFailure
-            _ <- ZIO.foreachDiscard(failure)(error => ZIO.fail(StartError.ConnectionFailed(error)))
-            attached <- topology.completeJoin(
-                          reservation,
-                          entry.handle.lifecycle,
-                          entry.handle.epoch
-                        )
-            _ <- ZIO
-                   .fail(StartError.RegistrationRevoked(registration.id)).unless(attached)
-            _ <-
-              entry.handle.synchronizeUrl(inheritedUrl).mapError(StartError.ConnectionFailed.apply)
-            tree <- entry.handle.tree.mapError(StartError.ConnectionFailed.apply)
-            _    <-
-              output
-                .attach(
-                  sink,
-                  ConnectionOutput.Joined(RenderDelta.Replace(tree), SessionEffects())
-                ).mapError(error => StartError.ConnectionFailed(ConnectionError.SinkFailed(error)))
-            installed <- gate.withPermit {
-                           state.entries.get(entry.handle.lifecycle) match
-                             case Some(
-                                   current @ Entry(
-                                     _,
-                                     _,
-                                     EntryOwnership.Reattaching(
-                                       active,
-                                       activeOutput,
-                                       activeNotifier
-                                     )
-                                   )
-                                 )
-                                 if current.handle.epoch == entry.handle.epoch &&
-                                   sameCoordinates(
+                    )
+                  ),
+                  byTopic = state.byTopic.removed(entry.handle.topic)
+                )
+                ZIO.some(ReattachSlot(entry, registration, output))
+              case _ => ZIO.none
+      end if
+    }.flatMap {
+      case None       => ZIO.none
+      case Some(slot) =>
+        val entry        = slot.entry
+        val registration = slot.registration
+        val output       = slot.output
+        (for
+          _       <- output.detach
+          failure <- entry.handle.pollFailure
+          _ <- ZIO.foreachDiscard(failure)(error => ZIO.fail(StartError.ConnectionFailed(error)))
+          attached <- topology.completeJoin(
+                        reservation,
+                        entry.handle.lifecycle,
+                        entry.handle.epoch
+                      )
+          _ <- ZIO
+                 .fail(StartError.RegistrationRevoked(registration.id)).unless(attached)
+          _ <-
+            entry.handle.synchronizeUrl(inheritedUrl).mapError(StartError.ConnectionFailed.apply)
+          tree <- entry.handle.tree.mapError(StartError.ConnectionFailed.apply)
+          _    <-
+            output
+              .attach(
+                sink,
+                ConnectionOutput.Joined(RenderDelta.Replace(tree), SessionEffects())
+              ).mapError(error => StartError.ConnectionFailed(ConnectionError.SinkFailed(error)))
+          installed <- withGate {
+                         state.entries.get(entry.handle.lifecycle) match
+                           case Some(
+                                 current @ Entry(
+                                   _,
+                                   _,
+                                   EntryOwnership.Reattaching(
                                      active,
-                                     registration
-                                   ) && (activeOutput eq output) =>
-                               state = state.copy(
-                                 entries = state.entries.updated(
-                                   current.handle.lifecycle,
-                                   current.copy(
-                                     ownership = EntryOwnership.Attached(
-                                       registration,
-                                       output,
-                                       activeNotifier
-                                     )
+                                     activeOutput,
+                                     activeNotifier
                                    )
-                                 ),
-                                 byTopic = state.byTopic.updated(
-                                   current.handle.topic,
-                                   current.handle.lifecycle
                                  )
                                )
-                               ZIO.succeed(true)
-                             case _ => ZIO.succeed(false)
-                         }
-            _ <- ZIO.fail(StartError.Closed).unless(installed)
-          yield Some(entry.handle)).onError(_ => rollbackReattachment(reservation, slot))
-      }
+                               if current.handle.epoch == entry.handle.epoch &&
+                                 sameCoordinates(
+                                   active,
+                                   registration
+                                 ) && (activeOutput eq output) =>
+                             state = state.copy(
+                               entries = state.entries.updated(
+                                 current.handle.lifecycle,
+                                 current.copy(
+                                   ownership = EntryOwnership.Attached(
+                                     registration,
+                                     output,
+                                     activeNotifier
+                                   )
+                                 )
+                               ),
+                               byTopic = state.byTopic.updated(
+                                 current.handle.topic,
+                                 current.handle.lifecycle
+                               )
+                             )
+                             ZIO.succeed(true)
+                           case _ => ZIO.succeed(false)
+                       }
+          _ <- ZIO.fail(StartError.Closed).unless(installed)
+        yield Some(entry.handle)).onError(_ => rollbackReattachment(reservation, slot))
+    }
 
   def lifecycleForTopic(topic: NestedTopic): UIO[Option[ConnectedLifecycle]] =
-    gate.withPermit(ZIO.succeed(state.byTopic.get(topic).flatMap(state.entries.get).map(_.handle)))
+    withGate(ZIO.succeed(state.byTopic.get(topic).flatMap(state.entries.get).map(_.handle)))
 
   def lifecycle(
     lifecycle: LifecycleId,
     epoch: Epoch
   ): UIO[Option[ConnectedLifecycle]] =
-    gate.withPermit(
+    withGate(
       ZIO.succeed(state.entries.get(lifecycle).filter(_.handle.epoch == epoch).map(_.handle))
     )
 
@@ -636,75 +640,72 @@ final private[scalive] class ConnectionSupervisor private (
   ): IO[ConnectionError, Boolean] = route(topic)(_.patch(command, destination))
 
   def routeLeave(topic: NestedTopic): UIO[LeaveResult] =
-    gate
-      .withPermit {
-        ZIO.succeed(
-          state.byTopic
-            .get(topic).flatMap(state.entries.get).map(entry => entry.handle -> entry.ownership)
-        )
-      }.flatMap {
-        case None                                => ZIO.succeed(LeaveResult.UnknownTopic)
-        case Some((handle, EntryOwnership.Root)) =>
-          retireRootForNavigation(handle).map {
-            case true  => LeaveResult.Left
-            case false => LeaveResult.UnknownTopic
-          }
-        case Some((handle, EntryOwnership.Attached(registration, output, _)))
-            if registration.sticky =>
-          detachStickyForNavigation(handle, registration, output).map {
-            case true  => LeaveResult.Left
-            case false => LeaveResult.UnknownTopic
-          }
-        case Some((handle, EntryOwnership.DetachedSticky(_, _, output))) =>
-          detachRetainedChannel(handle, output).as(LeaveResult.Left)
-        case Some((handle, _)) =>
-          retire(handle.lifecycle, handle.epoch).as(LeaveResult.Left)
-      }
+    withGate {
+      ZIO.succeed(
+        state.byTopic
+          .get(topic).flatMap(state.entries.get).map(entry => entry.handle -> entry.ownership)
+      )
+    }.flatMap {
+      case None                                => ZIO.succeed(LeaveResult.UnknownTopic)
+      case Some((handle, EntryOwnership.Root)) =>
+        retireRootForNavigation(handle).map {
+          case true  => LeaveResult.Left
+          case false => LeaveResult.UnknownTopic
+        }
+      case Some((handle, EntryOwnership.Attached(registration, output, _)))
+          if registration.sticky =>
+        detachStickyForNavigation(handle, registration, output).map {
+          case true  => LeaveResult.Left
+          case false => LeaveResult.UnknownTopic
+        }
+      case Some((handle, EntryOwnership.DetachedSticky(_, _, output))) =>
+        detachRetainedChannel(handle, output).as(LeaveResult.Left)
+      case Some((handle, _)) =>
+        retire(handle.lifecycle, handle.epoch).as(LeaveResult.Left)
+    }
 
   def routeNavigationLeave(topic: NestedTopic): UIO[LeaveResult] =
-    gate
-      .withPermit {
-        state.byTopic.get(topic).flatMap(state.entries.get) match
-          case Some(Entry(handle, _, EntryOwnership.Root)) => ZIO.some(handle)
-          case _                                           => ZIO.none
-      }.flatMap {
-        case None       => ZIO.succeed(LeaveResult.UnknownTopic)
-        case Some(root) => retireRootForNavigation(root).as(LeaveResult.Left)
-      }
+    withGate {
+      state.byTopic.get(topic).flatMap(state.entries.get) match
+        case Some(Entry(handle, _, EntryOwnership.Root)) => ZIO.some(handle)
+        case _                                           => ZIO.none
+    }.flatMap {
+      case None       => ZIO.succeed(LeaveResult.UnknownTopic)
+      case Some(root) => retireRootForNavigation(root).as(LeaveResult.Left)
+    }
 
   def close: UIO[Unit] =
-    gate
-      .withPermit {
-        if state.closed then
-          ZIO.succeed(
-            (
-              Vector.empty[Entry],
-              Vector.empty[Scope.Closeable],
-              Vector.empty[Promise[Nothing, Unit]],
-              false
-            )
+    withGate {
+      if state.closed then
+        ZIO.succeed(
+          (
+            Vector.empty[Entry],
+            Vector.empty[Scope.Closeable],
+            Vector.empty[Promise[Nothing, Unit]],
+            false
           )
-        else
-          val entries = state.entries.values.toVector
-          val starts  = state.startingScopes.values.toVector
-          val waiters = retirements.values.toVector
-          state = State.empty.copy(closed = true)
-          retirements = Map.empty
-          ZIO.succeed((entries, starts, waiters, true))
-      }.flatMap { case (entries, starts, waiters, first) =>
-        if !first then ZIO.unit
-        else
-          // Lifecycles first: closing one waits for a turn that is committing, and that commit
-          // still activates its nested topology.
-          RuntimeCleanup.all(
-            Vector(
-              RuntimeCleanup.all(entries.map(closeEntry)),
-              RuntimeCleanup.all(starts.map(_.close(Exit.unit))),
-              topology.close,
-              supervisorScope.close(Exit.unit)
-            )
-          ) *> ZIO.foreachDiscard(waiters)(_.succeed(()))
-      }
+        )
+      else
+        val entries = state.entries.values.toVector
+        val starts  = state.startingScopes.values.toVector
+        val waiters = retirements.values.toVector
+        state = State.empty.copy(closed = true)
+        retirements = Map.empty
+        ZIO.succeed((entries, starts, waiters, true))
+    }.flatMap { case (entries, starts, waiters, first) =>
+      if !first then ZIO.unit
+      else
+        // Lifecycles first: closing one waits for a turn that is committing, and that commit
+        // still activates its nested topology.
+        RuntimeCleanup.all(
+          Vector(
+            RuntimeCleanup.all(entries.map(closeEntry)),
+            RuntimeCleanup.all(starts.map(_.close(Exit.unit))),
+            topology.close,
+            supervisorScope.close(Exit.unit)
+          )
+        ) *> ZIO.foreachDiscard(waiters)(_.succeed(()))
+    }
 
   private def route(
     topic: NestedTopic
@@ -725,29 +726,28 @@ final private[scalive] class ConnectionSupervisor private (
       for
         token  <- ZIO.succeed(new Object())
         scope  <- Scope.make
-        result <- gate
-                    .withPermit {
-                      if state.closed then ZIO.fail(StartError.Closed)
-                      else if state.entries.values.exists(_.handle.topic == topic) ||
-                        state.startingTopics.contains(topic)
-                      then ZIO.fail(StartError.DuplicateTopic(topic))
-                      else if rootDomId.nonEmpty &&
-                        (state.root.nonEmpty || state.startingRoot ||
-                          state.entries.values
-                            .exists(entry => rootDomId.contains(entry.handle.domId)))
-                      then ZIO.fail(StartError.DuplicateRoot(rootDomId.get))
-                      else if parent.exists { case (id, epoch) =>
-                          !state.entries.get(id).exists(_.handle.epoch == epoch)
-                        }
-                      then ZIO.fail(StartError.ParentUnavailable(parent.get._1, parent.get._2))
-                      else
-                        state = state.copy(
-                          startingTopics = state.startingTopics + topic,
-                          startingRoot = state.startingRoot || rootDomId.nonEmpty,
-                          startingScopes = state.startingScopes.updated(token, scope)
-                        )
-                        ZIO.succeed(StartSlot(token, topic, rootDomId.nonEmpty, scope))
-                    }.onError(_ => scope.close(Exit.unit))
+        result <- withGate {
+                    if state.closed then ZIO.fail(StartError.Closed)
+                    else if state.entries.values.exists(_.handle.topic == topic) ||
+                      state.startingTopics.contains(topic)
+                    then ZIO.fail(StartError.DuplicateTopic(topic))
+                    else if rootDomId.nonEmpty &&
+                      (state.root.nonEmpty || state.startingRoot ||
+                        state.entries.values
+                          .exists(entry => rootDomId.contains(entry.handle.domId)))
+                    then ZIO.fail(StartError.DuplicateRoot(rootDomId.get))
+                    else if parent.exists { case (id, epoch) =>
+                        !state.entries.get(id).exists(_.handle.epoch == epoch)
+                      }
+                    then ZIO.fail(StartError.ParentUnavailable(parent.get._1, parent.get._2))
+                    else
+                      state = state.copy(
+                        startingTopics = state.startingTopics + topic,
+                        startingRoot = state.startingRoot || rootDomId.nonEmpty,
+                        startingScopes = state.startingScopes.updated(token, scope)
+                      )
+                      ZIO.succeed(StartSlot(token, topic, rootDomId.nonEmpty, scope))
+                  }.onError(_ => scope.close(Exit.unit))
       yield result
     }
 
@@ -772,56 +772,54 @@ final private[scalive] class ConnectionSupervisor private (
     slot: StartSlot,
     handle: ConnectedLifecycle
   ): IO[StartError, ConnectedLifecycle] =
-    gate
-      .withPermit {
-        if !slotIsCurrent(slot) || state.closed then ZIO.fail(StartError.Closed)
-        else if state.root.nonEmpty || state.entries.contains(handle.lifecycle) then
-          ZIO.fail(StartError.DuplicateRoot(handle.domId))
-        else
-          val entry = Entry(handle, slot.scope, EntryOwnership.Root)
-          installEntry(slot, entry, root = true)
-          ZIO.succeed(handle)
-      }.tap(handle => monitor(handle)).tapError(_ => slot.scope.close(Exit.unit))
+    withGate {
+      if !slotIsCurrent(slot) || state.closed then ZIO.fail(StartError.Closed)
+      else if state.root.nonEmpty || state.entries.contains(handle.lifecycle) then
+        ZIO.fail(StartError.DuplicateRoot(handle.domId))
+      else
+        val entry = Entry(handle, slot.scope, EntryOwnership.Root)
+        installEntry(slot, entry, root = true)
+        ZIO.succeed(handle)
+    }.tap(handle => monitor(handle)).tapError(_ => slot.scope.close(Exit.unit))
 
   private def installNested(
     slot: StartSlot,
     reservation: NestedJoinReservation,
     pending: PendingNested
   ): IO[StartError, ConnectedLifecycle] =
-    val installed = gate
-      .withPermit {
-        val handle       = pending.handle
-        val registration = reservation.registration
-        if !slotIsCurrent(slot) || state.closed then ZIO.fail(StartError.Closed)
-        else if !state.entries
-            .get(registration.parentLifecycle).exists(_.handle.epoch == registration.parentEpoch)
-        then
-          ZIO.fail(
-            StartError.ParentUnavailable(registration.parentLifecycle, registration.parentEpoch)
-          )
-        else if state.entries.contains(handle.lifecycle) || state.byTopic.contains(handle.topic)
-        then ZIO.fail(StartError.DuplicateTopic(handle.topic))
-        else
-          handle.pollFailure.flatMap {
-            case Some(error) => ZIO.fail(StartError.ConnectionFailed(error))
-            case None        =>
-              topology.completeJoin(reservation, handle.lifecycle, handle.epoch).flatMap {
-                case false => ZIO.fail(StartError.RegistrationRevoked(registration.id))
-                case true  =>
-                  val entry = Entry(
-                    handle,
-                    slot.scope,
-                    EntryOwnership.Attached(
-                      registration,
-                      pending.output,
-                      pending.failureNotifier
-                    )
+    val installed = withGate {
+      val handle       = pending.handle
+      val registration = reservation.registration
+      if !slotIsCurrent(slot) || state.closed then ZIO.fail(StartError.Closed)
+      else if !state.entries
+          .get(registration.parentLifecycle).exists(_.handle.epoch == registration.parentEpoch)
+      then
+        ZIO.fail(
+          StartError.ParentUnavailable(registration.parentLifecycle, registration.parentEpoch)
+        )
+      else if state.entries.contains(handle.lifecycle) || state.byTopic.contains(handle.topic)
+      then ZIO.fail(StartError.DuplicateTopic(handle.topic))
+      else
+        handle.pollFailure.flatMap {
+          case Some(error) => ZIO.fail(StartError.ConnectionFailed(error))
+          case None        =>
+            topology.completeJoin(reservation, handle.lifecycle, handle.epoch).flatMap {
+              case false => ZIO.fail(StartError.RegistrationRevoked(registration.id))
+              case true  =>
+                val entry = Entry(
+                  handle,
+                  slot.scope,
+                  EntryOwnership.Attached(
+                    registration,
+                    pending.output,
+                    pending.failureNotifier
                   )
-                  installEntry(slot, entry, root = false)
-                  ZIO.succeed(handle)
-              }
-          }
-      }
+                )
+                installEntry(slot, entry, root = false)
+                ZIO.succeed(handle)
+            }
+        }
+    }
     installed
       .flatMap(handle =>
         pending.buffer.activate
@@ -850,7 +848,7 @@ final private[scalive] class ConnectionSupervisor private (
     topology.cancelJoin(reservation) *>
       topology
         .detachChild(registration.id, entry.handle.lifecycle, entry.handle.epoch).unit *>
-      gate.withPermit {
+      withGate {
         state.entries.get(entry.handle.lifecycle) match
           case Some(
                 current @ Entry(
@@ -900,7 +898,7 @@ final private[scalive] class ConnectionSupervisor private (
     handle: ConnectedLifecycle,
     failure: Option[ConnectionError]
   ): UIO[Unit] =
-    val ownership = gate.withPermit(
+    val ownership = withGate(
       ZIO.succeed(
         state.entries
           .get(handle.lifecycle).filter(entry => entry.handle eq handle).map(_.ownership)
@@ -956,12 +954,11 @@ final private[scalive] class ConnectionSupervisor private (
     }
 
   private def retire(lifecycle: LifecycleId, epoch: Epoch): UIO[Unit] =
-    gate
-      .withPermit {
-        ZIO.succeed(
-          state.entries.get(lifecycle).filter(_.handle.epoch == epoch).map(_.handle)
-        )
-      }.flatMap(ZIO.foreachDiscard(_)(retireHandle))
+    withGate {
+      ZIO.succeed(
+        state.entries.get(lifecycle).filter(_.handle.epoch == epoch).map(_.handle)
+      )
+    }.flatMap(ZIO.foreachDiscard(_)(retireHandle))
 
   private def retireHandle(handle: ConnectedLifecycle): UIO[Unit] =
     claimRetirement(handle).flatMap {
@@ -976,7 +973,7 @@ final private[scalive] class ConnectionSupervisor private (
     handle: ConnectedLifecycle
   ): UIO[Either[UIO[Unit], RetirementClaim]] =
     Promise.make[Nothing, Unit].flatMap { completion =>
-      gate.withPermit {
+      withGate {
         state.entries.get(handle.lifecycle) match
           case Some(entry) if entry.handle eq handle =>
             val activeCompletion = retirements.getOrElse(handle, completion)
@@ -989,7 +986,7 @@ final private[scalive] class ConnectionSupervisor private (
     }
 
   private def completeRetirement(claim: RetirementClaim): UIO[Unit] =
-    claim.completion.succeed(()).unit *> gate.withPermit {
+    claim.completion.succeed(()).unit *> withGate {
       val handle = claim.entry.handle
       if retirements.get(handle).contains(claim.completion) then
         retirements = retirements.removed(handle)
@@ -997,24 +994,23 @@ final private[scalive] class ConnectionSupervisor private (
     }
 
   private def retireRootForNavigation(handle: ConnectedLifecycle): UIO[Boolean] =
-    gate
-      .withPermit {
-        state.entries.get(handle.lifecycle) match
-          case Some(entry @ Entry(_, _, EntryOwnership.Root)) if entry.handle eq handle =>
-            removeEntry(entry)
-            ZIO.some(entry)
-          case _ => ZIO.none
-      }.flatMap {
-        case None       => ZIO.succeed(false)
-        case Some(root) =>
-          topology
-            .detachParentForNavigation(root.handle.lifecycle, root.handle.epoch).flatMap {
-              navigation =>
-                detachStickyEntries(navigation.detachedStickyChildren) *>
-                  ZIO.foreachDiscard(navigation.childLifecycleIdsToRetire)(retireById) *>
-                  closeEntry(root)
-            }.as(true)
-      }
+    withGate {
+      state.entries.get(handle.lifecycle) match
+        case Some(entry @ Entry(_, _, EntryOwnership.Root)) if entry.handle eq handle =>
+          removeEntry(entry)
+          ZIO.some(entry)
+        case _ => ZIO.none
+    }.flatMap {
+      case None       => ZIO.succeed(false)
+      case Some(root) =>
+        topology
+          .detachParentForNavigation(root.handle.lifecycle, root.handle.epoch).flatMap {
+            navigation =>
+              detachStickyEntries(navigation.detachedStickyChildren) *>
+                ZIO.foreachDiscard(navigation.childLifecycleIdsToRetire)(retireById) *>
+                closeEntry(root)
+          }.as(true)
+    }
 
   private def detachStickyForNavigation(
     handle: ConnectedLifecycle,
@@ -1025,76 +1021,72 @@ final private[scalive] class ConnectionSupervisor private (
       .detachStickyForNavigation(registration.id, handle.lifecycle, handle.epoch).flatMap {
         case None    => ZIO.succeed(false)
         case Some(_) =>
-          gate
-            .withPermit {
-              state.entries.get(handle.lifecycle) match
-                case Some(
-                      entry @ Entry(
-                        _,
-                        _,
-                        EntryOwnership.Attached(active, activeOutput, _)
+          withGate {
+            state.entries.get(handle.lifecycle) match
+              case Some(
+                    entry @ Entry(
+                      _,
+                      _,
+                      EntryOwnership.Attached(active, activeOutput, _)
+                    )
+                  )
+                  if entry.handle.epoch == handle.epoch && active == registration &&
+                    (activeOutput eq output) =>
+                state = state.copy(
+                  entries = state.entries.updated(
+                    handle.lifecycle,
+                    entry.copy(
+                      ownership = EntryOwnership.DetachedSticky(
+                        registration.applicationId,
+                        registration.topic,
+                        output
                       )
                     )
-                    if entry.handle.epoch == handle.epoch && active == registration &&
-                      (activeOutput eq output) =>
-                  state = state.copy(
-                    entries = state.entries.updated(
-                      handle.lifecycle,
-                      entry.copy(
-                        ownership = EntryOwnership.DetachedSticky(
-                          registration.applicationId,
-                          registration.topic,
-                          output
-                        )
-                      )
-                    ),
-                    byTopic = state.byTopic.removed(handle.topic)
-                  )
-                  ZIO.succeed(true)
-                case _ => ZIO.succeed(false)
-            }.flatMap {
-              case true  => output.detach.as(true)
-              case false => ZIO.succeed(false)
-            }
+                  ),
+                  byTopic = state.byTopic.removed(handle.topic)
+                )
+                ZIO.succeed(true)
+              case _ => ZIO.succeed(false)
+          }.flatMap {
+            case true  => output.detach.as(true)
+            case false => ZIO.succeed(false)
+          }
       }
 
   private def detachRetainedChannel(
     handle: ConnectedLifecycle,
     output: RebindableSink
   ): UIO[Unit] =
-    gate
-      .withPermit {
-        state.entries.get(handle.lifecycle) match
-          case Some(Entry(active, _, EntryOwnership.DetachedSticky(_, _, activeOutput)))
-              if active.epoch == handle.epoch && (activeOutput eq output) =>
-            state = state.copy(byTopic = state.byTopic.removed(handle.topic))
-            ZIO.succeed(true)
-          case _ => ZIO.succeed(false)
-      }.flatMap(detached => ZIO.when(detached)(output.detach).unit)
+    withGate {
+      state.entries.get(handle.lifecycle) match
+        case Some(Entry(active, _, EntryOwnership.DetachedSticky(_, _, activeOutput)))
+            if active.epoch == handle.epoch && (activeOutput eq output) =>
+          state = state.copy(byTopic = state.byTopic.removed(handle.topic))
+          ZIO.succeed(true)
+        case _ => ZIO.succeed(false)
+    }.flatMap(detached => ZIO.when(detached)(output.detach).unit)
 
   private def retireDetachedForTopic(topic: NestedTopic): UIO[Unit] =
-    gate
-      .withPermit {
-        ZIO.succeed(
-          state.entries.values.collectFirst {
-            case Entry(handle, _, EntryOwnership.DetachedSticky(_, detachedTopic, _))
-                if detachedTopic == topic =>
-              handle.lifecycle -> handle.epoch
-          }
-        )
-      }.flatMap(ZIO.foreachDiscard(_) { case (lifecycle, epoch) =>
-        retire(lifecycle, epoch)
-      })
+    withGate {
+      ZIO.succeed(
+        state.entries.values.collectFirst {
+          case Entry(handle, _, EntryOwnership.DetachedSticky(_, detachedTopic, _))
+              if detachedTopic == topic =>
+            handle.lifecycle -> handle.epoch
+        }
+      )
+    }.flatMap(ZIO.foreachDiscard(_) { case (lifecycle, epoch) =>
+      retire(lifecycle, epoch)
+    })
 
   private def removeExact(handle: ConnectedLifecycle): UIO[Option[Entry]] =
-    gate
-      .withPermit {
-        state.entries.get(handle.lifecycle) match
-          case Some(entry) if entry.handle.epoch == handle.epoch =>
-            removeEntry(entry)
-            ZIO.some(entry)
-          case _ => ZIO.none
-      }
+    withGate {
+      state.entries.get(handle.lifecycle) match
+        case Some(entry) if entry.handle.epoch == handle.epoch =>
+          removeEntry(entry)
+          ZIO.some(entry)
+        case _ => ZIO.none
+    }
 
   private def removeInstalled(handle: ConnectedLifecycle): UIO[Unit] =
     removeExact(handle).unit
@@ -1124,38 +1116,36 @@ final private[scalive] class ConnectionSupervisor private (
   private def detachStickyEntries(
     detached: Vector[DetachedStickyNestedLifecycle]
   ): UIO[Unit] =
-    gate
-      .withPermit {
-        detached.foreach { value =>
-          state.entries.get(value.child.lifecycle) match
-            case Some(
-                  entry @ Entry(
-                    _,
-                    _,
-                    EntryOwnership.Attached(registration, output, _)
-                  )
+    withGate {
+      detached.foreach { value =>
+        state.entries.get(value.child.lifecycle) match
+          case Some(
+                entry @ Entry(
+                  _,
+                  _,
+                  EntryOwnership.Attached(registration, output, _)
                 )
-                if entry.handle.epoch == value.child.epoch && registration == value.registration =>
-              val ownership = EntryOwnership.DetachedSticky(
-                registration.applicationId,
-                registration.topic,
-                output
+              ) if entry.handle.epoch == value.child.epoch && registration == value.registration =>
+            val ownership = EntryOwnership.DetachedSticky(
+              registration.applicationId,
+              registration.topic,
+              output
+            )
+            state = state.copy(
+              entries = state.entries.updated(
+                entry.handle.lifecycle,
+                entry.copy(ownership = ownership)
               )
-              state = state.copy(
-                entries = state.entries.updated(
-                  entry.handle.lifecycle,
-                  entry.copy(ownership = ownership)
-                )
-              )
-            case _ => ()
-        }
-        ZIO.unit
+            )
+          case _ => ()
       }
+      ZIO.unit
+    }
 
   private def closeEntry(entry: Entry): UIO[Unit] =
     RuntimeCleanup.all(Vector(entry.handle.close, entry.scope.close(Exit.unit)))
 
-  private def releaseSlot(slot: StartSlot): UIO[Unit] = gate.withPermit {
+  private def releaseSlot(slot: StartSlot): UIO[Unit] = withGate {
     if slotIsCurrent(slot) then
       state = state.copy(
         startingTopics = state.startingTopics - slot.topic,
@@ -1179,12 +1169,11 @@ final private[scalive] class ConnectionSupervisor private (
       left.topic == right.topic
 
   private[connection] def retireById(lifecycle: LifecycleId): UIO[Unit] =
-    gate
-      .withPermit {
-        state.entries.get(lifecycle) match
-          case None        => ZIO.none
-          case Some(entry) => ZIO.some(entry.handle.epoch)
-      }.flatMap(ZIO.foreachDiscard(_)(epoch => retire(lifecycle, epoch)))
+    withGate {
+      state.entries.get(lifecycle) match
+        case None        => ZIO.none
+        case Some(entry) => ZIO.some(entry.handle.epoch)
+    }.flatMap(ZIO.foreachDiscard(_)(epoch => retire(lifecycle, epoch)))
 
   private[scalive] def retireLifecycle(handle: ConnectedLifecycle): UIO[Unit] =
     retireHandle(handle)
@@ -1194,7 +1183,7 @@ final private[scalive] class ConnectionSupervisor private (
 
   private[scalive] def awaitRetirement(handle: ConnectedLifecycle): UIO[Unit] =
     Promise.make[Nothing, Unit].flatMap { candidate =>
-      gate.withPermit {
+      withGate {
         val await = state.entries.get(handle.lifecycle) match
           case Some(entry) if entry.handle eq handle =>
             val completion = retirements.getOrElse(handle, candidate)
@@ -1280,8 +1269,10 @@ private[scalive] object ConnectionSupervisor:
   final private class RebindableSink private (
     gate: Semaphore,
     private var destination: Option[ConnectionOutput => Task[Unit]]):
+    private def withGate[A](effect: => Task[A]): Task[A] =
+      gate.withPermit(ZIO.suspendSucceed(effect))
 
-    def offer(output: ConnectionOutput): Task[Unit] = gate.withPermit {
+    def offer(output: ConnectionOutput): Task[Unit] = withGate {
       destination.fold[Task[Unit]](ZIO.unit)(_(output))
     }
 
@@ -1292,7 +1283,7 @@ private[scalive] object ConnectionSupervisor:
     def attach(
       next: ConnectionOutput => Task[Unit],
       initial: ConnectionOutput
-    ): Task[Unit] = gate.withPermit {
+    ): Task[Unit] = withGate {
       next(initial) *> ZIO.succeed {
         destination = Some(next)
       }

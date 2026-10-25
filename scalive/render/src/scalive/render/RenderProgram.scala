@@ -1,6 +1,7 @@
 package scalive.render
 
 import java.util.Locale
+import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 import scala.util.boundary
 import scala.util.boundary.break
@@ -1855,7 +1856,7 @@ object RenderProgram:
     val renderedEntries = entries ++ operationEntries
     val lastRows        = last.fold(Map.empty[RowId, EvaluatedRow[Msg]])(_.rows)
     for
-      _ <- validateStreamDomIds(renderedEntries)
+      _ <- validateStreamDomIds(stream, renderedEntries)
       retained = state.snapshot(stream.identity)
       templates <- traverse(renderedEntries) { entry =>
                      rowCandidate(entry.domId, entry.value, retained.get(entry.domId))
@@ -1915,16 +1916,23 @@ object RenderProgram:
     end for
   end evaluateStreamRows
 
+  /** Rejects a DOM id `entries`, the rendered entries of `stream`, holds twice.
+    *
+    * The entries the operations render are those not among the stream's own, so they are all
+    * distinct when the stream's id sets are as large as what they index: only then is the search
+    * needed.
+    */
   private def validateStreamDomIds[A](
+    stream: LiveStream[A],
     entries: Vector[LiveStreamEntry[A]]
   ): Either[RenderError, Unit] =
-    entries
-      .foldLeft[Either[RenderError, Set[String]]](Right(Set.empty)) { (result, entry) =>
-        result.flatMap { seen =>
-          if seen.contains(entry.domId) then Left(RenderError.DuplicateStreamDomId(entry.domId))
-          else Right(seen + entry.domId)
-        }
-      }.map(_ => ())
+    if stream.entryIds.size == stream.entries.length &&
+      stream.insertedIds.size == stream.inserted.length
+    then Right(())
+    else
+      val seen      = mutable.HashSet.empty[String]
+      val duplicate = entries.find(entry => !seen.add(entry.domId))
+      duplicate.fold(Right(()))(entry => Left(RenderError.DuplicateStreamDomId(entry.domId)))
 
   private def evaluateSignalKeyed[A, Key, Msg](
     template: SignalKeyedTemplate[A, Key, Msg],

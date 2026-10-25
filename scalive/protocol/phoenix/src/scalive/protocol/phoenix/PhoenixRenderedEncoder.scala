@@ -147,18 +147,60 @@ private[scalive] object PhoenixRenderedEncoder:
     ownStatics: Boolean = false)
       extends ProjectedPart:
     // Computed once per instance. An update copies only the nodes on the path to what it changes,
-    // so the summaries of everything else carry over.
-    private[phoenix] lazy val summary: Summary = Summary.of(this)
+    // so the summaries of everything else carry over. A leaf, which holds nothing but statics and
+    // dynamics, as a text does, shares one summary and reads what it holds from its few parts, so
+    // it is read through the accessors below.
+    private lazy val summary: Summary = Summary.of(this)
+
+    private def isLeaf: Boolean = summary eq Summary.leaf
+
+    /** The CIDs this subtree holds, nested LiveViews included but not the components' content. */
+    private[phoenix] def cids: Set[Int] = summary.cids
+
+    /** The streams this subtree holds, nested LiveViews and stream rows included. */
+    private[phoenix] def streams: Vector[ProjectedStream] = summary.streams
+
+    /** How many dynamics this subtree adds to the rendered object holding it. */
+    private[phoenix] def dynamics: Int =
+      if !isLeaf then summary.dynamics
+      else
+        var count = 0
+        var index = 0
+        while index < parts.length do
+          parts(index) match
+            case _: ProjectedPart.Dynamic | _: ProjectedPart.StreamDomId => count += 1
+            case _                                                       => ()
+          index += 1
+        count
+
+    // The bounds of the template ids and slots of this program subtree.
+    private[phoenix] def idMin: Long   = if isLeaf then id.value else summary.idMin
+    private[phoenix] def idMax: Long   = if isLeaf then id.value else summary.idMax
+    private[phoenix] def slotMin: Long = if isLeaf then leafSlot(lowest = true) else summary.slotMin
+    private[phoenix] def slotMax: Long =
+      if isLeaf then leafSlot(lowest = false) else summary.slotMax
+
+    private def leafSlot(lowest: Boolean): Long =
+      var bound = if lowest then Long.MaxValue else Long.MinValue
+      var index = 0
+      while index < parts.length do
+        parts(index) match
+          case ProjectedPart.Dynamic(slot, _, _) =>
+            bound = if lowest then math.min(bound, slot.value) else math.max(bound, slot.value)
+          case _ => ()
+        index += 1
+      bound
 
     /** Whether the template id `target` may be in this program subtree. */
     private[phoenix] def mayHoldId(target: TemplateId): Boolean =
-      summary.idMin <= target.value && target.value <= summary.idMax
+      idMin <= target.value && target.value <= idMax
 
     /** Whether the slot `target` may be in this program subtree. */
     private[phoenix] def mayHoldSlot(target: TemplateSlotId): Boolean =
-      summary.slotMin <= target.value && target.value <= summary.slotMax
+      slotMin <= target.value && target.value <= slotMax
+  end ProjectedNode
 
-  /** What one projected subtree holds.
+  /** What one projected subtree holds, for a node holding other nodes, components or rows.
     *
     * The bounds cover the template ids and slots of the subtree's own program: nested LiveViews
     * have their own namespace. Ids are allocated as templates compile, so the bounds of siblings
@@ -181,37 +223,55 @@ private[scalive] object PhoenixRenderedEncoder:
     dynamics: Int)
 
   private[phoenix] object Summary:
+    /** The summary every leaf shares. Only its CIDs and streams, none, are read. */
+    val leaf: Summary = Summary(0L, 0L, Long.MaxValue, Long.MinValue, Set.empty, Vector.empty, 0)
+
     def of(node: ProjectedNode): Summary =
-      val builder = Builder(node.id.value)
-      val parts   = node.parts.iterator
-      while parts.hasNext do
-        parts.next() match
-          case ProjectedPart.Static(_) | ProjectedPart.Target(_) => ()
-          case ProjectedPart.Dynamic(slot, _, _)                 =>
-            builder.slotMin = math.min(builder.slotMin, slot.value)
-            builder.slotMax = math.max(builder.slotMax, slot.value)
-            builder.dynamics += 1
-          case child: ProjectedNode =>
-            builder.include(child, sameProgram = true)
-            builder.dynamics += (if child.ownStatics then 1 else child.summary.dynamics)
-          case ProjectedPart.Nested(child) =>
-            builder.include(child, sameProgram = false)
-            builder.dynamics += child.summary.dynamics
-          case ProjectedPart.Component(cid) =>
-            builder.cids = builder.cids + cid
-            builder.dynamics += 1
-          case ProjectedPart.Keyed(keyed) =>
-            val rows = keyed.rows.iterator
-            while rows.hasNext do builder.include(rows.next().child, sameProgram = true)
-            builder.dynamics += 1
-          case ProjectedPart.Stream(stream) =>
-            builder.streams = builder.streams :+ stream
-            val rows = stream.rows.iterator
-            while rows.hasNext do builder.include(rows.next().child, sameProgram = true)
-            builder.dynamics += 1
-          case ProjectedPart.StreamDomId(_) => builder.dynamics += 1
-      builder.result()
+      if isLeaf(node.parts) then leaf
+      else
+        val builder = Builder(node.id.value)
+        val parts   = node.parts.iterator
+        while parts.hasNext do
+          parts.next() match
+            case ProjectedPart.Static(_) | ProjectedPart.Target(_) => ()
+            case ProjectedPart.Dynamic(slot, _, _)                 =>
+              builder.slotMin = math.min(builder.slotMin, slot.value)
+              builder.slotMax = math.max(builder.slotMax, slot.value)
+              builder.dynamics += 1
+            case ProjectedPart.StreamDomId(_) => builder.dynamics += 1
+            case child: ProjectedNode         =>
+              builder.include(child, sameProgram = true)
+              builder.dynamics += (if child.ownStatics then 1 else child.dynamics)
+            case ProjectedPart.Nested(child) =>
+              builder.include(child, sameProgram = false)
+              builder.dynamics += child.dynamics
+            case ProjectedPart.Component(cid) =>
+              builder.cids = builder.cids + cid
+              builder.dynamics += 1
+            case ProjectedPart.Keyed(keyed) =>
+              val rows = keyed.rows.iterator
+              while rows.hasNext do builder.include(rows.next().child, sameProgram = true)
+              builder.dynamics += 1
+            case ProjectedPart.Stream(stream) =>
+              builder.streams = builder.streams :+ stream
+              val rows = stream.rows.iterator
+              while rows.hasNext do builder.include(rows.next().child, sameProgram = true)
+              builder.dynamics += 1
+        builder.result()
     end of
+
+    // A leaf holds nothing but statics and dynamics.
+    private def isLeaf(parts: Vector[ProjectedPart]): Boolean =
+      var index = 0
+      var leaf  = true
+      while leaf && index < parts.length do
+        leaf = parts(index) match
+          case _: ProjectedPart.Static | _: ProjectedPart.Dynamic | _: ProjectedPart.Target |
+              _: ProjectedPart.StreamDomId =>
+            true
+          case _ => false
+        index += 1
+      leaf
 
     // Mutable fields rather than local variables, which closures would box one by one.
     final private class Builder(id: Long):
@@ -224,14 +284,13 @@ private[scalive] object PhoenixRenderedEncoder:
       var dynamics = 0
 
       def include(child: ProjectedNode, sameProgram: Boolean): Unit =
-        val summary = child.summary
         if sameProgram then
-          idMin = math.min(idMin, summary.idMin)
-          idMax = math.max(idMax, summary.idMax)
-          slotMin = math.min(slotMin, summary.slotMin)
-          slotMax = math.max(slotMax, summary.slotMax)
-        if summary.cids.nonEmpty then cids = cids ++ summary.cids
-        if summary.streams.nonEmpty then streams = streams ++ summary.streams
+          idMin = math.min(idMin, child.idMin)
+          idMax = math.max(idMax, child.idMax)
+          slotMin = math.min(slotMin, child.slotMin)
+          slotMax = math.max(slotMax, child.slotMax)
+        if child.cids.nonEmpty then cids = cids ++ child.cids
+        if child.streams.nonEmpty then streams = streams ++ child.streams
 
       def result(): Summary = Summary(idMin, idMax, slotMin, slotMax, cids, streams, dynamics)
   end Summary
@@ -936,7 +995,7 @@ private[scalive] object PhoenixRenderedEncoder:
     case RenderChange.Component(token, delta) =>
       val owned = context
         .knownCid(token).filter(cid =>
-          current.root.summary.cids.contains(cid) &&
+          current.root.cids.contains(cid) &&
             context.components.get(cid).exists(component => component.token eq token)
         )
       owned match
@@ -1249,7 +1308,7 @@ private[scalive] object PhoenixRenderedEncoder:
     val components = context.components
 
     def sameCids(before: ProjectedNode, after: ProjectedNode): Boolean =
-      (before eq after) || before.summary.cids == after.summary.cids
+      (before eq after) || before.cids == after.cids
     def sameGraph(state: PhoenixRenderedState): Boolean =
       sameCids(state.root, root) && context.changedCids.forall(cid =>
         state.components
@@ -1261,7 +1320,7 @@ private[scalive] object PhoenixRenderedEncoder:
       case _                               => reachableCids(root, components)
     for
       reachable <- graph
-      streams    = root.summary.streams ++ components.valuesIterator.flatMap(_.root.summary.streams)
+      streams    = root.streams ++ components.valuesIterator.flatMap(_.root.streams)
       streamRefs = streams.iterator.map(stream => IdentityKey(stream.identity) -> stream.ref).toMap
     yield PhoenixRenderedState(
       root,
@@ -1288,7 +1347,7 @@ private[scalive] object PhoenixRenderedEncoder:
     val seen   = mutable.HashSet.empty[Int]
     val owners = Map.newBuilder[Int, Int]
     def loop(program: ProjectedNode, owner: Option[Int]): Either[PhoenixEncodingError, Unit] =
-      program.summary.cids.foldLeft[Either[PhoenixEncodingError, Unit]](Right(())) { (result, cid) =>
+      program.cids.foldLeft[Either[PhoenixEncodingError, Unit]](Right(())) { (result, cid) =>
         result.flatMap { _ =>
           components.get(cid) match
             case Some(component) if seen.add(cid) =>
@@ -1405,8 +1464,8 @@ private[scalive] object PhoenixRenderedEncoder:
     components: Map[Int, ProjectedComponent],
     streamRefs: Map[IdentityKey, String]
   ): Map[IdentityKey, String] =
-    val identities = (root.summary.streams.iterator ++
-      components.valuesIterator.flatMap(_.root.summary.streams))
+    val identities = (root.streams.iterator ++
+      components.valuesIterator.flatMap(_.root.streams))
       .map(stream => IdentityKey(stream.identity)).toSet
     streamRefs.filter((identity, _) => identities.contains(identity))
 
@@ -1598,14 +1657,14 @@ private[scalive] object PhoenixRenderedEncoder:
 
     def unchanged(node: ProjectedNode, previous: Option[ProjectedNode]): Boolean =
       previous.exists(_ eq node) &&
-        !node.summary.cids.exists(changes.touchedComponents.contains)
+        !node.cids.exists(changes.touchedComponents.contains)
 
     def loop(
       node: ProjectedNode,
       previous: Option[ProjectedNode]
     ): Either[PhoenixEncodingError, Unit] =
       if unchanged(node, previous) then
-        index += node.summary.dynamics
+        index += node.dynamics
         Right(())
       else
         val previousParts = previous.map(_.parts).filter(_.length == node.parts.length)
@@ -1685,7 +1744,7 @@ private[scalive] object PhoenixRenderedEncoder:
     val updates = keyed.rows.zip(explicit).map { case (row, update) =>
       update match
         // A row's own diff still has to reach the components it holds.
-        case Some(update) if !update.full && row.child.summary.cids.exists(touched.contains) =>
+        case Some(update) if !update.full && row.child.cids.exists(touched.contains) =>
           val changes = update.changes.getOrElse(SparseChanges(Set.empty, Set.empty))
           Some(update.copy(changes = Some(changes.touching(touched))))
         case Some(update) => Some(update)
@@ -1813,14 +1872,14 @@ private[scalive] object PhoenixRenderedEncoder:
     previous: Option[ProjectedNode],
     changes: SparseChanges
   ): Boolean =
-    previous.exists(_ eq row) && !row.summary.cids.exists(changes.touchedComponents.contains)
+    previous.exists(_ eq row) && !row.cids.exists(changes.touchedComponents.contains)
 
   private def rowChanged(root: ProjectedNode, changes: SparseChanges): Boolean =
     rowContainsChangedSlot(root, changes.slots) ||
       rowContainsChangedStream(root, changes.streams) ||
       rowContainsChangedKeyed(root, changes.keyedTargets) ||
       collectIds(root).exists(changes.replaced.contains) ||
-      root.summary.cids.exists(changes.touchedComponents.contains)
+      root.cids.exists(changes.touchedComponents.contains)
 
   // Rows whose statics the client's stream template must cover.
   private def streamTemplateRows(stream: ProjectedStream): Vector[ProjectedStreamRow] =

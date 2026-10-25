@@ -27,7 +27,10 @@ Maintained Scala 3/JMH fixtures cover the Scalive render pipeline:
 
 `RetainedHeap` is not a JMH benchmark: it measures the heap a connection keeps per row of a keyed
 list and of a stream after a turn, split into the model, the render and the Phoenix encoder state.
-It walks the object graph with JOL, so its figures are exact and repeat on the same JVM.
+A third page, `componentList`, is a keyed list whose rows each hold a component, measured after one
+row changed, which keeps the others, every component rendered again with less content, and an
+unrelated turn: it checks that the render keeps no component render the page no longer shows. It
+walks the object graph with JOL, so its figures are exact and repeat on the same JVM.
 
 Fixture invariants are checked once in trial setup, not in timed methods. `BenchmarkCounters`
 accumulates output/diff size, expression sample count, render/diff nanoseconds, retained-template

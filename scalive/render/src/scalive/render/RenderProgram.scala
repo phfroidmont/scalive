@@ -311,7 +311,13 @@ object RenderProgram:
     element: ElementTemplate[Msg]):
     def retire(): Unit = scope.close()
 
-  /** A committed row, with the bindings it rendered and the components it declared, in order. */
+  /** A committed row, with the bindings it rendered and the components it declared, in order.
+    *
+    * Its node is the one its evaluation made, without what resolution filled in
+    * (`EvaluatedTree.unresolved`), and the node of [[EvaluatedRows]] holds those of its rows. The
+    * committed tree holds the resolved copies, which the runtime replaces when a component renders
+    * again, so a record keeps no component's render.
+    */
   final private case class EvaluatedRow[Msg](
     node: EvaluatedNode.Element,
     bindings: BindingTable.Rows[Msg],
@@ -1796,11 +1802,17 @@ object RenderProgram:
           rowCandidate
         )
         val rowBindings = bindings.exitRows(id)
-        evaluated.map { (node, rows, signals, next) =>
+        evaluated.map { (node, recorded, rows, signals, next) =>
           commitActions += state.assignment(
             stream.identity,
             next,
-            EvaluatedRows(node, signals, rowBindings, rows, requirements.componentsSince(declared))
+            EvaluatedRows(
+              recorded,
+              signals,
+              rowBindings,
+              rows,
+              requirements.componentsSince(declared)
+            )
           )
           node
         }
@@ -1827,6 +1839,7 @@ object RenderProgram:
   ): Either[
     RenderError,
     (
+      EvaluatedNode.Stream,
       EvaluatedNode.Stream,
       Map[RowId, EvaluatedRow[Msg]],
       SignalEvaluation.RowsEvaluation,
@@ -1868,13 +1881,11 @@ object RenderProgram:
               commitActions,
               candidateRows,
               requirements
-            ).map((child, evaluated) =>
-              EvaluatedNode.StreamRow(entry.domId, child) -> (row.id -> evaluated)
-            )
+            ).map(EvaluatedNode.StreamRow(entry.domId, _) -> _)
           }
         }
-      (evaluatedWithMemos, rowSignals) = evaluatedRows
-      renderedRows                     = evaluatedWithMemos.map(_._1)
+      (evaluated, rowSignals) = evaluatedRows
+      renderedRows            = evaluated.map(_._1)
     yield
       val rows     = renderedRows.take(entries.length)
       val rowsById = renderedRows.map(row => row.domId -> row).toMap
@@ -1899,7 +1910,8 @@ object RenderProgram:
           node.copy(rows = rows, operations = operations)
         case _ =>
           EvaluatedNode.Stream(id, stream.identity, stream.generation, rows, operations, revision)
-      (node, evaluatedWithMemos.map(_._2).toMap, rowSignals, next)
+      val records = templates.iterator.map(_.id).zip(evaluated.iterator.map(_._2)).toMap
+      (node, recordedStream(node, evaluated), records, rowSignals, next)
     end for
   end evaluateStreamRows
 
@@ -1998,6 +2010,7 @@ object RenderProgram:
       CollectionRows(
         result._1,
         result._2,
+        result._3,
         evaluated => template.state.assignment(next, removed, evaluated)
       )
     end for
@@ -2087,14 +2100,18 @@ object RenderProgram:
       CollectionRows(
         result._1,
         result._2,
+        result._3,
         evaluated => template.state.assignment(next, removed, evaluated)
       )
     end for
   end evaluateSignalKeyedByIndexRows
 
-  /** The evaluated rows of a collection, and the commit that keeps them. */
+  /** The evaluated rows of a collection, its node and the one it records, and the commit that keeps
+    * them.
+    */
   final private case class CollectionRows[Msg](
     node: EvaluatedNode.Keyed,
+    recorded: EvaluatedNode.Keyed,
     rows: Map[RowId, EvaluatedRow[Msg]],
     assignment: SignalKeyedTemplate.Evaluated[Msg] => () => Unit)
 
@@ -2143,7 +2160,7 @@ object RenderProgram:
         evaluated.map { (collection, signals) =>
           commitActions += collection.assignment(
             EvaluatedRows(
-              collection.node,
+              collection.recorded,
               signals,
               rowBindings,
               collection.rows,
@@ -2211,10 +2228,14 @@ object RenderProgram:
     commitActions: ArrayBuffer[() => Unit],
     candidateRows: CandidateRows,
     requirements: Requirements[Msg]
-  ): Either[RenderError, (EvaluatedNode.Keyed, Map[RowId, EvaluatedRow[Msg]])] =
+  ): Either[
+    RenderError,
+    (EvaluatedNode.Keyed, EvaluatedNode.Keyed, Map[RowId, EvaluatedRow[Msg]])
+  ] =
     val old      = previous.collect { case keyed: EvaluatedNode.Keyed => keyed }
     val lastRows = last.fold(Map.empty[RowId, EvaluatedRow[Msg]])(_.rows)
-    // The committed rows hold the previous nodes when the previous collection is the committed one.
+    // The recorded rows are the committed ones when the recorded collection is: it then holds
+    // nothing resolution would have filled in.
     val committed = last.exists(rows => old.exists(_ eq rows.node))
     val oldRows   =
       if committed then Map.empty[RowId, EvaluatedNode]
@@ -2239,9 +2260,43 @@ object RenderProgram:
     }.map { evaluated =>
       val keyedRows = evaluated.map(_._1)
       val byId      = evaluated.iterator.map((row, value) => row.id -> value).toMap
-      keyedNode(id, old, keyedRows, revision) -> byId
+      val node      = keyedNode(id, old, keyedRows, revision)
+      (node, recordedKeyed(node, evaluated), byId)
     }
   end evaluateItemRows
+
+  /** `node`, whose rows are `rows`, holding each row's recorded node instead: what a collection
+    * records holds what its rows record, without what resolution filled in.
+    */
+  private def recordedKeyed[Msg](
+    node: EvaluatedNode.Keyed,
+    rows: Vector[(EvaluatedNode.KeyedRow, EvaluatedRow[Msg])]
+  ): EvaluatedNode.Keyed =
+    if rows.forall((row, record) => row.child eq record.node) then node
+    else
+      node.copy(rows =
+        rows.map((row, record) =>
+          if row.child eq record.node then row else row.copy(child = record.node)
+        )
+      )
+
+  /** `node`, whose rendered rows are `rows`, holding each row's recorded node instead, also in the
+    * operations that insert it, like [[recordedKeyed]].
+    */
+  private def recordedStream[Msg](
+    node: EvaluatedNode.Stream,
+    rows: Vector[(EvaluatedNode.StreamRow, EvaluatedRow[Msg])]
+  ): EvaluatedNode.Stream =
+    if rows.forall((row, record) => row.child eq record.node) then node
+    else
+      val recorded = rows.map((row, record) =>
+        if row.child eq record.node then row else row.copy(child = record.node)
+      )
+      val byDomId    = recorded.map(row => row.domId -> row).toMap
+      val operations = node.operations.copy(inserts =
+        node.operations.inserts.map(insert => insert.copy(row = byDomId(insert.row.domId)))
+      )
+      node.copy(rows = recorded.take(node.rows.length), operations = operations)
 
   private def keyedNode(
     id: TemplateId,
@@ -2261,7 +2316,7 @@ object RenderProgram:
     * every signal it read from outside it are unchanged, and it renders nothing that signals do not
     * track. `last` is what the row's last evaluation recorded, and `previous` that evaluation's
     * node as resolution filled in its components. A kept row keeps its bindings and signal samples,
-    * and declares its components again.
+    * and declares its components again. Returns the row's node and what it records.
     */
   private def evaluateRow[A, Msg](
     id: RowId,
@@ -2283,19 +2338,15 @@ object RenderProgram:
           if !read.untracked && row.item == item &&
             EvaluatedTree.resolvedFrom(committed, row.node) =>
         traverse(read.outside)(transaction.sample(_))
-          .map(outside =>
-            Option.when(outside.forall(transaction.unchanged))(
-              if committed eq row.node then row else row.copy(node = committed)
-            )
-          )
+          .map(outside => Option.when(outside.forall(transaction.unchanged))(committed -> row))
       case _ => Right(None)
 
     kept.flatMap {
-      case Some(row) =>
+      case Some(keptRow @ (_, row)) =>
         transaction.keepRow(id)
         bindings.keepRow(row.bindings)
         requirements.components ++= row.components
-        Right(row.node -> row)
+        Right(keptRow)
       case None =>
         transaction.bindSource(source, item).flatMap { _ =>
           val declared = requirements.components.length
@@ -2315,7 +2366,12 @@ object RenderProgram:
           transaction.exitRow()
           val rowBindings = bindings.exitRow()
           evaluated.map(node =>
-            node -> EvaluatedRow(node, rowBindings, item, requirements.componentsSince(declared))
+            node -> EvaluatedRow(
+              EvaluatedTree.unresolved(node),
+              rowBindings,
+              item,
+              requirements.componentsSince(declared)
+            )
           )
         }
     }

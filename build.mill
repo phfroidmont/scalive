@@ -63,9 +63,11 @@ trait PublishCommon extends PublishModule:
 
 trait ScaliveModule extends ScalaCommon:
   def testModuleDeps: Seq[JavaModule] = Nil
+  def testMvnDeps: Seq[Dep]           = Nil
 
   object test extends ScaliveTests:
     override def moduleDeps = super.moduleDeps ++ testModuleDeps
+    override def mvnDeps    = super.mvnDeps() ++ testMvnDeps
 
 trait PublishedScaliveModule extends ScaliveModule with PublishCommon
 
@@ -223,6 +225,8 @@ object scalive extends PublishedScaliveBundle:
 
   object render extends ScaliveModule:
     def moduleDeps = Seq(api)
+    // JOL tells which objects a render program retains between turns.
+    override def testMvnDeps = Seq(mvn"org.openjdk.jol:jol-core:0.17")
 
   object runtime extends Module:
     object contracts extends ScaliveModule:

@@ -628,6 +628,25 @@ object EvaluatedTree:
       }
       Right(resolved.fold(nodes)(_.result()))
 
+  /** `node` without what resolution filled in: each component and nested LiveView in it without its
+    * resolution, and every node on the way to one copied, the rest kept as it is. `node` is then
+    * [[resolvedFrom]] what this returns.
+    *
+    * A render program records nodes across turns, for which this keeps no component's render: an
+    * update of the component replaces that render in the committed tree, but not in the record.
+    */
+  private[render] def unresolved[Node <: EvaluatedNode](node: Node): Node =
+    val stripped = node match
+      case _ if !node.holdsResolvable         => node
+      case component: EvaluatedNode.Component =>
+        if component.resolution.isEmpty then component else component.copy(resolution = None)
+      case nested: EvaluatedNode.Nested =>
+        if nested.resolution.isEmpty then nested else nested.copy(resolution = None)
+      // Removing a resolution cannot fail.
+      case other =>
+        resolveContents(other, child => Right(unresolved(child))).fold(throw _, identity)
+    stripped.asInstanceOf[Node]
+
   /** Whether `node` is `evaluated`, or what resolving components and nested LiveViews into
     * `evaluated` made of it. Resolution keeps a node that holds neither as it is, and replaces one
     * that does by a copy that differs only in what it holds and in their resolutions.

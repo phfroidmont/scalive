@@ -2,6 +2,7 @@ package scalive.render
 
 import java.time.Instant
 
+import org.openjdk.jol.info.GraphLayout
 import zio.IO
 import zio.Task
 import zio.ZIO
@@ -29,16 +30,25 @@ object UnchangedCollectionSpec extends ZIOSpecDefault:
   private val badgeChild = RenderProgram.compile[Unit, Nothing](_ => span("badge"))
 
   /** Resolves the components of a render as the runtime does for components it keeps: each
-    * application id to the same instance, rendering `child`.
+    * application id to the same instance, rendering `child` unless it rendered something else.
     */
   final private class Instances(child: CommittedRender[Nothing]):
-    private val refs = scala.collection.mutable.Map.empty[String, ComponentRef[Nothing]]
+    private val refs     = scala.collection.mutable.Map.empty[String, ComponentRef[Nothing]]
+    private val rendered = scala.collection.mutable.Map.empty[String, CommittedRender[Nothing]]
+
+    /** Has the instance of `applicationId` render `render` from now on, as an update of it does. */
+    def render(applicationId: String, render: CommittedRender[Nothing]): Unit =
+      rendered.update(applicationId, render)
 
     def resolve[Msg](candidate: RenderCandidate[Msg]): IO[RenderError, RenderCandidate[Msg]] =
       ZIO.fromEither(
         candidate.resolveComponents(candidate.componentRequirements.map { requirement =>
           val ref = refs.getOrElseUpdate(requirement.applicationId, ComponentRef.runtime(Object()))
-          requirement.resolve(ref, ref.asInstanceOf[Object], child)
+          requirement.resolve(
+            ref,
+            ref.asInstanceOf[Object],
+            rendered.getOrElse(requirement.applicationId, child)
+          )
         })
       )
 
@@ -47,6 +57,13 @@ object UnchangedCollectionSpec extends ZIOSpecDefault:
 
   private def declared(candidate: RenderCandidate[?]): Vector[(String, Any)] =
     candidate.componentRequirements.map(requirement => requirement.applicationId -> requirement.props)
+
+  /** Whether `target` is reachable from `root`: adding it to what `root` reaches adds nothing. */
+  private def reaches(root: Object, target: Object): Boolean =
+    // Lambdas are hidden classes, whose field offsets JOL finds only this way.
+    System.setProperty("jol.magicFieldOffset", "true"): Unit
+    val reached = GraphLayout.parseInstance(root).totalCount()
+    GraphLayout.parseInstance(root, target).totalCount() == reached
 
   /** Rows that each hold a component, between two components. */
   private def badgeRows = RenderProgram.compile[Page, Nothing] { page =>
@@ -88,6 +105,48 @@ object UnchangedCollectionSpec extends ZIOSpecDefault:
     tree.root
       .children(1).asInstanceOf[EvaluatedNode.Element].children.head
       .asInstanceOf[EvaluatedNode.Stream]
+
+  /** Renders `initial` then `changed`, which keeps the row holding `badge-1` while that component
+    * renders a large render; renders less in `badge-1`, as an update of it does; then renders
+    * `changed` again and `unrelated`, resolving components each time as the runtime does.
+    *
+    * Returns the last render as HTML, whether the second committed render held the large render,
+    * and whether the program still reaches it.
+    */
+  private def afterComponentUpdate[Input](
+    compiled: Either[RenderError, RenderProgram[Input, Nothing]],
+    initial: Input,
+    changed: Input,
+    unrelated: Input
+  ): IO[RenderError, (String, Boolean, Boolean)] =
+    val largeCompiled =
+      RenderProgram.compile[Unit, Nothing](_ => div(span("large"), ul(li("one"), li("two"))))
+    def turn(
+      program: RenderProgram[Input, Nothing],
+      resolution: Instances
+    )(
+      input: Input,
+      previous: Option[CommittedRender[Nothing]]
+    ) = program.evaluate(input, previous).flatMap(resolution.resolve).map(_.commit)
+
+    for
+      program    <- ZIO.fromEither(compiled)
+      resolution <- instances
+      render = turn(program, resolution)
+      large   <- ZIO.fromEither(largeCompiled).flatMap(_.evaluate(())).map(_.commit)
+      small   <- ZIO.fromEither(badgeChild).flatMap(_.evaluate(())).map(_.commit)
+      _       <- ZIO.succeed(resolution.render("badge-1", large))
+      first   <- render(initial, None)
+      kept    <- render(changed, Some(first))
+      _       <- ZIO.succeed(resolution.render("badge-1", small))
+      updated <- render(changed, Some(kept))
+      last    <- render(unrelated, Some(updated))
+    yield (
+      HtmlRenderer.render(last.tree),
+      reaches(kept, large.tree.root),
+      reaches(program, large.tree.root)
+    )
+  end afterComponentUpdate
 
   override def spec = suite("UnchangedCollectionSpec")(
     test("reuses a collection whose items and outside signals did not change") {
@@ -708,6 +767,71 @@ object UnchangedCollectionSpec extends ZIOSpecDefault:
         badgeRow(updated.tree, 0) eq badgeRow(base.tree, 0),
         !(badgeRow(updated.tree, 1) eq badgeRow(base.tree, 1)),
         badgeRow(updated.tree, 2) eq badgeRow(base.tree, 2)
+      )
+    },
+    test("retains no render that a component of a kept row no longer holds") {
+      val two = rows.take(2)
+      for (html, committed, retained) <- afterComponentUpdate(
+                                           badgeRows,
+                                           Page(0, 0, two),
+                                           Page(0, 0, two.updated(1, Row(2, "TWO"))),
+                                           Page(1, 0, two.updated(1, Row(2, "TWO")))
+                                         )
+      yield assertTrue(html == badgeHtml(2), committed, !retained)
+    },
+    test("retains no render that a component of a kept nested row no longer holds") {
+      final case class Group(id: Int, rows: Vector[Row])
+      final case class Groups(counter: Int, groups: Vector[Group])
+      val compiled = RenderProgram.compile[Groups, Nothing] { model =>
+        div(
+          span(model.map(_.counter.toString)),
+          model.map(_.groups).splitBy(_.id) { (_, group) =>
+            ul(group.map(_.rows).splitBy(_.id) { (id, row) =>
+              li(component(Badge, s"badge-$id").render(row.map(_.label)))
+            })
+          }
+        )
+      }
+      val groups  = Vector(Group(1, rows.take(2)))
+      val changed = Vector(Group(1, rows.take(2).updated(1, Row(2, "TWO"))))
+
+      // The group is evaluated again, holding the first row as it was kept.
+      for (html, committed, retained) <-
+          afterComponentUpdate(compiled, Groups(0, groups), Groups(0, changed), Groups(1, changed))
+      yield assertTrue(
+        html == "<div><span>1</span><ul>" +
+          "<li><span>badge</span></li><li><span>badge</span></li></ul></div>",
+        committed,
+        !retained
+      )
+    },
+    test("retains no render that a component of a kept stream row no longer holds") {
+      val identity = scalive.streams.LiveStreamIdentity.fresh()
+      val changed  = Row(2, "TWO")
+      def stream(generation: Long, values: Vector[Row], inserted: Vector[Row]) =
+        scalive.streams.LiveStream(
+          identity,
+          "rows",
+          generation,
+          values.map(streamEntry),
+          inserted.map(appended),
+          Vector.empty,
+          reset = false
+        )
+      val next = stream(2L, Vector(rows(0), changed), Vector(changed))
+
+      for (html, committed, retained) <- afterComponentUpdate(
+                                           badgeStreamRows,
+                                           Feed(0, stream(1L, rows.take(2), Vector.empty)),
+                                           Feed(0, next),
+                                           Feed(1, next)
+                                         )
+      yield assertTrue(
+        html == "<div><span>badge</span><ul id=\"rows\" phx-update=\"stream\">" +
+          "<li id=\"rows-1\"><span>badge</span></li><li id=\"rows-2\"><span>badge</span></li>" +
+          "</ul></div>",
+        committed,
+        !retained
       )
     }
   )

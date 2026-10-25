@@ -595,6 +595,84 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
         )
       )
     },
+    test("keeps the stream statics the browser holds until the stream is reset") {
+      val identity = LiveStreamIdentity.fresh()
+      val first    = stream(identity, 1L, Vector(StreamItem("a", "A"), StreamItem("b", "B")))
+      // The row that made the statics differ is deleted, and a row built like the others added.
+      val next = stream(
+        identity,
+        2L,
+        Vector(StreamItem("a", "A"), StreamItem("c", "C")),
+        Vector((StreamItem("c", "C"), StreamAt.Last, None, false)),
+        deletes = Vector("b")
+      )
+      val reset = stream(
+        identity,
+        3L,
+        Vector(StreamItem("d", "D")),
+        Vector((StreamItem("d", "D"), StreamAt.Last, None, false)),
+        reset = true
+      )
+      val compiled = RenderProgram.compile[LiveStream[StreamItem], Nothing](model =>
+        div(
+          model.stream((domId, item) =>
+            if domId == "b" then span(idAttr := domId, em(item.map(_.label)))
+            else span(idAttr := domId, item.map(_.label))
+          )
+        )
+      )
+      def metadata(inserted: String, deleted: Vector[String], reset: Boolean) =
+        Json.Arr(
+          Vector[Json](
+            Json.Str("0"),
+            Json.Arr(Json.Arr(Json.Str(inserted), Json.Num(-1), Json.Null, Json.Bool(false))),
+            Json.Arr(deleted.map(Json.Str(_))*)
+          ) ++ (if reset then Vector(Json.Bool(true)) else Vector.empty)*
+        )
+      for
+        program   <- ZIO.fromEither(compiled)
+        candidate <- program.evaluate(first)
+        encoded   <- ZIO.fromEither(PhoenixRenderedEncoder.initial(candidate.tree))
+        second    <- program.evaluate(next, Some(candidate.commit))
+        deleted   <- ZIO.fromEither(
+                     PhoenixRenderedEncoder
+                       .update(encoded._1, TreeDiffer.diff(candidate.tree, second.tree))
+                   )
+        third <- program.evaluate(reset, Some(second.commit))
+        reset <- ZIO.fromEither(
+                   PhoenixRenderedEncoder
+                     .update(deleted._1, TreeDiffer.diff(second.tree, third.tree))
+                 )
+      yield assertTrue(
+        field(dynamic(encoded._2), "s") == Json.Arr(
+          Json.Str("<span id=\""),
+          Json.Str(""),
+          Json.Str(""),
+          Json.Str(""),
+          Json.Str("")
+        ),
+        dynamic(deleted._2) == Json.Obj(
+          "k" -> Json.Obj(
+            "0" -> Json.Obj(
+              "0" -> Json.Str("c"),
+              "1" -> Json.Str("\">"),
+              "2" -> Json.Str("C"),
+              "3" -> Json.Str("</span>")
+            ),
+            "kc" -> Json.Num(1)
+          ),
+          "stream" -> metadata("c", Vector("b"), reset = false)
+        ),
+        dynamic(reset._2) == Json.Obj(
+          "s" -> Json.Arr(Json.Str("<span id=\""), Json.Str("\">"), Json.Str("</span>")),
+          "k" -> Json.Obj(
+            "0" -> Json.Obj("0" -> Json.Str("d"), "1" -> Json.Str("D")),
+            "kc" -> Json.Num(1)
+          ),
+          "stream" -> metadata("d", Vector.empty, reset = true)
+        )
+      )
+    },
     test("projects row-local bindings as keyed stream dynamics") {
       val identity = LiveStreamIdentity.fresh()
       val initial = stream(

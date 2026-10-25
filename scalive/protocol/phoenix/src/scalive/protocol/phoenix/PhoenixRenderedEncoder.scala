@@ -329,7 +329,71 @@ private[scalive] object PhoenixRenderedEncoder:
     rows: Vector[ProjectedStreamRow],
     operations: ProjectedStreamOperations,
     // The row statics the client last received, or None before they are sent.
-    sentStatics: Option[Vector[String]])
+    sentStatics: Option[StreamStatics])
+
+  /** The statics the rows of a stream share, which shape the payload of each row.
+    *
+    * A static the rows differ in is None, and is sent among each row's dynamics. The browser
+    * renders each row it receives from the last statics it was sent, so the statics only ever gain
+    * differences: those it holds then cover every row it holds, and a payload shapes them from the
+    * rows it sends alone.
+    */
+  private[phoenix] enum StreamStatics:
+    case NoRows
+    case Shared(statics: Vector[Option[String]], dynamics: Int)
+
+    /** The statics the browser receives. */
+    lazy val values: Vector[String] = this match
+      case NoRows                    => Vector("")
+      case Shared(statics, dynamics) =>
+        val values  = Vector.newBuilder[String]
+        val current = StringBuilder()
+        statics.indices.foreach { index =>
+          statics(index) match
+            case Some(value) => current.append(value)
+            case None        =>
+              values += current.result()
+              current.clear()
+          if index < dynamics then
+            values += current.result()
+            current.clear()
+        }
+        values += current.result()
+        values.result()
+
+    /** These statics, also covering a row of `statics` and `dynamics`. */
+    def including(
+      statics: Vector[String],
+      dynamics: Vector[Json]
+    ): Either[PhoenixEncodingError, StreamStatics] = this match
+      case NoRows => Right(Shared(statics.map(Some(_)), dynamics.length))
+      case shared @ Shared(sharedStatics, sharedDynamics) =>
+        if statics.length != sharedStatics.length || dynamics.length != sharedDynamics then
+          Left(PhoenixEncodingError.InvalidStreamRowTemplate)
+        else if sharedStatics.indices.forall(index =>
+            sharedStatics(index).forall(_ == statics(index))
+          )
+        then Right(shared)
+        else
+          Right(
+            Shared(
+              sharedStatics.indices
+                .map(index => sharedStatics(index).filter(_ == statics(index))).toVector,
+              sharedDynamics
+            )
+          )
+
+    /** The dynamics of a row of `statics` and `dynamics` these statics cover. */
+    def shape(statics: Vector[String], dynamics: Vector[Json]): Vector[Json] = this match
+      case NoRows                       => dynamics
+      case Shared(sharedStatics, count) =>
+        val shaped = Vector.newBuilder[Json]
+        sharedStatics.indices.foreach { index =>
+          if sharedStatics(index).isEmpty then shaped += Json.Str(statics(index))
+          if index < count then shaped += dynamics(index)
+        }
+        shaped.result()
+  end StreamStatics
   final private[phoenix] case class SparseChanges(
     slots: Set[TemplateSlotId],
     streams: Set[TemplateId],
@@ -344,18 +408,10 @@ private[scalive] object PhoenixRenderedEncoder:
     all: Map[Int, ProjectedComponent],
     // The CIDs the render reaches. The other components wait for the browser to destroy them.
     active: Set[Int],
-    // Stream rows flattened on their own, shared by the payload and the record of what it sent.
-    private val streamRows: StreamRows = StreamRows()):
-    /** `row` flattened on its own, which only shapes the statics its stream shares. */
-    def streamRow(row: ProjectedNode)
-      : Either[PhoenixEncodingError, (Vector[String], Vector[Json])] =
-      Option(streamRows.get(row)) match
-        case Some(flattened) => Right(flattened)
-        case None            =>
-          flatten(row, this, Some(TemplateTable())).map { flattened =>
-            streamRows.put(row, flattened)
-            flattened
-          }
+    // The statics the payload sent each stream, which the state then records as sent.
+    val sentStatics: SentStatics = SentStatics()):
+    /** These components, recording nothing as sent, for rows flattened only to shape statics. */
+    def unsent: Components = Components(all, active)
 
     def apply(cid: Int): ProjectedComponent       = get(cid).get
     def get(cid: Int): Option[ProjectedComponent] = all.get(cid).filter(_ => active.contains(cid))
@@ -375,12 +431,8 @@ private[scalive] object PhoenixRenderedEncoder:
       active.toVector
         .flatMap(cid => keys(all(cid)).map(key => IdentityKey(key) -> cid))
         .groupMap(_._1)(_._2).view.mapValues(_.toSet).toMap
-  end Components
 
-  // The payload of an update and the record of what it sent each need every row of a stream it
-  // changed flattened on its own, so one update keeps them, by row, to flatten each row once.
-  final private class StreamRows
-      extends java.util.IdentityHashMap[ProjectedNode, (Vector[String], Vector[Json])]
+  final private class SentStatics extends java.util.IdentityHashMap[ProjectedStream, StreamStatics]
 
   /** The statics of the nested templates in one comprehension, sent once as its `p`. */
   final private class TemplateTable:
@@ -476,9 +528,9 @@ private[scalive] object PhoenixRenderedEncoder:
     for
       root  <- project(tree.root, None, context)
       state <- finish(root, context, validate = true, None)
-      streamRows = StreamRows()
-      json <- fullPayload(state, streamRows)
-    yield clearPending(None, state, context.changedCids, streamRows) -> json
+      sentStatics = SentStatics()
+      json <- fullPayload(state, sentStatics)
+    yield clearPending(None, state, context.changedCids, sentStatics) -> json
 
   /** Projects a disconnected render with fresh connection-local CIDs and inlines components. */
   private[scalive] def fullHtml(
@@ -490,7 +542,7 @@ private[scalive] object PhoenixRenderedEncoder:
       root  <- project(tree.root, None, context)
       state <- finish(root, context, validate = true, None)
       html  <- renderHtml(state.root, Components(state.components, state.activeCids))
-    yield clearPending(None, state, context.changedCids, StreamRows()) -> html
+    yield clearPending(None, state, context.changedCids, SentStatics()) -> html
 
   def update(
     state: PhoenixRenderedState,
@@ -502,20 +554,20 @@ private[scalive] object PhoenixRenderedEncoder:
       for
         root <- project(tree.root, None, context)
         next <- finish(root, context, validate = true, Some(state))
-        streamRows = StreamRows()
-        json <- fullPayload(next, streamRows)
-      yield clearPending(Some(state), next, context.changedCids, streamRows) -> json
+        sentStatics = SentStatics()
+        json <- fullPayload(next, sentStatics)
+      yield clearPending(Some(state), next, context.changedCids, sentStatics) -> json
 
     case update: RenderDelta.Update =>
-      val context    = ProjectionContext(Some(state))
-      val streamRows = StreamRows()
+      val context     = ProjectionContext(Some(state))
+      val sentStatics = SentStatics()
       for
         result <- applyDelta(state.root, update, None, context)
         // A sparse update changes only what its diff reaches, which the differ derives from the
         // validated tree it follows; the whole graph is validated again when it is resent.
         next <- finish(result.root, context, validate = result.structural, Some(state))
         json <-
-          if result.structural then fullPayload(next, streamRows)
+          if result.structural then fullPayload(next, sentStatics)
           else
             val fullDiffCids = result.changedComponents ++ context.allocatedCids
             val pendingDiffs = fullDiffCids.iterator.map(_ -> Option.empty[SparseChanges]).toMap ++
@@ -523,8 +575,8 @@ private[scalive] object PhoenixRenderedEncoder:
             val diffs = pendingDiffs.map { case (cid, changes) =>
               if state.pendingDeletionCids.contains(cid) then cid -> None else cid -> changes
             }
-            sparsePayload(state, next, result.changes, diffs, streamRows)
-      yield clearPending(Some(state), next, context.changedCids, streamRows) -> json
+            sparsePayload(state, next, result.changes, diffs, sentStatics)
+      yield clearPending(Some(state), next, context.changedCids, sentStatics) -> json
 
   private[scalive] def html(state: PhoenixRenderedState): Either[PhoenixEncodingError, String] =
     renderHtml(state.root, Components(state.components, state.activeCids))
@@ -539,9 +591,8 @@ private[scalive] object PhoenixRenderedEncoder:
     previous: Option[PhoenixRenderedState],
     state: PhoenixRenderedState,
     changedCids: Iterable[Int],
-    streamRows: StreamRows
+    sentStatics: SentStatics
   ): PhoenixRenderedState =
-    val stateComponents = Components(state.components, state.components.keySet, streamRows)
     // Records the stream statics the client now holds, so the next diff can tell if they changed.
     // What has nothing to clear keeps its instance, and with it its summary.
     def clearNode(node: ProjectedNode, previous: Option[ProjectedNode]): ProjectedNode =
@@ -582,13 +633,20 @@ private[scalive] object PhoenixRenderedEncoder:
               val previousRows = previousPart
                 .collect { case ProjectedPart.Stream(value) => value.rows }
                 .getOrElse(Vector.empty)
+              val previousRow = previousStreamRows(stream, previousRows)
+              val rows        = mapKeepingInstances(stream.rows) { (row, _) =>
+                val index = previousRow.indexOf(row.domId)
+                if index >= 0 && (previousRows(index).child eq row.child) then row
+                else
+                  val previousChild = Option.when(index >= 0)(previousRows(index).child)
+                  val cleared       = clearNode(row.child, previousChild)
+                  if cleared eq row.child then row else row.copy(child = cleared)
+              }
               ProjectedPart.Stream(
                 stream.copy(
-                  rows = clearRows(stream.rows, previousRows)(_.domId, _.child)((row, child) =>
-                    row.copy(child = child)
-                  ),
+                  rows = rows,
                   operations = emptyStreamOperations,
-                  sentStatics = streamStatics(stream, stateComponents).toOption
+                  sentStatics = Option(sentStatics.get(stream)).orElse(stream.sentStatics)
                 )
               )
             case part => part
@@ -1205,11 +1263,11 @@ private[scalive] object PhoenixRenderedEncoder:
       val existing = rows.indexWhere(_.domId == insert.row.domId)
       if existing >= 0 then rows = rows.updated(existing, insert.row)
       else if !insert.updateOnly then
-        val index = insert.at match
-          case StreamAt.First        => 0
-          case StreamAt.Last         => rows.length
-          case StreamAt.Index(value) => math.min(value, rows.length)
-        rows = rows.patch(index, Vector(insert.row), 0)
+        rows = insert.at match
+          case StreamAt.First                               => insert.row +: rows
+          case StreamAt.Index(value) if value < rows.length =>
+            rows.patch(value, Vector(insert.row), 0)
+          case _ => rows :+ insert.row
       insert.limit.foreach {
         case StreamLimit.KeepFirst(count) => rows = rows.take(count)
         case StreamLimit.KeepLast(count)  => rows = rows.takeRight(count)
@@ -1472,9 +1530,9 @@ private[scalive] object PhoenixRenderedEncoder:
 
   private def fullPayload(
     state: PhoenixRenderedState,
-    streamRows: StreamRows
+    sentStatics: SentStatics
   ): Either[PhoenixEncodingError, Json.Obj] =
-    val active = Components(state.components, state.activeCids, streamRows)
+    val active = Components(state.components, state.activeCids, sentStatics)
     rendered(state.root, active, None, None).flatMap { root =>
       if active.isEmpty then Right(root)
       else componentObject(active, state.activeCids).map(value => root.add("c", value))
@@ -1485,9 +1543,9 @@ private[scalive] object PhoenixRenderedEncoder:
     state: PhoenixRenderedState,
     changed: SparseChanges,
     changedComponents: Map[Int, Option[SparseChanges]],
-    streamRows: StreamRows
+    sentStatics: SentStatics
   ): Either[PhoenixEncodingError, Json.Obj] =
-    val active        = Components(state.components, state.activeCids, streamRows)
+    val active        = Components(state.components, state.activeCids, sentStatics)
     val activeChanges = changedComponents.view.filterKeys(state.activeCids.contains).toMap
     rendered(state.root, active, Some(changed), None, Some(previous.root)).flatMap { root =>
       val touches =
@@ -1754,7 +1812,7 @@ private[scalive] object PhoenixRenderedEncoder:
             case changes if changes.replaced.contains(row.child.id) =>
               ProjectedKeyedRowUpdate(None, None, full = true)
             case changes
-                if !keptRow(row.child, previousRows.get(row.id), changes) &&
+                if !keptRow(row.child, previousRows.get(row.id).exists(_ eq row.child), changes) &&
                   rowChanged(row.child, changes) =>
               ProjectedKeyedRowUpdate(None, Some(changes), full = false)
           }
@@ -1812,11 +1870,13 @@ private[scalive] object PhoenixRenderedEncoder:
     sparseChanges: Option[SparseChanges],
     templates: Option[TemplateTable]
   ): Either[PhoenixEncodingError, Json.Obj] =
-    lazy val previousRows = previous.fold(Map.empty[String, ProjectedNode])(
-      _.rows.iterator.map(row => row.domId -> row.child).toMap
-    )
+    val previousRows     = previous.fold(Vector.empty)(_.rows)
+    lazy val previousRow = previousStreamRows(stream, previousRows)
+    // Asked of the rows in order, as their previous instances are found with a cursor.
     def changed(row: ProjectedStreamRow, changes: SparseChanges): Boolean =
-      !keptRow(row.child, previousRows.get(row.domId), changes) && rowChanged(row.child, changes)
+      val index = previousRow.indexOf(row.domId)
+      val kept  = index >= 0 && (previousRows(index).child eq row.child)
+      !keptRow(row.child, kept, changes) && rowChanged(row.child, changes)
     val selectedRows = sparseChanges match
       case None                                                 => stream.rows
       case Some(changes) if changes.streams.contains(stream.id) =>
@@ -1831,34 +1891,67 @@ private[scalive] object PhoenixRenderedEncoder:
       sparseChanges.exists(_.streams.contains(stream.id))
     if !shouldEmit then Right(Json.Obj.empty)
     else
-      val table     = templates.getOrElse(TemplateTable())
-      val flattened = for
+      val table = templates.getOrElse(TemplateTable())
+      for
         selected <- traverse(selectedRows)(row => flatten(row.child, components, Some(table)))
-        // The other rows only shape the shared statics; what they reference is not sent.
-        others <- traverse(streamTemplateRows(stream))(row => components.streamRow(row.child))
-      yield selected ++ others
-      flattened
-        .flatMap(normalizeStreamRows).map { case (statics, rows) =>
-          val selectedCount    = selectedRows.length
-          val selectedPayloads = rows.take(selectedCount).map { dynamics =>
-            Json.Obj(dynamics.zipWithIndex.map { case (value, index) =>
-              index.toString -> value
-            }*)
-          }
-          val keyedFields = selectedPayloads.zipWithIndex.map { case (value, index) =>
-            index.toString -> value
-          } :+ ("kc" -> Json.Num(selectedCount))
-          val metadata = streamMetadata(stream)
-          // A row whose static structure changed, such as a conditional that now renders,
-          // needs new statics: the client renders every inserted row from the last ones sent.
-          val includeStatics = sparseChanges.isEmpty || !stream.sentStatics.contains(statics)
-          val fields         =
-            (if includeStatics then Vector("s" -> Json.Arr(statics.map(Json.Str(_))*))
-             else Vector.empty) ++
-              Vector("k" -> Json.Obj(keyedFields*), "stream" -> metadata)
-          Json.Obj((fields ++ sharedTemplates(templates, table))*)
+        base     <- baseStatics(stream, components)
+        statics  <- selected.foldLeft[Either[PhoenixEncodingError, StreamStatics]](Right(base)) {
+                     case (result, (rowStatics, dynamics)) =>
+                       result.flatMap(_.including(rowStatics, dynamics))
+                   }
+      yield
+        components.sentStatics.put(stream, statics): Unit
+        val selectedPayloads = selected.map { (rowStatics, dynamics) =>
+          val shaped = statics.shape(rowStatics, dynamics)
+          Json.Obj(shaped.zipWithIndex.map { case (value, index) => index.toString -> value }*)
         }
+        val keyedFields = selectedPayloads.zipWithIndex.map { case (value, index) =>
+          index.toString -> value
+        } :+ ("kc" -> Json.Num(selectedPayloads.length))
+        val metadata = streamMetadata(stream)
+        // A row whose static structure changed, such as a conditional that now renders,
+        // needs new statics: the client renders every inserted row from the last ones sent.
+        val includeStatics =
+          sparseChanges.isEmpty || !stream.sentStatics.exists(_.values == statics.values)
+        val fields =
+          (if includeStatics then Vector("s" -> Json.Arr(statics.values.map(Json.Str(_))*))
+           else Vector.empty) ++
+            Vector("k" -> Json.Obj(keyedFields*), "stream" -> metadata)
+        Json.Obj((fields ++ sharedTemplates(templates, table))*)
   end streamJson
+
+  /** The statics the rows of `stream` share before a payload adds the rows it sends: those the
+    * browser holds, or, before it holds any or once the stream is reset, those of every row.
+    */
+  private def baseStatics(
+    stream: ProjectedStream,
+    components: Components
+  ): Either[PhoenixEncodingError, StreamStatics] =
+    stream.sentStatics.filter(_ => !stream.operations.reset) match
+      case Some(sent) => Right(sent)
+      case None       =>
+        // These rows only shape the statics; what they reference is not sent.
+        val rows    = stream.operations.inserts.iterator.map(_.row) ++ stream.rows.iterator
+        val shaping = components.unsent
+        rows.foldLeft[Either[PhoenixEncodingError, StreamStatics]](Right(StreamStatics.NoRows)) {
+          (result, row) =>
+            for
+              statics   <- result
+              flattened <- flatten(row.child, shaping, Some(TemplateTable()))
+              included  <- statics.including(flattened._1, flattened._2)
+            yield included
+        }
+
+  private def previousStreamRows(
+    stream: ProjectedStream,
+    previous: Vector[ProjectedStreamRow]
+  ): StreamRowCursor[ProjectedStreamRow] =
+    StreamRowCursor(
+      previous,
+      _.domId,
+      stream.operations.inserts.iterator.map(_.row.domId).toSet,
+      stream.operations.deletes.length
+    )
 
   // Only the outermost comprehension sends the table: the browser ignores a nested one's.
   private def sharedTemplates(
@@ -1868,12 +1961,8 @@ private[scalive] object PhoenixRenderedEncoder:
     if inherited.nonEmpty then Vector.empty else table.toJson.map("p" -> _).toVector
 
   // A row the update kept as it was, holding no component the diff has to reach, did not change.
-  private def keptRow(
-    row: ProjectedNode,
-    previous: Option[ProjectedNode],
-    changes: SparseChanges
-  ): Boolean =
-    previous.exists(_ eq row) && !row.cids.exists(changes.touchedComponents.contains)
+  private def keptRow(row: ProjectedNode, kept: Boolean, changes: SparseChanges): Boolean =
+    kept && !row.cids.exists(changes.touchedComponents.contains)
 
   private def rowChanged(root: ProjectedNode, changes: SparseChanges): Boolean =
     rowContainsChangedSlot(root, changes.slots) ||
@@ -1881,50 +1970,6 @@ private[scalive] object PhoenixRenderedEncoder:
       rowContainsChangedKeyed(root, changes.keyedTargets) ||
       collectIds(root).exists(changes.replaced.contains) ||
       root.cids.exists(changes.touchedComponents.contains)
-
-  // Rows whose statics the client's stream template must cover.
-  private def streamTemplateRows(stream: ProjectedStream): Vector[ProjectedStreamRow] =
-    stream.operations.inserts.map(_.row) ++ stream.rows
-
-  private def streamStatics(
-    stream: ProjectedStream,
-    components: Components
-  ): Either[PhoenixEncodingError, Vector[String]] =
-    traverse(streamTemplateRows(stream))(row => components.streamRow(row.child))
-      .flatMap(normalizeStreamRows).map(_._1)
-
-  private def normalizeStreamRows(
-    rows: Vector[(Vector[String], Vector[Json])]
-  ): Either[PhoenixEncodingError, (Vector[String], Vector[Vector[Json]])] =
-    rows.headOption match
-      case None                                => Right(Vector("") -> Vector.empty)
-      case Some((firstStatics, firstDynamics)) =>
-        val compatible = rows.forall { case (statics, dynamics) =>
-          statics.length == firstStatics.length && dynamics.length == firstDynamics.length
-        }
-        if !compatible then Left(PhoenixEncodingError.InvalidStreamRowTemplate)
-        else
-          val statics  = Vector.newBuilder[String]
-          val dynamics = rows.map(_ => Vector.newBuilder[Json])
-          val current  = StringBuilder()
-
-          firstStatics.indices.foreach { index =>
-            val values = rows.map(_._1(index))
-            if values.forall(_ == values.head) then current.append(values.head)
-            else
-              statics += current.result()
-              current.clear()
-              values.zip(dynamics).foreach { case (value, row) => row += Json.Str(value) }
-
-            if index < firstDynamics.length then
-              statics += current.result()
-              current.clear()
-              rows.zip(dynamics).foreach { case ((_, values), row) => row += values(index) }
-          }
-
-          statics += current.result()
-          Right(statics.result() -> dynamics.map(_.result()))
-  end normalizeStreamRows
 
   private def streamMetadata(stream: ProjectedStream): Json.Arr =
     val inserts = stream.operations.inserts.map { insert =>

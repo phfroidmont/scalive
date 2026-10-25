@@ -226,6 +226,24 @@ object SignalEvaluation:
     /** Whether `sample` holds the value it held in the previous evaluation. */
     def unchanged(sample: SignalSample[?]): Boolean = sample.revision != revision
 
+    /** Whether every signal of `signals`, which a row or collection read from outside it in that
+      * order, holds the value it held in the previous evaluation.
+      *
+      * Samples them in order and stops at the first that changed. A signal read inside a branch
+      * comes after the branch's condition and may be valid only while the branch is shown, such as
+      * the present value that `option` projects, so it is sampled only while the condition is
+      * unchanged.
+      */
+    def allUnchanged(signals: Vector[Signal[?]]): Either[RenderError, Boolean] =
+      var index = 0
+      while index < signals.length do
+        sample(signals(index)) match
+          case Left(error)                           => return Left(error)
+          case Right(sampled) if !unchanged(sampled) => return Right(false)
+          case Right(_)                              => ()
+        index += 1
+      Right(true)
+
     /** Starts evaluating the rows of a collection, which read their previous samples from
       * `previous`.
       */

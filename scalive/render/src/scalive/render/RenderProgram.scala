@@ -1774,8 +1774,9 @@ object RenderProgram:
       case (Some(rows), Some(committed))
           if unchanged && !rows.signals.untracked &&
             EvaluatedTree.resolvedFrom(committed, rows.node) =>
-        traverse(rows.signals.outside)(transaction.sample(_))
-          .map(samples => Option.when(samples.forall(transaction.unchanged))(rows -> committed))
+        transaction
+          .allUnchanged(rows.signals.outside)
+          .map(Option.when(_)(rows -> committed))
       case _ => Right(None)
 
     reusable.flatMap {
@@ -2147,8 +2148,9 @@ object RenderProgram:
       case (Some(rows), Some(committed))
           if !rows.signals.untracked && transaction.unchanged(items) &&
             EvaluatedTree.resolvedFrom(committed, rows.node) =>
-        traverse(rows.signals.outside)(transaction.sample(_))
-          .map(samples => Option.when(samples.forall(transaction.unchanged))(rows -> committed))
+        transaction
+          .allUnchanged(rows.signals.outside)
+          .map(Option.when(_)(rows -> committed))
       case _ => Right(None)
 
     reusable.flatMap {
@@ -2345,8 +2347,7 @@ object RenderProgram:
       case (Some(row), Some(read), Some(committed: EvaluatedNode.Element))
           if !read.untracked && row.item == item &&
             EvaluatedTree.resolvedFrom(committed, row.node) =>
-        traverse(read.outside)(transaction.sample(_))
-          .map(outside => Option.when(outside.forall(transaction.unchanged))(committed -> row))
+        transaction.allUnchanged(read.outside).map(Option.when(_)(committed -> row))
       case _ => Right(None)
 
     kept.flatMap {

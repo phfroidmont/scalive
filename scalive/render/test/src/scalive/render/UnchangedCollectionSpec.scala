@@ -214,6 +214,31 @@ object UnchangedCollectionSpec extends ZIOSpecDefault:
           "<div><ul><li>one!</li><li>two!</li></ul><ul><li>three!</li></ul></div>"
       )
     },
+    test("closes a branch in a row that read a signal valid only while the branch is open") {
+      final case class Editing(open: Option[Int], rows: Vector[Row])
+      val compiled = RenderProgram.compile[Editing, Nothing] { model =>
+        div(model.map(_.rows).splitBy(_.id) { (id, row) =>
+          li(
+            row.map(_.label),
+            Signal.option(model.map(_.open.filter(_ == id)))(open =>
+              span(open.map(value => s" editing $value"))
+            )
+          )
+        })
+      }
+
+      for
+        program <- ZIO.fromEither(compiled)
+        first   <- program.evaluate(Editing(Some(1), rows))
+        base = first.commit
+        closed <- program.evaluate(Editing(None, rows), Some(base))
+        // The rows change too, so each kept row checks what it read on its own.
+        closedAndChanged <- program.evaluate(Editing(None, rows.take(2)), Some(base))
+      yield assertTrue(
+        HtmlRenderer.render(closed.tree) == "<div><li>one</li><li>two</li><li>three</li></div>",
+        HtmlRenderer.render(closedAndChanged.tree) == "<div><li>one</li><li>two</li></div>"
+      )
+    },
     test("keeps the signal values of a reused collection for its next update") {
       var labels   = 0
       val compiled = RenderProgram.compile[Page, Nothing] { page =>

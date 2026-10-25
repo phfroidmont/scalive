@@ -542,6 +542,25 @@ For the diffing model, read
 For explicit ID-addressed inserts and deletes in frequently changing collections, read
 [Streams and collection updates](streams-and-collection-updates.md#choose-streams-deliberately).
 
+### Fold shared state into the entries {#fold-shared-state-into-entries}
+
+Scalive does not evaluate a row again while its entry, and every signal the row
+reads from outside it, are unchanged. A row can derive a signal from state
+outside the row, such as the selection it compares its key with:
+
+@:sourceRegion(documentation/fixtures/guides/src/bindings/SelectableRows.scala, bindings-row-derived-state)
+
+This renders correctly, but each row builds its own `selected.map(...)`. Every
+render then checks one signal per row, even when it changes nothing in the
+list, such as a change to an unread counter elsewhere on the page. For a long
+list, fold the shared state into the entries instead, so that each row reads its
+entry alone:
+
+@:sourceRegion(documentation/fixtures/guides/src/bindings/SelectableRows.scala, bindings-row-folded-state)
+
+The list is then left as it was when the change is elsewhere, and a new
+selection evaluates only the rows whose entry it changed.
+
 ## Write reusable helpers {#write-reusable-helpers}
 
 Keep reusable markup in ordinary functions. Pass a `Signal` to a helper whose

@@ -25,7 +25,7 @@ enum AttributeValue:
 final case class EvaluatedAttribute private[render] (
   name: String,
   value: Option[AttributeValue],
-  slot: Option[TemplateSlotId],
+  slot: OptionalSlotId,
   revision: RenderRevision)
 
 /** A protocol-neutral evaluated HTML node with exact template identity and revision. */
@@ -94,7 +94,7 @@ object EvaluatedNode:
 
   final case class Text private[render] (
     id: TemplateId,
-    slot: Option[TemplateSlotId],
+    slot: OptionalSlotId,
     value: String,
     raw: Boolean,
     revision: RenderRevision)

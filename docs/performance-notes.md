@@ -14,8 +14,8 @@ tree the browser holds). `RetainedHeap` measures it per row:
 
 | Page | Model | Render | Encoder | Total |
 |---|---|---|---|---|
-| Keyed list | 77 B | 2,812 B | 1,221 B | 4,109 B |
-| Stream | 244 B | 1,816 B | 725 B | 2,785 B |
+| Keyed list | 77 B | 2,856 B | 1,221 B | 4,153 B |
+| Stream | 244 B | 1,860 B | 725 B | 2,829 B |
 | Keyed list, a component per row | 77 B | 2,165 B | 1,542 B | 3,783 B |
 
 Upstream keeps only the assigns, and nothing of a stream row once sent. For 100 connections
@@ -28,6 +28,8 @@ What a keyed row holds on the render side, from a JOL class histogram:
 - 5 `ElementTemplate` (200 B) and 3 `TextTemplate` (72 B): each row compiles its own templates.
 - 5 boxed `Long` row keys, 120 B: one per map keyed by `RowId`.
 - 6 `Some`, 96 B, and signal samples, about 250 B.
+- The row's entry in the binding table's groups (#3), about 44 B, of which 16 B is one more boxed
+  `RowId`. Rows without bindings have none.
 
 Rows sharing one compiled template would remove about a third of it, and needs row functions to
 receive their key as a signal; it is not done, see
@@ -65,23 +67,28 @@ saving with `gc.alloc.rate.norm` before and after.
 
 ## Stream insert evaluation {#stream-insert-evaluation}
 
-Inserting one row into a stream costs O(rows) to evaluate: 1.4 MB and under 1 ms at 1,000 rows,
-16.5 MB and about 9 ms at 10,000 (`StreamTurnBenchmark.evaluate`, `operation=insert`, 2026-10-28;
-2.5 MB and 25.4 MB before #2). The diff and
+Inserting one row into a stream costs O(rows) to evaluate: 0.5 MB and under 1 ms at 1,000 rows,
+5.4 MB and about 5 ms at 10,000 (`StreamTurnBenchmark.evaluate`, `operation=insert`, 2026-10-28;
+2.5 MB and 25 MB before the bindings were grouped per row and the other per-row structures kept
+across turns). The diff and
 the encoder cost little for the same insert (4 KB and 49 KB at 1,000 rows), since they find each
 row's previous instance with `StreamRowCursor` and shape the payload from the rows it sends.
 
 Each kept row is cheap, about 1 µs, but evaluation still visits every row, to check whether it is
-kept, and rebuilds the collection's bindings, which `BindingTable.Builder.result` adds back to the
-table one by one. The same holds for a keyed list whose items changed (`KeyedRowsBenchmark`), where
-it matches upstream, which also walks every entry of a changed comprehension.
+kept. The same holds for a keyed list whose items changed (`KeyedRowsBenchmark`), where it matches
+upstream, which also walks every entry of a changed comprehension.
 
-The other structures indexed by row are kept across turns as persistent maps and updated only for
-the rows a turn inserts, deletes or evaluates again (#2): the row templates, the row records and the
-rows' signal samples (`RowsEvaluation`). A stream tells the rows it no longer holds from its
+The bindings are no longer rebuilt (#3): `BindingTable` groups them per top-level collection, then
+per row, in persistent maps, and a turn drops and adds only the groups of the rows it inserts,
+deletes or evaluates again; a kept row keeps its group as it is. The builder still visits every kept
+row, which costs a lookup, and finds the deleted rows by comparing the count of rows rendered again
+with the previous groups, walking them only when some are missing.
+
+Nor are the other structures indexed by row (#2): the row templates, the row records and the rows'
+signal samples (`RowsEvaluation`) are kept across turns as persistent maps and updated only for the
+rows a turn inserts, deletes or evaluates again. A stream tells the rows it no longer holds from its
 deletions, and searches its entries for them only when a limit pruned some or after a reset. The
 stream's row order (`EvaluatedNode.Stream.rows`) is still built from the visit.
 
-What remains for O(changed): bindings grouped per row so that the table drops and adds only the
-rows that changed (#3), and visiting only the rows behind changed outside signals, which needs the
-row order derived from the stream's operations (#4).
+What remains for O(changed) is visiting only the rows behind changed outside signals, which needs
+the row order derived from the stream's operations (#4).

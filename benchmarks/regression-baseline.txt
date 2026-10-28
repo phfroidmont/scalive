@@ -3,37 +3,37 @@
 # `retained` lines: heap retained per row in B, tolerance 2%.
 # Regenerate with `mill benchmarks.updateRegressionBaseline` after an intended change.
 alloc BindingsAndSignalsBenchmark.bindingLookup rowCount=1000 80009
-alloc BindingsAndSignalsBenchmark.changedInputEqualRenderedValues rowCount=1000 11800
-alloc ComponentTurnBenchmark.rootClick cardCount=100 layout=splitBy 905215
-alloc ComponentTurnBenchmark.rootClick cardCount=100 layout=static 915925
-alloc InitialRenderBenchmark.evaluate rowCount=1000 15017793
-alloc InitialRenderBenchmark.html rowCount=1000 7717939
-alloc InitialRenderBenchmark.phoenixEncoding rowCount=1000 10318051
-alloc KeyedRowsBenchmark.phoenixEncoding operation=reintroduction rowCount=1000 2713006
-alloc KeyedRowsBenchmark.phoenixEncoding operation=removal rowCount=1000 2684955
-alloc KeyedRowsBenchmark.phoenixEncoding operation=reorder rowCount=1000 2648451
-alloc KeyedRowsBenchmark.phoenixEncoding operation=update rowCount=1000 2392710
-alloc KeyedRowsBenchmark.renderDiffAndEncode operation=reintroduction rowCount=1000 4950537
-alloc KeyedRowsBenchmark.renderDiffAndEncode operation=removal rowCount=1000 4897332
-alloc KeyedRowsBenchmark.renderDiffAndEncode operation=reorder rowCount=1000 4873536
-alloc KeyedRowsBenchmark.renderDiffAndEncode operation=update rowCount=1000 4617909
+alloc BindingsAndSignalsBenchmark.changedInputEqualRenderedValues rowCount=1000 11840
+alloc ComponentTurnBenchmark.rootClick cardCount=100 layout=splitBy 902821
+alloc ComponentTurnBenchmark.rootClick cardCount=100 layout=static 915613
+alloc InitialRenderBenchmark.evaluate rowCount=1000 15233786
+alloc InitialRenderBenchmark.html rowCount=1000 7549892
+alloc InitialRenderBenchmark.phoenixEncoding rowCount=1000 10342098
+alloc KeyedRowsBenchmark.phoenixEncoding operation=reintroduction rowCount=1000 2697127
+alloc KeyedRowsBenchmark.phoenixEncoding operation=removal rowCount=1000 2669147
+alloc KeyedRowsBenchmark.phoenixEncoding operation=reorder rowCount=1000 2648562
+alloc KeyedRowsBenchmark.phoenixEncoding operation=update rowCount=1000 2376668
+alloc KeyedRowsBenchmark.renderDiffAndEncode operation=reintroduction rowCount=1000 3915856
+alloc KeyedRowsBenchmark.renderDiffAndEncode operation=removal rowCount=1000 4130896
+alloc KeyedRowsBenchmark.renderDiffAndEncode operation=reorder rowCount=1000 3857559
+alloc KeyedRowsBenchmark.renderDiffAndEncode operation=update rowCount=1000 3631641
 alloc KeyedRowsBenchmark.semanticDiff operation=reintroduction rowCount=1000 304014
 alloc KeyedRowsBenchmark.semanticDiff operation=removal rowCount=1000 304438
 alloc KeyedRowsBenchmark.semanticDiff operation=reorder rowCount=1000 304535
 alloc KeyedRowsBenchmark.semanticDiff operation=update rowCount=1000 307967
-alloc StreamAndLifecycleBenchmark.largeStreamSmallPatch rowCount=1000 46910
-alloc StreamAndLifecycleBenchmark.lateCandidateFailureRollback rowCount=1000 459923
+alloc StreamAndLifecycleBenchmark.largeStreamSmallPatch rowCount=1000 30970
+alloc StreamAndLifecycleBenchmark.lateCandidateFailureRollback rowCount=1000 460202
 alloc StreamAndLifecycleBenchmark.nestedRetainedTemplates rowCount=1000 16936
 alloc StreamTurnBenchmark.createStream operation=insert rowCount=1000 1216275
 alloc StreamTurnBenchmark.createStream operation=unrelated rowCount=1000 1216275
-alloc StreamTurnBenchmark.evaluate operation=insert rowCount=1000 1367709
-alloc StreamTurnBenchmark.evaluate operation=unrelated rowCount=1000 12216
-alloc StreamTurnBenchmark.phoenixEncoding operation=insert rowCount=1000 49003
-alloc StreamTurnBenchmark.phoenixEncoding operation=unrelated rowCount=1000 6872
-alloc StreamTurnBenchmark.semanticDiff operation=insert rowCount=1000 4281
+alloc StreamTurnBenchmark.evaluate operation=insert rowCount=1000 467276
+alloc StreamTurnBenchmark.evaluate operation=unrelated rowCount=1000 12360
+alloc StreamTurnBenchmark.phoenixEncoding operation=insert rowCount=1000 49091
+alloc StreamTurnBenchmark.phoenixEncoding operation=unrelated rowCount=1000 6776
+alloc StreamTurnBenchmark.semanticDiff operation=insert rowCount=1000 4265
 alloc StreamTurnBenchmark.semanticDiff operation=unrelated rowCount=1000 3216
-alloc UnrelatedChangeBenchmark.evaluate rowCount=1000 11056
-alloc UnrelatedChangeBenchmark.phoenixEncoding rowCount=1000 6800
+alloc UnrelatedChangeBenchmark.evaluate rowCount=1000 11728
+alloc UnrelatedChangeBenchmark.phoenixEncoding rowCount=1000 6840
 alloc UnrelatedChangeBenchmark.semanticDiff rowCount=1000 3216
 retained componentList.data 77
 retained componentList.encoder 1542
@@ -41,9 +41,9 @@ retained componentList.render 2165
 retained componentList.total 3783
 retained keyedList.data 77
 retained keyedList.encoder 1221
-retained keyedList.render 2812
-retained keyedList.total 4109
+retained keyedList.render 2856
+retained keyedList.total 4153
 retained stream.data 244
 retained stream.encoder 725
-retained stream.render 1816
-retained stream.total 2785
+retained stream.render 1860
+retained stream.total 2829

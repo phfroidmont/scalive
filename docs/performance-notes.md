@@ -88,12 +88,13 @@ A stream insert or delete evaluates only the rows its operations insert and thos
 changed signal from outside them (#4): an append costs about 5 µs and 29 KB at 1,000 and at
 10,000 rows, a delete in the middle 5 µs and 24 KB at 1,000 rows and 27 µs and 46 KB at 10,000
 (`StreamTurnBenchmark.evaluate`, 2026-10-28; at 10,000 rows, 4 ms and 5.5 MB for the append and
-4 ms and 6.6 MB for the delete before). Each
-collection and stream keeps which of its rows read each signal from outside them, samples each such
-signal once per turn, and counts one that can no longer be sampled, such as one read in a branch
-since closed, as changed. The stream's row order is replayed from its operations; a delete still
-searches the rows for the one it deletes and copies the row vector, which is the cost left at
-10,000 rows.
+4 ms and 6.6 MB for the delete before). Each collection and stream keeps which of its rows read
+each signal from outside them, samples each such signal once per turn, and counts one that can no
+longer be sampled as changed. Evaluating the rows behind it again samples it again only if they
+still read it: one read in a branch since closed is skipped, and any other failure fails the turn,
+as it did when each row checked its own signals. The stream's row order is replayed from its
+operations; a delete still searches the rows for the one it deletes and copies the row vector,
+which is the cost left at 10,000 rows.
 
 What still visits every row:
 

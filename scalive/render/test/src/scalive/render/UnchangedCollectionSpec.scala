@@ -243,6 +243,62 @@ object UnchangedCollectionSpec extends ZIOSpecDefault:
         HtmlRenderer.render(closedAndChanged.tree) == "<div><li>one</li><li>two</li></div>"
       )
     },
+    test("fails the turn when a signal rows read from outside fails outside any branch") {
+      final case class Labels(suffix: Option[String], rows: Vector[Row])
+      final case class StreamLabels(suffix: Option[String], stream: scalive.streams.LiveStream[Row])
+      val keyedRows = RenderProgram.compile[Labels, Nothing] { model =>
+        val suffix = model.map(_.suffix.get)
+        div(model.map(_.rows).splitBy(_.id)((_, row) => li(row.map(_.label), suffix)))
+      }
+      val openBranchRows = RenderProgram.compile[Labels, Nothing] { model =>
+        div(model.map(_.rows).splitBy(_.id) { (_, row) =>
+          li(
+            row.map(_.label),
+            Signal.option(model.map(_.suffix))(suffix => span(suffix.map(_.headOption.get.toString)))
+          )
+        })
+      }
+      val streamRows = RenderProgram.compile[StreamLabels, Nothing] { model =>
+        val suffix = model.map(_.suffix.get)
+        div(model.map(_.stream).renderIn(ul)(row => li(row.map(_.label), suffix)))
+      }
+      val identity = scalive.streams.LiveStreamIdentity.fresh()
+      def stream(generation: Long, values: Vector[Row], deleted: Vector[String]) =
+        scalive.streams.LiveStream(
+          identity,
+          "rows",
+          generation,
+          values.map(streamEntry),
+          Vector.empty,
+          deleted,
+          reset = false
+        )
+      val initial = stream(1L, rows, Vector.empty)
+      def failure[Input](
+        compiled: Either[RenderError, RenderProgram[Input, Nothing]],
+        first: Input,
+        failing: Input
+      ) =
+        for
+          program <- ZIO.fromEither(compiled)
+          base    <- program.evaluate(first).map(_.commit)
+          failed  <- program.evaluate(failing, Some(base)).flip
+        yield failed match
+          case RenderError.EvaluationFailed(_: NoSuchElementException) => true
+          case _                                                       => false
+
+      for
+        keyed    <- failure(keyedRows, Labels(Some("!"), rows), Labels(None, rows))
+        reused  <- failure(streamRows, StreamLabels(Some("!"), initial), StreamLabels(None, initial))
+        deleted <- failure(
+                     streamRows,
+                     StreamLabels(Some("!"), initial),
+                     StreamLabels(None, stream(2L, rows.take(2), Vector("rows-3")))
+                   )
+        // The branch stays open, so what it reads must still be sampled.
+        inOpenBranch <- failure(openBranchRows, Labels(Some("!"), rows), Labels(Some(""), rows))
+      yield assertTrue(keyed, reused, deleted, inOpenBranch)
+    },
     test("keeps the signal values of a reused collection for its next update") {
       var labels   = 0
       val compiled = RenderProgram.compile[Page, Nothing] { page =>

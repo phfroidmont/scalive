@@ -1479,7 +1479,7 @@ object RenderProgram:
     bindings: BindingTable.Builder[Msg]
   ): Either[RenderError, Vector[EvaluatedAttribute]] =
     val attributes = template.attributes
-    val evaluated  = new Array[AnyRef](attributes.length)
+    val evaluated  = RefArray[EvaluatedAttribute](attributes.length)
 
     // Phoenix gates form recovery on the old and new phx-change values matching exactly.
     val formIdIndex =
@@ -1516,7 +1516,7 @@ object RenderProgram:
           case Right(attribute) => evaluated(index) = attribute
           case Left(error)      => return Left(error)
       index += 1
-    Right(vectorOf(evaluated))
+    Right(evaluated.toVector)
   end evaluateAttributes
 
   private def evaluateChildren[Msg](
@@ -1531,7 +1531,7 @@ object RenderProgram:
     requirements: Requirements[Msg]
   ): Either[RenderError, Vector[EvaluatedNode]] =
     val children  = template.children
-    val evaluated = new Array[AnyRef](children.length)
+    val evaluated = RefArray[EvaluatedNode](children.length)
     var index     = 0
     while index < children.length do
       evaluateNode(
@@ -1548,7 +1548,7 @@ object RenderProgram:
         case Right(child) => evaluated(index) = child
         case Left(error)  => return Left(error)
       index += 1
-    Right(vectorOf(evaluated))
+    Right(evaluated.toVector)
   end evaluateChildren
 
   private def previousAttribute(
@@ -1567,9 +1567,20 @@ object RenderProgram:
       case Some(element) if index < element.children.length => Some(element.children(index))
       case _                                                => None
 
-  // Up to 32 elements, a vector wraps an array of references without copying it.
-  private def vectorOf[A](values: Array[AnyRef]): Vector[A] =
-    Vector.from(ArraySeq.unsafeWrapArray(values)).asInstanceOf[Vector[A]]
+  /** An array of references that holds only `A`s: up to 32 elements, a vector wraps it without
+    * copying it, which it would not do for an array typed `A`.
+    */
+  private object RefArray:
+    opaque type RefArray[A <: AnyRef] = Array[AnyRef]
+
+    def apply[A <: AnyRef](length: Int): RefArray[A] = new Array[AnyRef](length)
+
+    extension [A <: AnyRef](array: RefArray[A])
+      inline def update(index: Int, value: A): Unit = array(index) = value
+
+      // Only `update` writes to it, so every element is an `A`.
+      inline def toVector: Vector[A] =
+        Vector.from(ArraySeq.unsafeWrapArray(array)).asInstanceOf[Vector[A]]
 
   private def textValue(attribute: EvaluatedAttribute): Option[String] =
     attribute.value.collect { case AttributeValue.Text(value) => value }

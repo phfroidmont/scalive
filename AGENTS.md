@@ -52,3 +52,17 @@ Compatibility targets behavior and feature set parity, not internal implementati
 Scalive is currently in Alpha.
 Until the project reaches a stable release, we optimize for the best API design with no backward-compatibility guarantees.
 Breaking changes are expected when they improve clarity, safety, or developer experience.
+
+## Agent skills
+
+### Issue tracker
+
+Issues are tracked in GitHub Issues for `phfroidmont/scalive` (via `gh`). See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `GLOSSARY.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.

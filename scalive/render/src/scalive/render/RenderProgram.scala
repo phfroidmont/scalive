@@ -321,7 +321,7 @@ object RenderProgram:
     */
   final private case class EvaluatedRow[Msg](
     node: EvaluatedNode.Element,
-    bindings: BindingTable.Rows[Msg],
+    bindings: BindingTable.Row[Msg],
     item: Any,
     components: Vector[ComponentRequirement[Msg]])
 
@@ -331,7 +331,7 @@ object RenderProgram:
   final private case class EvaluatedRows[+Node <: EvaluatedNode, Msg](
     node: Node,
     signals: SignalEvaluation.RowsEvaluation,
-    bindings: BindingTable.Rows[Msg],
+    bindings: BindingTable.Collection[Msg],
     rows: Map[RowId, EvaluatedRow[Msg]],
     components: Vector[ComponentRequirement[Msg]])
 
@@ -1787,7 +1787,7 @@ object RenderProgram:
         }
       case None =>
         val declared = requirements.components.length
-        bindings.enterRows()
+        bindings.enterRows(id)
         val evaluated = evaluateStreamRows(
           id,
           stream,
@@ -1803,7 +1803,7 @@ object RenderProgram:
           requirements,
           rowCandidate
         )
-        val rowBindings = bindings.exitRows(id)
+        val rowBindings = bindings.exitRows()
         evaluated.map { (node, recorded, rows, signals, next) =>
           commitActions += state.assignment(
             stream.identity,
@@ -2161,12 +2161,12 @@ object RenderProgram:
         }
       case None =>
         val declared = requirements.components.length
-        bindings.enterRows()
+        bindings.enterRows(id)
         val evaluated = withinRows(
           transaction,
           last.fold(SignalEvaluation.RowsEvaluation.empty)(_.signals)
         )(evaluateRows)
-        val rowBindings = bindings.exitRows(id)
+        val rowBindings = bindings.exitRows()
         evaluated.map { (collection, signals) =>
           commitActions += collection.assignment(
             EvaluatedRows(
@@ -2353,7 +2353,7 @@ object RenderProgram:
     kept.flatMap {
       case Some(keptRow @ (_, row)) =>
         transaction.keepRow(id)
-        bindings.keepRow(row.bindings)
+        bindings.keepRow(id, row.bindings)
         requirements.components ++= row.components
         Right(keptRow)
       case None =>
@@ -2373,7 +2373,7 @@ object RenderProgram:
             requirements
           ).map(_.asInstanceOf[EvaluatedNode.Element])
           transaction.exitRow()
-          val rowBindings = bindings.exitRow()
+          val rowBindings = bindings.exitRow(id)
           evaluated.map(node =>
             node -> EvaluatedRow(
               EvaluatedTree.unresolved(node),

@@ -65,30 +65,35 @@ browsers join at once. In evaluation, most of it is closures from `for` over `Ei
 jdk.ObjectAllocationSample`) attributes it by frame. Its sample weights are skewed, so confirm a
 saving with `gc.alloc.rate.norm` before and after.
 
-## Stream insert evaluation {#stream-insert-evaluation}
+## Stream rows evaluated on every turn {#stream-rows-evaluated-on-every-turn}
 
-Inserting one row into a stream costs O(rows) to evaluate: 0.5 MB and under 1 ms at 1,000 rows,
-5.4 MB and about 5 ms at 10,000 (`StreamTurnBenchmark.evaluate`, `operation=insert`, 2026-10-28;
-2.5 MB and 25 MB before the bindings were grouped per row and the other per-row structures kept
-across turns). The diff and
-the encoder cost little for the same insert (4 KB and 49 KB at 1,000 rows), since they find each
-row's previous instance with `StreamRowCursor` and shape the payload from the rows it sends.
+A stream insert or delete evaluates only the rows its operations insert and those that read a
+changed signal from outside them (#4): an append costs about 5 µs and 29 KB at 1,000 and at
+10,000 rows, a delete in the middle 5 µs and 24 KB at 1,000 rows and 27 µs and 46 KB at 10,000
+(`StreamTurnBenchmark.evaluate`, 2026-10-28; at 10,000 rows, 4 ms and 5.5 MB for the append and
+4 ms and 6.6 MB for the delete before). Each
+collection and stream keeps which of its rows read each signal from outside them, samples each such
+signal once per turn, and counts one that can no longer be sampled, such as one read in a branch
+since closed, as changed. The stream's row order is replayed from its operations; a delete still
+searches the rows for the one it deletes and copies the row vector, which is the cost left at
+10,000 rows.
 
-Each kept row is cheap, about 1 µs, but evaluation still visits every row, to check whether it is
-kept. The same holds for a keyed list whose items changed (`KeyedRowsBenchmark`), where it matches
-upstream, which also walks every entry of a changed comprehension.
+What still visits every row:
 
-The bindings are no longer rebuilt (#3): `BindingTable` groups them per top-level collection, then
-per row, in persistent maps, and a turn drops and adds only the groups of the rows it inserts,
-deletes or evaluates again; a kept row keeps its group as it is. The builder still visits every kept
-row, which costs a lookup, and finds the deleted rows by comparing the count of rows rendered again
-with the previous groups, walking them only when some are missing.
-
-Nor are the other structures indexed by row (#2): the row templates, the row records and the rows'
-signal samples (`RowsEvaluation`) are kept across turns as persistent maps and updated only for the
-rows a turn inserts, deletes or evaluates again. A stream tells the rows it no longer holds from its
-deletions, and searches its entries for them only when a limit pruned some or after a reset. The
-stream's row order (`EvaluatedNode.Stream.rows`) is still built from the visit.
-
-What remains for O(changed) is visiting only the rows behind changed outside signals, which needs
-the row order derived from the stream's operations (#4).
+- A stream whose rows hold components. The kernel receives every collection's component
+  requirements in evaluation order each turn, so each row declares its components again. Visiting
+  only the changed rows would need the kernel to keep the requirements of each collection as a
+  persistent sequence.
+- A stream after a reset, or whose rows render something no signal tracks (a nested LiveView, a
+  stream, or a flash).
+- An insertion at an index, or with a limit, still costs O(rows) to place: it patches or trims the
+  row vector, then checks the whole row order against the stream's entries. When operations the
+  stream merged do not replay to its entries, such as an entry inserted, then another, then the
+  first updated, the rows are found by DOM id, which costs a map of them.
+- A keyed list whose items changed (`KeyedRowsBenchmark`), as upstream walks every entry of a
+  changed comprehension: it compares every item, though a kept row now costs less (a turn
+  updating one row of 1,000 allocates 3.25 MB instead of 3.63 MB in `renderDiffAndEncode`, and of
+  10,000 rows 31.4 MB instead of 37.2 MB).
+- A row that builds its own outside signal, such as `selected.map(_ == id)` in the row function,
+  costs one indexed signal, sampled every turn the collection is evaluated: the bindings guide
+  advises folding such state into the entries.

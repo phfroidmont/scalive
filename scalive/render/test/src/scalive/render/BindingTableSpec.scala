@@ -441,6 +441,30 @@ object BindingTableSpec extends ZIOSpecDefault:
         deleted.bindings.size == 5
       )
     },
+    test("keeps the bindings of a stream row only its operations render for that turn only") {
+      final case class Row(id: Int)
+      final case class Feed(stream: LiveStream[Row])
+      val identity = LiveStreamIdentity.fresh()
+      def entry(row: Row) = LiveStreamEntry(s"rows-${row.id}", row)
+      def stream(generation: Long, inserted: Vector[LiveStreamInsert[Row]], deleted: Vector[Row]) =
+        val rows = Vector(Row(0), Row(1), Row(2)).filterNot(deleted.contains)
+        LiveStream(identity, "rows", generation, rows.map(entry), inserted, deleted.map(entry(_).domId), reset = false)
+      // A limit of 3 prunes the row it inserts at once.
+      val pruned   = LiveStreamInsert(entry(Row(3)), StreamAt.Last, Some(StreamLimit.KeepFirst(3)), false)
+      val compiled = RenderProgram.compile[Feed, Int] { feed =>
+        div(feed.map(_.stream).renderIn(ul)(row => li(on.click(row)((row, _) => row.id))))
+      }
+
+      for
+        program  <- ZIO.fromEither(compiled)
+        first    <- program.evaluate(Feed(stream(1L, Vector.empty, Vector.empty)))
+        inserted <- program.evaluate(Feed(stream(2L, Vector(pruned), Vector.empty)), Some(first.commit))
+        deleted  <- program.evaluate(Feed(stream(3L, Vector.empty, Vector(Row(0)))), Some(inserted.commit))
+      yield assertTrue(
+        inserted.bindings.size == 4,
+        deleted.bindings.size == 2
+      )
+    },
     test("retires the bindings of a row a collection removes and keeps those of the others") {
       final case class Row(id: Int)
       val compiled = RenderProgram.compile[Vector[Row], Int] { rows =>

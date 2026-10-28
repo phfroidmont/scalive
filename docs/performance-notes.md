@@ -94,7 +94,7 @@ longer be sampled as changed. Evaluating the rows behind it again samples it aga
 still read it: one read in a branch since closed is skipped, and any other failure fails the turn,
 as it did when each row checked its own signals. The stream's row order is replayed from its
 operations; a delete still searches the rows for the one it deletes and copies the row vector,
-which is the cost left at 10,000 rows.
+which is the cost left at 10,000 rows (accepted, see below).
 
 What still visits every row:
 
@@ -108,6 +108,10 @@ What still visits every row:
   row vector, then checks the whole row order against the stream's entries. When operations the
   stream merged do not replay to its entries, such as an entry inserted, then another, then the
   first updated, the rows are found by DOM id, which costs a map of them.
+- A delete, or an update of a row by its DOM id, still searches the rows for it, and a delete copies
+  the row vector around it: about 5 µs at 1,000 rows and 27 µs at 10,000 for a delete in the
+  middle (`StreamTurnBenchmark.evaluate`). Accepted on 2026-10-28, like insertions at an index;
+  avoiding it would need the stream to keep its rows indexed by DOM id across turns.
 - A `splitBy` or `splitByIndex` collection whose items changed (`KeyedRowsBenchmark`), as upstream
   walks every entry of a changed Phoenix comprehension: it compares every entry, though a kept row
   now costs less (a turn updating one row of 1,000 allocates 3.25 MB instead of 3.63 MB in

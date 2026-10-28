@@ -418,7 +418,7 @@ object SignalEvaluationSpec extends ZIOSpecDefault:
         intermediateCalls == 2,
         downstreamCalls == 1,
         secondIntermediate.revision == firstIntermediate.revision,
-        secondIntermediate.dependencyRevisions == Vector(secondRevision),
+        secondIntermediate.firstDependency == secondRevision,
         secondDownstream == firstDownstream
       )
     },

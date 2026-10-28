@@ -353,8 +353,8 @@ object RenderRequirementsSpec extends ZIOSpecDefault:
           .asInstanceOf[EvaluatedNode.Text].slot
         delta = TreeDiffer.diff(rootBase.tree, currentResolved.tree)
       yield assertTrue(
-        rootSlot.exists(_.value == 1L),
-        childSlot.exists(_.value == 1L),
+        rootSlot.toOption.exists(_.value == 1L),
+        childSlot.toOption.exists(_.value == 1L),
         TreeDiffer.diff(leftBase.tree, leftCurrent.tree) == RenderDelta.Empty,
         delta match
           case RenderDelta.Update(

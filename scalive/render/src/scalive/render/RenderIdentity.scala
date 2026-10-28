@@ -18,6 +18,25 @@ object TemplateSlotId:
 
   extension (id: TemplateSlotId) def value: Long = id
 
+/** A dynamic scalar slot or none. Every evaluated text and attribute holds one, so it is stored as
+  * a plain `Long` rather than a boxed `Option`: slot identities start at 1, and 0 is none.
+  */
+opaque type OptionalSlotId = Long
+
+object OptionalSlotId:
+  private[render] val none: OptionalSlotId = 0L
+
+  private[render] def apply(slot: TemplateSlotId): OptionalSlotId = slot
+
+  extension (slot: OptionalSlotId)
+    def isEmpty: Boolean  = slot == 0L
+    def nonEmpty: Boolean = slot != 0L
+
+    def get: TemplateSlotId =
+      if slot == 0L then throw java.util.NoSuchElementException("OptionalSlotId.none.get") else slot
+
+    def toOption: Option[TemplateSlotId] = if slot == 0L then None else Some(slot)
+
 /** Compile-time slot from which a lifecycle-scoped binding identity is derived. */
 opaque type BindingSlotId = Long
 

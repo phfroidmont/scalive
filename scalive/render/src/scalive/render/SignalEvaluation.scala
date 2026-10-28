@@ -74,7 +74,10 @@ final private[render] class SignalSource[A](val scope: SignalScope)
 final case class SignalSample[+A] private[render] (
   value: A,
   revision: RenderRevision,
-  private[render] val dependencyRevisions: Vector[RenderRevision])
+  // The revisions of the samples it was computed from: none for a source or a constant, the first
+  // for a mapped signal, both for a zipped one. Plain fields, as every sample a row keeps has them.
+  private[render] val firstDependency: RenderRevision,
+  private[render] val secondDependency: RenderRevision)
 
 /** Immutable signal samples retained by a successful render.
   *
@@ -84,7 +87,7 @@ final case class SignalSample[+A] private[render] (
   */
 final case class SignalEvaluation private[render] (
   revision: RenderRevision,
-  private[render] val samples: SignalEvaluation.SignalCache,
+  private[render] val samples: SignalCache,
   // Whether the render read anything no signal tracks: a nested LiveView, a stream, or a flash. A
   // render that did not is the same render again for the same input. Its components do not count:
   // signals track their declarations, and the runtime resolves them into it again on every turn.
@@ -93,6 +96,10 @@ final case class SignalEvaluation private[render] (
 object SignalEvaluation:
   val empty: SignalEvaluation =
     SignalEvaluation(RenderRevision.initial, SignalCache.empty, untracked = true)
+
+  // The dependency revision a sample has in place of an input. A signal always has the same kind of
+  // expression, so this never stands for a real dependency.
+  private val noDependency: RenderRevision = RenderRevision.initial
 
   private[render] def begin[A](
     previous: SignalEvaluation,
@@ -286,7 +293,7 @@ object SignalEvaluation:
       val level = levels.last
       val row   = level.current.get
       val read  = RowSignals(
-        SignalCache.empty.appended(row.placed),
+        SignalCache.of(row.placed),
         row.outside.values().asScala.toVector,
         row.untracked
       )
@@ -311,7 +318,7 @@ object SignalEvaluation:
     def result: SignalEvaluation =
       SignalEvaluation(
         revision,
-        SignalCache.empty.appended(levels.head.placed),
+        SignalCache.of(levels.head.placed),
         levels.head.untracked
       )
 
@@ -327,7 +334,11 @@ object SignalEvaluation:
                   case Left(error) => return Left(error)
                   case Right(_)    => ()
               case Signal.Expression.Constant(value) =>
-                putEvaluated(current, changedSample(current, value, Vector.empty, -1), -1)
+                putEvaluated(
+                  current,
+                  changedSample(current, value, noDependency, noDependency, -1),
+                  -1
+                )
               case mapped @ Signal.Expression.Mapped(parent, f) =>
                 stack.append(EvaluationFrame.CompleteMapped(mapped, parent, f))
                 stack.append(EvaluationFrame.Visit(parent))
@@ -343,6 +354,7 @@ object SignalEvaluation:
           case frame: EvaluationFrame.CompleteZipped[?, ?] => completeZipped(frame)
 
       Right(())
+    end evaluate
 
     private def evaluateSource[A](signal: Signal[A]): Either[RenderError, Unit] =
       val depth = signal.expression match
@@ -352,7 +364,11 @@ object SignalEvaluation:
         .flatMap(_.get(signal))
         .toRight(RenderError.MissingSignalSource())
         .map(value =>
-          putEvaluated(signal, changedSample(signal, value, Vector.empty, depth), depth)
+          putEvaluated(
+            signal,
+            changedSample(signal, value, noDependency, noDependency, depth),
+            depth
+          )
         )
 
     private def completeMapped[A, B](
@@ -360,28 +376,40 @@ object SignalEvaluation:
     ): Either[RenderError, Unit] =
       val parentSample = evaluatedSample(frame.parent).get
       val depth        = evaluated.get(frame.parent).depth
-      val dependencies = Vector(parentSample.revision)
+      val dependency   = parentSample.revision
       val sampled      = previousSample(frame.signal, depth) match
-        case Some(cached) if cached.dependencyRevisions == dependencies => Right(cached)
-        case _                                                          =>
-          try Right(changedSample(frame.signal, frame.f(parentSample.value), dependencies, depth))
+        case Some(cached) if cached.firstDependency == dependency => Right(cached)
+        case _                                                    =>
+          try
+            Right(
+              changedSample(
+                frame.signal,
+                frame.f(parentSample.value),
+                dependency,
+                noDependency,
+                depth
+              )
+            )
           catch case NonFatal(error) => Left(RenderError.EvaluationFailed(error))
       sampled.map(sample => putEvaluated(frame.signal, sample, depth))
 
     private def completeZipped[A, B](frame: EvaluationFrame.CompleteZipped[A, B]): Unit =
-      val leftSample   = evaluatedSample(frame.left).get
-      val rightSample  = evaluatedSample(frame.right).get
-      val leftDepth    = evaluated.get(frame.left).depth
-      val rightDepth   = evaluated.get(frame.right).depth
-      val depth        = math.max(leftDepth, rightDepth)
-      val dependencies = Vector(leftSample.revision, rightSample.revision)
-      val sampled      = previousSample(frame.signal, depth) match
-        case Some(cached) if cached.dependencyRevisions == dependencies => cached
-        case _                                                          =>
+      val leftSample  = evaluatedSample(frame.left).get
+      val rightSample = evaluatedSample(frame.right).get
+      val leftDepth   = evaluated.get(frame.left).depth
+      val rightDepth  = evaluated.get(frame.right).depth
+      val depth       = math.max(leftDepth, rightDepth)
+      val sampled     = previousSample(frame.signal, depth) match
+        case Some(cached)
+            if cached.firstDependency == leftSample.revision &&
+              cached.secondDependency == rightSample.revision =>
+          cached
+        case _ =>
           changedSample(
             frame.signal,
             (leftSample.value, rightSample.value),
-            dependencies,
+            leftSample.revision,
+            rightSample.revision,
             depth
           )
       recordOutside(frame.left, leftDepth, depth)
@@ -411,13 +439,14 @@ object SignalEvaluation:
     private def changedSample[A](
       signal: Signal[A],
       value: A,
-      dependencies: Vector[RenderRevision],
+      firstDependency: RenderRevision,
+      secondDependency: RenderRevision,
       depth: Int
     ): SignalSample[A] =
       previousSample(signal, depth) match
         case Some(cached) if cached.value == value =>
-          cached.copy(dependencyRevisions = dependencies)
-        case _ => SignalSample(value, revision, dependencies)
+          cached.copy(firstDependency = firstDependency, secondDependency = secondDependency)
+        case _ => SignalSample(value, revision, firstDependency, secondDependency)
 
     private def previousSample[A](signal: Signal[A], depth: Int): Option[SignalSample[A]] =
       val level = levels(levelOf(depth))
@@ -543,22 +572,4 @@ object SignalEvaluation:
         type Value = A
         val signal = signalValue
         val value  = packedValue
-
-  final private[render] class SignalCache private (
-    private val entries: Map[SignalKey, PackedSignalValue[SignalSample]]):
-    def get[A](signal: Signal[A]): Option[SignalSample[A]] =
-      entries.get(SignalKey(signal)).flatMap(_.get(signal))
-
-    def appended(samples: Iterable[PackedSignalValue[SignalSample]]): SignalCache =
-      SignalCache(samples.foldLeft(entries) { (all, sample) =>
-        all + (SignalKey(sample.signal) -> sample)
-      })
-
-  private[render] object SignalCache:
-    val empty: SignalCache = new SignalCache(Map.empty)
-
-    private def apply(
-      entries: Map[SignalKey, PackedSignalValue[SignalSample]]
-    ): SignalCache =
-      new SignalCache(entries)
 end SignalEvaluation

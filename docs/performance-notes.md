@@ -28,14 +28,18 @@ What a keyed row holds on the render side, from a JOL class histogram (2026-10-2
 - 5 `ElementTemplate` (200 B) and 3 `TextTemplate` (72 B): each row compiles its own templates.
 - 3 boxed `Long` row keys, 72 B: one per map keyed by `RowId`.
 - 3 signal samples in one array, about 160 B, and 3 `Some` attribute values, 48 B.
+- The row's entry in the binding table's groups (#3), about 44 B, of which 16 B is one more boxed
+  `RowId`. Rows without bindings have none.
 
 Slots and signal samples were made compact on 2026-10-28 (#5), which saved 280 B per keyed row
 (2,856 B before), 168 B per stream row and 203 B per component row. Evaluated texts and
 attributes hold their slot as a plain `Long` (`OptionalSlotId`) instead of a boxed `Some`; a row's
 samples sit in one array, signal then sample, rather than a map of a key and a wrapper per sample;
 and a sample holds its dependency revisions as two `Long` fields rather than a vector.
-- The row's entry in the binding table's groups (#3), about 44 B, of which 16 B is one more boxed
-  `RowId`. Rows without bindings have none.
+
+Net of spec #1, a keyed row's render side went from 2,812 B to 2,576 B, 236 B less: #5 saved
+280 B, and #3's binding groups added 44 B. The target was about 300 B. What is left of the
+wrappers are the boxed `RowId` keys (72 B) and the `Some` attribute values (48 B) above.
 
 Rows sharing one compiled template would remove about a third of it, and needs row functions to
 receive their key as a signal; it is not done, see

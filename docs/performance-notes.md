@@ -61,15 +61,26 @@ A first render allocates per row, in `InitialRenderBenchmark`:
 
 | Step | Allocated per row |
 |---|---|
-| Evaluation | 14.4 KB (15.1 KB before #5) |
+| Evaluation | 11.2 KB (15.1 KB before #5 and #6) |
 | Initial Phoenix payload | 10.3 KB |
 | Disconnected HTML | 7.5 KB |
 
 This is garbage, not retained memory: it matters for mount latency and GC pressure when many
-browsers join at once. In evaluation, most of it is closures from `for` over `Either` in
-`evaluateNode` and the per-row template compilation above. A JFR allocation profile (JMH `-prof jfr`, then `jfr print --events
-jdk.ObjectAllocationSample`) attributes it by frame. Its sample weights are skewed, so confirm a
-saving with `gc.alloc.rate.norm` before and after.
+browsers join at once. Evaluating an element and compiling a row's elements now loop and return at
+the first error instead of chaining `for` over `Either` (#6), which saved a fifth of evaluation
+(14.4 KB to 11.2 KB per row at 1,000 rows, and 14.0 KB to 11.7 KB at 10,000; 2026-10-28). About
+40% of that came from evaluating elements, the rest from compiling them.
+
+What is left, by the JFR profile below (taken before #5): compiling each row's templates is a little
+over a quarter, of which `SignalScope.validate` building an identity map for each signal it checks
+is more than a third; running the row function itself (the view's own `HtmlElement`s and
+`Mod.flatten`) about a fifth; then text and attribute values, binding groups, row signals and
+signal samples.
+
+A JFR allocation profile (JMH `-prof 'jfr:configName=profile'`, then `jfr print --stack-depth 64
+--events jdk.ObjectAllocationSample`; the default depth of 5 hides the callers) attributes it by
+frame. Its sample weights are skewed by TLAB size, so count samples rather than sum weights, and
+confirm a saving with `gc.alloc.rate.norm` before and after.
 
 ## Stream rows evaluated on every turn {#stream-rows-evaluated-on-every-turn}
 

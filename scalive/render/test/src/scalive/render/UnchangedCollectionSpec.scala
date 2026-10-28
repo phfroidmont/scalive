@@ -65,6 +65,16 @@ object UnchangedCollectionSpec extends ZIOSpecDefault:
     val reached = GraphLayout.parseInstance(root).totalCount()
     GraphLayout.parseInstance(root, target).totalCount() == reached
 
+  /** Whether `after` keeps the very record and read that `before` kept of a row. */
+  private def sameRetained(before: RenderProgram.RetainedRow, after: RenderProgram.RetainedRow): Boolean =
+    sameInstance(before.record, after.record) && sameInstance(before.read, after.read)
+
+  private def sameInstance(before: Option[AnyRef], after: Option[AnyRef]): Boolean =
+    (before, after) match
+      case (Some(before), Some(after)) => before eq after
+      case (None, None)                => true
+      case _                           => false
+
   /** Rows that each hold a component, between two components. */
   private def badgeRows = RenderProgram.compile[Page, Nothing] { page =>
     div(
@@ -438,9 +448,7 @@ object UnchangedCollectionSpec extends ZIOSpecDefault:
       yield assertTrue(
         before.size == 3,
         after.size == 4,
-        before.forall { case (id, (record, read)) =>
-          after.get(id).exists((nextRecord, nextRead) => (nextRecord eq record) && (nextRead eq read))
-        }
+        before.forall((id, row) => after.get(id).exists(sameRetained(row, _)))
       )
     },
     test("drops what a stream keeps of the rows it deletes, prunes or only inserts") {
@@ -485,7 +493,7 @@ object UnchangedCollectionSpec extends ZIOSpecDefault:
         afterPrune.size == 2,
         afterPrune.keySet.intersect(initial.keySet).size == 1,
         afterTransient == afterPrune,
-        afterTransient.values.forall((record, read) => record != null && read != null)
+        afterTransient.values.forall(row => row.record.nonEmpty && row.read.nonEmpty)
       )
     },
     test("places the rows a stream's operations insert, delete or prune, and keeps the others") {
@@ -502,10 +510,8 @@ object UnchangedCollectionSpec extends ZIOSpecDefault:
       def domIds(tree: EvaluatedTree) = onlyStream(tree).rows.map(_.domId.stripPrefix("rows-")).mkString(",")
       def turn(program: RenderProgram[Feed, Nothing], previous: CommittedRender[Nothing], next: LiveStream[Row]) =
         program.evaluate(Feed(0, next), Some(previous)).map(_.commit)
-      def kept(before: Map[RowId, (AnyRef, AnyRef)], after: Map[RowId, (AnyRef, AnyRef)]) =
-        after.count { case (id, (record, read)) =>
-          before.get(id).exists((last, lastRead) => (last eq record) && (lastRead eq read))
-        }
+      def kept(before: Map[RowId, RenderProgram.RetainedRow], after: Map[RowId, RenderProgram.RetainedRow]) =
+        after.count((id, row) => before.get(id).exists(sameRetained(_, row)))
 
       for
         program  <- ZIO.fromEither(compiled)
@@ -603,7 +609,7 @@ object UnchangedCollectionSpec extends ZIOSpecDefault:
         HtmlRenderer.render(second.tree) ==
           "<div><li class=\"off\">one</li><li class=\"on\">two</li><li class=\"off\">three</li></div>",
         // The first two rows read their own selection, which changed.
-        after.count { case (id, (record, _)) => before.get(id).exists(_._1 eq record) } == 1,
+        after.count((id, row) => before.get(id).exists(last => sameInstance(last.record, row.record))) == 1,
         after.size == 3
       )
     },
@@ -649,13 +655,9 @@ object UnchangedCollectionSpec extends ZIOSpecDefault:
         (indexedBefore, indexedAfter) <- removing(byIndex, rows.take(2))
       yield assertTrue(
         keyedAfter.size == 2,
-        keyedAfter.forall { case (id, (record, read)) =>
-          keyedBefore.get(id).exists((last, lastRead) => (last eq record) && (lastRead eq read))
-        },
+        keyedAfter.forall((id, row) => keyedBefore.get(id).exists(sameRetained(_, row))),
         indexedAfter.size == 2,
-        indexedAfter.forall { case (id, (record, read)) =>
-          indexedBefore.get(id).exists((last, lastRead) => (last eq record) && (lastRead eq read))
-        }
+        indexedAfter.forall((id, row) => indexedBefore.get(id).exists(sameRetained(_, row)))
       )
     },
     test("drops the bindings of a collection that is no longer rendered") {

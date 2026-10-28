@@ -64,10 +64,8 @@ final class RenderProgram[Input, Msg] private (
   private[render] def retainedKeyedRowCount: Int =
     RenderProgram.retainedKeyedRowCount(template)
 
-  /** What the committed collections and streams of the program's own template keep of each row: its
-    * record and what it read.
-    */
-  private[render] def retainedRows: Map[RowId, (AnyRef, AnyRef)] =
+  /** What the committed collections and streams of the program's own template keep of each row. */
+  private[render] def retainedRows: Map[RowId, RenderProgram.RetainedRow] =
     RenderProgram.retainedRows(template)
 
   private[scalive] def evaluateIn(
@@ -3360,12 +3358,18 @@ object RenderProgram:
     case _: SignalStreamTemplate[?, ?]      => 0
     case _: TextTemplate                    => 0
 
-  /** A missing record or signals is `null`. */
-  private def retainedRows(template: NodeTemplate[?]): Map[RowId, (AnyRef, AnyRef)] =
-    def of(rows: Option[EvaluatedRows[?, ?]]): Map[RowId, (AnyRef, AnyRef)] =
+  /** What a committed collection or stream keeps of one row: its record, an `EvaluatedRow` this
+    * leaves opaque, and what it read.
+    */
+  final private[render] case class RetainedRow(
+    record: Option[AnyRef],
+    read: Option[SignalEvaluation.RowSignals])
+
+  private def retainedRows(template: NodeTemplate[?]): Map[RowId, RetainedRow] =
+    def of(rows: Option[EvaluatedRows[?, ?]]): Map[RowId, RetainedRow] =
       rows.fold(Map.empty) { rows =>
         (rows.rows.keySet ++ rows.signals.rows.keySet).iterator
-          .map(id => id -> (rows.rows.get(id).orNull, rows.signals.rows.get(id).orNull))
+          .map(id => id -> RetainedRow(rows.rows.get(id), rows.signals.rows.get(id)))
           .toMap
       }
     template match

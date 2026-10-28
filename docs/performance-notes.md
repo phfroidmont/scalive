@@ -14,20 +14,26 @@ tree the browser holds). `RetainedHeap` measures it per row:
 
 | Page | Model | Render | Encoder | Total |
 |---|---|---|---|---|
-| Keyed list | 77 B | 2,856 B | 1,221 B | 4,153 B |
-| Stream | 244 B | 1,860 B | 725 B | 2,829 B |
-| Keyed list, a component per row | 77 B | 2,165 B | 1,542 B | 3,783 B |
+| Keyed list | 77 B | 2,576 B | 1,221 B | 3,873 B |
+| Stream | 244 B | 1,692 B | 725 B | 2,661 B |
+| Keyed list, a component per row | 77 B | 1,962 B | 1,542 B | 3,581 B |
 
 Upstream keeps only the assigns, and nothing of a stream row once sent. For 100 connections
-showing 1,000 rows, Scalive keeps about 400 MB.
+showing 1,000 rows, Scalive keeps about 390 MB.
 
-What a keyed row holds on the render side, from a JOL class histogram:
+What a keyed row holds on the render side, from a JOL class histogram (2026-10-28):
 
-- 17 small vectors, about 760 B: each element's children and attributes, and each row's records.
+- 15 small vectors, about 680 B: each element's children and attributes, and each row's records.
 - 5 `EvaluatedNode.Element`, 240 B.
 - 5 `ElementTemplate` (200 B) and 3 `TextTemplate` (72 B): each row compiles its own templates.
-- 5 boxed `Long` row keys, 120 B: one per map keyed by `RowId`.
-- 6 `Some`, 96 B, and signal samples, about 250 B.
+- 3 boxed `Long` row keys, 72 B: one per map keyed by `RowId`.
+- 3 signal samples in one array, about 160 B, and 3 `Some` attribute values, 48 B.
+
+Slots and signal samples were made compact on 2026-10-28 (#5), which saved 280 B per keyed row
+(2,856 B before), 168 B per stream row and 203 B per component row. Evaluated texts and
+attributes hold their slot as a plain `Long` (`OptionalSlotId`) instead of a boxed `Some`; a row's
+samples sit in one array, signal then sample, rather than a map of a key and a wrapper per sample;
+and a sample holds its dependency revisions as two `Long` fields rather than a vector.
 - The row's entry in the binding table's groups (#3), about 44 B, of which 16 B is one more boxed
   `RowId`. Rows without bindings have none.
 
@@ -55,7 +61,7 @@ A first render allocates per row, in `InitialRenderBenchmark`:
 
 | Step | Allocated per row |
 |---|---|
-| Evaluation | 15.3 KB |
+| Evaluation | 14.4 KB (15.1 KB before #5) |
 | Initial Phoenix payload | 10.3 KB |
 | Disconnected HTML | 7.5 KB |
 

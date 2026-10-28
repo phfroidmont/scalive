@@ -33,7 +33,7 @@ object RenderProgramSpec extends ZIOSpecDefault:
         root.id.value == 1L,
         child.id.value == 2L,
         text.id.value == 3L,
-        root.attributes.head.slot.exists(_.value == 1L),
+        root.attributes.head.slot.toOption.exists(_.value == 1L),
         first.bindings.ids == second.bindings.ids,
         first.bindings.ids.head.encoded.matches("b[0-9]+:1")
       )

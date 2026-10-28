@@ -517,7 +517,7 @@ object RenderProgram:
 
   private object TextTemplate:
     enum Value:
-      case Static(value: String, raw: Boolean, slot: Option[TemplateSlotId] = None)
+      case Static(value: String, raw: Boolean, slot: OptionalSlotId = OptionalSlotId.none)
       case Dynamic(slot: TemplateSlotId, signal: Signal[String], raw: Boolean)
 
   private enum CompositePart:
@@ -537,7 +537,7 @@ object RenderProgram:
     final case class Static(
       name: String,
       value: Option[AttributeValue],
-      slot: Option[TemplateSlotId] = None)
+      slot: OptionalSlotId = OptionalSlotId.none)
         extends AttributeTemplate[Nothing]
     final case class DynamicValue(name: String, slot: TemplateSlotId, signal: Signal[String])
         extends AttributeTemplate[Nothing]
@@ -1243,7 +1243,7 @@ object RenderProgram:
       element.copy(
         attributes = element.attributes.map {
           case static: AttributeTemplate.Static =>
-            static.copy(slot = allocator.slot().fold(throw _, Some(_)))
+            static.copy(slot = allocator.slot().fold(throw _, OptionalSlotId(_)))
           case other => other
         },
         children = element.children.map {
@@ -1255,7 +1255,7 @@ object RenderProgram:
                   TextTemplate.Value.Static(
                     value,
                     raw,
-                    allocator.slot().fold(throw _, Some(_))
+                    allocator.slot().fold(throw _, OptionalSlotId(_))
                   )
                 )
               case _ => text
@@ -2977,22 +2977,21 @@ object RenderProgram:
     revision: RenderRevision,
     transaction: SignalEvaluation.Transaction
   ): Either[RenderError, EvaluatedNode.Text] =
-    val value = template.value match
-      case TextTemplate.Value.Static(value, raw, slot)   => Right((slot, value, raw))
-      case TextTemplate.Value.Dynamic(slot, signal, raw) =>
-        transaction
-          .sample(signal).flatMap(sample =>
-            nonNullString(sample.value, "signal text content")
-              .map(value => (Some(slot), value, raw))
-          )
-
-    value.map { case (slot, text, raw) =>
+    def node(slot: OptionalSlotId, text: String, raw: Boolean): EvaluatedNode.Text =
       previous match
         case Some(node: EvaluatedNode.Text)
             if node.id == template.id && node.slot == slot && node.value == text && node.raw == raw =>
           node
         case _ => EvaluatedNode.Text(template.id, slot, text, raw, revision)
-    }
+
+    template.value match
+      case TextTemplate.Value.Static(value, raw, slot)   => Right(node(slot, value, raw))
+      case TextTemplate.Value.Dynamic(slot, signal, raw) =>
+        transaction
+          .sample(signal).flatMap(sample =>
+            nonNullString(sample.value, "signal text content")
+              .map(value => node(OptionalSlotId(slot), value, raw))
+          )
 
   private def evaluateAttribute[Msg](
     template: AttributeTemplate[Msg],
@@ -3004,81 +3003,83 @@ object RenderProgram:
   ): Either[RenderError, EvaluatedAttribute] =
     import AttributeTemplate.*
 
-    val evaluated: Either[RenderError, (Option[TemplateSlotId], Option[AttributeValue])] =
-      template match
-        case Static(_, value, slot)        => Right(slot -> value)
-        case DynamicValue(_, slot, signal) =>
-          transaction
-            .sample(signal).flatMap(sample =>
-              nonNullString(sample.value, s"signal attribute '${template.name}'")
-                .map(value => Some(slot) -> Some(AttributeValue.Text(value)))
-            )
-        case DynamicOptional(_, slot, signal) =>
-          transaction.sample(signal).flatMap { sample =>
-            sample.value match
-              case Some(value) =>
-                nonNullString(value, s"optional signal attribute '${template.name}'")
-                  .map(value => Some(slot) -> Some(AttributeValue.Text(value)))
-              case None => Right(Some(slot) -> None)
-          }
-        case DynamicPresence(_, slot, signal) =>
-          transaction
-            .sample(signal).map(sample =>
-              Some(slot) -> Option.when(sample.value)(AttributeValue.Presence)
-            )
-        case Composite(name, slot, parts) =>
-          traverse(parts)(part => evaluateCompositePart(name, part, transaction))
-            .map(tokens => Some(slot) -> compositeAttributeValue(tokens.flatten))
-        case Binding(name, valueSlot, id, operation) =>
-          val resolvedId = resolveBindingId(name, id, formId)
-          bindings
-            .add(resolvedId, BindingOperation(operation)).map(_ =>
-              Some(valueSlot) -> Some(AttributeValue.Text(resolvedId.encoded))
-            )
-        case SignalBinding(name, valueSlot, id, signal, operation) =>
-          val resolvedId = resolveBindingId(name, id, formId)
-          transaction.sample(signal).flatMap { sample =>
-            bindings
-              .add(resolvedId, BindingOperation(payload => operation(sample.value, payload))).map(
-                _ => Some(valueSlot) -> Some(AttributeValue.Text(resolvedId.encoded))
-              )
-          }
-        case JsBinding(name, valueSlot, id, command) =>
-          evaluateJs(resolveBindingId(name, id, formId), command, bindings).map(value =>
-            Some(valueSlot) -> Some(AttributeValue.Text(value))
-          )
-        case SignalJsBinding(name, valueSlot, id, command) =>
-          val resolvedId = resolveBindingId(name, id, formId)
-          transaction
-            .sample(command).flatMap(sample =>
-              evaluateJs(resolvedId, sample.value, bindings)
-                .map(value => Some(valueSlot) -> Some(AttributeValue.Text(value)))
-            )
-        case RoutedBinding(name, valueSlot, id, operation) =>
-          val resolvedId = resolveBindingId(name, id, formId)
-          bindings
-            .add(
-              resolvedId,
-              BindingOperation.dispatching(payload => BindingDispatch.Routed(operation(payload)))
-            ).map(_ => Some(valueSlot) -> Some(AttributeValue.Text(resolvedId.encoded)))
-        case ComponentTarget(target, valueSlot) =>
-          Right(Some(valueSlot) -> Some(AttributeValue.ComponentTarget(target)))
-        case Choice(_, signal, branches) =>
-          transaction.sample(signal).flatMap { sample =>
-            branches.find(_._1 == sample.value) match
-              case Some((_, branch)) =>
-                evaluateAttribute(branch, previous, revision, transaction, bindings, formId)
-                  .map(attribute => attribute.slot -> attribute.value)
-              case None => Right(None -> None)
-          }
-
-    evaluated.map { case (slot, value) =>
+    def attribute(slot: OptionalSlotId, value: Option[AttributeValue]): EvaluatedAttribute =
       previous match
         case Some(attribute)
             if attribute.name == template.name && attribute.slot == slot && attribute.value == value =>
           attribute
         case _ => EvaluatedAttribute(template.name, value, slot, revision)
-    }
+
+    template match
+      case Static(_, value, slot)        => Right(attribute(slot, value))
+      case DynamicValue(_, slot, signal) =>
+        transaction
+          .sample(signal).flatMap(sample =>
+            nonNullString(sample.value, s"signal attribute '${template.name}'")
+              .map(value => attribute(OptionalSlotId(slot), Some(AttributeValue.Text(value))))
+          )
+      case DynamicOptional(_, slot, signal) =>
+        transaction.sample(signal).flatMap { sample =>
+          sample.value match
+            case Some(value) =>
+              nonNullString(value, s"optional signal attribute '${template.name}'")
+                .map(value => attribute(OptionalSlotId(slot), Some(AttributeValue.Text(value))))
+            case None => Right(attribute(OptionalSlotId(slot), None))
+        }
+      case DynamicPresence(_, slot, signal) =>
+        transaction
+          .sample(signal).map(sample =>
+            attribute(OptionalSlotId(slot), Option.when(sample.value)(AttributeValue.Presence))
+          )
+      case Composite(name, slot, parts) =>
+        traverse(parts)(part => evaluateCompositePart(name, part, transaction))
+          .map(tokens => attribute(OptionalSlotId(slot), compositeAttributeValue(tokens.flatten)))
+      case Binding(name, valueSlot, id, operation) =>
+        val resolvedId = resolveBindingId(name, id, formId)
+        bindings
+          .add(resolvedId, BindingOperation(operation)).map(_ =>
+            attribute(OptionalSlotId(valueSlot), Some(AttributeValue.Text(resolvedId.encoded)))
+          )
+      case SignalBinding(name, valueSlot, id, signal, operation) =>
+        val resolvedId = resolveBindingId(name, id, formId)
+        transaction.sample(signal).flatMap { sample =>
+          bindings
+            .add(resolvedId, BindingOperation(payload => operation(sample.value, payload))).map(_ =>
+              attribute(OptionalSlotId(valueSlot), Some(AttributeValue.Text(resolvedId.encoded)))
+            )
+        }
+      case JsBinding(name, valueSlot, id, command) =>
+        evaluateJs(resolveBindingId(name, id, formId), command, bindings).map(value =>
+          attribute(OptionalSlotId(valueSlot), Some(AttributeValue.Text(value)))
+        )
+      case SignalJsBinding(name, valueSlot, id, command) =>
+        val resolvedId = resolveBindingId(name, id, formId)
+        transaction
+          .sample(command).flatMap(sample =>
+            evaluateJs(resolvedId, sample.value, bindings)
+              .map(value => attribute(OptionalSlotId(valueSlot), Some(AttributeValue.Text(value))))
+          )
+      case RoutedBinding(name, valueSlot, id, operation) =>
+        val resolvedId = resolveBindingId(name, id, formId)
+        bindings
+          .add(
+            resolvedId,
+            BindingOperation.dispatching(payload => BindingDispatch.Routed(operation(payload)))
+          ).map(_ =>
+            attribute(OptionalSlotId(valueSlot), Some(AttributeValue.Text(resolvedId.encoded)))
+          )
+      case ComponentTarget(target, valueSlot) =>
+        Right(attribute(OptionalSlotId(valueSlot), Some(AttributeValue.ComponentTarget(target))))
+      case Choice(_, signal, branches) =>
+        transaction.sample(signal).flatMap { sample =>
+          branches.find(_._1 == sample.value) match
+            case Some((_, branch)) =>
+              evaluateAttribute(branch, previous, revision, transaction, bindings, formId)
+                .map(selected => attribute(selected.slot, selected.value))
+            case None => Right(attribute(OptionalSlotId.none, None))
+        }
+    end match
+
   end evaluateAttribute
 
   private def evaluateCompositePart(

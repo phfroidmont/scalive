@@ -741,9 +741,9 @@ private[scalive] object PhoenixRenderedEncoder:
   ): Either[PhoenixEncodingError, ProjectedNode] = node match
     case text: EvaluatedNode.Text =>
       val value = if text.raw then text.value else Escaping.escape(text.value)
-      val part  = text.slot match
-        case Some(slot) => ProjectedPart.Dynamic(slot, value, None)
-        case None       => ProjectedPart.Static(value)
+      val part  =
+        if text.slot.nonEmpty then ProjectedPart.Dynamic(text.slot.get, value, None)
+        else ProjectedPart.Static(value)
       Right(ProjectedNode(text.id, Vector(part)))
     case element: EvaluatedNode.Element =>
       val opening = Vector.newBuilder[ProjectedPart]
@@ -939,12 +939,12 @@ private[scalive] object PhoenixRenderedEncoder:
     attribute: EvaluatedAttribute
   ): Either[PhoenixEncodingError, ProjectedPart] =
     val value = projectAttributeValue(attribute.name, attribute.value)
-    attribute.slot match
-      case Some(slot) => Right(ProjectedPart.Dynamic(slot, value, Some(attribute.name)))
-      case None       =>
-        value match
-          case text: String                           => Right(ProjectedPart.Static(text))
-          case target: ProjectedValue.ComponentTarget => Right(ProjectedPart.Target(target))
+    if attribute.slot.nonEmpty then
+      Right(ProjectedPart.Dynamic(attribute.slot.get, value, Some(attribute.name)))
+    else
+      value match
+        case text: String                           => Right(ProjectedPart.Static(text))
+        case target: ProjectedValue.ComponentTarget => Right(ProjectedPart.Target(target))
 
   private def projectAttributeValue(
     name: String,

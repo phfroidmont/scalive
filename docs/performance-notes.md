@@ -68,8 +68,10 @@ A first render allocates per row, in `InitialRenderBenchmark`:
 This is garbage, not retained memory: it matters for mount latency and GC pressure when many
 browsers join at once. Evaluating an element and compiling a row's elements now loop and return at
 the first error instead of chaining `for` over `Either` (#6), which saved a fifth of evaluation
-(14.4 KB to 11.2 KB per row at 1,000 rows, and 14.0 KB to 11.7 KB at 10,000; 2026-10-28). About
-40% of that came from evaluating elements, the rest from compiling them.
+(14.4 KB to 11.2 KB per row at 1,000 rows, and 14.0 KB to 11.7 KB at 10,000; 2026-10-28). #6 was
+scoped to `evaluateNode`, but the JFR profile of the mount path flagged the compile frames too, as
+a mount compiles each row's templates before evaluating them, so both were rewritten: the loops in
+`evaluateNode` alone saved 9–10%, and with compilation 16–22%.
 
 What is left, by the JFR profile below (taken before #5): compiling each row's templates is a little
 over a quarter, of which `SignalScope.validate` building an identity map for each signal it checks

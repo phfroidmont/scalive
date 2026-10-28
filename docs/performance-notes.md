@@ -29,11 +29,9 @@ What a keyed row holds on the render side, from a JOL class histogram:
 - 5 boxed `Long` row keys, 120 B: one per map keyed by `RowId`.
 - 6 `Some`, 96 B, and signal samples, about 250 B.
 
-The structural change that removes most of it is rows sharing one compiled template, instead of
-each row compiling its own when it is first rendered. A row would then hold only its values and its
-samples. It is a large refactor of `RenderProgram`, as row templates carry the row's signal scope.
-Before starting, measure what share of the 2,812 B it removes, with a JOL histogram of a row
-(`GraphLayout.parseInstance(...).toFootprint`) as `RetainedHeap` takes it.
+Rows sharing one compiled template would remove about a third of it, and needs row functions to
+receive their key as a signal; it is not done, see
+[ADR 0001](adr/0001-row-functions-receive-plain-keys.md).
 
 On the encoder side, the remaining 1,221 B are mostly parts vectors (about 390 B), 8
 `ProjectedNode` (256 B) and 5 branch summaries (280 B). Two smaller savings were measured and not
@@ -44,8 +42,10 @@ done:
 - Summaries only on nodes holding something other than leaves: about 220 B, but a search then
   costs O(children) at each node with many leaf children.
 
-A further structural option is the encoder deriving what it needs from the evaluated tree
-instead of holding a second copy of it.
+The encoder cannot derive what it holds from the evaluated tree instead: it also holds what is
+local to the connection and the protocol (component CIDs, stream refs, the CSRF input, the row
+statics the browser holds, pending stream operations), and it updates its copy from each turn's
+changes rather than projecting the tree again.
 
 ## Evaluation allocation on mount {#evaluation-allocation-on-mount}
 
@@ -59,8 +59,7 @@ A first render allocates per row, in `InitialRenderBenchmark`:
 
 This is garbage, not retained memory: it matters for mount latency and GC pressure when many
 browsers join at once. In evaluation, most of it is closures from `for` over `Either` in
-`evaluateNode` and the per-row template compilation above, which sharing row templates would also
-remove. A JFR allocation profile (JMH `-prof jfr`, then `jfr print --events
+`evaluateNode` and the per-row template compilation above. A JFR allocation profile (JMH `-prof jfr`, then `jfr print --events
 jdk.ObjectAllocationSample`) attributes it by frame. Its sample weights are skewed, so confirm a
 saving with `gc.alloc.rate.norm` before and after.
 

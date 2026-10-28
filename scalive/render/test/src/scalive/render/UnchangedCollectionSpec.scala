@@ -65,6 +65,16 @@ object UnchangedCollectionSpec extends ZIOSpecDefault:
     val reached = GraphLayout.parseInstance(root).totalCount()
     GraphLayout.parseInstance(root, target).totalCount() == reached
 
+  /** Whether `after` keeps the very record and read that `before` kept of a row. */
+  private def sameRetained(before: RenderProgram.RetainedRow, after: RenderProgram.RetainedRow): Boolean =
+    sameInstance(before.record, after.record) && sameInstance(before.read, after.read)
+
+  private def sameInstance(before: Option[AnyRef], after: Option[AnyRef]): Boolean =
+    (before, after) match
+      case (Some(before), Some(after)) => before eq after
+      case (None, None)                => true
+      case _                           => false
+
   /** Rows that each hold a component, between two components. */
   private def badgeRows = RenderProgram.compile[Page, Nothing] { page =>
     div(
@@ -243,6 +253,62 @@ object UnchangedCollectionSpec extends ZIOSpecDefault:
         HtmlRenderer.render(closedAndChanged.tree) == "<div><li>one</li><li>two</li></div>"
       )
     },
+    test("fails the turn when a signal rows read from outside fails outside any branch") {
+      final case class Labels(suffix: Option[String], rows: Vector[Row])
+      final case class StreamLabels(suffix: Option[String], stream: scalive.streams.LiveStream[Row])
+      val keyedRows = RenderProgram.compile[Labels, Nothing] { model =>
+        val suffix = model.map(_.suffix.get)
+        div(model.map(_.rows).splitBy(_.id)((_, row) => li(row.map(_.label), suffix)))
+      }
+      val openBranchRows = RenderProgram.compile[Labels, Nothing] { model =>
+        div(model.map(_.rows).splitBy(_.id) { (_, row) =>
+          li(
+            row.map(_.label),
+            Signal.option(model.map(_.suffix))(suffix => span(suffix.map(_.headOption.get.toString)))
+          )
+        })
+      }
+      val streamRows = RenderProgram.compile[StreamLabels, Nothing] { model =>
+        val suffix = model.map(_.suffix.get)
+        div(model.map(_.stream).renderIn(ul)(row => li(row.map(_.label), suffix)))
+      }
+      val identity = scalive.streams.LiveStreamIdentity.fresh()
+      def stream(generation: Long, values: Vector[Row], deleted: Vector[String]) =
+        scalive.streams.LiveStream(
+          identity,
+          "rows",
+          generation,
+          values.map(streamEntry),
+          Vector.empty,
+          deleted,
+          reset = false
+        )
+      val initial = stream(1L, rows, Vector.empty)
+      def failure[Input](
+        compiled: Either[RenderError, RenderProgram[Input, Nothing]],
+        first: Input,
+        failing: Input
+      ) =
+        for
+          program <- ZIO.fromEither(compiled)
+          base    <- program.evaluate(first).map(_.commit)
+          failed  <- program.evaluate(failing, Some(base)).flip
+        yield failed match
+          case RenderError.EvaluationFailed(_: NoSuchElementException) => true
+          case _                                                       => false
+
+      for
+        keyed    <- failure(keyedRows, Labels(Some("!"), rows), Labels(None, rows))
+        reused  <- failure(streamRows, StreamLabels(Some("!"), initial), StreamLabels(None, initial))
+        deleted <- failure(
+                     streamRows,
+                     StreamLabels(Some("!"), initial),
+                     StreamLabels(None, stream(2L, rows.take(2), Vector("rows-3")))
+                   )
+        // The branch stays open, so what it reads must still be sampled.
+        inOpenBranch <- failure(openBranchRows, Labels(Some("!"), rows), Labels(Some(""), rows))
+      yield assertTrue(keyed, reused, deleted, inOpenBranch)
+    },
     test("keeps the signal values of a reused collection for its next update") {
       var labels   = 0
       val compiled = RenderProgram.compile[Page, Nothing] { page =>
@@ -382,9 +448,7 @@ object UnchangedCollectionSpec extends ZIOSpecDefault:
       yield assertTrue(
         before.size == 3,
         after.size == 4,
-        before.forall { case (id, (record, read)) =>
-          after.get(id).exists((nextRecord, nextRead) => (nextRecord eq record) && (nextRead eq read))
-        }
+        before.forall((id, row) => after.get(id).exists(sameRetained(row, _)))
       )
     },
     test("drops what a stream keeps of the rows it deletes, prunes or only inserts") {
@@ -429,7 +493,7 @@ object UnchangedCollectionSpec extends ZIOSpecDefault:
         afterPrune.size == 2,
         afterPrune.keySet.intersect(initial.keySet).size == 1,
         afterTransient == afterPrune,
-        afterTransient.values.forall((record, read) => record != null && read != null)
+        afterTransient.values.forall(row => row.record.nonEmpty && row.read.nonEmpty)
       )
     },
     test("places the rows a stream's operations insert, delete or prune, and keeps the others") {
@@ -446,10 +510,8 @@ object UnchangedCollectionSpec extends ZIOSpecDefault:
       def domIds(tree: EvaluatedTree) = onlyStream(tree).rows.map(_.domId.stripPrefix("rows-")).mkString(",")
       def turn(program: RenderProgram[Feed, Nothing], previous: CommittedRender[Nothing], next: LiveStream[Row]) =
         program.evaluate(Feed(0, next), Some(previous)).map(_.commit)
-      def kept(before: Map[RowId, (AnyRef, AnyRef)], after: Map[RowId, (AnyRef, AnyRef)]) =
-        after.count { case (id, (record, read)) =>
-          before.get(id).exists((last, lastRead) => (last eq record) && (lastRead eq read))
-        }
+      def kept(before: Map[RowId, RenderProgram.RetainedRow], after: Map[RowId, RenderProgram.RetainedRow]) =
+        after.count((id, row) => before.get(id).exists(sameRetained(_, row)))
 
       for
         program  <- ZIO.fromEither(compiled)
@@ -547,7 +609,7 @@ object UnchangedCollectionSpec extends ZIOSpecDefault:
         HtmlRenderer.render(second.tree) ==
           "<div><li class=\"off\">one</li><li class=\"on\">two</li><li class=\"off\">three</li></div>",
         // The first two rows read their own selection, which changed.
-        after.count { case (id, (record, _)) => before.get(id).exists(_._1 eq record) } == 1,
+        after.count((id, row) => before.get(id).exists(last => sameInstance(last.record, row.record))) == 1,
         after.size == 3
       )
     },
@@ -593,13 +655,9 @@ object UnchangedCollectionSpec extends ZIOSpecDefault:
         (indexedBefore, indexedAfter) <- removing(byIndex, rows.take(2))
       yield assertTrue(
         keyedAfter.size == 2,
-        keyedAfter.forall { case (id, (record, read)) =>
-          keyedBefore.get(id).exists((last, lastRead) => (last eq record) && (lastRead eq read))
-        },
+        keyedAfter.forall((id, row) => keyedBefore.get(id).exists(sameRetained(_, row))),
         indexedAfter.size == 2,
-        indexedAfter.forall { case (id, (record, read)) =>
-          indexedBefore.get(id).exists((last, lastRead) => (last eq record) && (lastRead eq read))
-        }
+        indexedAfter.forall((id, row) => indexedBefore.get(id).exists(sameRetained(_, row)))
       )
     },
     test("drops the bindings of a collection that is no longer rendered") {

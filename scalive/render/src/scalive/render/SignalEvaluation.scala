@@ -241,15 +241,16 @@ object SignalEvaluation:
       *
       * Stops at the first that changed. A signal that can no longer be sampled counts as changed:
       * one read inside a branch may be valid only while the branch is shown, such as the present
-      * value that `option` projects, and evaluating again what read it reads it only if it still
-      * does.
+      * value that `option` projects. Evaluating again what read it samples it again only if it
+      * still reads it, so a failure outside a branch since closed still fails the render there.
       */
     def allUnchanged(signals: Vector[Signal[?]]): Boolean =
       signals.forall(signal => sample(signal).exists(unchanged))
 
     /** The rows of the collection that the last `enterRows` started that read, in the previous
       * evaluation, a signal from outside them that changed or can no longer be sampled, as in
-      * [[allUnchanged]].
+      * [[allUnchanged]]: those rows are evaluated again, which fails the render if they still read
+      * a signal that cannot be sampled.
       *
       * Samples each signal the rows read once, skipping those whose rows all read another that
       * changed.

@@ -28,14 +28,18 @@ What a keyed row holds on the render side, from a JOL class histogram (2026-10-2
 - 5 `ElementTemplate` (200 B) and 3 `TextTemplate` (72 B): each row compiles its own templates.
 - 3 boxed `Long` row keys, 72 B: one per map keyed by `RowId`.
 - 3 signal samples in one array, about 160 B, and 3 `Some` attribute values, 48 B.
+- The row's entry in the binding table's groups (#3), about 44 B, of which 16 B is one more boxed
+  `RowId`. Rows without bindings have none.
 
 Slots and signal samples were made compact on 2026-10-28 (#5), which saved 280 B per keyed row
 (2,856 B before), 168 B per stream row and 203 B per component row. Evaluated texts and
 attributes hold their slot as a plain `Long` (`OptionalSlotId`) instead of a boxed `Some`; a row's
 samples sit in one array, signal then sample, rather than a map of a key and a wrapper per sample;
 and a sample holds its dependency revisions as two `Long` fields rather than a vector.
-- The row's entry in the binding table's groups (#3), about 44 B, of which 16 B is one more boxed
-  `RowId`. Rows without bindings have none.
+
+Net of spec #1, a keyed row's render side went from 2,812 B to 2,576 B, 236 B less: #5 saved
+280 B, and #3's binding groups added 44 B. The target was about 300 B. What is left of the
+wrappers are the boxed `RowId` keys (72 B) and the `Some` attribute values (48 B) above.
 
 Rows sharing one compiled template would remove about a third of it, and needs row functions to
 receive their key as a signal; it is not done, see
@@ -68,8 +72,10 @@ A first render allocates per row, in `InitialRenderBenchmark`:
 This is garbage, not retained memory: it matters for mount latency and GC pressure when many
 browsers join at once. Evaluating an element and compiling a row's elements now loop and return at
 the first error instead of chaining `for` over `Either` (#6), which saved a fifth of evaluation
-(14.4 KB to 11.2 KB per row at 1,000 rows, and 14.0 KB to 11.7 KB at 10,000; 2026-10-28). About
-40% of that came from evaluating elements, the rest from compiling them.
+(14.4 KB to 11.2 KB per row at 1,000 rows, and 14.0 KB to 11.7 KB at 10,000; 2026-10-28). #6 was
+scoped to `evaluateNode`, but the JFR profile of the mount path flagged the compile frames too, as
+a mount compiles each row's templates before evaluating them, so both were rewritten: the loops in
+`evaluateNode` alone saved 9–10%, and with compilation 16–22%.
 
 What is left, by the JFR profile below (taken before #5): compiling each row's templates is a little
 over a quarter, of which `SignalScope.validate` building an identity map for each signal it checks
@@ -88,12 +94,13 @@ A stream insert or delete evaluates only the rows its operations insert and thos
 changed signal from outside them (#4): an append costs about 5 µs and 29 KB at 1,000 and at
 10,000 rows, a delete in the middle 5 µs and 24 KB at 1,000 rows and 27 µs and 46 KB at 10,000
 (`StreamTurnBenchmark.evaluate`, 2026-10-28; at 10,000 rows, 4 ms and 5.5 MB for the append and
-4 ms and 6.6 MB for the delete before). Each
-collection and stream keeps which of its rows read each signal from outside them, samples each such
-signal once per turn, and counts one that can no longer be sampled, such as one read in a branch
-since closed, as changed. The stream's row order is replayed from its operations; a delete still
-searches the rows for the one it deletes and copies the row vector, which is the cost left at
-10,000 rows.
+4 ms and 6.6 MB for the delete before). Each collection and stream keeps which of its rows read
+each signal from outside them, samples each such signal once per turn, and counts one that can no
+longer be sampled as changed. Evaluating the rows behind it again samples it again only if they
+still read it: one read in a branch since closed is skipped, and any other failure fails the turn,
+as it did when each row checked its own signals. The stream's row order is replayed from its
+operations; a delete still searches the rows for the one it deletes and copies the row vector,
+which is the cost left at 10,000 rows (accepted, see below).
 
 What still visits every row:
 
@@ -107,10 +114,14 @@ What still visits every row:
   row vector, then checks the whole row order against the stream's entries. When operations the
   stream merged do not replay to its entries, such as an entry inserted, then another, then the
   first updated, the rows are found by DOM id, which costs a map of them.
-- A keyed list whose items changed (`KeyedRowsBenchmark`), as upstream walks every entry of a
-  changed comprehension: it compares every item, though a kept row now costs less (a turn
-  updating one row of 1,000 allocates 3.25 MB instead of 3.63 MB in `renderDiffAndEncode`, and of
-  10,000 rows 31.4 MB instead of 37.2 MB).
+- A delete, or an update of a row by its DOM id, still searches the rows for it, and a delete copies
+  the row vector around it: about 5 µs at 1,000 rows and 27 µs at 10,000 for a delete in the
+  middle (`StreamTurnBenchmark.evaluate`). Accepted on 2026-10-28, like insertions at an index;
+  avoiding it would need the stream to keep its rows indexed by DOM id across turns.
+- A `splitBy` or `splitByIndex` collection whose items changed (`KeyedRowsBenchmark`), as upstream
+  walks every entry of a changed Phoenix comprehension: it compares every entry, though a kept row
+  now costs less (a turn updating one row of 1,000 allocates 3.25 MB instead of 3.63 MB in
+  `renderDiffAndEncode`, and of 10,000 rows 31.4 MB instead of 37.2 MB).
 - A row that builds its own outside signal, such as `selected.map(_ == id)` in the row function,
   costs one indexed signal, sampled every turn the collection is evaluated: the bindings guide
   advises folding such state into the entries.

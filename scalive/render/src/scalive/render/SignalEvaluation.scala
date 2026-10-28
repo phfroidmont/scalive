@@ -250,10 +250,12 @@ object SignalEvaluation:
     def enterRows(previous: RowsEvaluation): Unit =
       levels += Level(previous.rows, SignalCache.empty)
 
-    /** Ends evaluating the rows that the last `enterRows` started. */
+    /** Ends evaluating the rows that the last `enterRows` started. A row keeps what it read in the
+      * previous evaluation unless it was evaluated again or dropped.
+      */
     def exitRows(): RowsEvaluation =
       val level = levels.remove(levels.length - 1)
-      RowsEvaluation(level.rows.toMap, level.outside.values().asScala.toVector, level.untracked)
+      RowsEvaluation(level.rows, level.outside.values().asScala.toVector, level.untracked)
 
     /** Starts evaluating row `id` of the collection that the last `enterRows` started. */
     def enterRow(id: RowId): Unit =
@@ -271,14 +273,12 @@ object SignalEvaluation:
         row.outside.values().asScala.toVector,
         row.untracked
       )
-      level.rows.update(row.id, read)
+      level.updateRow(row.id, read)
       level.current = None
       read
 
-    /** Keeps row `id` of the collection being evaluated as it was, with what it read then. */
-    def keepRow(id: RowId): Unit =
-      val level = levels.last
-      level.rows.update(id, level.previousRows(id))
+    /** Forgets what `ids`, rows the collection being evaluated no longer renders, read. */
+    def dropRows(ids: Iterable[RowId]): Unit = levels.last.dropRows(ids)
 
     /** What row `id` of the collection being evaluated read in the previous evaluation. */
     def previousRow(id: RowId): Option[RowSignals] = levels.last.previousRows.get(id)
@@ -421,8 +421,23 @@ object SignalEvaluation:
     val placed    = ArrayBuffer.empty[PackedSignalValue[SignalSample]]
     val outside   = java.util.LinkedHashMap[SignalKey, Signal[?]]()
     var untracked = false
-    val rows      = scala.collection.mutable.LinkedHashMap.empty[RowId, RowSignals]
     var current   = Option.empty[RowLevel]
+
+    // What the rows read: those of the previous rows updated one by one, or, when there are none,
+    // built at once, which allocates less.
+    private var updated = previousRows
+    private val built   = Option.when(previousRows.isEmpty)(Map.newBuilder[RowId, RowSignals])
+    private var dropped = Vector.empty[RowId]
+
+    def updateRow(id: RowId, read: RowSignals): Unit = built match
+      case Some(rows) => rows += id -> read
+      case None       => updated = updated.updated(id, read)
+
+    def dropRows(ids: Iterable[RowId]): Unit = built match
+      case Some(_) => dropped ++= ids
+      case None    => updated = updated -- ids
+
+    def rows: Map[RowId, RowSignals] = built.fold(updated)(_.result() -- dropped)
 
   final private class RowLevel(val id: RowId, val previous: SignalCache):
     val placed    = ArrayBuffer.empty[PackedSignalValue[SignalSample]]

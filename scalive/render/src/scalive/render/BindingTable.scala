@@ -121,8 +121,13 @@ object BindingTable:
   /** The bindings of the rows of one collection that render any, by row. */
   private[render] type Collection[+Msg] = Map[RowId, Row[Msg]]
 
-  /** The rows of collection `id` collected so far, from `prior`, its rows in the base table. */
-  final private class Collecting[Msg](val id: TemplateId, val prior: Collection[Msg]):
+  /** The rows of collection `id` collected so far, from `prior`, its rows before. When
+    * `keepsOthers`, the rows of `prior` not collected again keep their bindings unless removed.
+    */
+  final private class Collecting[Msg](
+    val id: TemplateId,
+    val prior: Collection[Msg],
+    val keepsOthers: Boolean):
     // The rows of `prior` this evaluation renders again, and their bindings now.
     val rendered              = mutable.ArrayBuffer.empty[RowId]
     var kept: Collection[Msg] = prior
@@ -157,7 +162,23 @@ object BindingTable:
     /** Starts collecting the bindings of the rows of collection `id`. */
     def enterRows(id: TemplateId): Unit =
       val prior = if open.isEmpty then base.rowGroups(id) else Map.empty[RowId, Row[Msg]]
-      open += Collecting(id, prior)
+      open += Collecting(id, prior, keepsOthers = false)
+
+    /** Starts collecting the bindings of the rows of collection `id` that the evaluation evaluates
+      * again or removes: the others keep their bindings in `previous`, those of its rows in the
+      * previous evaluation.
+      */
+    def enterChangedRows(id: TemplateId, previous: Collection[Msg]): Unit =
+      val prior = if open.isEmpty then base.rowGroups(id) else previous
+      open += Collecting(id, prior, keepsOthers = true)
+
+    /** Drops the bindings of row `id` of the collection the last `enterChangedRows` started. */
+    def removeRow(id: RowId): Unit =
+      val collection = open.last
+      collection.prior.get(id).foreach { prior =>
+        collection.kept -= id
+        if open.length == 1 then removedRows += prior
+      }
 
     /** Ends collecting the bindings of the rows of the collection the last `enterRows` started, and
       * returns them.
@@ -165,7 +186,8 @@ object BindingTable:
     def exitRows(): Collection[Msg] =
       val collection = open.remove(open.length - 1)
       val kept       =
-        if collection.rendered.length == collection.prior.size then collection.kept
+        if collection.keepsOthers || collection.rendered.length == collection.prior.size then
+          collection.kept
         else
           val rendered = collection.rendered.toSet
           val removed  = collection.prior.filterNot((id, _) => rendered.contains(id))
@@ -191,6 +213,14 @@ object BindingTable:
       collect(id, row)
       row
 
+    /** Ends collecting the bindings of a row that the collection being collected renders only for
+      * this evaluation, which the last `enterRow` started: they belong to what holds the
+      * collection, and so are not kept with its rows.
+      */
+    def exitTransientRow(): Unit =
+      val row = levels.remove(levels.length - 1)
+      levels.last ++= row: Unit
+
     /** Keeps `row`, the bindings of row `id` in the previous evaluation, in the collection being
       * collected. A duplicate among them and the rest is found when the table is built.
       */
@@ -201,7 +231,7 @@ object BindingTable:
       val topLevel   = open.length == 1
       collection.prior.get(id) match
         case Some(prior) =>
-          collection.rendered += id
+          if !collection.keepsOthers then collection.rendered += id
           if !(prior eq row) then
             collection.kept =
               if row.isEmpty then collection.kept - id else collection.kept.updated(id, row)

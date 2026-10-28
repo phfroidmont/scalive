@@ -101,6 +101,10 @@ object UnchangedCollectionSpec extends ZIOSpecDefault:
     )
   }
 
+  private def onlyStream(tree: EvaluatedTree): EvaluatedNode.Stream =
+    tree.root.children.head.asInstanceOf[EvaluatedNode.Element].children.head
+      .asInstanceOf[EvaluatedNode.Stream]
+
   private def badgeStream(tree: EvaluatedTree): EvaluatedNode.Stream =
     tree.root
       .children(1).asInstanceOf[EvaluatedNode.Element].children.head
@@ -426,6 +430,145 @@ object UnchangedCollectionSpec extends ZIOSpecDefault:
         afterPrune.keySet.intersect(initial.keySet).size == 1,
         afterTransient == afterPrune,
         afterTransient.values.forall((record, read) => record != null && read != null)
+      )
+    },
+    test("places the rows a stream's operations insert, delete or prune, and keeps the others") {
+      import scalive.streams.*
+      val identity = LiveStreamIdentity.fresh()
+      val zero     = Row(0, "zero")
+      val added    = Row(4, "four")
+      def stream(generation: Long, values: Vector[Row], inserted: Vector[LiveStreamInsert[Row]], deleted: Vector[String]) =
+        LiveStream(identity, "rows", generation, values.map(streamEntry), inserted, deleted, reset = false)
+      def first(row: Row) = LiveStreamInsert(streamEntry(row), StreamAt.First, None, false)
+      val compiled = RenderProgram.compile[Feed, Nothing] { feed =>
+        div(feed.map(_.stream).renderIn(ul)(row => li(row.map(_.label))))
+      }
+      def domIds(tree: EvaluatedTree) = onlyStream(tree).rows.map(_.domId.stripPrefix("rows-")).mkString(",")
+      def turn(program: RenderProgram[Feed, Nothing], previous: CommittedRender[Nothing], next: LiveStream[Row]) =
+        program.evaluate(Feed(0, next), Some(previous)).map(_.commit)
+      def kept(before: Map[RowId, (AnyRef, AnyRef)], after: Map[RowId, (AnyRef, AnyRef)]) =
+        after.count { case (id, (record, read)) =>
+          before.get(id).exists((last, lastRead) => (last eq record) && (lastRead eq read))
+        }
+
+      for
+        program  <- ZIO.fromEither(compiled)
+        base     <- program.evaluate(Feed(0, stream(1L, rows, Vector.empty, Vector.empty))).map(_.commit)
+        initial   = program.retainedRows
+        inserted <- turn(program, base, stream(2L, zero +: rows :+ added, Vector(first(zero), appended(added)), Vector.empty))
+        afterInsert = program.retainedRows
+        deleted  <- turn(program, inserted, stream(3L, Vector(zero, rows(0), rows(2), added), Vector.empty, Vector("rows-2")))
+        afterDelete = program.retainedRows
+        // Deleting a row and inserting it again places it last.
+        moved <- turn(program, deleted, stream(4L, Vector(rows(0), rows(2), added, zero), Vector(appended(zero)), Vector("rows-0")))
+        // A limit of 3 prunes the first row, which the stream does not list as deleted.
+        pruned <- turn(
+                    program,
+                    moved,
+                    stream(5L, Vector(rows(2), added, rows(1)), Vector(LiveStreamInsert(streamEntry(rows(1)), StreamAt.Last, Some(StreamLimit.KeepLast(3)), false)), Vector.empty)
+                  )
+      yield assertTrue(
+        domIds(inserted.tree) == "0,1,2,3,4",
+        kept(initial, afterInsert) == 3,
+        domIds(deleted.tree) == "0,1,3,4",
+        afterDelete.size == 4,
+        kept(afterInsert, afterDelete) == 4,
+        domIds(moved.tree) == "1,3,4,0",
+        domIds(pruned.tree) == "3,4,2",
+        program.retainedRows.size == 3
+      )
+    },
+    test("places the rows of operations a stream merged as it holds them") {
+      import scalive.streams.*
+      val identity = LiveStreamIdentity.fresh()
+      val x        = Row(4, "x")
+      val y        = Row(5, "y")
+      def stream(values: Vector[Row], inserted: Vector[LiveStreamInsert[Row]]) =
+        LiveStream(identity, "rows", 2L, values.map(streamEntry), inserted, Vector.empty, reset = false)
+      val compiled = RenderProgram.compile[Feed, Nothing] { feed =>
+        div(feed.map(_.stream).renderIn(ul)(row => li(row.map(_.label))))
+      }
+      def domIds(tree: EvaluatedTree) = onlyStream(tree).rows.map(_.domId.stripPrefix("rows-")).mkString(",")
+      def render(program: RenderProgram[Feed, Nothing], base: CommittedRender[Nothing], next: LiveStream[Row]) =
+        program.evaluate(Feed(0, next), Some(base)).flatMap(candidate => candidate.discard.as(domIds(candidate.tree)))
+
+      for
+        program <- ZIO.fromEither(compiled)
+        base    <- program.evaluate(Feed(0, LiveStream(identity, "rows", 1L, rows.map(streamEntry), Vector.empty, Vector.empty, reset = false))).map(_.commit)
+        // `x` was appended, then `y`, then `x` updated: the stream keeps only `x`'s last insertion.
+        updatedAfter <- render(program, base, stream(rows :+ x :+ y, Vector(appended(y), appended(x))))
+        // `x` was inserted first, then updated with an insertion that would have appended it.
+        updatedElsewhere <- render(program, base, stream(x +: rows, Vector(appended(x))))
+      yield assertTrue(
+        updatedAfter == "1,2,3,4,5",
+        updatedElsewhere == "4,1,2,3"
+      )
+    },
+    test("updates the stream rows that read a changed signal along with those it inserts") {
+      import scalive.streams.*
+      final case class Selected(selected: Int, stream: LiveStream[Row])
+      val identity = LiveStreamIdentity.fresh()
+      val added    = Row(4, "four")
+      def stream(generation: Long, values: Vector[Row], inserted: Vector[Row]) =
+        LiveStream(identity, "rows", generation, values.map(streamEntry), inserted.map(appended), Vector.empty, reset = false)
+      val compiled = RenderProgram.compile[Selected, Nothing] { model =>
+        val selected = model.map(_.selected)
+        div(model.map(_.stream).renderIn(ul)(row =>
+          li(row.combineWithFn(selected)((row, selected) => if row.id == selected then "*" else row.label))
+        ))
+      }
+
+      for
+        program <- ZIO.fromEither(compiled)
+        base    <- program.evaluate(Selected(1, stream(1L, rows, Vector.empty))).map(_.commit)
+        second  <- program.evaluate(Selected(2, stream(2L, rows :+ added, Vector(added))), Some(base))
+      yield assertTrue(
+        HtmlRenderer.render(second.tree) ==
+          "<div><ul id=\"rows\" phx-update=\"stream\"><li id=\"rows-1\">one</li><li id=\"rows-2\">*</li><li id=\"rows-3\">three</li><li id=\"rows-4\">four</li></ul></div>"
+      )
+    },
+    test("evaluates again only the rows of a collection that read a signal from outside that changed") {
+      val compiled = RenderProgram.compile[Page, Nothing] { page =>
+        val selected = page.map(_.selected)
+        div(page.map(_.rows).splitBy(_.id) { (id, row) =>
+          li(cls := selected.map(value => if value == id then "on" else "off"), row.map(_.label))
+        })
+      }
+
+      for
+        program <- ZIO.fromEither(compiled)
+        first   <- program.evaluate(Page(0, 1, rows))
+        base   = first.commit
+        before = program.retainedRows
+        second <- program.evaluate(Page(0, 2, rows), Some(base))
+        _     = second.commit
+        after = program.retainedRows
+      yield assertTrue(
+        HtmlRenderer.render(second.tree) ==
+          "<div><li class=\"off\">one</li><li class=\"on\">two</li><li class=\"off\">three</li></div>",
+        // The first two rows read their own selection, which changed.
+        after.count { case (id, (record, _)) => before.get(id).exists(_._1 eq record) } == 1,
+        after.size == 3
+      )
+    },
+    test("declares the components of the rows a stream inserts in the order it holds them") {
+      import scalive.streams.*
+      val identity = LiveStreamIdentity.fresh()
+      def first(row: Row) = LiveStreamInsert(streamEntry(row), StreamAt.First, None, false)
+
+      for
+        program    <- ZIO.fromEither(badgeStreamRows)
+        resolution <- instances
+        base       <- program
+                        .evaluate(Feed(0, LiveStream(identity, "rows", 1L, Vector.empty, Vector.empty, Vector.empty, reset = false)))
+                        .flatMap(resolution.resolve)
+        // Inserting each first places the last one inserted first.
+        inserted <- program.evaluate(
+                      Feed(0, LiveStream(identity, "rows", 2L, rows.reverse.map(streamEntry), rows.map(first), Vector.empty, reset = false)),
+                      Some(base.commit)
+                    )
+      yield assertTrue(
+        declared(inserted).map(_._1) == Vector("counter", "badge-3", "badge-2", "badge-1")
       )
     },
     test("drops what a collection keeps of the rows it removes, and keeps the others' as they were") {

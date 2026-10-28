@@ -65,19 +65,23 @@ saving with `gc.alloc.rate.norm` before and after.
 
 ## Stream insert evaluation {#stream-insert-evaluation}
 
-Inserting one row into a stream costs O(rows) to evaluate: 2.6 MB and under 1 ms at 1,000 rows,
-26 MB and about 10 ms at 10,000 (`StreamTurnBenchmark.evaluate`, `operation=insert`). The diff and
+Inserting one row into a stream costs O(rows) to evaluate: 1.4 MB and under 1 ms at 1,000 rows,
+16.5 MB and about 9 ms at 10,000 (`StreamTurnBenchmark.evaluate`, `operation=insert`, 2026-10-28;
+2.5 MB and 25.4 MB before #2). The diff and
 the encoder cost little for the same insert (4 KB and 49 KB at 1,000 rows), since they find each
 row's previous instance with `StreamRowCursor` and shape the payload from the rows it sends.
 
-Each kept row is cheap, about 1 µs, but evaluation rebuilds per turn every structure indexed by row:
-the row templates map, the row records, the rows' signal samples (`RowsEvaluation`), and the
-collection's bindings, which `BindingTable.Builder.result` adds back to the table one by one. The
-same holds for a keyed list whose items changed (`KeyedRowsBenchmark`), where it matches upstream,
-which also walks every entry of a changed comprehension.
+Each kept row is cheap, about 1 µs, but evaluation still visits every row, to check whether it is
+kept, and rebuilds the collection's bindings, which `BindingTable.Builder.result` adds back to the
+table one by one. The same holds for a keyed list whose items changed (`KeyedRowsBenchmark`), where
+it matches upstream, which also walks every entry of a changed comprehension.
 
-Making it O(changed) means keeping those structures across turns and updating them by the rows a
-turn inserts, deletes or evaluates: persistent maps updated in place of rebuilt ones, bindings
-grouped per row so that the table drops and adds only the rows that changed, and the stream's
-operations used to tell which rows changed. That touches `RenderProgram`, `SignalEvaluation` and
-`BindingTable` together.
+The other structures indexed by row are kept across turns as persistent maps and updated only for
+the rows a turn inserts, deletes or evaluates again (#2): the row templates, the row records and the
+rows' signal samples (`RowsEvaluation`). A stream tells the rows it no longer holds from its
+deletions, and searches its entries for them only when a limit pruned some or after a reset. The
+stream's row order (`EvaluatedNode.Stream.rows`) is still built from the visit.
+
+What remains for O(changed): bindings grouped per row so that the table drops and adds only the
+rows that changed (#3), and visiting only the rows behind changed outside signals, which needs the
+row order derived from the stream's operations (#4).

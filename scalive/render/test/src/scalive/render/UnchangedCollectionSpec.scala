@@ -350,6 +350,115 @@ object UnchangedCollectionSpec extends ZIOSpecDefault:
           "<div><ul id=\"rows\" phx-update=\"stream\"><li id=\"rows-1\"></li><li id=\"rows-2\">*</li><li id=\"rows-3\"></li></ul></div>"
       )
     },
+    test("keeps the record and signal samples of a stream row when another is inserted") {
+      val identity = scalive.streams.LiveStreamIdentity.fresh()
+      val added    = Row(4, "four")
+      def stream(generation: Long, values: Vector[Row], inserted: Vector[Row]) =
+        scalive.streams.LiveStream(
+          identity,
+          "rows",
+          generation,
+          values.map(streamEntry),
+          inserted.map(appended),
+          Vector.empty,
+          reset = false
+        )
+      val compiled = RenderProgram.compile[Feed, Nothing] { feed =>
+        div(feed.map(_.stream).renderIn(ul)(row => li(row.map(_.label))))
+      }
+
+      for
+        program <- ZIO.fromEither(compiled)
+        first   <- program.evaluate(Feed(0, stream(1L, rows, Vector.empty)))
+        base   = first.commit
+        before = program.retainedRows
+        second <- program.evaluate(Feed(0, stream(2L, rows :+ added, Vector(added))), Some(base))
+        _     = second.commit
+        after = program.retainedRows
+      yield assertTrue(
+        before.size == 3,
+        after.size == 4,
+        before.forall { case (id, (record, read)) =>
+          after.get(id).exists((nextRecord, nextRead) => (nextRecord eq record) && (nextRead eq read))
+        }
+      )
+    },
+    test("drops what a stream keeps of the rows it deletes, prunes or only inserts") {
+      import scalive.streams.*
+      val identity = LiveStreamIdentity.fresh()
+      val added    = Row(4, "four")
+      val pruned   = Row(5, "five")
+      def stream(generation: Long, values: Vector[Row], inserted: Vector[LiveStreamInsert[Row]], deleted: Vector[String]) =
+        LiveStream(identity, "rows", generation, values.map(streamEntry), inserted, deleted, reset = false)
+      def insert(row: Row, at: StreamAt, limit: StreamLimit) =
+        LiveStreamInsert(streamEntry(row), at, Some(limit), false)
+      val compiled = RenderProgram.compile[Feed, Nothing] { feed =>
+        div(feed.map(_.stream).renderIn(ul)(row => li(row.map(_.label))))
+      }
+      def turn(program: RenderProgram[Feed, Nothing], previous: CommittedRender[Nothing], next: LiveStream[Row]) =
+        program.evaluate(Feed(0, next), Some(previous)).map(_.commit)
+
+      for
+        program <- ZIO.fromEither(compiled)
+        base    <- program.evaluate(Feed(0, stream(1L, rows, Vector.empty, Vector.empty))).map(_.commit)
+        initial = program.retainedRows
+        deleted <- turn(program, base, stream(2L, Vector(rows(0), rows(2)), Vector.empty, Vector("rows-2")))
+        afterDelete = program.retainedRows
+        // Inserting past a limit of 2 prunes the first row, which the stream does not list as deleted.
+        limited <- turn(
+                     program,
+                     deleted,
+                     stream(3L, Vector(rows(2), added), Vector(insert(added, StreamAt.Last, StreamLimit.KeepLast(2))), Vector.empty)
+                   )
+        afterPrune = program.retainedRows
+        // A row the limit prunes at once is rendered only by its insert.
+        _ <- turn(
+               program,
+               limited,
+               stream(4L, Vector(rows(2), added), Vector(insert(pruned, StreamAt.Last, StreamLimit.KeepFirst(2))), Vector.empty)
+             )
+        afterTransient = program.retainedRows
+      yield assertTrue(
+        initial.size == 3,
+        afterDelete.keySet.subsetOf(initial.keySet),
+        afterDelete.size == 2,
+        afterPrune.size == 2,
+        afterPrune.keySet.intersect(initial.keySet).size == 1,
+        afterTransient == afterPrune,
+        afterTransient.values.forall((record, read) => record != null && read != null)
+      )
+    },
+    test("drops what a collection keeps of the rows it removes, and keeps the others' as they were") {
+      val compiled = RenderProgram.compile[Page, Nothing] { page =>
+        div(page.map(_.rows).splitBy(_.id)((_, row) => li(row.map(_.label))))
+      }
+      val byIndex = RenderProgram.compile[Page, Nothing] { page =>
+        div(page.map(_.rows).splitByIndex((_, row) => li(row.map(_.label))))
+      }
+      def removing(compiled: Either[RenderError, RenderProgram[Page, Nothing]], next: Vector[Row]) =
+        for
+          program <- ZIO.fromEither(compiled)
+          first   <- program.evaluate(Page(0, 0, rows))
+          base   = first.commit
+          before = program.retainedRows
+          _ <- program.evaluate(Page(0, 0, next), Some(base)).map(_.commit)
+          after = program.retainedRows
+        yield (before, after)
+
+      for
+        (keyedBefore, keyedAfter)     <- removing(compiled, Vector(rows(0), rows(2)))
+        (indexedBefore, indexedAfter) <- removing(byIndex, rows.take(2))
+      yield assertTrue(
+        keyedAfter.size == 2,
+        keyedAfter.forall { case (id, (record, read)) =>
+          keyedBefore.get(id).exists((last, lastRead) => (last eq record) && (lastRead eq read))
+        },
+        indexedAfter.size == 2,
+        indexedAfter.forall { case (id, (record, read)) =>
+          indexedBefore.get(id).exists((last, lastRead) => (last eq record) && (lastRead eq read))
+        }
+      )
+    },
     test("drops the bindings of a collection that is no longer rendered") {
       val compiled = RenderProgram.compile[(Boolean, Vector[Row]), String] { model =>
         div(

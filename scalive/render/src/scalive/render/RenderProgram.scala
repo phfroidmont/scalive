@@ -61,6 +61,12 @@ final class RenderProgram[Input, Msg] private (
   private[render] def retainedKeyedRowCount: Int =
     RenderProgram.retainedKeyedRowCount(template)
 
+  /** What the committed collections and streams of the program's own template keep of each row: its
+    * record and what it read.
+    */
+  private[render] def retainedRows: Map[RowId, (AnyRef, AnyRef)] =
+    RenderProgram.retainedRows(template)
+
   private[scalive] def evaluateIn(
     input: Input,
     previous: Option[CommittedRender[Msg]],
@@ -353,20 +359,28 @@ object RenderProgram:
           if retainedIdentity.exists(_ eq identity) then evaluated else None
         }
 
+      def committed: Option[EvaluatedRows[EvaluatedNode.Stream, Msg]] = synchronized(evaluated)
+
+      /** Keeps `changes.templates` and `rows`, retiring the row templates no longer kept: only
+        * `changes.retired` when the retained templates are still those the changes were made from.
+        */
       def assignment(
         identity: LiveStreamIdentity,
-        next: Map[String, StreamRowTemplate[A, Msg]],
+        changes: StreamRowChanges[A, Msg],
         rows: EvaluatedRows[EvaluatedNode.Stream, Msg]
       ): () => Unit = () =>
         synchronized {
           val old          = retained
           val sameIdentity = retainedIdentity.exists(_ eq identity)
+          val next         = changes.templates
           retainedIdentity = Some(identity)
           retained = next
           evaluated = Some(rows)
-          old.foreach { case (domId, row) =>
-            if !sameIdentity || !next.get(domId).exists(_.scope eq row.scope) then row.retire()
-          }
+          if sameIdentity && (old eq changes.base) then changes.retired.foreach(_.retire())
+          else
+            old.foreach { case (domId, row) =>
+              if !sameIdentity || !next.get(domId).exists(_.scope eq row.scope) then row.retire()
+            }
         }
 
       def closeAll(): Unit = synchronized {
@@ -376,6 +390,16 @@ object RenderProgram:
         evaluated = None
       }
     end State
+
+    /** How a stream's evaluation changes the row templates it keeps: `base`, those it kept, become
+      * `templates`. `retired` are those of `base` no longer kept, and `dropped` the ids of the rows
+      * whose record and samples the stream no longer keeps.
+      */
+    final case class StreamRowChanges[A, Msg](
+      base: Map[String, StreamRowTemplate[A, Msg]],
+      templates: Map[String, StreamRowTemplate[A, Msg]],
+      retired: Vector[StreamRowTemplate[A, Msg]],
+      dropped: Vector[RowId])
   end StreamTemplate
 
   sealed private trait KeyedRowTemplate[+Msg]:
@@ -1804,10 +1828,10 @@ object RenderProgram:
           rowCandidate
         )
         val rowBindings = bindings.exitRows(id)
-        evaluated.map { (node, recorded, rows, signals, next) =>
+        evaluated.map { (node, recorded, rows, signals, changes) =>
           commitActions += state.assignment(
             stream.identity,
-            next,
+            changes,
             EvaluatedRows(
               recorded,
               signals,
@@ -1845,7 +1869,7 @@ object RenderProgram:
       EvaluatedNode.Stream,
       Map[RowId, EvaluatedRow[Msg]],
       SignalEvaluation.RowsEvaluation,
-      Map[String, StreamRowTemplate[A, Msg]]
+      StreamTemplate.StreamRowChanges[A, Msg]
     )
   ] =
     val entries          = stream.entries
@@ -1856,26 +1880,32 @@ object RenderProgram:
       .toVector
     val renderedEntries = entries ++ operationEntries
     val lastRows        = last.fold(Map.empty[RowId, EvaluatedRow[Msg]])(_.rows)
+    // The recorded rows are the committed ones when the recorded stream is: it then holds nothing
+    // resolution would have filled in.
+    val committed = last.exists(rows => old.exists(_ eq rows.node))
     for
       _ <- validateStreamDomIds(stream, renderedEntries)
       retained = state.snapshot(stream.identity)
       templates <- traverse(renderedEntries) { entry =>
                      rowCandidate(entry.domId, entry.value, retained.get(entry.domId))
                    }
-      oldRows = old.toVector.flatMap(_.rows).map(row => row.domId -> row.child).toMap
+      oldRows =
+        if committed then Map.empty[String, EvaluatedNode]
+        else old.toVector.flatMap(_.rows).map(row => row.domId -> row.child).toMap
       evaluatedRows <-
         withinRows(
           transaction,
           last.fold(SignalEvaluation.RowsEvaluation.empty)(_.signals)
         ) {
           traverse(templates.zip(renderedEntries)) { case (row, entry) =>
+            val lastRow = lastRows.get(row.id)
             evaluateRow(
               row.id,
               row.source,
               entry.value,
               row.element,
-              oldRows.get(entry.domId),
-              lastRows.get(row.id),
+              if committed then lastRow.map(_.node) else oldRows.get(entry.domId),
+              lastRow,
               revision,
               transaction,
               flash,
@@ -1884,26 +1914,34 @@ object RenderProgram:
               candidateRows,
               requirements
             ).map(EvaluatedNode.StreamRow(entry.domId, _) -> _)
+          }.map { evaluated =>
+            val changes = streamRowChanges(stream, retained, templates)
+            transaction.dropRows(changes.dropped)
+            evaluated -> changes
           }
         }
-      (evaluated, rowSignals) = evaluatedRows
-      renderedRows            = evaluated.map(_._1)
+      ((evaluated, changes), rowSignals) = evaluatedRows
+      renderedRows                       = evaluated.map(_._1)
     yield
-      val rows     = renderedRows.take(entries.length)
-      val rowsById = renderedRows.map(row => row.domId -> row).toMap
-      val inserts  = stream.inserted.map { insert =>
-        val row = rowsById(insert.entry.domId)
+      val rows         = renderedRows.take(entries.length)
+      val insertedRows =
+        if stream.inserted.isEmpty then Map.empty[String, EvaluatedNode.StreamRow]
+        else
+          renderedRows.iterator
+            .filter(row => stream.insertedIds.contains(row.domId))
+            .map(row => row.domId -> row)
+            .toMap
+      val inserts = stream.inserted.map { insert =>
+        val row = insertedRows(insert.entry.domId)
         EvaluatedNode.StreamInsert(row, insert.at, insert.limit, insert.updateOnly)
       }
       val operations         = EvaluatedNode.StreamOperations(inserts, stream.deleted, stream.reset)
-      val retainedTemplates  = templates.take(entries.length)
       val transientTemplates = operationEntries
         .zip(templates.drop(entries.length)).collect {
           case (entry, template) if !retained.contains(entry.domId) => template
         }
       if transientTemplates.nonEmpty then
         commitActions += (() => transientTemplates.foreach(_.retire()))
-      val next = Map.from(entries.map(_.domId).zip(retainedTemplates))
       val node = old match
         case Some(node)
             if node.id == id && (node.identity eq stream.identity) &&
@@ -1912,10 +1950,83 @@ object RenderProgram:
           node.copy(rows = rows, operations = operations)
         case _ =>
           EvaluatedNode.Stream(id, stream.identity, stream.generation, rows, operations, revision)
-      val records = templates.iterator.map(_.id).zip(evaluated.iterator.map(_._2)).toMap
-      (node, recordedStream(node, evaluated), records, rowSignals, next)
+      val records = updatedRecords(
+        lastRows -- changes.dropped,
+        lastRows,
+        templates.iterator.take(entries.length).map(_.id),
+        evaluated.iterator.map(_._2)
+      )
+      (node, recordedStream(node, evaluated), records, rowSignals, changes)
     end for
   end evaluateStreamRows
+
+  /** How evaluating `stream` from the row templates `retained` and to `templates`, those of its
+    * rendered entries, changes the templates it keeps.
+    *
+    * The rows it no longer keeps are those of `retained` its entries no longer hold. Its deletions
+    * usually tell them all; only when they do not, such as after a limit pruned some rows or a
+    * reset, are its entries searched for them. The rows only its operations render are not kept.
+    */
+  private def streamRowChanges[A, Msg](
+    stream: LiveStream[A],
+    retained: Map[String, StreamRowTemplate[A, Msg]],
+    templates: Vector[StreamRowTemplate[A, Msg]]
+  ): StreamTemplate.StreamRowChanges[A, Msg] =
+    val entries = stream.entries
+    if retained.isEmpty then
+      val kept    = Map.from(entries.iterator.map(_.domId).zip(templates))
+      val dropped = templates.iterator.drop(entries.length).map(_.id).toVector
+      return StreamTemplate.StreamRowChanges(retained, kept, Vector.empty, dropped)
+    var next     = retained
+    var added    = 0
+    val replaced = Vector.newBuilder[StreamRowTemplate[A, Msg]]
+    var index    = 0
+    while index < entries.length do
+      val domId    = entries(index).domId
+      val template = templates(index)
+      retained.get(domId) match
+        case Some(kept) if kept eq template => ()
+        case Some(kept)                     =>
+          next = next.updated(domId, template)
+          if !(kept.scope eq template.scope) then replaced += kept
+        case None =>
+          next = next.updated(domId, template)
+          added += 1
+      index += 1
+
+    val removedCount = retained.size + added - entries.length
+    val deleted      =
+      stream.deleted.filter(domId => retained.contains(domId) && !stream.entryIds.contains(domId))
+    val removed =
+      if deleted.length == removedCount then deleted
+      else retained.keysIterator.filterNot(stream.entryIds.contains).toVector
+    val retired = removed.map(retained) ++ replaced.result()
+    StreamTemplate.StreamRowChanges(
+      retained,
+      next -- removed,
+      retired,
+      retired.map(_.id) ++ templates.iterator.drop(entries.length).map(_.id)
+    )
+  end streamRowChanges
+
+  /** `records`, the records of the rows that were kept, holding `evaluated`, the records of the
+    * rows `ids`, for each that `last` does not already hold.
+    */
+  private def updatedRecords[Msg](
+    records: Map[RowId, EvaluatedRow[Msg]],
+    last: Map[RowId, EvaluatedRow[Msg]],
+    ids: Iterator[RowId],
+    evaluated: Iterator[EvaluatedRow[Msg]]
+  ): Map[RowId, EvaluatedRow[Msg]] =
+    // Building them at once allocates less than adding them one by one to no records.
+    if records.isEmpty then Map.from(ids.zip(evaluated))
+    else
+      var next = records
+      while ids.hasNext do
+        val id     = ids.next()
+        val record = evaluated.next()
+        if !last.get(id).exists(_ eq record) then next = next.updated(id, record)
+      next
 
   /** Rejects a DOM id `entries`, the rendered entries of `stream`, holds twice.
     *
@@ -1986,7 +2097,7 @@ object RenderProgram:
   ): Either[RenderError, CollectionRows[Msg]] =
     val entries = values.iterator.map(value => template.key(value) -> value).toVector
     for
-      _ <- validateEvaluationKeys(entries.map(_._1))
+      keys <- validateEvaluationKeys(entries.map(_._1))
       retained = template.state.snapshot
       rows <- traverse(entries) { case (key, _) =>
                 retained.get(key) match
@@ -1998,9 +2109,11 @@ object RenderProgram:
                       candidateRows
                     )
               }
+      (next, removed) = keptRowTemplates(retained, entries.map(_._1), rows, keys.contains)
       result <- evaluateItemRows(
                   template.id,
                   rows.zip(entries.map(_._2)),
+                  removed.map(_.id),
                   previous,
                   template.state.lastEvaluated,
                   revision,
@@ -2011,17 +2124,12 @@ object RenderProgram:
                   candidateRows,
                   requirements
                 )
-    yield
-      val next    = Map.from(entries.map(_._1).zip(rows))
-      val removed = retained.iterator.collect {
-        case (key, row) if !next.contains(key) => row
-      }.toVector
-      CollectionRows(
-        result._1,
-        result._2,
-        result._3,
-        evaluated => template.state.assignment(next, removed, evaluated)
-      )
+    yield CollectionRows(
+      result._1,
+      result._2,
+      result._3,
+      evaluated => template.state.assignment(next, removed, evaluated)
+    )
     end for
   end evaluateSignalKeyedRows
 
@@ -2088,9 +2196,11 @@ object RenderProgram:
                       candidateRows
                     )
               }
+      (next, removed) = keptRowTemplates(retained, indices, rows, _ < values.length)
       result <- evaluateItemRows(
                   template.id,
                   rows.zip(values),
+                  removed.map(_.id),
                   previous,
                   template.state.lastEvaluated,
                   revision,
@@ -2101,19 +2211,39 @@ object RenderProgram:
                   candidateRows,
                   requirements
                 )
-    yield
-      val next    = Map.from(indices.zip(rows))
-      val removed = retained.iterator.collect {
-        case (index, row) if !next.contains(index) => row
-      }.toVector
-      CollectionRows(
-        result._1,
-        result._2,
-        result._3,
-        evaluated => template.state.assignment(next, removed, evaluated)
-      )
+    yield CollectionRows(
+      result._1,
+      result._2,
+      result._3,
+      evaluated => template.state.assignment(next, removed, evaluated)
+    )
     end for
   end evaluateSignalKeyedByIndexRows
+
+  /** The row templates a collection keeps after `retained`, now that its rows are `rows`, keyed
+    * `keys`, and those of `retained` it no longer keeps, whose keys are not `present`.
+    *
+    * Only when `retained` and the new rows hold more than `keys` is `retained` searched for them.
+    */
+  private def keptRowTemplates[Key, A, Msg](
+    retained: Map[Key, DynamicKeyedRowTemplate[A, Msg]],
+    keys: Vector[Key],
+    rows: Vector[DynamicKeyedRowTemplate[A, Msg]],
+    present: Key => Boolean
+  ): (Map[Key, DynamicKeyedRowTemplate[A, Msg]], Vector[DynamicKeyedRowTemplate[A, Msg]]) =
+    if retained.isEmpty then return Map.from(keys.iterator.zip(rows)) -> Vector.empty
+    var next  = retained
+    var added = 0
+    var index = 0
+    while index < keys.length do
+      if !retained.contains(keys(index)) then
+        next = next.updated(keys(index), rows(index))
+        added += 1
+      index += 1
+    if retained.size + added == keys.length then next -> Vector.empty
+    else
+      val removed = retained.filterNot((key, _) => present(key))
+      (next -- removed.keys, removed.values.toVector)
 
   /** The evaluated rows of a collection, its node and the one it records, and the commit that keeps
     * them.
@@ -2224,11 +2354,13 @@ object RenderProgram:
     }.map(rows => keyedNode(id, old, rows, revision))
 
   /** Evaluates the rows of a signal collection, each from its item. Each row keeps its committed
-    * node when nothing it read changed, given `last`, the committed rows.
+    * node when nothing it read changed, given `last`, the committed rows, which held the rows
+    * `removed` too.
     */
   private def evaluateItemRows[A, Msg](
     id: TemplateId,
     rows: Vector[(DynamicKeyedRowTemplate[A, Msg], A)],
+    removed: Vector[RowId],
     previous: Option[EvaluatedNode],
     last: Option[EvaluatedRows[?, Msg]],
     revision: RenderRevision,
@@ -2268,9 +2400,15 @@ object RenderProgram:
         requirements
       ).map(EvaluatedNode.KeyedRow(row.id, _) -> _)
     }.map { evaluated =>
+      transaction.dropRows(removed)
       val keyedRows = evaluated.map(_._1)
-      val byId      = evaluated.iterator.map((row, value) => row.id -> value).toMap
-      val node      = keyedNode(id, old, keyedRows, revision)
+      val byId      = updatedRecords(
+        lastRows -- removed,
+        lastRows,
+        keyedRows.iterator.map(_.id),
+        evaluated.iterator.map(_._2)
+      )
+      val node = keyedNode(id, old, keyedRows, revision)
       (node, recordedKeyed(node, evaluated), byId)
     }
   end evaluateItemRows
@@ -2352,7 +2490,6 @@ object RenderProgram:
 
     kept.flatMap {
       case Some(keptRow @ (_, row)) =>
-        transaction.keepRow(id)
         bindings.keepRow(row.bindings)
         requirements.components ++= row.components
         Right(keptRow)
@@ -2386,14 +2523,15 @@ object RenderProgram:
     }
   end evaluateRow
 
-  private def validateEvaluationKeys[A](keys: Vector[A]): Either[RenderError, Unit] =
+  /** Rejects a key `keys` holds twice, and otherwise returns them as a set. */
+  private def validateEvaluationKeys[A](keys: Vector[A]): Either[RenderError, Set[A]] =
     keys
       .foldLeft[Either[RenderError, Set[A]]](Right(Set.empty)) { (result, key) =>
         result.flatMap(seen =>
           if seen.contains(key) then Left(RenderError.DuplicateKey(key))
           else Right(seen + key)
         )
-      }.map(_ => ())
+      }
 
   private def evaluateComponentRequirement[OwnerMsg](
     location: TemplateId,
@@ -2779,6 +2917,25 @@ object RenderProgram:
     case stream: StaticStreamTemplate[?, ?] => stream.state.snapshot(stream.stream.identity).size
     case _: SignalStreamTemplate[?, ?]      => 0
     case _: TextTemplate                    => 0
+
+  /** A missing record or signals is `null`. */
+  private def retainedRows(template: NodeTemplate[?]): Map[RowId, (AnyRef, AnyRef)] =
+    def of(rows: Option[EvaluatedRows[?, ?]]): Map[RowId, (AnyRef, AnyRef)] =
+      rows.fold(Map.empty) { rows =>
+        (rows.rows.keySet ++ rows.signals.rows.keySet).iterator
+          .map(id => id -> (rows.rows.get(id).orNull, rows.signals.rows.get(id).orNull))
+          .toMap
+      }
+    template match
+      case element: ElementTemplate[?] =>
+        element.children.map(retainedRows).foldLeft(Map.empty)(_ ++ _)
+      case choice: ChoiceTemplate[?] =>
+        choice.branches.flatMap(_._2).map(retainedRows).foldLeft(Map.empty)(_ ++ _)
+      case keyed: SignalKeyedTemplate[?, ?, ?]     => of(keyed.state.lastEvaluated)
+      case keyed: SignalKeyedByIndexTemplate[?, ?] => of(keyed.state.lastEvaluated)
+      case stream: StaticStreamTemplate[?, ?]      => of(stream.state.committed)
+      case stream: SignalStreamTemplate[?, ?]      => of(stream.state.committed)
+      case _                                       => Map.empty
 
   private def closeRetainedRows(template: NodeTemplate[?]): Unit = template match
     case element: ElementTemplate[?] => element.children.foreach(closeRetainedRows)

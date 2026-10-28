@@ -1,6 +1,7 @@
 package scalive.render
 
 import java.util.Locale
+import scala.collection.immutable.ArraySeq
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 import scala.util.boundary
@@ -609,57 +610,73 @@ object RenderProgram:
     lock: Object,
     state: Signal[RenderState]):
 
+    // Each row compiles its elements when it mounts, so these steps return early rather than
+    // allocate the closures of a for over Either.
     def compileElement[Msg](element: HtmlElement[Msg]): Either[RenderError, ElementTemplate[Msg]] =
-      for
-        id    <- allocator.template()
-        parts <- classifyMods(element.mods)
-        (attributeCandidates, contents) = parts
-        _          <- validateAttributeCandidateNames(attributeCandidates)
-        finalized  <- finalizeAttributes(attributeCandidates)
-        attributes <- targetOwner(finalized)
-        _          <- validateAttributeNames(attributes)
-        _          <- Either.cond(
-               !element.tag.void || contents.isEmpty,
-               (),
-               RenderError.InvalidHtml(
-                 s"void element '${element.tag.name}' cannot contain child content"
-               )
-             )
-        children <- traverse(contents)(compileContent)
-      yield ElementTemplate(id, element.tag.name, element.tag.void, attributes, children)
+      val id = allocator.template() match
+        case Right(id)   => id
+        case Left(error) => return Left(error)
+      val (attributeCandidates, contents) = classifyMods(element.mods) match
+        case Right(parts) => parts
+        case Left(error)  => return Left(error)
+      validateAttributeCandidateNames(attributeCandidates) match
+        case Right(_)    => ()
+        case Left(error) => return Left(error)
+      val finalized = finalizeAttributes(attributeCandidates) match
+        case Right(finalized) => finalized
+        case Left(error)      => return Left(error)
+      val attributes = targetOwner(finalized) match
+        case Right(attributes) => attributes
+        case Left(error)       => return Left(error)
+      validateAttributeNames(attributes) match
+        case Right(_)    => ()
+        case Left(error) => return Left(error)
+      if element.tag.void && contents.nonEmpty then
+        return Left(
+          RenderError.InvalidHtml(
+            s"void element '${element.tag.name}' cannot contain child content"
+          )
+        )
+      traverse(contents)(compileContent) match
+        case Right(children) =>
+          Right(ElementTemplate(id, element.tag.name, element.tag.void, attributes, children))
+        case Left(error) => Left(error)
 
     private def classifyMods[Msg](
       mods: Vector[Mod[Msg]]
     ): Either[RenderError, (Vector[AttributeCandidate[Msg]], Vector[Mod.Content[Msg]])] =
-      mods
-        .foldLeft[Either[RenderError, (Vector[AttributeCandidate[Msg]], Vector[Mod.Content[Msg]])]](
-          Right(Vector.empty -> Vector.empty)
-        ) { (result, mod) =>
-          result.flatMap { case (attributes, contents) =>
-            mod match
-              case Mod.Attr.Group(attrs) =>
-                traverse(attrs.flatMap(_.flattened))(compileAttribute)
-                  .map(compiled => attributes.appendedAll(compiled) -> contents)
-              case attribute: Mod.Attr[Msg] =>
-                compileAttribute(attribute).map(compiled => (attributes :+ compiled) -> contents)
-              case choice @ Mod.Content.SignalChoice(_, _) =>
-                val branchMods = choice.branches.flatMap(_._2)
-                val allAttrs = branchMods.nonEmpty && branchMods.forall(_.isInstanceOf[Mod.Attr[?]])
-                val allContent = branchMods.forall(_.isInstanceOf[Mod.Content[?]])
-                if allAttrs then
-                  compileAttributeChoice(choice).map(compiled =>
-                    (attributes :+ compiled) -> contents
-                  )
-                else if allContent then Right(attributes -> (contents :+ choice))
-                else
-                  Left(
-                    RenderError.InvalidHtml(
-                      "the branches of a choice cannot mix attributes and content"
-                    )
-                  )
-              case content: Mod.Content[Msg] => Right(attributes -> (contents :+ content))
-          }
-        }
+      var attributes = Vector.empty[AttributeCandidate[Msg]]
+      var contents   = Vector.empty[Mod.Content[Msg]]
+      var index      = 0
+      while index < mods.length do
+        mods(index) match
+          case Mod.Attr.Group(attrs) =>
+            traverse(attrs.flatMap(_.flattened))(compileAttribute) match
+              case Right(compiled) => attributes = attributes.appendedAll(compiled)
+              case Left(error)     => return Left(error)
+          case attribute: Mod.Attr[Msg] =>
+            compileAttribute(attribute) match
+              case Right(compiled) => attributes = attributes :+ compiled
+              case Left(error)     => return Left(error)
+          case choice @ Mod.Content.SignalChoice(_, _) =>
+            val branchMods = choice.branches.flatMap(_._2)
+            val allAttrs   = branchMods.nonEmpty && branchMods.forall(_.isInstanceOf[Mod.Attr[?]])
+            val allContent = branchMods.forall(_.isInstanceOf[Mod.Content[?]])
+            if allAttrs then
+              compileAttributeChoice(choice) match
+                case Right(compiled) => attributes = attributes :+ compiled
+                case Left(error)     => return Left(error)
+            else if allContent then contents = contents :+ choice
+            else
+              return Left(
+                RenderError.InvalidHtml(
+                  "the branches of a choice cannot mix attributes and content"
+                )
+              )
+          case content: Mod.Content[Msg] => contents = contents :+ content
+        index += 1
+      Right(attributes -> contents)
+    end classifyMods
 
     // A branch without an attribute renders the attribute absent, like an unmatched value.
     private def compileAttributeChoice[Msg](
@@ -894,29 +911,27 @@ object RenderProgram:
     private def finalizeAttributes[Msg](
       candidates: Vector[AttributeCandidate[Msg]]
     ): Either[RenderError, Vector[AttributeTemplate[Msg]]] =
-      candidates
-        .foldLeft[Either[RenderError, (Vector[AttributeTemplate[Msg]], Set[String])]](
-          Right(Vector.empty -> Set.empty)
-        ) { (result, candidate) =>
-          result.flatMap { case (attributes, emittedCompositeNames) =>
-            candidate match
-              case AttributeCandidate.Scalar(template) =>
-                Right((attributes :+ template) -> emittedCompositeNames)
-              case AttributeCandidate.Composite(name, _) =>
-                val normalizedName = name.toLowerCase(Locale.ROOT)
-                if emittedCompositeNames.contains(normalizedName) then
-                  Right(attributes -> emittedCompositeNames)
-                else
-                  val parts = candidates.collect {
-                    case AttributeCandidate.Composite(candidateName, part)
-                        if candidateName.equalsIgnoreCase(name) =>
-                      part
-                  }
-                  finalizeCompositeAttribute(name, parts).map(template =>
-                    (attributes :+ template) -> (emittedCompositeNames + normalizedName)
-                  )
-          }
-        }.map(_._1)
+      var attributes            = Vector.empty[AttributeTemplate[Msg]]
+      var emittedCompositeNames = Set.empty[String]
+      var index                 = 0
+      while index < candidates.length do
+        candidates(index) match
+          case AttributeCandidate.Scalar(template)   => attributes = attributes :+ template
+          case AttributeCandidate.Composite(name, _) =>
+            val normalizedName = name.toLowerCase(Locale.ROOT)
+            if !emittedCompositeNames.contains(normalizedName) then
+              val parts = candidates.collect {
+                case AttributeCandidate.Composite(candidateName, part)
+                    if candidateName.equalsIgnoreCase(name) =>
+                  part
+              }
+              finalizeCompositeAttribute(name, parts) match
+                case Right(template) =>
+                  attributes = attributes :+ template
+                  emittedCompositeNames += normalizedName
+                case Left(error) => return Left(error)
+        index += 1
+      Right(attributes)
 
     private def targetOwner[Msg](
       attributes: Vector[AttributeTemplate[Msg]]
@@ -951,16 +966,23 @@ object RenderProgram:
     ): Either[RenderError, NodeTemplate[Msg]] =
       content match
         case Mod.Content.Text(text, raw) =>
-          for
-            value <- nonNullString(text, "text content")
-            id    <- allocator.template()
-          yield TextTemplate(id, TextTemplate.Value.Static(value, raw))
+          nonNullString(text, "text content") match
+            case Right(_)    => ()
+            case Left(error) => return Left(error)
+          allocator.template() match
+            case Right(id)   => Right(TextTemplate(id, TextTemplate.Value.Static(text, raw)))
+            case Left(error) => Left(error)
         case Mod.Content.SignalText(value, raw) =>
-          for
-            _    <- scope.validate(value)
-            id   <- allocator.template()
-            slot <- allocator.slot()
-          yield TextTemplate(id, TextTemplate.Value.Dynamic(slot, value, raw))
+          scope.validate(value) match
+            case Right(_)    => ()
+            case Left(error) => return Left(error)
+          val id = allocator.template() match
+            case Right(id)   => id
+            case Left(error) => return Left(error)
+          allocator.slot() match
+            case Right(slot) =>
+              Right(TextTemplate(id, TextTemplate.Value.Dynamic(slot, value, raw)))
+            case Left(error) => Left(error)
         case Mod.Content.Tag(element)                  => compileElement(element)
         case Mod.Content.SignalChoice(value, branches) =>
           if branches.exists(_._2.exists(_.isInstanceOf[Mod.Attr[?]])) then
@@ -1189,7 +1211,13 @@ object RenderProgram:
     private def validateAttributeCandidateNames[Msg](
       candidates: Vector[AttributeCandidate[Msg]]
     ): Either[RenderError, Unit] =
-      traverse(candidates)(candidate => validateAttributeName(candidate.name)).map(_ => ())
+      var index = 0
+      while index < candidates.length do
+        validateAttributeName(candidates(index).name) match
+          case Right(_)    => ()
+          case Left(error) => return Left(error)
+        index += 1
+      Right(())
 
     private def validateAttributeName(name: String): Either[RenderError, Unit] =
       Either.cond(
@@ -1201,17 +1229,19 @@ object RenderProgram:
     private def validateAttributeNames[Msg](
       attributes: Vector[AttributeTemplate[Msg]]
     ): Either[RenderError, Unit] =
-      attributes
-        .foldLeft[Either[RenderError, Set[String]]](Right(Set.empty)) { case (result, attribute) =>
-          result.flatMap { names =>
-            validateAttributeName(attribute.name).flatMap { _ =>
-              val normalizedName = attribute.name.toLowerCase(Locale.ROOT)
-              if names.contains(normalizedName) then
-                Left(RenderError.InvalidHtml(s"duplicate HTML attribute '${attribute.name}'"))
-              else Right(names + normalizedName)
-            }
-          }
-        }.map(_ => ())
+      var names = Set.empty[String]
+      var index = 0
+      while index < attributes.length do
+        val name = attributes(index).name
+        validateAttributeName(name) match
+          case Right(_)    => ()
+          case Left(error) => return Left(error)
+        val normalizedName = name.toLowerCase(Locale.ROOT)
+        if names.contains(normalizedName) then
+          return Left(RenderError.InvalidHtml(s"duplicate HTML attribute '$name'"))
+        names += normalizedName
+        index += 1
+      Right(())
 
     /** Compiles a changed projection candidate without changing committed retained state.
       *
@@ -1420,20 +1450,17 @@ object RenderProgram:
                       transaction,
                       bindings
                     )
-      children <- traverseIndexed(template.children) { (child, index) =>
-                    val previousChild = previous.flatMap(_.children.lift(index))
-                    evaluateNode(
-                      child,
-                      previousChild,
-                      revision,
-                      transaction,
-                      flash,
-                      bindings,
-                      commitActions,
-                      candidateRows,
-                      requirements
-                    )
-                  }
+      children <- evaluateChildren(
+                    template,
+                    previous,
+                    revision,
+                    transaction,
+                    flash,
+                    bindings,
+                    commitActions,
+                    candidateRows,
+                    requirements
+                  )
       element = retainElementRevision(template, attributes, children, previous, revision)
       table <- bindings.result()
     yield (
@@ -1442,7 +1469,6 @@ object RenderProgram:
       requirements,
       CandidateCommit(commitActions.toArray, candidateRows.rollbackActions, candidateRows.scopes)
     )
-    end for
   end evaluateElement
 
   private def evaluateAttributes[Msg](
@@ -1452,41 +1478,98 @@ object RenderProgram:
     transaction: SignalEvaluation.Transaction,
     bindings: BindingTable.Builder[Msg]
   ): Either[RenderError, Vector[EvaluatedAttribute]] =
-    // Phoenix gates form recovery on the old and new phx-change values matching exactly.
-    val formIdIndex = Option
-      .when(template.tag.equalsIgnoreCase("form"))(
-        template.attributes.indexWhere(_.name.equalsIgnoreCase("id"))
-      ).filter(_ >= 0)
+    val attributes = template.attributes
+    val evaluated  = new Array[AnyRef](attributes.length)
 
-    val evaluatedFormId = formIdIndex match
-      case Some(index) =>
+    // Phoenix gates form recovery on the old and new phx-change values matching exactly.
+    val formIdIndex =
+      if template.tag.equalsIgnoreCase("form") then
+        attributes.indexWhere(_.name.equalsIgnoreCase("id"))
+      else -1
+    var formId: Option[String] = None
+    if formIdIndex >= 0 then
+      evaluateAttribute(
+        attributes(formIdIndex),
+        previousAttribute(previous, formIdIndex),
+        revision,
+        transaction,
+        bindings,
+        None
+      ) match
+        case Right(attribute) =>
+          evaluated(formIdIndex) = attribute
+          formId = textValue(attribute).filter(_.nonEmpty)
+        case Left(error) => return Left(error)
+
+    // A loop rather than a traversal, so that evaluating an element allocates no closures.
+    var index = 0
+    while index < attributes.length do
+      if index != formIdIndex then
         evaluateAttribute(
-          template.attributes(index),
-          previous.flatMap(_.attributes.lift(index)),
+          attributes(index),
+          previousAttribute(previous, index),
           revision,
           transaction,
           bindings,
-          None
-        ).map(attribute => Some((index, attribute, textValue(attribute).filter(_.nonEmpty))))
-      case None => Right(None)
-
-    evaluatedFormId.flatMap { evaluatedId =>
-      val formId = evaluatedId.flatMap(_._3)
-      traverseIndexed(template.attributes) { (attribute, index) =>
-        evaluatedId match
-          case Some((idIndex, value, _)) if index == idIndex => Right(value)
-          case _                                             =>
-            evaluateAttribute(
-              attribute,
-              previous.flatMap(_.attributes.lift(index)),
-              revision,
-              transaction,
-              bindings,
-              formId
-            )
-      }
-    }
+          formId
+        ) match
+          case Right(attribute) => evaluated(index) = attribute
+          case Left(error)      => return Left(error)
+      index += 1
+    Right(vectorOf(evaluated))
   end evaluateAttributes
+
+  private def evaluateChildren[Msg](
+    template: ElementTemplate[Msg],
+    previous: Option[EvaluatedNode.Element],
+    revision: RenderRevision,
+    transaction: SignalEvaluation.Transaction,
+    flash: Map[FlashKey, FlashValue],
+    bindings: BindingTable.Builder[Msg],
+    commitActions: ArrayBuffer[() => Unit],
+    candidateRows: CandidateRows,
+    requirements: Requirements[Msg]
+  ): Either[RenderError, Vector[EvaluatedNode]] =
+    val children  = template.children
+    val evaluated = new Array[AnyRef](children.length)
+    var index     = 0
+    while index < children.length do
+      evaluateNode(
+        children(index),
+        previousChild(previous, index),
+        revision,
+        transaction,
+        flash,
+        bindings,
+        commitActions,
+        candidateRows,
+        requirements
+      ) match
+        case Right(child) => evaluated(index) = child
+        case Left(error)  => return Left(error)
+      index += 1
+    Right(vectorOf(evaluated))
+  end evaluateChildren
+
+  private def previousAttribute(
+    previous: Option[EvaluatedNode.Element],
+    index: Int
+  ): Option[EvaluatedAttribute] =
+    previous match
+      case Some(element) if index < element.attributes.length => Some(element.attributes(index))
+      case _                                                  => None
+
+  private def previousChild(
+    previous: Option[EvaluatedNode.Element],
+    index: Int
+  ): Option[EvaluatedNode] =
+    previous match
+      case Some(element) if index < element.children.length => Some(element.children(index))
+      case _                                                => None
+
+  // Up to 32 elements, a vector wraps an array of references without copying it.
+  private def vectorOf[A](values: Array[AnyRef]): Vector[A] =
+    Vector.from(ArraySeq.unsafeWrapArray(values)).asInstanceOf[Vector[A]]
 
   private def textValue(attribute: EvaluatedAttribute): Option[String] =
     attribute.value.collect { case AttributeValue.Text(value) => value }
@@ -1503,37 +1586,30 @@ object RenderProgram:
     requirements: Requirements[Msg]
   ): Either[RenderError, EvaluatedNode] =
     template match
+      // Matches rather than a for over Either, which would allocate closures for every element.
       case element: ElementTemplate[Msg] =>
-        for
-          previousElement = previous.collect { case node: EvaluatedNode.Element => node }
-          attributes <- evaluateAttributes(
-                          element,
-                          previousElement,
-                          revision,
-                          transaction,
-                          bindings
-                        )
-          children <- traverseIndexed(element.children) { (child, index) =>
-                        val previousChild = previousElement.flatMap(_.children.lift(index))
-                        evaluateNode(
-                          child,
-                          previousChild,
-                          revision,
-                          transaction,
-                          flash,
-                          bindings,
-                          commitActions,
-                          candidateRows,
-                          requirements
-                        )
-                      }
-        yield retainElementRevision(
-          element,
-          attributes,
-          children,
-          previousElement,
-          revision
-        )
+        val previousElement = previous match
+          case Some(node: EvaluatedNode.Element) => Some(node)
+          case _                                 => None
+        evaluateAttributes(element, previousElement, revision, transaction, bindings) match
+          case Left(error)       => Left(error)
+          case Right(attributes) =>
+            evaluateChildren(
+              element,
+              previousElement,
+              revision,
+              transaction,
+              flash,
+              bindings,
+              commitActions,
+              candidateRows,
+              requirements
+            ) match
+              case Left(error)     => Left(error)
+              case Right(children) =>
+                Right(
+                  retainElementRevision(element, attributes, children, previousElement, revision)
+                )
       case text: TextTemplate            => evaluateText(text, previous, revision, transaction)
       case template: ChoiceTemplate[Msg] =>
         for

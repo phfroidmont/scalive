@@ -61,9 +61,11 @@ object TreeDiffer:
         val attributeChanges =
           left.attributes.zip(right.attributes).flatMap { case (oldAttribute, newAttribute) =>
             if oldAttribute.revision == newAttribute.revision then None
+            else if newAttribute.slot.isEmpty then None
             else
-              newAttribute.slot
-                .map(slot => RenderChange.Attribute(slot, newAttribute.name, newAttribute.value))
+              Some(
+                RenderChange.Attribute(newAttribute.slot.get, newAttribute.name, newAttribute.value)
+              )
           }
         val childChanges       = left.children.zip(right.children).flatMap(diffNode)
         val changedWithoutSlot =

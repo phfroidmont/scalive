@@ -25,8 +25,9 @@ class StreamTurnState:
   @Param(Array("1000", "10000"))
   var rowCount: Int = 0
 
-  // `unrelated` changes a counter next to the stream; `insert` appends one row to it.
-  @Param(Array("unrelated", "insert"))
+  // `unrelated` changes a counter next to the stream; `insert` appends one row to it, and `delete`
+  // deletes the one in its middle.
+  @Param(Array("unrelated", "insert", "delete"))
   var operation: String = ""
 
   var rows: Vector[Row]                     = Vector.empty
@@ -57,6 +58,7 @@ class StreamTurnState:
     next = operation match
       case "unrelated" => initial.copy(counter = 1)
       case "insert"    => initial.copy(stream = settled.insert(Rows, Row(rowCount, "new")).stream)
+      case "delete"    => initial.copy(stream = settled.delete(Rows, rowCount / 2).stream)
       case other       => throw IllegalArgumentException(other)
     val candidate = run(program.evaluate(next, Some(previous)))
     currentTree = candidate.tree
@@ -71,7 +73,9 @@ class StreamTurnState:
   def close(): Unit = run(previous.close *> program.close)
 end StreamTurnState
 
-/** One turn on a page holding a large stream: a change next to it, or one row inserted into it. */
+/** One turn on a page holding a large stream: a change next to it, or one row inserted into it or
+  * deleted from it.
+  */
 @BenchmarkMode(Array(Mode.AverageTime))
 @OutputTimeUnit(TimeUnit.MICROSECONDS)
 @Warmup(iterations = 2, time = 200, timeUnit = TimeUnit.MILLISECONDS)

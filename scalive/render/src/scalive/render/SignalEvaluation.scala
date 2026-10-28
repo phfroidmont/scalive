@@ -3,6 +3,7 @@ package scalive.render
 import java.util.IdentityHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
+import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 import scala.collection.mutable.ArrayDeque
 import scala.jdk.CollectionConverters.*
@@ -73,7 +74,10 @@ final private[render] class SignalSource[A](val scope: SignalScope)
 final case class SignalSample[+A] private[render] (
   value: A,
   revision: RenderRevision,
-  private[render] val dependencyRevisions: Vector[RenderRevision])
+  // The revisions of the samples it was computed from: none for a source or a constant, the first
+  // for a mapped signal, both for a zipped one. Plain fields, as every sample a row keeps has them.
+  private[render] val firstDependency: RenderRevision,
+  private[render] val secondDependency: RenderRevision)
 
 /** Immutable signal samples retained by a successful render.
   *
@@ -83,7 +87,7 @@ final case class SignalSample[+A] private[render] (
   */
 final case class SignalEvaluation private[render] (
   revision: RenderRevision,
-  private[render] val samples: SignalEvaluation.SignalCache,
+  private[render] val samples: SignalCache,
   // Whether the render read anything no signal tracks: a nested LiveView, a stream, or a flash. A
   // render that did not is the same render again for the same input. Its components do not count:
   // signals track their declarations, and the runtime resolves them into it again on every turn.
@@ -92,6 +96,10 @@ final case class SignalEvaluation private[render] (
 object SignalEvaluation:
   val empty: SignalEvaluation =
     SignalEvaluation(RenderRevision.initial, SignalCache.empty, untracked = true)
+
+  // The dependency revision a sample has in place of an input. A signal always has the same kind of
+  // expression, so this never stands for a real dependency.
+  private val noDependency: RenderRevision = RenderRevision.initial
 
   private[render] def begin[A](
     previous: SignalEvaluation,
@@ -172,15 +180,17 @@ object SignalEvaluation:
     untracked: Boolean)
 
   /** What evaluating the rows of one collection read: each row's, and every signal from outside the
-    * rows that any of them read.
+    * rows that any of them read, with the rows that read each.
     */
   final private[render] case class RowsEvaluation(
     rows: Map[RowId, RowSignals],
     outside: Vector[Signal[?]],
-    untracked: Boolean)
+    untracked: Boolean,
+    readers: Map[SignalKey, Set[RowId]])
 
   private[render] object RowsEvaluation:
-    val empty: RowsEvaluation = RowsEvaluation(Map.empty, Vector.empty, untracked = false)
+    val empty: RowsEvaluation =
+      RowsEvaluation(Map.empty, Vector.empty, untracked = false, Map.empty)
 
   final private[render] class Transaction private (
     previous: SignalEvaluation,
@@ -192,7 +202,7 @@ object SignalEvaluation:
 
     // The program, then the rows of each collection being evaluated, outermost first. The signals
     // of a row scope of depth n belong to level n, and to the row of that level being evaluated.
-    private val levels = ArrayBuffer(Level(Map.empty, previous.samples))
+    private val levels = ArrayBuffer(Level(RowsEvaluation.empty, previous.samples))
 
     /** Supplies one child-scope source for this candidate only. */
     def bindSource[A](signal: Signal[A], value: A): Either[RenderError, Unit] =
@@ -226,34 +236,51 @@ object SignalEvaluation:
     /** Whether `sample` holds the value it held in the previous evaluation. */
     def unchanged(sample: SignalSample[?]): Boolean = sample.revision != revision
 
-    /** Whether every signal of `signals`, which a row or collection read from outside it in that
-      * order, holds the value it held in the previous evaluation.
+    /** Whether every signal of `signals`, which a collection read from outside it, holds the value
+      * it held in the previous evaluation.
       *
-      * Samples them in order and stops at the first that changed. A signal read inside a branch
-      * comes after the branch's condition and may be valid only while the branch is shown, such as
-      * the present value that `option` projects, so it is sampled only while the condition is
-      * unchanged.
+      * Stops at the first that changed. A signal that can no longer be sampled counts as changed:
+      * one read inside a branch may be valid only while the branch is shown, such as the present
+      * value that `option` projects. Evaluating again what read it samples it again only if it
+      * still reads it, so a failure outside a branch since closed still fails the render there.
       */
-    def allUnchanged(signals: Vector[Signal[?]]): Either[RenderError, Boolean] =
-      var index = 0
-      while index < signals.length do
-        sample(signals(index)) match
-          case Left(error)                           => return Left(error)
-          case Right(sampled) if !unchanged(sampled) => return Right(false)
-          case Right(_)                              => ()
-        index += 1
-      Right(true)
+    def allUnchanged(signals: Vector[Signal[?]]): Boolean =
+      signals.forall(signal => sample(signal).exists(unchanged))
+
+    /** The rows of the collection that the last `enterRows` started that read, in the previous
+      * evaluation, a signal from outside them that changed or can no longer be sampled, as in
+      * [[allUnchanged]]: those rows are evaluated again, which fails the render if they still read
+      * a signal that cannot be sampled.
+      *
+      * Samples each signal the rows read once, skipping those whose rows all read another that
+      * changed.
+      */
+    def changedRows(): Set[RowId] =
+      var changed = Set.empty[RowId]
+      levels.last.previous.readers.foreach { (key, rows) =>
+        if changed.isEmpty || !rows.subsetOf(changed) then
+          val same = sample(key.signal).exists(unchanged)
+          if !same then changed = if changed.isEmpty then rows else changed ++ rows
+      }
+      changed
 
     /** Starts evaluating the rows of a collection, which read their previous samples from
       * `previous`.
       */
     def enterRows(previous: RowsEvaluation): Unit =
-      levels += Level(previous.rows, SignalCache.empty)
+      levels += Level(previous, SignalCache.empty)
 
-    /** Ends evaluating the rows that the last `enterRows` started. */
+    /** Ends evaluating the rows that the last `enterRows` started. A row keeps what it read in the
+      * previous evaluation unless it was evaluated again or dropped.
+      */
     def exitRows(): RowsEvaluation =
-      val level = levels.remove(levels.length - 1)
-      RowsEvaluation(level.rows.toMap, level.outside.values().asScala.toVector, level.untracked)
+      val level   = levels.remove(levels.length - 1)
+      val readers = level.readers
+      // Only the rows still rendered count: the rows dropped may have read some of them.
+      val outside =
+        level.outside
+          .values().asScala.iterator.filter(signal => readers.contains(SignalKey(signal)))
+      RowsEvaluation(level.rows, outside.toVector, level.untracked, readers)
 
     /** Starts evaluating row `id` of the collection that the last `enterRows` started. */
     def enterRow(id: RowId): Unit =
@@ -267,18 +294,16 @@ object SignalEvaluation:
       val level = levels.last
       val row   = level.current.get
       val read  = RowSignals(
-        SignalCache.empty.appended(row.placed),
+        SignalCache.of(row.placed),
         row.outside.values().asScala.toVector,
         row.untracked
       )
-      level.rows.update(row.id, read)
+      level.updateRow(row.id, read)
       level.current = None
       read
 
-    /** Keeps row `id` of the collection being evaluated as it was, with what it read then. */
-    def keepRow(id: RowId): Unit =
-      val level = levels.last
-      level.rows.update(id, level.previousRows(id))
+    /** Forgets what `ids`, rows the collection being evaluated no longer renders, read. */
+    def dropRows(ids: Iterable[RowId]): Unit = levels.last.dropRows(ids)
 
     /** What row `id` of the collection being evaluated read in the previous evaluation. */
     def previousRow(id: RowId): Option[RowSignals] = levels.last.previousRows.get(id)
@@ -294,7 +319,7 @@ object SignalEvaluation:
     def result: SignalEvaluation =
       SignalEvaluation(
         revision,
-        SignalCache.empty.appended(levels.head.placed),
+        SignalCache.of(levels.head.placed),
         levels.head.untracked
       )
 
@@ -310,7 +335,11 @@ object SignalEvaluation:
                   case Left(error) => return Left(error)
                   case Right(_)    => ()
               case Signal.Expression.Constant(value) =>
-                putEvaluated(current, changedSample(current, value, Vector.empty, -1), -1)
+                putEvaluated(
+                  current,
+                  changedSample(current, value, noDependency, noDependency, -1),
+                  -1
+                )
               case mapped @ Signal.Expression.Mapped(parent, f) =>
                 stack.append(EvaluationFrame.CompleteMapped(mapped, parent, f))
                 stack.append(EvaluationFrame.Visit(parent))
@@ -326,6 +355,7 @@ object SignalEvaluation:
           case frame: EvaluationFrame.CompleteZipped[?, ?] => completeZipped(frame)
 
       Right(())
+    end evaluate
 
     private def evaluateSource[A](signal: Signal[A]): Either[RenderError, Unit] =
       val depth = signal.expression match
@@ -335,7 +365,11 @@ object SignalEvaluation:
         .flatMap(_.get(signal))
         .toRight(RenderError.MissingSignalSource())
         .map(value =>
-          putEvaluated(signal, changedSample(signal, value, Vector.empty, depth), depth)
+          putEvaluated(
+            signal,
+            changedSample(signal, value, noDependency, noDependency, depth),
+            depth
+          )
         )
 
     private def completeMapped[A, B](
@@ -343,28 +377,40 @@ object SignalEvaluation:
     ): Either[RenderError, Unit] =
       val parentSample = evaluatedSample(frame.parent).get
       val depth        = evaluated.get(frame.parent).depth
-      val dependencies = Vector(parentSample.revision)
+      val dependency   = parentSample.revision
       val sampled      = previousSample(frame.signal, depth) match
-        case Some(cached) if cached.dependencyRevisions == dependencies => Right(cached)
-        case _                                                          =>
-          try Right(changedSample(frame.signal, frame.f(parentSample.value), dependencies, depth))
+        case Some(cached) if cached.firstDependency == dependency => Right(cached)
+        case _                                                    =>
+          try
+            Right(
+              changedSample(
+                frame.signal,
+                frame.f(parentSample.value),
+                dependency,
+                noDependency,
+                depth
+              )
+            )
           catch case NonFatal(error) => Left(RenderError.EvaluationFailed(error))
       sampled.map(sample => putEvaluated(frame.signal, sample, depth))
 
     private def completeZipped[A, B](frame: EvaluationFrame.CompleteZipped[A, B]): Unit =
-      val leftSample   = evaluatedSample(frame.left).get
-      val rightSample  = evaluatedSample(frame.right).get
-      val leftDepth    = evaluated.get(frame.left).depth
-      val rightDepth   = evaluated.get(frame.right).depth
-      val depth        = math.max(leftDepth, rightDepth)
-      val dependencies = Vector(leftSample.revision, rightSample.revision)
-      val sampled      = previousSample(frame.signal, depth) match
-        case Some(cached) if cached.dependencyRevisions == dependencies => cached
-        case _                                                          =>
+      val leftSample  = evaluatedSample(frame.left).get
+      val rightSample = evaluatedSample(frame.right).get
+      val leftDepth   = evaluated.get(frame.left).depth
+      val rightDepth  = evaluated.get(frame.right).depth
+      val depth       = math.max(leftDepth, rightDepth)
+      val sampled     = previousSample(frame.signal, depth) match
+        case Some(cached)
+            if cached.firstDependency == leftSample.revision &&
+              cached.secondDependency == rightSample.revision =>
+          cached
+        case _ =>
           changedSample(
             frame.signal,
             (leftSample.value, rightSample.value),
-            dependencies,
+            leftSample.revision,
+            rightSample.revision,
             depth
           )
       recordOutside(frame.left, leftDepth, depth)
@@ -394,17 +440,18 @@ object SignalEvaluation:
     private def changedSample[A](
       signal: Signal[A],
       value: A,
-      dependencies: Vector[RenderRevision],
+      firstDependency: RenderRevision,
+      secondDependency: RenderRevision,
       depth: Int
     ): SignalSample[A] =
       previousSample(signal, depth) match
         case Some(cached) if cached.value == value =>
-          cached.copy(dependencyRevisions = dependencies)
-        case _ => SignalSample(value, revision, dependencies)
+          cached.copy(firstDependency = firstDependency, secondDependency = secondDependency)
+        case _ => SignalSample(value, revision, firstDependency, secondDependency)
 
     private def previousSample[A](signal: Signal[A], depth: Int): Option[SignalSample[A]] =
       val level = levels(levelOf(depth))
-      level.current.fold(level.previous)(_.previous).get(signal)
+      level.current.fold(level.previousSamples)(_.previous).get(signal)
 
     // Constants have depth -1 and belong to the program.
     private def levelOf(depth: Int): Int = math.min(math.max(depth, 0), levels.length - 1)
@@ -414,15 +461,68 @@ object SignalEvaluation:
     val value: PackedSignalValue[SignalSample],
     val depth: Int)
 
-  // The program has `previous` samples; the rows of a collection have `previousRows`.
+  // The program has `previousSamples`; the rows of a collection have what they read in `previous`.
   final private class Level(
-    val previousRows: Map[RowId, RowSignals],
-    val previous: SignalCache):
+    val previous: RowsEvaluation,
+    val previousSamples: SignalCache):
     val placed    = ArrayBuffer.empty[PackedSignalValue[SignalSample]]
     val outside   = java.util.LinkedHashMap[SignalKey, Signal[?]]()
     var untracked = false
-    val rows      = scala.collection.mutable.LinkedHashMap.empty[RowId, RowSignals]
     var current   = Option.empty[RowLevel]
+
+    def previousRows: Map[RowId, RowSignals] = previous.rows
+
+    // What the rows read: those of the previous rows updated one by one, or, when there are none,
+    // built at once, which allocates less.
+    private var updated = previousRows
+    private val built   = Option.when(previousRows.isEmpty)(Map.newBuilder[RowId, RowSignals])
+    private var dropped = Vector.empty[RowId]
+
+    // The rows that read each signal from outside them, and what the rows evaluated in this level
+    // read from outside them.
+    var readers: Map[SignalKey, Set[RowId]] = previous.readers
+    private val readNow                     = mutable.HashMap.empty[RowId, Vector[Signal[?]]]
+
+    def updateRow(id: RowId, read: RowSignals): Unit =
+      built match
+        case Some(rows) => (rows += id -> read): Unit
+        case None       => updated = updated.updated(id, read)
+      val before = outsideOf(id)
+      if !sameSignals(before, read.outside) then
+        unread(id, before)
+        read.outside.foreach { signal =>
+          val key = SignalKey(signal)
+          readers = readers.updated(key, readers.getOrElse(key, Set.empty[RowId]) + id)
+        }
+      if read.outside.nonEmpty || readNow.contains(id) then readNow.update(id, read.outside)
+
+    def dropRows(ids: Iterable[RowId]): Unit =
+      built match
+        case Some(_) => dropped ++= ids
+        case None    => updated = updated -- ids
+      ids.foreach { id =>
+        unread(id, outsideOf(id))
+        readNow.update(id, Vector.empty)
+      }
+
+    def rows: Map[RowId, RowSignals] = built.fold(updated)(_.result() -- dropped)
+
+    private def outsideOf(id: RowId): Vector[Signal[?]] =
+      readNow.getOrElse(id, previousRows.get(id).fold(Vector.empty[Signal[?]])(_.outside))
+
+    private def unread(id: RowId, signals: Vector[Signal[?]]): Unit =
+      signals.foreach { signal =>
+        val key = SignalKey(signal)
+        readers.get(key).foreach { rows =>
+          val left = rows - id
+          readers = if left.isEmpty then readers - key else readers.updated(key, left)
+        }
+      }
+
+    private def sameSignals(left: Vector[Signal[?]], right: Vector[Signal[?]]): Boolean =
+      left.length == right.length &&
+        (left.isEmpty || left.iterator.zip(right.iterator).forall(_ eq _))
+  end Level
 
   final private class RowLevel(val id: RowId, val previous: SignalCache):
     val placed    = ArrayBuffer.empty[PackedSignalValue[SignalSample]]
@@ -448,7 +548,7 @@ object SignalEvaluation:
       right: Signal[B])
         extends EvaluationFrame
 
-  final private class SignalKey private (val signal: Signal[?]):
+  final private[render] class SignalKey private (val signal: Signal[?]):
     override def hashCode(): Int = System.identityHashCode(signal)
 
     override def equals(other: Any): Boolean = other match
@@ -473,22 +573,4 @@ object SignalEvaluation:
         type Value = A
         val signal = signalValue
         val value  = packedValue
-
-  final private[render] class SignalCache private (
-    private val entries: Map[SignalKey, PackedSignalValue[SignalSample]]):
-    def get[A](signal: Signal[A]): Option[SignalSample[A]] =
-      entries.get(SignalKey(signal)).flatMap(_.get(signal))
-
-    def appended(samples: Iterable[PackedSignalValue[SignalSample]]): SignalCache =
-      SignalCache(samples.foldLeft(entries) { (all, sample) =>
-        all + (SignalKey(sample.signal) -> sample)
-      })
-
-  private[render] object SignalCache:
-    val empty: SignalCache = new SignalCache(Map.empty)
-
-    private def apply(
-      entries: Map[SignalKey, PackedSignalValue[SignalSample]]
-    ): SignalCache =
-      new SignalCache(entries)
 end SignalEvaluation

@@ -65,6 +65,16 @@ object UnchangedCollectionSpec extends ZIOSpecDefault:
     val reached = GraphLayout.parseInstance(root).totalCount()
     GraphLayout.parseInstance(root, target).totalCount() == reached
 
+  /** Whether `after` keeps the very record and read that `before` kept of a row. */
+  private def sameRetained(before: RenderProgram.RetainedRow, after: RenderProgram.RetainedRow): Boolean =
+    sameInstance(before.record, after.record) && sameInstance(before.read, after.read)
+
+  private def sameInstance(before: Option[AnyRef], after: Option[AnyRef]): Boolean =
+    (before, after) match
+      case (Some(before), Some(after)) => before eq after
+      case (None, None)                => true
+      case _                           => false
+
   /** Rows that each hold a component, between two components. */
   private def badgeRows = RenderProgram.compile[Page, Nothing] { page =>
     div(
@@ -100,6 +110,10 @@ object UnchangedCollectionSpec extends ZIOSpecDefault:
       }
     )
   }
+
+  private def onlyStream(tree: EvaluatedTree): EvaluatedNode.Stream =
+    tree.root.children.head.asInstanceOf[EvaluatedNode.Element].children.head
+      .asInstanceOf[EvaluatedNode.Stream]
 
   private def badgeStream(tree: EvaluatedTree): EvaluatedNode.Stream =
     tree.root
@@ -239,6 +253,62 @@ object UnchangedCollectionSpec extends ZIOSpecDefault:
         HtmlRenderer.render(closedAndChanged.tree) == "<div><li>one</li><li>two</li></div>"
       )
     },
+    test("fails the turn when a signal rows read from outside fails outside any branch") {
+      final case class Labels(suffix: Option[String], rows: Vector[Row])
+      final case class StreamLabels(suffix: Option[String], stream: scalive.streams.LiveStream[Row])
+      val keyedRows = RenderProgram.compile[Labels, Nothing] { model =>
+        val suffix = model.map(_.suffix.get)
+        div(model.map(_.rows).splitBy(_.id)((_, row) => li(row.map(_.label), suffix)))
+      }
+      val openBranchRows = RenderProgram.compile[Labels, Nothing] { model =>
+        div(model.map(_.rows).splitBy(_.id) { (_, row) =>
+          li(
+            row.map(_.label),
+            Signal.option(model.map(_.suffix))(suffix => span(suffix.map(_.headOption.get.toString)))
+          )
+        })
+      }
+      val streamRows = RenderProgram.compile[StreamLabels, Nothing] { model =>
+        val suffix = model.map(_.suffix.get)
+        div(model.map(_.stream).renderIn(ul)(row => li(row.map(_.label), suffix)))
+      }
+      val identity = scalive.streams.LiveStreamIdentity.fresh()
+      def stream(generation: Long, values: Vector[Row], deleted: Vector[String]) =
+        scalive.streams.LiveStream(
+          identity,
+          "rows",
+          generation,
+          values.map(streamEntry),
+          Vector.empty,
+          deleted,
+          reset = false
+        )
+      val initial = stream(1L, rows, Vector.empty)
+      def failure[Input](
+        compiled: Either[RenderError, RenderProgram[Input, Nothing]],
+        first: Input,
+        failing: Input
+      ) =
+        for
+          program <- ZIO.fromEither(compiled)
+          base    <- program.evaluate(first).map(_.commit)
+          failed  <- program.evaluate(failing, Some(base)).flip
+        yield failed match
+          case RenderError.EvaluationFailed(_: NoSuchElementException) => true
+          case _                                                       => false
+
+      for
+        keyed    <- failure(keyedRows, Labels(Some("!"), rows), Labels(None, rows))
+        reused  <- failure(streamRows, StreamLabels(Some("!"), initial), StreamLabels(None, initial))
+        deleted <- failure(
+                     streamRows,
+                     StreamLabels(Some("!"), initial),
+                     StreamLabels(None, stream(2L, rows.take(2), Vector("rows-3")))
+                   )
+        // The branch stays open, so what it reads must still be sampled.
+        inOpenBranch <- failure(openBranchRows, Labels(Some("!"), rows), Labels(Some(""), rows))
+      yield assertTrue(keyed, reused, deleted, inOpenBranch)
+    },
     test("keeps the signal values of a reused collection for its next update") {
       var labels   = 0
       val compiled = RenderProgram.compile[Page, Nothing] { page =>
@@ -348,6 +418,246 @@ object UnchangedCollectionSpec extends ZIOSpecDefault:
       yield assertTrue(
         HtmlRenderer.render(second.tree) ==
           "<div><ul id=\"rows\" phx-update=\"stream\"><li id=\"rows-1\"></li><li id=\"rows-2\">*</li><li id=\"rows-3\"></li></ul></div>"
+      )
+    },
+    test("keeps the record and signal samples of a stream row when another is inserted") {
+      val identity = scalive.streams.LiveStreamIdentity.fresh()
+      val added    = Row(4, "four")
+      def stream(generation: Long, values: Vector[Row], inserted: Vector[Row]) =
+        scalive.streams.LiveStream(
+          identity,
+          "rows",
+          generation,
+          values.map(streamEntry),
+          inserted.map(appended),
+          Vector.empty,
+          reset = false
+        )
+      val compiled = RenderProgram.compile[Feed, Nothing] { feed =>
+        div(feed.map(_.stream).renderIn(ul)(row => li(row.map(_.label))))
+      }
+
+      for
+        program <- ZIO.fromEither(compiled)
+        first   <- program.evaluate(Feed(0, stream(1L, rows, Vector.empty)))
+        base   = first.commit
+        before = program.retainedRows
+        second <- program.evaluate(Feed(0, stream(2L, rows :+ added, Vector(added))), Some(base))
+        _     = second.commit
+        after = program.retainedRows
+      yield assertTrue(
+        before.size == 3,
+        after.size == 4,
+        before.forall((id, row) => after.get(id).exists(sameRetained(row, _)))
+      )
+    },
+    test("drops what a stream keeps of the rows it deletes, prunes or only inserts") {
+      import scalive.streams.*
+      val identity = LiveStreamIdentity.fresh()
+      val added    = Row(4, "four")
+      val pruned   = Row(5, "five")
+      def stream(generation: Long, values: Vector[Row], inserted: Vector[LiveStreamInsert[Row]], deleted: Vector[String]) =
+        LiveStream(identity, "rows", generation, values.map(streamEntry), inserted, deleted, reset = false)
+      def insert(row: Row, at: StreamAt, limit: StreamLimit) =
+        LiveStreamInsert(streamEntry(row), at, Some(limit), false)
+      val compiled = RenderProgram.compile[Feed, Nothing] { feed =>
+        div(feed.map(_.stream).renderIn(ul)(row => li(row.map(_.label))))
+      }
+      def turn(program: RenderProgram[Feed, Nothing], previous: CommittedRender[Nothing], next: LiveStream[Row]) =
+        program.evaluate(Feed(0, next), Some(previous)).map(_.commit)
+
+      for
+        program <- ZIO.fromEither(compiled)
+        base    <- program.evaluate(Feed(0, stream(1L, rows, Vector.empty, Vector.empty))).map(_.commit)
+        initial = program.retainedRows
+        deleted <- turn(program, base, stream(2L, Vector(rows(0), rows(2)), Vector.empty, Vector("rows-2")))
+        afterDelete = program.retainedRows
+        // Inserting past a limit of 2 prunes the first row, which the stream does not list as deleted.
+        limited <- turn(
+                     program,
+                     deleted,
+                     stream(3L, Vector(rows(2), added), Vector(insert(added, StreamAt.Last, StreamLimit.KeepLast(2))), Vector.empty)
+                   )
+        afterPrune = program.retainedRows
+        // A row the limit prunes at once is rendered only by its insert.
+        _ <- turn(
+               program,
+               limited,
+               stream(4L, Vector(rows(2), added), Vector(insert(pruned, StreamAt.Last, StreamLimit.KeepFirst(2))), Vector.empty)
+             )
+        afterTransient = program.retainedRows
+      yield assertTrue(
+        initial.size == 3,
+        afterDelete.keySet.subsetOf(initial.keySet),
+        afterDelete.size == 2,
+        afterPrune.size == 2,
+        afterPrune.keySet.intersect(initial.keySet).size == 1,
+        afterTransient == afterPrune,
+        afterTransient.values.forall(row => row.record.nonEmpty && row.read.nonEmpty)
+      )
+    },
+    test("places the rows a stream's operations insert, delete or prune, and keeps the others") {
+      import scalive.streams.*
+      val identity = LiveStreamIdentity.fresh()
+      val zero     = Row(0, "zero")
+      val added    = Row(4, "four")
+      def stream(generation: Long, values: Vector[Row], inserted: Vector[LiveStreamInsert[Row]], deleted: Vector[String]) =
+        LiveStream(identity, "rows", generation, values.map(streamEntry), inserted, deleted, reset = false)
+      def first(row: Row) = LiveStreamInsert(streamEntry(row), StreamAt.First, None, false)
+      val compiled = RenderProgram.compile[Feed, Nothing] { feed =>
+        div(feed.map(_.stream).renderIn(ul)(row => li(row.map(_.label))))
+      }
+      def domIds(tree: EvaluatedTree) = onlyStream(tree).rows.map(_.domId.stripPrefix("rows-")).mkString(",")
+      def turn(program: RenderProgram[Feed, Nothing], previous: CommittedRender[Nothing], next: LiveStream[Row]) =
+        program.evaluate(Feed(0, next), Some(previous)).map(_.commit)
+      def kept(before: Map[RowId, RenderProgram.RetainedRow], after: Map[RowId, RenderProgram.RetainedRow]) =
+        after.count((id, row) => before.get(id).exists(sameRetained(_, row)))
+
+      for
+        program  <- ZIO.fromEither(compiled)
+        base     <- program.evaluate(Feed(0, stream(1L, rows, Vector.empty, Vector.empty))).map(_.commit)
+        initial   = program.retainedRows
+        inserted <- turn(program, base, stream(2L, zero +: rows :+ added, Vector(first(zero), appended(added)), Vector.empty))
+        afterInsert = program.retainedRows
+        deleted  <- turn(program, inserted, stream(3L, Vector(zero, rows(0), rows(2), added), Vector.empty, Vector("rows-2")))
+        afterDelete = program.retainedRows
+        // Deleting a row and inserting it again places it last.
+        moved <- turn(program, deleted, stream(4L, Vector(rows(0), rows(2), added, zero), Vector(appended(zero)), Vector("rows-0")))
+        // A limit of 3 prunes the first row, which the stream does not list as deleted.
+        pruned <- turn(
+                    program,
+                    moved,
+                    stream(5L, Vector(rows(2), added, rows(1)), Vector(LiveStreamInsert(streamEntry(rows(1)), StreamAt.Last, Some(StreamLimit.KeepLast(3)), false)), Vector.empty)
+                  )
+      yield assertTrue(
+        domIds(inserted.tree) == "0,1,2,3,4",
+        kept(initial, afterInsert) == 3,
+        domIds(deleted.tree) == "0,1,3,4",
+        afterDelete.size == 4,
+        kept(afterInsert, afterDelete) == 4,
+        domIds(moved.tree) == "1,3,4,0",
+        domIds(pruned.tree) == "3,4,2",
+        program.retainedRows.size == 3
+      )
+    },
+    test("places the rows of operations a stream merged as it holds them") {
+      import scalive.streams.*
+      val identity = LiveStreamIdentity.fresh()
+      val x        = Row(4, "x")
+      val y        = Row(5, "y")
+      def stream(values: Vector[Row], inserted: Vector[LiveStreamInsert[Row]]) =
+        LiveStream(identity, "rows", 2L, values.map(streamEntry), inserted, Vector.empty, reset = false)
+      val compiled = RenderProgram.compile[Feed, Nothing] { feed =>
+        div(feed.map(_.stream).renderIn(ul)(row => li(row.map(_.label))))
+      }
+      def domIds(tree: EvaluatedTree) = onlyStream(tree).rows.map(_.domId.stripPrefix("rows-")).mkString(",")
+      def render(program: RenderProgram[Feed, Nothing], base: CommittedRender[Nothing], next: LiveStream[Row]) =
+        program.evaluate(Feed(0, next), Some(base)).flatMap(candidate => candidate.discard.as(domIds(candidate.tree)))
+
+      for
+        program <- ZIO.fromEither(compiled)
+        base    <- program.evaluate(Feed(0, LiveStream(identity, "rows", 1L, rows.map(streamEntry), Vector.empty, Vector.empty, reset = false))).map(_.commit)
+        // `x` was appended, then `y`, then `x` updated: the stream keeps only `x`'s last insertion.
+        updatedAfter <- render(program, base, stream(rows :+ x :+ y, Vector(appended(y), appended(x))))
+        // `x` was inserted first, then updated with an insertion that would have appended it.
+        updatedElsewhere <- render(program, base, stream(x +: rows, Vector(appended(x))))
+      yield assertTrue(
+        updatedAfter == "1,2,3,4,5",
+        updatedElsewhere == "4,1,2,3"
+      )
+    },
+    test("updates the stream rows that read a changed signal along with those it inserts") {
+      import scalive.streams.*
+      final case class Selected(selected: Int, stream: LiveStream[Row])
+      val identity = LiveStreamIdentity.fresh()
+      val added    = Row(4, "four")
+      def stream(generation: Long, values: Vector[Row], inserted: Vector[Row]) =
+        LiveStream(identity, "rows", generation, values.map(streamEntry), inserted.map(appended), Vector.empty, reset = false)
+      val compiled = RenderProgram.compile[Selected, Nothing] { model =>
+        val selected = model.map(_.selected)
+        div(model.map(_.stream).renderIn(ul)(row =>
+          li(row.combineWithFn(selected)((row, selected) => if row.id == selected then "*" else row.label))
+        ))
+      }
+
+      for
+        program <- ZIO.fromEither(compiled)
+        base    <- program.evaluate(Selected(1, stream(1L, rows, Vector.empty))).map(_.commit)
+        second  <- program.evaluate(Selected(2, stream(2L, rows :+ added, Vector(added))), Some(base))
+      yield assertTrue(
+        HtmlRenderer.render(second.tree) ==
+          "<div><ul id=\"rows\" phx-update=\"stream\"><li id=\"rows-1\">one</li><li id=\"rows-2\">*</li><li id=\"rows-3\">three</li><li id=\"rows-4\">four</li></ul></div>"
+      )
+    },
+    test("evaluates again only the rows of a collection that read a signal from outside that changed") {
+      val compiled = RenderProgram.compile[Page, Nothing] { page =>
+        val selected = page.map(_.selected)
+        div(page.map(_.rows).splitBy(_.id) { (id, row) =>
+          li(cls := selected.map(value => if value == id then "on" else "off"), row.map(_.label))
+        })
+      }
+
+      for
+        program <- ZIO.fromEither(compiled)
+        first   <- program.evaluate(Page(0, 1, rows))
+        base   = first.commit
+        before = program.retainedRows
+        second <- program.evaluate(Page(0, 2, rows), Some(base))
+        _     = second.commit
+        after = program.retainedRows
+      yield assertTrue(
+        HtmlRenderer.render(second.tree) ==
+          "<div><li class=\"off\">one</li><li class=\"on\">two</li><li class=\"off\">three</li></div>",
+        // The first two rows read their own selection, which changed.
+        after.count((id, row) => before.get(id).exists(last => sameInstance(last.record, row.record))) == 1,
+        after.size == 3
+      )
+    },
+    test("declares the components of the rows a stream inserts in the order it holds them") {
+      import scalive.streams.*
+      val identity = LiveStreamIdentity.fresh()
+      def first(row: Row) = LiveStreamInsert(streamEntry(row), StreamAt.First, None, false)
+
+      for
+        program    <- ZIO.fromEither(badgeStreamRows)
+        resolution <- instances
+        base       <- program
+                        .evaluate(Feed(0, LiveStream(identity, "rows", 1L, Vector.empty, Vector.empty, Vector.empty, reset = false)))
+                        .flatMap(resolution.resolve)
+        // Inserting each first places the last one inserted first.
+        inserted <- program.evaluate(
+                      Feed(0, LiveStream(identity, "rows", 2L, rows.reverse.map(streamEntry), rows.map(first), Vector.empty, reset = false)),
+                      Some(base.commit)
+                    )
+      yield assertTrue(
+        declared(inserted).map(_._1) == Vector("counter", "badge-3", "badge-2", "badge-1")
+      )
+    },
+    test("drops what a collection keeps of the rows it removes, and keeps the others' as they were") {
+      val compiled = RenderProgram.compile[Page, Nothing] { page =>
+        div(page.map(_.rows).splitBy(_.id)((_, row) => li(row.map(_.label))))
+      }
+      val byIndex = RenderProgram.compile[Page, Nothing] { page =>
+        div(page.map(_.rows).splitByIndex((_, row) => li(row.map(_.label))))
+      }
+      def removing(compiled: Either[RenderError, RenderProgram[Page, Nothing]], next: Vector[Row]) =
+        for
+          program <- ZIO.fromEither(compiled)
+          first   <- program.evaluate(Page(0, 0, rows))
+          base   = first.commit
+          before = program.retainedRows
+          _ <- program.evaluate(Page(0, 0, next), Some(base)).map(_.commit)
+          after = program.retainedRows
+        yield (before, after)
+
+      for
+        (keyedBefore, keyedAfter)     <- removing(compiled, Vector(rows(0), rows(2)))
+        (indexedBefore, indexedAfter) <- removing(byIndex, rows.take(2))
+      yield assertTrue(
+        keyedAfter.size == 2,
+        keyedAfter.forall((id, row) => keyedBefore.get(id).exists(sameRetained(_, row))),
+        indexedAfter.size == 2,
+        indexedAfter.forall((id, row) => indexedBefore.get(id).exists(sameRetained(_, row)))
       )
     },
     test("drops the bindings of a collection that is no longer rendered") {

@@ -1,6 +1,7 @@
 package scalive.render
 
 import java.util.Locale
+import scala.collection.immutable.ArraySeq
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 import scala.util.boundary
@@ -26,6 +27,8 @@ import scalive.Signal
 import scalive.streams.LiveStream
 import scalive.streams.LiveStreamEntry
 import scalive.streams.LiveStreamIdentity
+import scalive.streams.StreamAt
+import scalive.streams.StreamLimit
 
 /** A retained, protocol-neutral render program compiled once for one lifecycle graph.
   *
@@ -60,6 +63,10 @@ final class RenderProgram[Input, Msg] private (
 
   private[render] def retainedKeyedRowCount: Int =
     RenderProgram.retainedKeyedRowCount(template)
+
+  /** What the committed collections and streams of the program's own template keep of each row. */
+  private[render] def retainedRows: Map[RowId, RenderProgram.RetainedRow] =
+    RenderProgram.retainedRows(template)
 
   private[scalive] def evaluateIn(
     input: Input,
@@ -312,7 +319,9 @@ object RenderProgram:
     element: ElementTemplate[Msg]):
     def retire(): Unit = scope.close()
 
-  /** A committed row, with the bindings it rendered and the components it declared, in order.
+  /** A committed row, with the bindings it rendered, the item and key it was evaluated from, and
+    * the components it declared, in order. Its key is the one its collection identifies it by: its
+    * item's key, its index, or its DOM id in a stream.
     *
     * Its node is the one its evaluation made, without what resolution filled in
     * (`EvaluatedTree.unresolved`), and the node of [[EvaluatedRows]] holds those of its rows. The
@@ -321,8 +330,9 @@ object RenderProgram:
     */
   final private case class EvaluatedRow[Msg](
     node: EvaluatedNode.Element,
-    bindings: BindingTable.Rows[Msg],
+    bindings: BindingTable.Row[Msg],
     item: Any,
+    key: Any,
     components: Vector[ComponentRequirement[Msg]])
 
   /** The committed rows of a collection or a stream, with what evaluating them read, the bindings
@@ -331,7 +341,7 @@ object RenderProgram:
   final private case class EvaluatedRows[+Node <: EvaluatedNode, Msg](
     node: Node,
     signals: SignalEvaluation.RowsEvaluation,
-    bindings: BindingTable.Rows[Msg],
+    bindings: BindingTable.Collection[Msg],
     rows: Map[RowId, EvaluatedRow[Msg]],
     components: Vector[ComponentRequirement[Msg]])
 
@@ -353,20 +363,28 @@ object RenderProgram:
           if retainedIdentity.exists(_ eq identity) then evaluated else None
         }
 
+      def committed: Option[EvaluatedRows[EvaluatedNode.Stream, Msg]] = synchronized(evaluated)
+
+      /** Keeps `changes.templates` and `rows`, retiring the row templates no longer kept: only
+        * `changes.retired` when the retained templates are still those the changes were made from.
+        */
       def assignment(
         identity: LiveStreamIdentity,
-        next: Map[String, StreamRowTemplate[A, Msg]],
+        changes: StreamRowChanges[A, Msg],
         rows: EvaluatedRows[EvaluatedNode.Stream, Msg]
       ): () => Unit = () =>
         synchronized {
           val old          = retained
           val sameIdentity = retainedIdentity.exists(_ eq identity)
+          val next         = changes.templates
           retainedIdentity = Some(identity)
           retained = next
           evaluated = Some(rows)
-          old.foreach { case (domId, row) =>
-            if !sameIdentity || !next.get(domId).exists(_.scope eq row.scope) then row.retire()
-          }
+          if sameIdentity && (old eq changes.base) then changes.retired.foreach(_.retire())
+          else
+            old.foreach { case (domId, row) =>
+              if !sameIdentity || !next.get(domId).exists(_.scope eq row.scope) then row.retire()
+            }
         }
 
       def closeAll(): Unit = synchronized {
@@ -376,6 +394,16 @@ object RenderProgram:
         evaluated = None
       }
     end State
+
+    /** How a stream's evaluation changes the row templates it keeps: `base`, those it kept, become
+      * `templates`. `retired` are those of `base` no longer kept, and `dropped` the ids of the rows
+      * whose record and samples the stream no longer keeps.
+      */
+    final case class StreamRowChanges[A, Msg](
+      base: Map[String, StreamRowTemplate[A, Msg]],
+      templates: Map[String, StreamRowTemplate[A, Msg]],
+      retired: Vector[StreamRowTemplate[A, Msg]],
+      dropped: Vector[RowId])
   end StreamTemplate
 
   sealed private trait KeyedRowTemplate[+Msg]:
@@ -458,6 +486,19 @@ object RenderProgram:
 
     def scopes: Map[RowId, SignalScope] = rows.iterator.map(row => row._1 -> row._2).toMap
 
+  /** What evaluating one render passes to every node it evaluates: the revision and signal
+    * transaction it evaluates in, the flash it renders, and where it collects bindings, commit
+    * actions, candidate rows and requirements. There is one per render.
+    */
+  final private class Evaluation[Msg](
+    val revision: RenderRevision,
+    val transaction: SignalEvaluation.Transaction,
+    val flash: Map[FlashKey, FlashValue],
+    val bindings: BindingTable.Builder[Msg],
+    val commitActions: ArrayBuffer[() => Unit],
+    val candidateRows: CandidateRows,
+    val requirements: Requirements[Msg])
+
   final private class Requirements[Msg]:
     val components = ArrayBuffer.empty[ComponentRequirement[Msg]]
     val nested     = ArrayBuffer.empty[NestedRequirement]
@@ -488,7 +529,7 @@ object RenderProgram:
 
   private object TextTemplate:
     enum Value:
-      case Static(value: String, raw: Boolean, slot: Option[TemplateSlotId] = None)
+      case Static(value: String, raw: Boolean, slot: OptionalSlotId = OptionalSlotId.none)
       case Dynamic(slot: TemplateSlotId, signal: Signal[String], raw: Boolean)
 
   private enum CompositePart:
@@ -508,7 +549,7 @@ object RenderProgram:
     final case class Static(
       name: String,
       value: Option[AttributeValue],
-      slot: Option[TemplateSlotId] = None)
+      slot: OptionalSlotId = OptionalSlotId.none)
         extends AttributeTemplate[Nothing]
     final case class DynamicValue(name: String, slot: TemplateSlotId, signal: Signal[String])
         extends AttributeTemplate[Nothing]
@@ -580,57 +621,73 @@ object RenderProgram:
     lock: Object,
     state: Signal[RenderState]):
 
+    // Each row compiles its elements when it mounts, so these steps return early rather than
+    // allocate the closures of a for over Either.
     def compileElement[Msg](element: HtmlElement[Msg]): Either[RenderError, ElementTemplate[Msg]] =
-      for
-        id    <- allocator.template()
-        parts <- classifyMods(element.mods)
-        (attributeCandidates, contents) = parts
-        _          <- validateAttributeCandidateNames(attributeCandidates)
-        finalized  <- finalizeAttributes(attributeCandidates)
-        attributes <- targetOwner(finalized)
-        _          <- validateAttributeNames(attributes)
-        _          <- Either.cond(
-               !element.tag.void || contents.isEmpty,
-               (),
-               RenderError.InvalidHtml(
-                 s"void element '${element.tag.name}' cannot contain child content"
-               )
-             )
-        children <- traverse(contents)(compileContent)
-      yield ElementTemplate(id, element.tag.name, element.tag.void, attributes, children)
+      val id = allocator.template() match
+        case Right(id)   => id
+        case Left(error) => return Left(error)
+      val (attributeCandidates, contents) = classifyMods(element.mods) match
+        case Right(parts) => parts
+        case Left(error)  => return Left(error)
+      validateAttributeCandidateNames(attributeCandidates) match
+        case Right(_)    => ()
+        case Left(error) => return Left(error)
+      val finalized = finalizeAttributes(attributeCandidates) match
+        case Right(finalized) => finalized
+        case Left(error)      => return Left(error)
+      val attributes = targetOwner(finalized) match
+        case Right(attributes) => attributes
+        case Left(error)       => return Left(error)
+      validateAttributeNames(attributes) match
+        case Right(_)    => ()
+        case Left(error) => return Left(error)
+      if element.tag.void && contents.nonEmpty then
+        return Left(
+          RenderError.InvalidHtml(
+            s"void element '${element.tag.name}' cannot contain child content"
+          )
+        )
+      traverse(contents)(compileContent) match
+        case Right(children) =>
+          Right(ElementTemplate(id, element.tag.name, element.tag.void, attributes, children))
+        case Left(error) => Left(error)
 
     private def classifyMods[Msg](
       mods: Vector[Mod[Msg]]
     ): Either[RenderError, (Vector[AttributeCandidate[Msg]], Vector[Mod.Content[Msg]])] =
-      mods
-        .foldLeft[Either[RenderError, (Vector[AttributeCandidate[Msg]], Vector[Mod.Content[Msg]])]](
-          Right(Vector.empty -> Vector.empty)
-        ) { (result, mod) =>
-          result.flatMap { case (attributes, contents) =>
-            mod match
-              case Mod.Attr.Group(attrs) =>
-                traverse(attrs.flatMap(_.flattened))(compileAttribute)
-                  .map(compiled => attributes.appendedAll(compiled) -> contents)
-              case attribute: Mod.Attr[Msg] =>
-                compileAttribute(attribute).map(compiled => (attributes :+ compiled) -> contents)
-              case choice @ Mod.Content.SignalChoice(_, _) =>
-                val branchMods = choice.branches.flatMap(_._2)
-                val allAttrs = branchMods.nonEmpty && branchMods.forall(_.isInstanceOf[Mod.Attr[?]])
-                val allContent = branchMods.forall(_.isInstanceOf[Mod.Content[?]])
-                if allAttrs then
-                  compileAttributeChoice(choice).map(compiled =>
-                    (attributes :+ compiled) -> contents
-                  )
-                else if allContent then Right(attributes -> (contents :+ choice))
-                else
-                  Left(
-                    RenderError.InvalidHtml(
-                      "the branches of a choice cannot mix attributes and content"
-                    )
-                  )
-              case content: Mod.Content[Msg] => Right(attributes -> (contents :+ content))
-          }
-        }
+      var attributes = Vector.empty[AttributeCandidate[Msg]]
+      var contents   = Vector.empty[Mod.Content[Msg]]
+      var index      = 0
+      while index < mods.length do
+        mods(index) match
+          case Mod.Attr.Group(attrs) =>
+            traverse(attrs.flatMap(_.flattened))(compileAttribute) match
+              case Right(compiled) => attributes = attributes.appendedAll(compiled)
+              case Left(error)     => return Left(error)
+          case attribute: Mod.Attr[Msg] =>
+            compileAttribute(attribute) match
+              case Right(compiled) => attributes = attributes :+ compiled
+              case Left(error)     => return Left(error)
+          case choice @ Mod.Content.SignalChoice(_, _) =>
+            val branchMods = choice.branches.flatMap(_._2)
+            val allAttrs   = branchMods.nonEmpty && branchMods.forall(_.isInstanceOf[Mod.Attr[?]])
+            val allContent = branchMods.forall(_.isInstanceOf[Mod.Content[?]])
+            if allAttrs then
+              compileAttributeChoice(choice) match
+                case Right(compiled) => attributes = attributes :+ compiled
+                case Left(error)     => return Left(error)
+            else if allContent then contents = contents :+ choice
+            else
+              return Left(
+                RenderError.InvalidHtml(
+                  "the branches of a choice cannot mix attributes and content"
+                )
+              )
+          case content: Mod.Content[Msg] => contents = contents :+ content
+        index += 1
+      Right(attributes -> contents)
+    end classifyMods
 
     // A branch without an attribute renders the attribute absent, like an unmatched value.
     private def compileAttributeChoice[Msg](
@@ -865,29 +922,27 @@ object RenderProgram:
     private def finalizeAttributes[Msg](
       candidates: Vector[AttributeCandidate[Msg]]
     ): Either[RenderError, Vector[AttributeTemplate[Msg]]] =
-      candidates
-        .foldLeft[Either[RenderError, (Vector[AttributeTemplate[Msg]], Set[String])]](
-          Right(Vector.empty -> Set.empty)
-        ) { (result, candidate) =>
-          result.flatMap { case (attributes, emittedCompositeNames) =>
-            candidate match
-              case AttributeCandidate.Scalar(template) =>
-                Right((attributes :+ template) -> emittedCompositeNames)
-              case AttributeCandidate.Composite(name, _) =>
-                val normalizedName = name.toLowerCase(Locale.ROOT)
-                if emittedCompositeNames.contains(normalizedName) then
-                  Right(attributes -> emittedCompositeNames)
-                else
-                  val parts = candidates.collect {
-                    case AttributeCandidate.Composite(candidateName, part)
-                        if candidateName.equalsIgnoreCase(name) =>
-                      part
-                  }
-                  finalizeCompositeAttribute(name, parts).map(template =>
-                    (attributes :+ template) -> (emittedCompositeNames + normalizedName)
-                  )
-          }
-        }.map(_._1)
+      var attributes            = Vector.empty[AttributeTemplate[Msg]]
+      var emittedCompositeNames = Set.empty[String]
+      var index                 = 0
+      while index < candidates.length do
+        candidates(index) match
+          case AttributeCandidate.Scalar(template)   => attributes = attributes :+ template
+          case AttributeCandidate.Composite(name, _) =>
+            val normalizedName = name.toLowerCase(Locale.ROOT)
+            if !emittedCompositeNames.contains(normalizedName) then
+              val parts = candidates.collect {
+                case AttributeCandidate.Composite(candidateName, part)
+                    if candidateName.equalsIgnoreCase(name) =>
+                  part
+              }
+              finalizeCompositeAttribute(name, parts) match
+                case Right(template) =>
+                  attributes = attributes :+ template
+                  emittedCompositeNames += normalizedName
+                case Left(error) => return Left(error)
+        index += 1
+      Right(attributes)
 
     private def targetOwner[Msg](
       attributes: Vector[AttributeTemplate[Msg]]
@@ -922,16 +977,23 @@ object RenderProgram:
     ): Either[RenderError, NodeTemplate[Msg]] =
       content match
         case Mod.Content.Text(text, raw) =>
-          for
-            value <- nonNullString(text, "text content")
-            id    <- allocator.template()
-          yield TextTemplate(id, TextTemplate.Value.Static(value, raw))
+          nonNullString(text, "text content") match
+            case Right(_)    => ()
+            case Left(error) => return Left(error)
+          allocator.template() match
+            case Right(id)   => Right(TextTemplate(id, TextTemplate.Value.Static(text, raw)))
+            case Left(error) => Left(error)
         case Mod.Content.SignalText(value, raw) =>
-          for
-            _    <- scope.validate(value)
-            id   <- allocator.template()
-            slot <- allocator.slot()
-          yield TextTemplate(id, TextTemplate.Value.Dynamic(slot, value, raw))
+          scope.validate(value) match
+            case Right(_)    => ()
+            case Left(error) => return Left(error)
+          val id = allocator.template() match
+            case Right(id)   => id
+            case Left(error) => return Left(error)
+          allocator.slot() match
+            case Right(slot) =>
+              Right(TextTemplate(id, TextTemplate.Value.Dynamic(slot, value, raw)))
+            case Left(error) => Left(error)
         case Mod.Content.Tag(element)                  => compileElement(element)
         case Mod.Content.SignalChoice(value, branches) =>
           if branches.exists(_._2.exists(_.isInstanceOf[Mod.Attr[?]])) then
@@ -1160,7 +1222,13 @@ object RenderProgram:
     private def validateAttributeCandidateNames[Msg](
       candidates: Vector[AttributeCandidate[Msg]]
     ): Either[RenderError, Unit] =
-      traverse(candidates)(candidate => validateAttributeName(candidate.name)).map(_ => ())
+      var index = 0
+      while index < candidates.length do
+        validateAttributeName(candidates(index).name) match
+          case Right(_)    => ()
+          case Left(error) => return Left(error)
+        index += 1
+      Right(())
 
     private def validateAttributeName(name: String): Either[RenderError, Unit] =
       Either.cond(
@@ -1172,17 +1240,19 @@ object RenderProgram:
     private def validateAttributeNames[Msg](
       attributes: Vector[AttributeTemplate[Msg]]
     ): Either[RenderError, Unit] =
-      attributes
-        .foldLeft[Either[RenderError, Set[String]]](Right(Set.empty)) { case (result, attribute) =>
-          result.flatMap { names =>
-            validateAttributeName(attribute.name).flatMap { _ =>
-              val normalizedName = attribute.name.toLowerCase(Locale.ROOT)
-              if names.contains(normalizedName) then
-                Left(RenderError.InvalidHtml(s"duplicate HTML attribute '${attribute.name}'"))
-              else Right(names + normalizedName)
-            }
-          }
-        }.map(_ => ())
+      var names = Set.empty[String]
+      var index = 0
+      while index < attributes.length do
+        val name = attributes(index).name
+        validateAttributeName(name) match
+          case Right(_)    => ()
+          case Left(error) => return Left(error)
+        val normalizedName = name.toLowerCase(Locale.ROOT)
+        if names.contains(normalizedName) then
+          return Left(RenderError.InvalidHtml(s"duplicate HTML attribute '$name'"))
+        names += normalizedName
+        index += 1
+      Right(())
 
     /** Compiles a changed projection candidate without changing committed retained state.
       *
@@ -1214,7 +1284,7 @@ object RenderProgram:
       element.copy(
         attributes = element.attributes.map {
           case static: AttributeTemplate.Static =>
-            static.copy(slot = allocator.slot().fold(throw _, Some(_)))
+            static.copy(slot = allocator.slot().fold(throw _, OptionalSlotId(_)))
           case other => other
         },
         children = element.children.map {
@@ -1226,7 +1296,7 @@ object RenderProgram:
                   TextTemplate.Value.Static(
                     value,
                     raw,
-                    allocator.slot().fold(throw _, Some(_))
+                    allocator.slot().fold(throw _, OptionalSlotId(_))
                   )
                 )
               case _ => text
@@ -1383,6 +1453,15 @@ object RenderProgram:
     val bindings      = BindingTable.Builder[Msg](previousBindings)
     val commitActions = ArrayBuffer.empty[() => Unit]
     val requirements  = Requirements[Msg]()
+    val evaluation    = Evaluation(
+      revision,
+      transaction,
+      flash,
+      bindings,
+      commitActions,
+      candidateRows,
+      requirements
+    )
     for
       attributes <- evaluateAttributes(
                       template,
@@ -1391,20 +1470,11 @@ object RenderProgram:
                       transaction,
                       bindings
                     )
-      children <- traverseIndexed(template.children) { (child, index) =>
-                    val previousChild = previous.flatMap(_.children.lift(index))
-                    evaluateNode(
-                      child,
-                      previousChild,
-                      revision,
-                      transaction,
-                      flash,
-                      bindings,
-                      commitActions,
-                      candidateRows,
-                      requirements
-                    )
-                  }
+      children <- evaluateChildren(
+                    template,
+                    previous,
+                    evaluation
+                  )
       element = retainElementRevision(template, attributes, children, previous, revision)
       table <- bindings.result()
     yield (
@@ -1413,7 +1483,6 @@ object RenderProgram:
       requirements,
       CandidateCommit(commitActions.toArray, candidateRows.rollbackActions, candidateRows.scopes)
     )
-    end for
   end evaluateElement
 
   private def evaluateAttributes[Msg](
@@ -1423,41 +1492,96 @@ object RenderProgram:
     transaction: SignalEvaluation.Transaction,
     bindings: BindingTable.Builder[Msg]
   ): Either[RenderError, Vector[EvaluatedAttribute]] =
-    // Phoenix gates form recovery on the old and new phx-change values matching exactly.
-    val formIdIndex = Option
-      .when(template.tag.equalsIgnoreCase("form"))(
-        template.attributes.indexWhere(_.name.equalsIgnoreCase("id"))
-      ).filter(_ >= 0)
+    val attributes = template.attributes
+    val evaluated  = RefArray[EvaluatedAttribute](attributes.length)
 
-    val evaluatedFormId = formIdIndex match
-      case Some(index) =>
+    // Phoenix gates form recovery on the old and new phx-change values matching exactly.
+    val formIdIndex =
+      if template.tag.equalsIgnoreCase("form") then
+        attributes.indexWhere(_.name.equalsIgnoreCase("id"))
+      else -1
+    var formId: Option[String] = None
+    if formIdIndex >= 0 then
+      evaluateAttribute(
+        attributes(formIdIndex),
+        previousAttribute(previous, formIdIndex),
+        revision,
+        transaction,
+        bindings,
+        None
+      ) match
+        case Right(attribute) =>
+          evaluated(formIdIndex) = attribute
+          formId = textValue(attribute).filter(_.nonEmpty)
+        case Left(error) => return Left(error)
+
+    // A loop rather than a traversal, so that evaluating an element allocates no closures.
+    var index = 0
+    while index < attributes.length do
+      if index != formIdIndex then
         evaluateAttribute(
-          template.attributes(index),
-          previous.flatMap(_.attributes.lift(index)),
+          attributes(index),
+          previousAttribute(previous, index),
           revision,
           transaction,
           bindings,
-          None
-        ).map(attribute => Some((index, attribute, textValue(attribute).filter(_.nonEmpty))))
-      case None => Right(None)
-
-    evaluatedFormId.flatMap { evaluatedId =>
-      val formId = evaluatedId.flatMap(_._3)
-      traverseIndexed(template.attributes) { (attribute, index) =>
-        evaluatedId match
-          case Some((idIndex, value, _)) if index == idIndex => Right(value)
-          case _                                             =>
-            evaluateAttribute(
-              attribute,
-              previous.flatMap(_.attributes.lift(index)),
-              revision,
-              transaction,
-              bindings,
-              formId
-            )
-      }
-    }
+          formId
+        ) match
+          case Right(attribute) => evaluated(index) = attribute
+          case Left(error)      => return Left(error)
+      index += 1
+    Right(evaluated.toVector)
   end evaluateAttributes
+
+  private def evaluateChildren[Msg](
+    template: ElementTemplate[Msg],
+    previous: Option[EvaluatedNode.Element],
+    evaluation: Evaluation[Msg]
+  ): Either[RenderError, Vector[EvaluatedNode]] =
+    val children  = template.children
+    val evaluated = RefArray[EvaluatedNode](children.length)
+    var index     = 0
+    while index < children.length do
+      evaluateNode(
+        children(index),
+        previousChild(previous, index),
+        evaluation
+      ) match
+        case Right(child) => evaluated(index) = child
+        case Left(error)  => return Left(error)
+      index += 1
+    Right(evaluated.toVector)
+
+  private def previousAttribute(
+    previous: Option[EvaluatedNode.Element],
+    index: Int
+  ): Option[EvaluatedAttribute] =
+    previous match
+      case Some(element) if index < element.attributes.length => Some(element.attributes(index))
+      case _                                                  => None
+
+  private def previousChild(
+    previous: Option[EvaluatedNode.Element],
+    index: Int
+  ): Option[EvaluatedNode] =
+    previous match
+      case Some(element) if index < element.children.length => Some(element.children(index))
+      case _                                                => None
+
+  /** An array of references that holds only `A`s: up to 32 elements, a vector wraps it without
+    * copying it, which it would not do for an array typed `A`.
+    */
+  private object RefArray:
+    opaque type RefArray[A <: AnyRef] = Array[AnyRef]
+
+    def apply[A <: AnyRef](length: Int): RefArray[A] = new Array[AnyRef](length)
+
+    extension [A <: AnyRef](array: RefArray[A])
+      inline def update(index: Int, value: A): Unit = array(index) = value
+
+      // Only `update` writes to it, so every element is an `A`.
+      inline def toVector: Vector[A] =
+        Vector.from(ArraySeq.unsafeWrapArray(array)).asInstanceOf[Vector[A]]
 
   private def textValue(attribute: EvaluatedAttribute): Option[String] =
     attribute.value.collect { case AttributeValue.Text(value) => value }
@@ -1465,50 +1589,44 @@ object RenderProgram:
   private def evaluateNode[Msg](
     template: NodeTemplate[Msg],
     previous: Option[EvaluatedNode],
-    revision: RenderRevision,
-    transaction: SignalEvaluation.Transaction,
-    flash: Map[FlashKey, FlashValue],
-    bindings: BindingTable.Builder[Msg],
-    commitActions: ArrayBuffer[() => Unit],
-    candidateRows: CandidateRows,
-    requirements: Requirements[Msg]
+    evaluation: Evaluation[Msg]
   ): Either[RenderError, EvaluatedNode] =
     template match
+      // Matches rather than a for over Either, which would allocate closures for every element.
       case element: ElementTemplate[Msg] =>
-        for
-          previousElement = previous.collect { case node: EvaluatedNode.Element => node }
-          attributes <- evaluateAttributes(
-                          element,
-                          previousElement,
-                          revision,
-                          transaction,
-                          bindings
-                        )
-          children <- traverseIndexed(element.children) { (child, index) =>
-                        val previousChild = previousElement.flatMap(_.children.lift(index))
-                        evaluateNode(
-                          child,
-                          previousChild,
-                          revision,
-                          transaction,
-                          flash,
-                          bindings,
-                          commitActions,
-                          candidateRows,
-                          requirements
-                        )
-                      }
-        yield retainElementRevision(
+        val previousElement = previous match
+          case Some(node: EvaluatedNode.Element) => Some(node)
+          case _                                 => None
+        evaluateAttributes(
           element,
-          attributes,
-          children,
           previousElement,
-          revision
-        )
-      case text: TextTemplate            => evaluateText(text, previous, revision, transaction)
+          evaluation.revision,
+          evaluation.transaction,
+          evaluation.bindings
+        ) match
+          case Left(error)       => Left(error)
+          case Right(attributes) =>
+            evaluateChildren(
+              element,
+              previousElement,
+              evaluation
+            ) match
+              case Left(error)     => Left(error)
+              case Right(children) =>
+                Right(
+                  retainElementRevision(
+                    element,
+                    attributes,
+                    children,
+                    previousElement,
+                    evaluation.revision
+                  )
+                )
+      case text: TextTemplate =>
+        evaluateText(text, previous, evaluation.revision, evaluation.transaction)
       case template: ChoiceTemplate[Msg] =>
         for
-          selected <- transaction.sample(template.signal)
+          selected <- evaluation.transaction.sample(template.signal)
           previousChildren = previous
                                .collect { case choice: EvaluatedNode.Choice => choice.children }
                                .getOrElse(Vector.empty)
@@ -1518,13 +1636,7 @@ object RenderProgram:
                             evaluateNode(
                               node,
                               previousChildren.lift(index),
-                              revision,
-                              transaction,
-                              flash,
-                              bindings,
-                              commitActions,
-                              candidateRows,
-                              requirements
+                              evaluation
                             )
                           }
                         case None => Right(Vector.empty)
@@ -1535,89 +1647,73 @@ object RenderProgram:
           case Some(old: EvaluatedNode.Choice)
               if old.id == template.id && sameBy(old.children, children)(_.revision) =>
             old.copy(children = children)
-          case _ => EvaluatedNode.Choice(template.id, children, revision)
+          case _ => EvaluatedNode.Choice(template.id, children, evaluation.revision)
       case template: KeyedTemplate[Msg] =>
         evaluateKeyedRows(
           template.id,
           template.rows,
           previous,
-          revision,
-          transaction,
-          flash,
-          bindings,
-          commitActions,
-          candidateRows,
-          requirements
+          evaluation
         )
       case template: SignalKeyedTemplate[?, ?, Msg] =>
         evaluateSignalKeyed(
           template,
           previous,
-          revision,
-          transaction,
-          flash,
-          bindings,
-          commitActions,
-          candidateRows,
-          requirements
+          evaluation
         )
       case template: SignalKeyedByIndexTemplate[?, Msg] =>
         evaluateSignalKeyedByIndex(
           template,
           previous,
-          revision,
-          transaction,
-          flash,
-          bindings,
-          commitActions,
-          candidateRows,
-          requirements
+          evaluation
         )
       // Signals track a component's declaration. A kept row or collection declares its components
       // again from what it recorded, and the runtime resolves them into it on every turn.
       case template: ComponentTemplate[Msg] =>
-        evaluateComponentRequirement(template.id, template.spec, transaction).map { requirement =>
-          requirements.components += requirement
-          EvaluatedNode.Component(
-            template.id,
-            requirement.applicationId,
-            None,
-            revision
-          )
+        evaluateComponentRequirement(template.id, template.spec, evaluation.transaction).map {
+          requirement =>
+            evaluation.requirements.components += requirement
+            EvaluatedNode.Component(
+              template.id,
+              requirement.applicationId,
+              None,
+              evaluation.revision
+            )
         }
       case template: NestedTemplate =>
-        transaction.markUntracked()
-        evaluateNestedRequirement(template.id, template.spec, transaction).map { requirement =>
-          requirements.nested += requirement
-          previous match
-            case Some(old: EvaluatedNode.Nested)
-                if old.id == template.id && old.applicationId == requirement.applicationId =>
-              EvaluatedNode.Nested(template.id, requirement.applicationId, None, old.revision)
-            case _ => EvaluatedNode.Nested(template.id, requirement.applicationId, None, revision)
+        evaluation.transaction.markUntracked()
+        evaluateNestedRequirement(template.id, template.spec, evaluation.transaction).map {
+          requirement =>
+            evaluation.requirements.nested += requirement
+            previous match
+              case Some(old: EvaluatedNode.Nested)
+                  if old.id == template.id && old.applicationId == requirement.applicationId =>
+                EvaluatedNode.Nested(template.id, requirement.applicationId, None, old.revision)
+              case _ =>
+                EvaluatedNode.Nested(
+                  template.id,
+                  requirement.applicationId,
+                  None,
+                  evaluation.revision
+                )
         }
       case template: StaticStreamTemplate[?, Msg] =>
-        transaction.markUntracked()
+        evaluation.transaction.markUntracked()
         val requirement = StreamRequirement.Static(
           template.id,
           template.stream,
           template.project
         )
-        requirements.streams += requirement
+        evaluation.requirements.streams += requirement
         evaluateStaticStream(
           template,
           previous,
-          revision,
-          transaction,
-          flash,
-          bindings,
-          commitActions,
-          candidateRows,
-          requirements
+          evaluation
         )
       case template: SignalStreamTemplate[?, Msg] =>
-        transaction.markUntracked()
-        transaction.sample(template.stream).flatMap { sample =>
-          requirements.streams += StreamRequirement.SignalBacked(
+        evaluation.transaction.markUntracked()
+        evaluation.transaction.sample(template.stream).flatMap { sample =>
+          evaluation.requirements.streams += StreamRequirement.SignalBacked(
             template.id,
             sample.value,
             template.project
@@ -1625,28 +1721,22 @@ object RenderProgram:
           evaluateSignalStream(
             template,
             sample.value,
-            transaction.unchanged(sample),
+            evaluation.transaction.unchanged(sample),
             previous,
-            revision,
-            transaction,
-            flash,
-            bindings,
-            commitActions,
-            candidateRows,
-            requirements
+            evaluation
           )
         }
       case template: FlashTemplate =>
         // A flash comes from the render state, not from a signal.
-        transaction.markUntracked()
+        evaluation.transaction.markUntracked()
         val oldFlash = previous.collect { case node: EvaluatedNode.Flash => node }
         def absent   =
-          commitActions += template.state.assignment(None)
+          evaluation.commitActions += template.state.assignment(None)
           oldFlash match
             case Some(node) if node.id == template.id && node.child.isEmpty => Right(node)
-            case _ => Right(EvaluatedNode.Flash(template.id, None, revision))
+            case _ => Right(EvaluatedNode.Flash(template.id, None, evaluation.revision))
         val candidate =
-          flash.get(template.key) match
+          evaluation.flash.get(template.key) match
             case None          => Right(None)
             case Some(message) =>
               for
@@ -1660,34 +1750,22 @@ object RenderProgram:
             for child <- evaluateNode(
                            projected,
                            oldFlash.flatMap(_.child),
-                           revision,
-                           transaction,
-                           flash,
-                           bindings,
-                           commitActions,
-                           candidateRows,
-                           requirements
+                           evaluation
                          ).map(_.asInstanceOf[EvaluatedNode.Element])
             yield
-              commitActions += template.state.assignment(Some(value -> projected))
+              evaluation.commitActions += template.state.assignment(Some(value -> projected))
               oldFlash match
                 case Some(node) if node.id == template.id && node.child.exists(_ eq child) => node
                 case Some(node)
                     if node.id == template.id && node.child.exists(_.revision == child.revision) =>
                   node.copy(child = Some(child))
-                case _ => EvaluatedNode.Flash(template.id, Some(child), revision)
+                case _ => EvaluatedNode.Flash(template.id, Some(child), evaluation.revision)
         }
 
   private def evaluateStaticStream[A, Msg](
     template: StaticStreamTemplate[A, Msg],
     previous: Option[EvaluatedNode],
-    revision: RenderRevision,
-    transaction: SignalEvaluation.Transaction,
-    flash: Map[FlashKey, FlashValue],
-    bindings: BindingTable.Builder[Msg],
-    commitActions: ArrayBuffer[() => Unit],
-    candidateRows: CandidateRows,
-    requirements: Requirements[Msg]
+    evaluation: Evaluation[Msg]
   ): Either[RenderError, EvaluatedNode.Stream] =
     evaluateStream(
       template.id,
@@ -1696,20 +1774,14 @@ object RenderProgram:
       unchanged = true,
       template.state,
       previous,
-      revision,
-      transaction,
-      flash,
-      bindings,
-      commitActions,
-      candidateRows,
-      requirements,
+      evaluation,
       (domId, value, retained) =>
         template.compiler.staticStreamRowCandidate(
           domId,
           value,
           template.project,
           retained,
-          candidateRows
+          evaluation.candidateRows
         )
     )
 
@@ -1718,13 +1790,7 @@ object RenderProgram:
     stream: LiveStream[A],
     unchanged: Boolean,
     previous: Option[EvaluatedNode],
-    revision: RenderRevision,
-    transaction: SignalEvaluation.Transaction,
-    flash: Map[FlashKey, FlashValue],
-    bindings: BindingTable.Builder[Msg],
-    commitActions: ArrayBuffer[() => Unit],
-    candidateRows: CandidateRows,
-    requirements: Requirements[Msg]
+    evaluation: Evaluation[Msg]
   ): Either[RenderError, EvaluatedNode.Stream] =
     evaluateStream(
       template.id,
@@ -1732,18 +1798,13 @@ object RenderProgram:
       unchanged,
       template.state,
       previous,
-      revision,
-      transaction,
-      flash,
-      bindings,
-      commitActions,
-      candidateRows,
-      requirements,
+      evaluation,
       (domId, _, retained) =>
         retained match
           case Some(row) => Right(row)
           case None      =>
-            template.compiler.signalStreamRowCandidate(domId, template.project, candidateRows)
+            template.compiler
+              .signalStreamRowCandidate(domId, template.project, evaluation.candidateRows)
     )
 
   /** Evaluates a stream, or keeps its committed node when `unchanged`, the stream is the same, and
@@ -1756,13 +1817,7 @@ object RenderProgram:
     unchanged: Boolean,
     state: StreamTemplate.State[A, Msg],
     previous: Option[EvaluatedNode],
-    revision: RenderRevision,
-    transaction: SignalEvaluation.Transaction,
-    flash: Map[FlashKey, FlashValue],
-    bindings: BindingTable.Builder[Msg],
-    commitActions: ArrayBuffer[() => Unit],
-    candidateRows: CandidateRows,
-    requirements: Requirements[Msg],
+    evaluation: Evaluation[Msg],
     rowCandidate: (String, A, Option[StreamRowTemplate[A, Msg]]) => Either[
       RenderError,
       StreamRowTemplate[A, Msg]
@@ -1773,52 +1828,70 @@ object RenderProgram:
     val reusable = (last, old) match
       case (Some(rows), Some(committed))
           if unchanged && !rows.signals.untracked &&
-            EvaluatedTree.resolvedFrom(committed, rows.node) =>
-        transaction
-          .allUnchanged(rows.signals.outside)
-          .map(Option.when(_)(rows -> committed))
-      case _ => Right(None)
+            EvaluatedTree.resolvedFrom(committed, rows.node) &&
+            evaluation.transaction.allUnchanged(rows.signals.outside) =>
+        Some(rows -> committed)
+      case _ => None
+    // Only the rows the operations touch or that read a changed signal are evaluated when the
+    // committed stream is the one recorded, which then holds no component, and the operations
+    // since are known: they are the stream's own when its generation changed, and none when the
+    // stream is unchanged.
+    val changesOnly = (last, old) match
+      case (Some(rows), Some(committed)) =>
+        (committed eq rows.node) && rows.components.isEmpty && !rows.signals.untracked &&
+        !stream.reset &&
+        (committed.generation != stream.generation ||
+          unchanged && stream.inserted.isEmpty && stream.deleted.isEmpty)
+      case _ => false
 
-    reusable.flatMap {
+    reusable match
       case Some((rows, committed)) =>
-        bindings.reuseRows(id, rows.bindings).map { _ =>
-          requirements.components ++= rows.components
+        evaluation.bindings.reuseRows(id, rows.bindings).map { _ =>
+          evaluation.requirements.components ++= rows.components
           committed
         }
       case None =>
-        val declared = requirements.components.length
-        bindings.enterRows()
-        val evaluated = evaluateStreamRows(
-          id,
-          stream,
-          state,
-          old,
-          last,
-          revision,
-          transaction,
-          flash,
-          bindings,
-          commitActions,
-          candidateRows,
-          requirements,
-          rowCandidate
-        )
-        val rowBindings = bindings.exitRows(id)
-        evaluated.map { (node, recorded, rows, signals, next) =>
-          commitActions += state.assignment(
+        val declared  = evaluation.requirements.components.length
+        val evaluated = (last, old) match
+          case (Some(rows), Some(committed)) if changesOnly =>
+            evaluation.bindings.enterChangedRows(id, rows.bindings)
+            evaluateStreamChanges(
+              id,
+              stream,
+              state,
+              committed,
+              rows,
+              declared,
+              evaluation,
+              rowCandidate
+            )
+          case _ =>
+            evaluation.bindings.enterRows(id)
+            evaluateStreamRows(
+              id,
+              stream,
+              state,
+              old,
+              last,
+              evaluation,
+              rowCandidate
+            )
+        val rowBindings = evaluation.bindings.exitRows()
+        evaluated.map { (node, recorded, rows, signals, changes) =>
+          evaluation.commitActions += state.assignment(
             stream.identity,
-            next,
+            changes,
             EvaluatedRows(
               recorded,
               signals,
               rowBindings,
               rows,
-              requirements.componentsSince(declared)
+              evaluation.requirements.componentsSince(declared)
             )
           )
           node
         }
-    }
+    end match
   end evaluateStream
 
   private def evaluateStreamRows[A, Msg](
@@ -1827,13 +1900,7 @@ object RenderProgram:
     state: StreamTemplate.State[A, Msg],
     old: Option[EvaluatedNode.Stream],
     last: Option[EvaluatedRows[EvaluatedNode.Stream, Msg]],
-    revision: RenderRevision,
-    transaction: SignalEvaluation.Transaction,
-    flash: Map[FlashKey, FlashValue],
-    bindings: BindingTable.Builder[Msg],
-    commitActions: ArrayBuffer[() => Unit],
-    candidateRows: CandidateRows,
-    requirements: Requirements[Msg],
+    evaluation: Evaluation[Msg],
     rowCandidate: (String, A, Option[StreamRowTemplate[A, Msg]]) => Either[
       RenderError,
       StreamRowTemplate[A, Msg]
@@ -1845,7 +1912,7 @@ object RenderProgram:
       EvaluatedNode.Stream,
       Map[RowId, EvaluatedRow[Msg]],
       SignalEvaluation.RowsEvaluation,
-      Map[String, StreamRowTemplate[A, Msg]]
+      StreamTemplate.StreamRowChanges[A, Msg]
     )
   ] =
     val entries          = stream.entries
@@ -1856,54 +1923,66 @@ object RenderProgram:
       .toVector
     val renderedEntries = entries ++ operationEntries
     val lastRows        = last.fold(Map.empty[RowId, EvaluatedRow[Msg]])(_.rows)
+    // The recorded rows are the committed ones when the recorded stream is: it then holds nothing
+    // resolution would have filled in.
+    val committed = last.exists(rows => old.exists(_ eq rows.node))
     for
       _ <- validateStreamDomIds(stream, renderedEntries)
       retained = state.snapshot(stream.identity)
       templates <- traverse(renderedEntries) { entry =>
                      rowCandidate(entry.domId, entry.value, retained.get(entry.domId))
                    }
-      oldRows = old.toVector.flatMap(_.rows).map(row => row.domId -> row.child).toMap
+      oldRows =
+        if committed then Map.empty[String, EvaluatedNode]
+        else old.toVector.flatMap(_.rows).map(row => row.domId -> row.child).toMap
       evaluatedRows <-
         withinRows(
-          transaction,
+          evaluation.transaction,
           last.fold(SignalEvaluation.RowsEvaluation.empty)(_.signals)
-        ) {
-          traverse(templates.zip(renderedEntries)) { case (row, entry) =>
+        ) { changed =>
+          traverse(templates.zip(renderedEntries).zipWithIndex) { case ((row, entry), index) =>
+            val transient = index >= entries.length
+            val lastRow   = if transient then None else lastRows.get(row.id)
             evaluateRow(
               row.id,
+              entry.domId,
               row.source,
               entry.value,
               row.element,
-              oldRows.get(entry.domId),
-              lastRows.get(row.id),
-              revision,
-              transaction,
-              flash,
-              bindings,
-              commitActions,
-              candidateRows,
-              requirements
+              if committed then lastRow.map(_.node) else oldRows.get(entry.domId),
+              lastRow,
+              changed,
+              transient,
+              evaluation
             ).map(EvaluatedNode.StreamRow(entry.domId, _) -> _)
+          }.map { evaluated =>
+            val changes = streamRowChanges(stream, retained, templates)
+            evaluation.transaction.dropRows(changes.dropped)
+            evaluated -> changes
           }
         }
-      (evaluated, rowSignals) = evaluatedRows
-      renderedRows            = evaluated.map(_._1)
+      ((evaluated, changes), rowSignals) = evaluatedRows
+      renderedRows                       = evaluated.map(_._1)
     yield
-      val rows     = renderedRows.take(entries.length)
-      val rowsById = renderedRows.map(row => row.domId -> row).toMap
-      val inserts  = stream.inserted.map { insert =>
-        val row = rowsById(insert.entry.domId)
+      val rows         = renderedRows.take(entries.length)
+      val insertedRows =
+        if stream.inserted.isEmpty then Map.empty[String, EvaluatedNode.StreamRow]
+        else
+          renderedRows.iterator
+            .filter(row => stream.insertedIds.contains(row.domId))
+            .map(row => row.domId -> row)
+            .toMap
+      val inserts = stream.inserted.map { insert =>
+        val row = insertedRows(insert.entry.domId)
         EvaluatedNode.StreamInsert(row, insert.at, insert.limit, insert.updateOnly)
       }
       val operations         = EvaluatedNode.StreamOperations(inserts, stream.deleted, stream.reset)
-      val retainedTemplates  = templates.take(entries.length)
       val transientTemplates = operationEntries
         .zip(templates.drop(entries.length)).collect {
           case (entry, template) if !retained.contains(entry.domId) => template
         }
       if transientTemplates.nonEmpty then
-        commitActions += (() => transientTemplates.foreach(_.retire()))
-      val next = Map.from(entries.map(_.domId).zip(retainedTemplates))
+        evaluation.commitActions += (() => transientTemplates.foreach(_.retire()))
       val node = old match
         case Some(node)
             if node.id == id && (node.identity eq stream.identity) &&
@@ -1911,11 +1990,380 @@ object RenderProgram:
               sameBy(node.rows, rows)(_.child.revision) =>
           node.copy(rows = rows, operations = operations)
         case _ =>
-          EvaluatedNode.Stream(id, stream.identity, stream.generation, rows, operations, revision)
-      val records = templates.iterator.map(_.id).zip(evaluated.iterator.map(_._2)).toMap
-      (node, recordedStream(node, evaluated), records, rowSignals, next)
+          EvaluatedNode.Stream(
+            id,
+            stream.identity,
+            stream.generation,
+            rows,
+            operations,
+            evaluation.revision
+          )
+      val records = updatedRecords(
+        lastRows -- changes.dropped,
+        lastRows,
+        templates.iterator.take(entries.length).map(_.id),
+        evaluated.iterator.map(_._2)
+      )
+      (node, recordedStream(node, evaluated), records, rowSignals, changes)
     end for
   end evaluateStreamRows
+
+  /** Evaluates the rows of `stream` that its operations since `last`, its committed rows, insert,
+    * and those that read a signal from outside them that changed: the others keep their node,
+    * record, bindings and signal samples without being visited. `committed`, the committed stream,
+    * is the one `last` recorded, and `declared` the count of components declared before it.
+    */
+  private def evaluateStreamChanges[A, Msg](
+    id: TemplateId,
+    stream: LiveStream[A],
+    state: StreamTemplate.State[A, Msg],
+    committed: EvaluatedNode.Stream,
+    last: EvaluatedRows[EvaluatedNode.Stream, Msg],
+    declared: Int,
+    evaluation: Evaluation[Msg],
+    rowCandidate: (String, A, Option[StreamRowTemplate[A, Msg]]) => Either[
+      RenderError,
+      StreamRowTemplate[A, Msg]
+    ]
+  ): Either[
+    RenderError,
+    (
+      EvaluatedNode.Stream,
+      EvaluatedNode.Stream,
+      Map[RowId, EvaluatedRow[Msg]],
+      SignalEvaluation.RowsEvaluation,
+      StreamTemplate.StreamRowChanges[A, Msg]
+    )
+  ] =
+    val retained = state.snapshot(stream.identity)
+    // The entries the operations insert that the stream holds, and those only they render.
+    val (insertedEntries, transientEntries) =
+      stream.inserted.map(_.entry).partition(entry => stream.entryIds.contains(entry.domId))
+
+    def evaluate(
+      entry: LiveStreamEntry[A],
+      transient: Boolean,
+      changed: Set[RowId]
+    ): Either[RenderError, EvaluatedStreamRow[A, Msg]] =
+      rowCandidate(entry.domId, entry.value, retained.get(entry.domId)).flatMap { template =>
+        val lastRow = if transient then None else last.rows.get(template.id)
+        evaluateRow(
+          template.id,
+          entry.domId,
+          template.source,
+          entry.value,
+          template.element,
+          lastRow.map(_.node),
+          lastRow,
+          changed,
+          transient,
+          evaluation
+        ).map((node, record) =>
+          EvaluatedStreamRow(
+            template,
+            EvaluatedNode.StreamRow(entry.domId, node),
+            record,
+            transient
+          )
+        )
+      }
+
+    // Ends evaluating the stream from `evaluated`, the rows it evaluated: drops what it keeps of
+    // the rows it no longer holds, and returns its node, the node it records, its records and how
+    // its templates change.
+    def complete(evaluated: Vector[EvaluatedStreamRow[A, Msg]]) =
+      val held         = evaluated.filterNot(_.transient)
+      val (rows, gone) = streamRowOrder(
+        stream,
+        committed.rows,
+        retained.contains,
+        held.iterator.map(row => row.row.domId -> row.row).toMap
+      )
+      val (templates, replaced) = heldTemplates(retained, held)
+      val retired               = gone.map(retained) ++ replaced
+      val dropped               =
+        retired.map(_.id) ++ evaluated.iterator.filter(_.transient).map(_.template.id)
+      evaluation.transaction.dropRows(dropped)
+      retired.foreach(row => evaluation.bindings.removeRow(row.id))
+      val transientTemplates = evaluated.collect {
+        case row if row.transient && !retained.contains(row.row.domId) => row.template
+      }
+      if transientTemplates.nonEmpty then
+        evaluation.commitActions += (() => transientTemplates.foreach(_.retire()))
+      if evaluated.count(_.record.components.nonEmpty) > 1 then
+        reorderComponents(rows, evaluated, declared, evaluation.requirements)
+
+      val byDomId = evaluated.iterator.map(row => row.row.domId -> row.row).toMap
+      val inserts = stream.inserted.map { insert =>
+        val row = byDomId(insert.entry.domId)
+        EvaluatedNode.StreamInsert(row, insert.at, insert.limit, insert.updateOnly)
+      }
+      val operations = EvaluatedNode.StreamOperations(inserts, stream.deleted, stream.reset)
+      // The same generation means no operations, so only the rows that read a changed signal may
+      // have changed.
+      val sameRevisions = committed.generation == stream.generation &&
+        held.forall(row =>
+          last.rows.get(row.template.id).exists(_.node.revision == row.row.child.revision)
+        )
+      val node =
+        if sameRevisions then committed.copy(rows = rows, operations = operations)
+        else
+          EvaluatedNode.Stream(
+            id,
+            stream.identity,
+            stream.generation,
+            rows,
+            operations,
+            evaluation.revision
+          )
+      val records = updatedRecords(
+        last.rows -- dropped,
+        last.rows,
+        held.iterator.map(_.template.id),
+        held.iterator.map(_.record)
+      )
+      val recorded = recordedStream(node, evaluated.map(row => row.row -> row.record))
+      (
+        node,
+        recorded,
+        records,
+        StreamTemplate.StreamRowChanges(retained, templates -- gone, retired, dropped)
+      )
+    end complete
+
+    for
+      _             <- validateStreamDomIds(stream, stream.entries ++ transientEntries)
+      evaluatedRows <- withinRows(evaluation.transaction, last.signals) { changed =>
+                         // A stream's records hold its entries' DOM ids and values.
+                         val reading = changed.iterator
+                           .flatMap(last.rows.get)
+                           .map(record =>
+                             LiveStreamEntry(
+                               record.key.asInstanceOf[String],
+                               record.item.asInstanceOf[A]
+                             )
+                           )
+                           .filter(entry =>
+                             stream.entryIds.contains(entry.domId) &&
+                               !stream.insertedIds.contains(entry.domId)
+                           )
+                         val touched = (insertedEntries ++ reading).map(_ -> false) ++
+                           transientEntries.map(_ -> true)
+                         traverse(touched)((entry, transient) =>
+                           evaluate(entry, transient, changed)
+                         )
+                           .map(complete)
+                       }
+      ((node, recorded, records, changes), signals) = evaluatedRows
+    yield (node, recorded, records, signals, changes)
+  end evaluateStreamChanges
+
+  /** The row templates of a stream after `retained`, now that the rows it holds that it evaluated
+    * are `held`, and those of `retained` they replace.
+    */
+  private def heldTemplates[A, Msg](
+    retained: Map[String, StreamRowTemplate[A, Msg]],
+    held: Vector[EvaluatedStreamRow[A, Msg]]
+  ): (Map[String, StreamRowTemplate[A, Msg]], Vector[StreamRowTemplate[A, Msg]]) =
+    var templates = retained
+    val replaced  = Vector.newBuilder[StreamRowTemplate[A, Msg]]
+    held.foreach { row =>
+      val domId = row.row.domId
+      retained.get(domId) match
+        case Some(kept) if kept eq row.template => ()
+        case Some(kept)                         =>
+          templates = templates.updated(domId, row.template)
+          if !(kept.scope eq row.template.scope) then replaced += kept
+        case None => templates = templates.updated(domId, row.template)
+    }
+    templates -> replaced.result()
+
+  /** A stream row evaluated from `template`, and whether only the stream's operations render it. */
+  final private case class EvaluatedStreamRow[A, Msg](
+    template: StreamRowTemplate[A, Msg],
+    row: EvaluatedNode.StreamRow,
+    record: EvaluatedRow[Msg],
+    transient: Boolean)
+
+  /** Declares the components of `evaluated`, the rows a stream evaluated, in the order of `rows`,
+    * the stream's rows, followed by those of the rows only its operations render, in place of those
+    * declared since `declared` of them were: its other rows declare none.
+    */
+  private def reorderComponents[A, Msg](
+    rows: Vector[EvaluatedNode.StreamRow],
+    evaluated: Vector[EvaluatedStreamRow[A, Msg]],
+    declared: Int,
+    requirements: Requirements[Msg]
+  ): Unit =
+    val held = evaluated.iterator.filterNot(_.transient).map(row => row.row.domId -> row).toMap
+    requirements.components.dropRightInPlace(requirements.components.length - declared)
+    rows.foreach(row =>
+      held.get(row.domId).foreach(requirements.components ++= _.record.components)
+    )
+    evaluated.foreach(row =>
+      if row.transient then requirements.components ++= row.record.components
+    )
+
+  /** The rows of `stream` in order: `previous`, its rows before its operations, of the DOM ids
+    * `retained`, after them, with `evaluated`, the rows it holds that it evaluated, in place of
+    * theirs. Also returns the DOM ids of `retained` the stream no longer holds.
+    *
+    * Replays the operations: the deletions, then the insertions with their limits. The stream
+    * merges some operations, such as an insertion of an entry it inserted before, so when replaying
+    * them does not give its entries, the rows are found by DOM id instead. No operation moves a row
+    * it keeps, so without limits nor insertions at an index, only the rows inserted first or last
+    * may be out of place.
+    */
+  private def streamRowOrder[A](
+    stream: LiveStream[A],
+    previous: Vector[EvaluatedNode.StreamRow],
+    retained: String => Boolean,
+    evaluated: Map[String, EvaluatedNode.StreamRow]
+  ): (Vector[EvaluatedNode.StreamRow], Vector[String]) =
+    var rows    = previous
+    val removed = Vector.newBuilder[String]
+    val deleted = mutable.HashSet.empty[String]
+    stream.deleted.foreach { domId =>
+      if retained(domId) && deleted.add(domId) then
+        val index = rows.indexWhere(_.domId == domId)
+        if index >= 0 then
+          rows = rows.take(index) ++ rows.drop(index + 1)
+          removed += domId
+    }
+    val added    = mutable.HashSet.empty[String]
+    var first    = 0
+    var last     = 0
+    var anyWhere = false
+    stream.inserted.foreach { insert =>
+      evaluated.get(insert.entry.domId).foreach { row =>
+        val held =
+          (retained(row.domId) && !deleted.contains(row.domId)) || added.contains(row.domId)
+        if !held then
+          added += row.domId
+          insert.at match
+            case StreamAt.First =>
+              rows = row +: rows
+              first += 1
+            case StreamAt.Last =>
+              rows = rows :+ row
+              last += 1
+            case StreamAt.Index(index) =>
+              rows = rows.patch(index, Vector(row), 0)
+              anyWhere = true
+        if insert.limit.nonEmpty then anyWhere = true
+        insert.limit match
+          case Some(StreamLimit.KeepFirst(count)) if rows.length > count =>
+            removed ++= rows.iterator.drop(count).map(_.domId)
+            rows = rows.take(count)
+          case Some(StreamLimit.KeepLast(count)) if rows.length > count =>
+            removed ++= rows.iterator.take(rows.length - count).map(_.domId)
+            rows = rows.takeRight(count)
+          case _ => ()
+      }
+    }
+    val replacing = evaluated.filterNot((domId, _) => added.contains(domId))
+    if replacing.size <= 8 then
+      replacing.foreach { (domId, row) =>
+        val index = rows.indexWhere(_.domId == domId)
+        if index >= 0 && !(rows(index).child eq row.child) then rows = rows.updated(index, row)
+      }
+    else rows = rows.map(row => replacing.getOrElse(row.domId, row))
+
+    val gone = removed.result().filter(domId => retained(domId) && !stream.entryIds.contains(domId))
+    val entries = stream.entries
+    val inPlace =
+      rows.length == entries.length && (
+        if anyWhere then sameDomIds(rows.iterator, entries.iterator)
+        else
+          sameDomIds(rows.iterator.take(first), entries.iterator.take(first)) &&
+          sameDomIds(rows.reverseIterator.take(last), entries.reverseIterator.take(last))
+      )
+    if inPlace then rows -> gone.distinct
+    else
+      // Every entry no operation inserts was among the previous rows.
+      val byDomId = previous.iterator.map(row => row.domId -> row).toMap ++ evaluated
+      val all     = stream.entries.map(entry => byDomId(entry.domId))
+      all -> previous.iterator.map(_.domId).filterNot(stream.entryIds.contains).toVector
+  end streamRowOrder
+
+  /** Whether `rows` and `entries`, of the same length, have the same DOM ids in order. */
+  private def sameDomIds[A](
+    rows: Iterator[EvaluatedNode.StreamRow],
+    entries: Iterator[LiveStreamEntry[A]]
+  ): Boolean =
+    while rows.hasNext do
+      val domId = rows.next().domId
+      val entry = entries.next().domId
+      if !((domId eq entry) || domId == entry) then return false
+    true
+
+  /** How evaluating `stream` from the row templates `retained` and to `templates`, those of its
+    * rendered entries, changes the templates it keeps.
+    *
+    * The rows it no longer keeps are those of `retained` its entries no longer hold. Its deletions
+    * usually tell them all; only when they do not, such as after a limit pruned some rows or a
+    * reset, are its entries searched for them. The rows only its operations render are not kept.
+    */
+  private def streamRowChanges[A, Msg](
+    stream: LiveStream[A],
+    retained: Map[String, StreamRowTemplate[A, Msg]],
+    templates: Vector[StreamRowTemplate[A, Msg]]
+  ): StreamTemplate.StreamRowChanges[A, Msg] =
+    val entries = stream.entries
+    if retained.isEmpty then
+      val kept    = Map.from(entries.iterator.map(_.domId).zip(templates))
+      val dropped = templates.iterator.drop(entries.length).map(_.id).toVector
+      return StreamTemplate.StreamRowChanges(retained, kept, Vector.empty, dropped)
+    var next     = retained
+    var added    = 0
+    val replaced = Vector.newBuilder[StreamRowTemplate[A, Msg]]
+    var index    = 0
+    while index < entries.length do
+      val domId    = entries(index).domId
+      val template = templates(index)
+      retained.get(domId) match
+        case Some(kept) if kept eq template => ()
+        case Some(kept)                     =>
+          next = next.updated(domId, template)
+          if !(kept.scope eq template.scope) then replaced += kept
+        case None =>
+          next = next.updated(domId, template)
+          added += 1
+      index += 1
+
+    val removedCount = retained.size + added - entries.length
+    val deleted      =
+      stream.deleted.filter(domId => retained.contains(domId) && !stream.entryIds.contains(domId))
+    val removed =
+      if deleted.length == removedCount then deleted
+      else retained.keysIterator.filterNot(stream.entryIds.contains).toVector
+    val retired = removed.map(retained) ++ replaced.result()
+    StreamTemplate.StreamRowChanges(
+      retained,
+      next -- removed,
+      retired,
+      retired.map(_.id) ++ templates.iterator.drop(entries.length).map(_.id)
+    )
+  end streamRowChanges
+
+  /** `records`, the records of the rows that were kept, holding `evaluated`, the records of the
+    * rows `ids`, for each that `last` does not already hold.
+    */
+  private def updatedRecords[Msg](
+    records: Map[RowId, EvaluatedRow[Msg]],
+    last: Map[RowId, EvaluatedRow[Msg]],
+    ids: Iterator[RowId],
+    evaluated: Iterator[EvaluatedRow[Msg]]
+  ): Map[RowId, EvaluatedRow[Msg]] =
+    // Building them at once allocates less than adding them one by one to no records.
+    if records.isEmpty then Map.from(ids.zip(evaluated))
+    else
+      var next = records
+      while ids.hasNext do
+        val id     = ids.next()
+        val record = evaluated.next()
+        if !last.get(id).exists(_ eq record) then next = next.updated(id, record)
+      next
 
   /** Rejects a DOM id `entries`, the rendered entries of `stream`, holds twice.
     *
@@ -1938,36 +2386,22 @@ object RenderProgram:
   private def evaluateSignalKeyed[A, Key, Msg](
     template: SignalKeyedTemplate[A, Key, Msg],
     previous: Option[EvaluatedNode],
-    revision: RenderRevision,
-    transaction: SignalEvaluation.Transaction,
-    flash: Map[FlashKey, FlashValue],
-    bindings: BindingTable.Builder[Msg],
-    commitActions: ArrayBuffer[() => Unit],
-    candidateRows: CandidateRows,
-    requirements: Requirements[Msg]
+    evaluation: Evaluation[Msg]
   ): Either[RenderError, EvaluatedNode.Keyed] =
-    transaction.sample(template.values).flatMap { sample =>
+    evaluation.transaction.sample(template.values).flatMap { sample =>
       evaluateCollection(
         template.id,
         sample,
         template.state.lastEvaluated,
         previous,
-        transaction,
-        bindings,
-        commitActions,
-        requirements
-      )(
+        evaluation
+      )(changed =>
         evaluateSignalKeyedRows(
           template,
           sample.value,
           previous,
-          revision,
-          transaction,
-          flash,
-          bindings,
-          commitActions,
-          candidateRows,
-          requirements
+          evaluation,
+          changed
         )
       )
     }
@@ -1976,17 +2410,13 @@ object RenderProgram:
     template: SignalKeyedTemplate[A, Key, Msg],
     values: Iterable[A],
     previous: Option[EvaluatedNode],
-    revision: RenderRevision,
-    transaction: SignalEvaluation.Transaction,
-    flash: Map[FlashKey, FlashValue],
-    bindings: BindingTable.Builder[Msg],
-    commitActions: ArrayBuffer[() => Unit],
-    candidateRows: CandidateRows,
-    requirements: Requirements[Msg]
+    evaluation: Evaluation[Msg],
+    changed: Set[RowId]
   ): Either[RenderError, CollectionRows[Msg]] =
     val entries = values.iterator.map(value => template.key(value) -> value).toVector
+    val keys    = entries.map(_._1)
     for
-      _ <- validateEvaluationKeys(entries.map(_._1))
+      present <- validateEvaluationKeys(keys)
       retained = template.state.snapshot
       rows <- traverse(entries) { case (key, _) =>
                 retained.get(key) match
@@ -1995,69 +2425,46 @@ object RenderProgram:
                     template.compiler.keyedRowCandidate(
                       template.project,
                       key,
-                      candidateRows
+                      evaluation.candidateRows
                     )
               }
+      (next, removed) = keptRowTemplates(retained, keys, rows, present.contains)
       result <- evaluateItemRows(
                   template.id,
-                  rows.zip(entries.map(_._2)),
+                  rows.zip(entries),
+                  removed.map(_.id),
                   previous,
                   template.state.lastEvaluated,
-                  revision,
-                  transaction,
-                  flash,
-                  bindings,
-                  commitActions,
-                  candidateRows,
-                  requirements
+                  changed,
+                  evaluation
                 )
-    yield
-      val next    = Map.from(entries.map(_._1).zip(rows))
-      val removed = retained.iterator.collect {
-        case (key, row) if !next.contains(key) => row
-      }.toVector
-      CollectionRows(
-        result._1,
-        result._2,
-        result._3,
-        evaluated => template.state.assignment(next, removed, evaluated)
-      )
-    end for
+    yield CollectionRows(
+      result._1,
+      result._2,
+      result._3,
+      evaluated => template.state.assignment(next, removed, evaluated)
+    )
   end evaluateSignalKeyedRows
 
   private def evaluateSignalKeyedByIndex[A, Msg](
     template: SignalKeyedByIndexTemplate[A, Msg],
     previous: Option[EvaluatedNode],
-    revision: RenderRevision,
-    transaction: SignalEvaluation.Transaction,
-    flash: Map[FlashKey, FlashValue],
-    bindings: BindingTable.Builder[Msg],
-    commitActions: ArrayBuffer[() => Unit],
-    candidateRows: CandidateRows,
-    requirements: Requirements[Msg]
+    evaluation: Evaluation[Msg]
   ): Either[RenderError, EvaluatedNode.Keyed] =
-    transaction.sample(template.values).flatMap { sample =>
+    evaluation.transaction.sample(template.values).flatMap { sample =>
       evaluateCollection(
         template.id,
         sample,
         template.state.lastEvaluated,
         previous,
-        transaction,
-        bindings,
-        commitActions,
-        requirements
-      )(
+        evaluation
+      )(changed =>
         evaluateSignalKeyedByIndexRows(
           template,
           sample.value,
           previous,
-          revision,
-          transaction,
-          flash,
-          bindings,
-          commitActions,
-          candidateRows,
-          requirements
+          evaluation,
+          changed
         )
       )
     }
@@ -2066,13 +2473,8 @@ object RenderProgram:
     template: SignalKeyedByIndexTemplate[A, Msg],
     items: Iterable[A],
     previous: Option[EvaluatedNode],
-    revision: RenderRevision,
-    transaction: SignalEvaluation.Transaction,
-    flash: Map[FlashKey, FlashValue],
-    bindings: BindingTable.Builder[Msg],
-    commitActions: ArrayBuffer[() => Unit],
-    candidateRows: CandidateRows,
-    requirements: Requirements[Msg]
+    evaluation: Evaluation[Msg],
+    changed: Set[RowId]
   ): Either[RenderError, CollectionRows[Msg]] =
     val values   = items.iterator.toVector
     val indices  = values.indices.toVector
@@ -2085,35 +2487,51 @@ object RenderProgram:
                     template.compiler.indexedRowCandidate(
                       template.project,
                       index,
-                      candidateRows
+                      evaluation.candidateRows
                     )
               }
+      (next, removed) = keptRowTemplates(retained, indices, rows, _ < values.length)
       result <- evaluateItemRows(
                   template.id,
-                  rows.zip(values),
+                  rows.zip(indices.zip(values)),
+                  removed.map(_.id),
                   previous,
                   template.state.lastEvaluated,
-                  revision,
-                  transaction,
-                  flash,
-                  bindings,
-                  commitActions,
-                  candidateRows,
-                  requirements
+                  changed,
+                  evaluation
                 )
-    yield
-      val next    = Map.from(indices.zip(rows))
-      val removed = retained.iterator.collect {
-        case (index, row) if !next.contains(index) => row
-      }.toVector
-      CollectionRows(
-        result._1,
-        result._2,
-        result._3,
-        evaluated => template.state.assignment(next, removed, evaluated)
-      )
-    end for
+    yield CollectionRows(
+      result._1,
+      result._2,
+      result._3,
+      evaluated => template.state.assignment(next, removed, evaluated)
+    )
   end evaluateSignalKeyedByIndexRows
+
+  /** The row templates a collection keeps after `retained`, now that its rows are `rows`, keyed
+    * `keys`, and those of `retained` it no longer keeps, whose keys are not `present`.
+    *
+    * Only when `retained` and the new rows hold more than `keys` is `retained` searched for them.
+    */
+  private def keptRowTemplates[Key, A, Msg](
+    retained: Map[Key, DynamicKeyedRowTemplate[A, Msg]],
+    keys: Vector[Key],
+    rows: Vector[DynamicKeyedRowTemplate[A, Msg]],
+    present: Key => Boolean
+  ): (Map[Key, DynamicKeyedRowTemplate[A, Msg]], Vector[DynamicKeyedRowTemplate[A, Msg]]) =
+    if retained.isEmpty then return Map.from(keys.iterator.zip(rows)) -> Vector.empty
+    var next  = retained
+    var added = 0
+    var index = 0
+    while index < keys.length do
+      if !retained.contains(keys(index)) then
+        next = next.updated(keys(index), rows(index))
+        added += 1
+      index += 1
+    if retained.size + added == keys.length then next -> Vector.empty
+    else
+      val removed = retained.filterNot((key, _) => present(key))
+      (next -- removed.keys, removed.values.toVector)
 
   /** The evaluated rows of a collection, its node and the one it records, and the commit that keeps
     * them.
@@ -2125,7 +2543,8 @@ object RenderProgram:
     assignment: SignalKeyedTemplate.Evaluated[Msg] => () => Unit)
 
   /** Reuses the committed rows of a collection when nothing they were evaluated from changed, and
-    * otherwise evaluates them with `evaluateRows`, which returns the rows and their commit.
+    * otherwise evaluates them with `evaluateRows`, which, given the rows that read a signal from
+    * outside them that changed, returns the rows and their commit.
     *
     * Nothing changed when the collection's items and every signal its rows read from outside them
     * are unchanged, and its rows render nothing that signals do not track. The reused rows keep
@@ -2136,61 +2555,58 @@ object RenderProgram:
     items: SignalSample[?],
     last: Option[SignalKeyedTemplate.Evaluated[Msg]],
     previous: Option[EvaluatedNode],
-    transaction: SignalEvaluation.Transaction,
-    bindings: BindingTable.Builder[Msg],
-    commitActions: ArrayBuffer[() => Unit],
-    requirements: Requirements[Msg]
+    evaluation: Evaluation[Msg]
   )(
-    evaluateRows: => Either[RenderError, CollectionRows[Msg]]
+    evaluateRows: Set[RowId] => Either[RenderError, CollectionRows[Msg]]
   ): Either[RenderError, EvaluatedNode.Keyed] =
     val old      = previous.collect { case keyed: EvaluatedNode.Keyed => keyed }
     val reusable = (last, old) match
       case (Some(rows), Some(committed))
-          if !rows.signals.untracked && transaction.unchanged(items) &&
-            EvaluatedTree.resolvedFrom(committed, rows.node) =>
-        transaction
-          .allUnchanged(rows.signals.outside)
-          .map(Option.when(_)(rows -> committed))
-      case _ => Right(None)
+          if !rows.signals.untracked && evaluation.transaction.unchanged(items) &&
+            EvaluatedTree.resolvedFrom(committed, rows.node) &&
+            evaluation.transaction.allUnchanged(rows.signals.outside) =>
+        Some(rows -> committed)
+      case _ => None
 
-    reusable.flatMap {
+    reusable match
       case Some((rows, committed)) =>
-        bindings.reuseRows(id, rows.bindings).map { _ =>
-          requirements.components ++= rows.components
+        evaluation.bindings.reuseRows(id, rows.bindings).map { _ =>
+          evaluation.requirements.components ++= rows.components
           committed
         }
       case None =>
-        val declared = requirements.components.length
-        bindings.enterRows()
+        val declared = evaluation.requirements.components.length
+        evaluation.bindings.enterRows(id)
         val evaluated = withinRows(
-          transaction,
+          evaluation.transaction,
           last.fold(SignalEvaluation.RowsEvaluation.empty)(_.signals)
         )(evaluateRows)
-        val rowBindings = bindings.exitRows(id)
+        val rowBindings = evaluation.bindings.exitRows()
         evaluated.map { (collection, signals) =>
-          commitActions += collection.assignment(
+          evaluation.commitActions += collection.assignment(
             EvaluatedRows(
               collection.recorded,
               signals,
               rowBindings,
               collection.rows,
-              requirements.componentsSince(declared)
+              evaluation.requirements.componentsSince(declared)
             )
           )
           collection.node
         }
-    }
   end evaluateCollection
 
-  /** Evaluates rows, whose signals belong one level deeper than their collection. */
+  /** Evaluates rows, whose signals belong one level deeper than their collection, given those of
+    * them that read a signal from outside them that changed.
+    */
   private def withinRows[A](
     transaction: SignalEvaluation.Transaction,
     previous: SignalEvaluation.RowsEvaluation
   )(
-    evaluate: => Either[RenderError, A]
+    evaluate: Set[RowId] => Either[RenderError, A]
   ): Either[RenderError, (A, SignalEvaluation.RowsEvaluation)] =
     transaction.enterRows(previous)
-    val evaluated = evaluate
+    val evaluated = evaluate(transaction.changedRows())
     val signals   = transaction.exitRows()
     evaluated.map(_ -> signals)
 
@@ -2199,13 +2615,7 @@ object RenderProgram:
     id: TemplateId,
     templates: Vector[KeyedRowTemplate[Msg]],
     previous: Option[EvaluatedNode],
-    revision: RenderRevision,
-    transaction: SignalEvaluation.Transaction,
-    flash: Map[FlashKey, FlashValue],
-    bindings: BindingTable.Builder[Msg],
-    commitActions: ArrayBuffer[() => Unit],
-    candidateRows: CandidateRows,
-    requirements: Requirements[Msg]
+    evaluation: Evaluation[Msg]
   ): Either[RenderError, EvaluatedNode.Keyed] =
     val old     = previous.collect { case keyed: EvaluatedNode.Keyed => keyed }
     val oldRows = old.toVector.flatMap(_.rows).map(row => row.id -> row.child).toMap
@@ -2213,31 +2623,22 @@ object RenderProgram:
       evaluateNode(
         row.element,
         oldRows.get(row.id),
-        revision,
-        transaction,
-        flash,
-        bindings,
-        commitActions,
-        candidateRows,
-        requirements
+        evaluation
       ).map(node => EvaluatedNode.KeyedRow(row.id, node.asInstanceOf[EvaluatedNode.Element]))
-    }.map(rows => keyedNode(id, old, rows, revision))
+    }.map(rows => keyedNode(id, old, rows, evaluation.revision))
 
-  /** Evaluates the rows of a signal collection, each from its item. Each row keeps its committed
-    * node when nothing it read changed, given `last`, the committed rows.
+  /** Evaluates the rows of a signal collection, each from its key and item. Each row keeps its
+    * committed node when nothing it read changed, given `last`, the committed rows, which held the
+    * rows `removed` too, and `changed`, those that read a signal from outside them that changed.
     */
   private def evaluateItemRows[A, Msg](
     id: TemplateId,
-    rows: Vector[(DynamicKeyedRowTemplate[A, Msg], A)],
+    rows: Vector[(DynamicKeyedRowTemplate[A, Msg], (Any, A))],
+    removed: Vector[RowId],
     previous: Option[EvaluatedNode],
     last: Option[EvaluatedRows[?, Msg]],
-    revision: RenderRevision,
-    transaction: SignalEvaluation.Transaction,
-    flash: Map[FlashKey, FlashValue],
-    bindings: BindingTable.Builder[Msg],
-    commitActions: ArrayBuffer[() => Unit],
-    candidateRows: CandidateRows,
-    requirements: Requirements[Msg]
+    changed: Set[RowId],
+    evaluation: Evaluation[Msg]
   ): Either[
     RenderError,
     (EvaluatedNode.Keyed, EvaluatedNode.Keyed, Map[RowId, EvaluatedRow[Msg]])
@@ -2250,27 +2651,30 @@ object RenderProgram:
     val oldRows   =
       if committed then Map.empty[RowId, EvaluatedNode]
       else old.toVector.flatMap(_.rows).map(row => row.id -> row.child).toMap
-    traverse(rows) { (row, item) =>
+    traverse(rows) { case (row, (key, item)) =>
       val lastRow = lastRows.get(row.id)
       evaluateRow(
         row.id,
+        key,
         row.source,
         item,
         row.element,
         if committed then lastRow.map(_.node) else oldRows.get(row.id),
         lastRow,
-        revision,
-        transaction,
-        flash,
-        bindings,
-        commitActions,
-        candidateRows,
-        requirements
+        changed,
+        transient = false,
+        evaluation
       ).map(EvaluatedNode.KeyedRow(row.id, _) -> _)
     }.map { evaluated =>
+      evaluation.transaction.dropRows(removed)
       val keyedRows = evaluated.map(_._1)
-      val byId      = evaluated.iterator.map((row, value) => row.id -> value).toMap
-      val node      = keyedNode(id, old, keyedRows, revision)
+      val byId      = updatedRecords(
+        lastRows -- removed,
+        lastRows,
+        keyedRows.iterator.map(_.id),
+        evaluated.iterator.map(_._2)
+      )
+      val node = keyedNode(id, old, keyedRows, evaluation.revision)
       (node, recordedKeyed(node, evaluated), byId)
     }
   end evaluateItemRows
@@ -2290,8 +2694,8 @@ object RenderProgram:
         )
       )
 
-  /** `node`, whose rendered rows are `rows`, holding each row's recorded node instead, also in the
-    * operations that insert it, like [[recordedKeyed]].
+  /** `node` holding the recorded node of each of `rows`, the rows it evaluated, instead, also in
+    * the operations that insert it, like [[recordedKeyed]].
     */
   private def recordedStream[Msg](
     node: EvaluatedNode.Stream,
@@ -2299,14 +2703,15 @@ object RenderProgram:
   ): EvaluatedNode.Stream =
     if rows.forall((row, record) => row.child eq record.node) then node
     else
-      val recorded = rows.map((row, record) =>
-        if row.child eq record.node then row else row.copy(child = record.node)
+      val recorded = rows.iterator.collect {
+        case (row, record) if !(row.child eq record.node) =>
+          row.domId -> row.copy(child = record.node)
+      }.toMap
+      def of(row: EvaluatedNode.StreamRow) = recorded.getOrElse(row.domId, row)
+      val operations                       = node.operations.copy(inserts =
+        node.operations.inserts.map(insert => insert.copy(row = of(insert.row)))
       )
-      val byDomId    = recorded.map(row => row.domId -> row).toMap
-      val operations = node.operations.copy(inserts =
-        node.operations.inserts.map(insert => insert.copy(row = byDomId(insert.row.domId)))
-      )
-      node.copy(rows = recorded.take(node.rows.length), operations = operations)
+      node.copy(rows = node.rows.map(of), operations = operations)
 
   private def keyedNode(
     id: TemplateId,
@@ -2322,78 +2727,74 @@ object RenderProgram:
         node.copy(rows = rows)
       case _ => EvaluatedNode.Keyed(id, rows, revision)
 
-  /** Evaluates one row from `item`, or keeps its committed node, `previous`, when its item and
-    * every signal it read from outside it are unchanged, and it renders nothing that signals do not
-    * track. `last` is what the row's last evaluation recorded, and `previous` that evaluation's
-    * node as resolution filled in its components. A kept row keeps its bindings and signal samples,
-    * and declares its components again. Returns the row's node and what it records.
+  /** Evaluates one row from `item`, or keeps its committed node, `previous`, when its item is
+    * unchanged, it is not among the rows of `changed`, which read from outside them a signal that
+    * changed, and it renders nothing that signals do not track. `last` is what the row's last
+    * evaluation recorded, and `previous` that evaluation's node as resolution filled in its
+    * components. A kept row keeps its bindings and signal samples, and declares its components
+    * again. The bindings of a `transient` row, which its collection renders only for this
+    * evaluation, are not kept with the collection's rows. Returns the row's node and what it
+    * records.
     */
   private def evaluateRow[A, Msg](
     id: RowId,
+    key: Any,
     source: Signal[A],
     item: A,
     element: ElementTemplate[Msg],
     previous: Option[EvaluatedNode],
     last: Option[EvaluatedRow[Msg]],
-    revision: RenderRevision,
-    transaction: SignalEvaluation.Transaction,
-    flash: Map[FlashKey, FlashValue],
-    bindings: BindingTable.Builder[Msg],
-    commitActions: ArrayBuffer[() => Unit],
-    candidateRows: CandidateRows,
-    requirements: Requirements[Msg]
+    changed: Set[RowId],
+    transient: Boolean,
+    evaluation: Evaluation[Msg]
   ): Either[RenderError, (EvaluatedNode.Element, EvaluatedRow[Msg])] =
-    val kept = (last, transaction.previousRow(id), previous) match
+    val kept = (last, evaluation.transaction.previousRow(id), previous) match
       case (Some(row), Some(read), Some(committed: EvaluatedNode.Element))
-          if !read.untracked && row.item == item &&
+          if !transient && !read.untracked && row.item == item && !changed.contains(id) &&
             EvaluatedTree.resolvedFrom(committed, row.node) =>
-        transaction.allUnchanged(read.outside).map(Option.when(_)(committed -> row))
-      case _ => Right(None)
+        Some(committed -> row)
+      case _ => None
 
-    kept.flatMap {
+    kept match
       case Some(keptRow @ (_, row)) =>
-        transaction.keepRow(id)
-        bindings.keepRow(row.bindings)
-        requirements.components ++= row.components
+        evaluation.bindings.keepRow(id, row.bindings)
+        evaluation.requirements.components ++= row.components
         Right(keptRow)
       case None =>
-        transaction.bindSource(source, item).flatMap { _ =>
-          val declared = requirements.components.length
-          transaction.enterRow(id)
-          bindings.enterRow()
+        evaluation.transaction.bindSource(source, item).flatMap { _ =>
+          val declared = evaluation.requirements.components.length
+          evaluation.transaction.enterRow(id)
+          evaluation.bindings.enterRow()
           val evaluated = evaluateNode(
             element,
             previous,
-            revision,
-            transaction,
-            flash,
-            bindings,
-            commitActions,
-            candidateRows,
-            requirements
+            evaluation
           ).map(_.asInstanceOf[EvaluatedNode.Element])
-          transaction.exitRow()
-          val rowBindings = bindings.exitRow()
+          evaluation.transaction.exitRow()
+          val rowBindings =
+            if transient then
+              evaluation.bindings.exitTransientRow()
+              Vector.empty
+            else evaluation.bindings.exitRow(id)
           evaluated.map(node =>
             node -> EvaluatedRow(
               EvaluatedTree.unresolved(node),
               rowBindings,
               item,
-              requirements.componentsSince(declared)
+              key,
+              evaluation.requirements.componentsSince(declared)
             )
           )
         }
-    }
+    end match
   end evaluateRow
 
-  private def validateEvaluationKeys[A](keys: Vector[A]): Either[RenderError, Unit] =
-    keys
-      .foldLeft[Either[RenderError, Set[A]]](Right(Set.empty)) { (result, key) =>
-        result.flatMap(seen =>
-          if seen.contains(key) then Left(RenderError.DuplicateKey(key))
-          else Right(seen + key)
-        )
-      }.map(_ => ())
+  /** Rejects a key `keys` holds twice, and otherwise returns them as a set. */
+  private def validateEvaluationKeys[A](keys: Vector[A]): Either[RenderError, collection.Set[A]] =
+    val seen = mutable.HashSet.empty[A]
+    keys.find(key => !seen.add(key)) match
+      case Some(key) => Left(RenderError.DuplicateKey(key))
+      case None      => Right(seen)
 
   private def evaluateComponentRequirement[OwnerMsg](
     location: TemplateId,
@@ -2485,22 +2886,21 @@ object RenderProgram:
     revision: RenderRevision,
     transaction: SignalEvaluation.Transaction
   ): Either[RenderError, EvaluatedNode.Text] =
-    val value = template.value match
-      case TextTemplate.Value.Static(value, raw, slot)   => Right((slot, value, raw))
-      case TextTemplate.Value.Dynamic(slot, signal, raw) =>
-        transaction
-          .sample(signal).flatMap(sample =>
-            nonNullString(sample.value, "signal text content")
-              .map(value => (Some(slot), value, raw))
-          )
-
-    value.map { case (slot, text, raw) =>
+    def node(slot: OptionalSlotId, text: String, raw: Boolean): EvaluatedNode.Text =
       previous match
         case Some(node: EvaluatedNode.Text)
             if node.id == template.id && node.slot == slot && node.value == text && node.raw == raw =>
           node
         case _ => EvaluatedNode.Text(template.id, slot, text, raw, revision)
-    }
+
+    template.value match
+      case TextTemplate.Value.Static(value, raw, slot)   => Right(node(slot, value, raw))
+      case TextTemplate.Value.Dynamic(slot, signal, raw) =>
+        transaction
+          .sample(signal).flatMap(sample =>
+            nonNullString(sample.value, "signal text content")
+              .map(value => node(OptionalSlotId(slot), value, raw))
+          )
 
   private def evaluateAttribute[Msg](
     template: AttributeTemplate[Msg],
@@ -2512,81 +2912,83 @@ object RenderProgram:
   ): Either[RenderError, EvaluatedAttribute] =
     import AttributeTemplate.*
 
-    val evaluated: Either[RenderError, (Option[TemplateSlotId], Option[AttributeValue])] =
-      template match
-        case Static(_, value, slot)        => Right(slot -> value)
-        case DynamicValue(_, slot, signal) =>
-          transaction
-            .sample(signal).flatMap(sample =>
-              nonNullString(sample.value, s"signal attribute '${template.name}'")
-                .map(value => Some(slot) -> Some(AttributeValue.Text(value)))
-            )
-        case DynamicOptional(_, slot, signal) =>
-          transaction.sample(signal).flatMap { sample =>
-            sample.value match
-              case Some(value) =>
-                nonNullString(value, s"optional signal attribute '${template.name}'")
-                  .map(value => Some(slot) -> Some(AttributeValue.Text(value)))
-              case None => Right(Some(slot) -> None)
-          }
-        case DynamicPresence(_, slot, signal) =>
-          transaction
-            .sample(signal).map(sample =>
-              Some(slot) -> Option.when(sample.value)(AttributeValue.Presence)
-            )
-        case Composite(name, slot, parts) =>
-          traverse(parts)(part => evaluateCompositePart(name, part, transaction))
-            .map(tokens => Some(slot) -> compositeAttributeValue(tokens.flatten))
-        case Binding(name, valueSlot, id, operation) =>
-          val resolvedId = resolveBindingId(name, id, formId)
-          bindings
-            .add(resolvedId, BindingOperation(operation)).map(_ =>
-              Some(valueSlot) -> Some(AttributeValue.Text(resolvedId.encoded))
-            )
-        case SignalBinding(name, valueSlot, id, signal, operation) =>
-          val resolvedId = resolveBindingId(name, id, formId)
-          transaction.sample(signal).flatMap { sample =>
-            bindings
-              .add(resolvedId, BindingOperation(payload => operation(sample.value, payload))).map(
-                _ => Some(valueSlot) -> Some(AttributeValue.Text(resolvedId.encoded))
-              )
-          }
-        case JsBinding(name, valueSlot, id, command) =>
-          evaluateJs(resolveBindingId(name, id, formId), command, bindings).map(value =>
-            Some(valueSlot) -> Some(AttributeValue.Text(value))
-          )
-        case SignalJsBinding(name, valueSlot, id, command) =>
-          val resolvedId = resolveBindingId(name, id, formId)
-          transaction
-            .sample(command).flatMap(sample =>
-              evaluateJs(resolvedId, sample.value, bindings)
-                .map(value => Some(valueSlot) -> Some(AttributeValue.Text(value)))
-            )
-        case RoutedBinding(name, valueSlot, id, operation) =>
-          val resolvedId = resolveBindingId(name, id, formId)
-          bindings
-            .add(
-              resolvedId,
-              BindingOperation.dispatching(payload => BindingDispatch.Routed(operation(payload)))
-            ).map(_ => Some(valueSlot) -> Some(AttributeValue.Text(resolvedId.encoded)))
-        case ComponentTarget(target, valueSlot) =>
-          Right(Some(valueSlot) -> Some(AttributeValue.ComponentTarget(target)))
-        case Choice(_, signal, branches) =>
-          transaction.sample(signal).flatMap { sample =>
-            branches.find(_._1 == sample.value) match
-              case Some((_, branch)) =>
-                evaluateAttribute(branch, previous, revision, transaction, bindings, formId)
-                  .map(attribute => attribute.slot -> attribute.value)
-              case None => Right(None -> None)
-          }
-
-    evaluated.map { case (slot, value) =>
+    def attribute(slot: OptionalSlotId, value: Option[AttributeValue]): EvaluatedAttribute =
       previous match
         case Some(attribute)
             if attribute.name == template.name && attribute.slot == slot && attribute.value == value =>
           attribute
         case _ => EvaluatedAttribute(template.name, value, slot, revision)
-    }
+
+    template match
+      case Static(_, value, slot)        => Right(attribute(slot, value))
+      case DynamicValue(_, slot, signal) =>
+        transaction
+          .sample(signal).flatMap(sample =>
+            nonNullString(sample.value, s"signal attribute '${template.name}'")
+              .map(value => attribute(OptionalSlotId(slot), Some(AttributeValue.Text(value))))
+          )
+      case DynamicOptional(_, slot, signal) =>
+        transaction.sample(signal).flatMap { sample =>
+          sample.value match
+            case Some(value) =>
+              nonNullString(value, s"optional signal attribute '${template.name}'")
+                .map(value => attribute(OptionalSlotId(slot), Some(AttributeValue.Text(value))))
+            case None => Right(attribute(OptionalSlotId(slot), None))
+        }
+      case DynamicPresence(_, slot, signal) =>
+        transaction
+          .sample(signal).map(sample =>
+            attribute(OptionalSlotId(slot), Option.when(sample.value)(AttributeValue.Presence))
+          )
+      case Composite(name, slot, parts) =>
+        traverse(parts)(part => evaluateCompositePart(name, part, transaction))
+          .map(tokens => attribute(OptionalSlotId(slot), compositeAttributeValue(tokens.flatten)))
+      case Binding(name, valueSlot, id, operation) =>
+        val resolvedId = resolveBindingId(name, id, formId)
+        bindings
+          .add(resolvedId, BindingOperation(operation)).map(_ =>
+            attribute(OptionalSlotId(valueSlot), Some(AttributeValue.Text(resolvedId.encoded)))
+          )
+      case SignalBinding(name, valueSlot, id, signal, operation) =>
+        val resolvedId = resolveBindingId(name, id, formId)
+        transaction.sample(signal).flatMap { sample =>
+          bindings
+            .add(resolvedId, BindingOperation(payload => operation(sample.value, payload))).map(_ =>
+              attribute(OptionalSlotId(valueSlot), Some(AttributeValue.Text(resolvedId.encoded)))
+            )
+        }
+      case JsBinding(name, valueSlot, id, command) =>
+        evaluateJs(resolveBindingId(name, id, formId), command, bindings).map(value =>
+          attribute(OptionalSlotId(valueSlot), Some(AttributeValue.Text(value)))
+        )
+      case SignalJsBinding(name, valueSlot, id, command) =>
+        val resolvedId = resolveBindingId(name, id, formId)
+        transaction
+          .sample(command).flatMap(sample =>
+            evaluateJs(resolvedId, sample.value, bindings)
+              .map(value => attribute(OptionalSlotId(valueSlot), Some(AttributeValue.Text(value))))
+          )
+      case RoutedBinding(name, valueSlot, id, operation) =>
+        val resolvedId = resolveBindingId(name, id, formId)
+        bindings
+          .add(
+            resolvedId,
+            BindingOperation.dispatching(payload => BindingDispatch.Routed(operation(payload)))
+          ).map(_ =>
+            attribute(OptionalSlotId(valueSlot), Some(AttributeValue.Text(resolvedId.encoded)))
+          )
+      case ComponentTarget(target, valueSlot) =>
+        Right(attribute(OptionalSlotId(valueSlot), Some(AttributeValue.ComponentTarget(target))))
+      case Choice(_, signal, branches) =>
+        transaction.sample(signal).flatMap { sample =>
+          branches.find(_._1 == sample.value) match
+            case Some((_, branch)) =>
+              evaluateAttribute(branch, previous, revision, transaction, bindings, formId)
+                .map(selected => attribute(selected.slot, selected.value))
+            case None => Right(attribute(OptionalSlotId.none, None))
+        }
+    end match
+
   end evaluateAttribute
 
   private def evaluateCompositePart(
@@ -2779,6 +3181,31 @@ object RenderProgram:
     case stream: StaticStreamTemplate[?, ?] => stream.state.snapshot(stream.stream.identity).size
     case _: SignalStreamTemplate[?, ?]      => 0
     case _: TextTemplate                    => 0
+
+  /** What a committed collection or stream keeps of one row: its record, an `EvaluatedRow` this
+    * leaves opaque, and what it read.
+    */
+  final private[render] case class RetainedRow(
+    record: Option[AnyRef],
+    read: Option[SignalEvaluation.RowSignals])
+
+  private def retainedRows(template: NodeTemplate[?]): Map[RowId, RetainedRow] =
+    def of(rows: Option[EvaluatedRows[?, ?]]): Map[RowId, RetainedRow] =
+      rows.fold(Map.empty) { rows =>
+        (rows.rows.keySet ++ rows.signals.rows.keySet).iterator
+          .map(id => id -> RetainedRow(rows.rows.get(id), rows.signals.rows.get(id)))
+          .toMap
+      }
+    template match
+      case element: ElementTemplate[?] =>
+        element.children.map(retainedRows).foldLeft(Map.empty)(_ ++ _)
+      case choice: ChoiceTemplate[?] =>
+        choice.branches.flatMap(_._2).map(retainedRows).foldLeft(Map.empty)(_ ++ _)
+      case keyed: SignalKeyedTemplate[?, ?, ?]     => of(keyed.state.lastEvaluated)
+      case keyed: SignalKeyedByIndexTemplate[?, ?] => of(keyed.state.lastEvaluated)
+      case stream: StaticStreamTemplate[?, ?]      => of(stream.state.committed)
+      case stream: SignalStreamTemplate[?, ?]      => of(stream.state.committed)
+      case _                                       => Map.empty
 
   private def closeRetainedRows(template: NodeTemplate[?]): Unit = template match
     case element: ElementTemplate[?] => element.children.foreach(closeRetainedRows)

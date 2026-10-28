@@ -39,16 +39,16 @@ object BindingOperation:
   * bindings earlier renders dropped: see [[resolveRetired]]. Construction rejects duplicate
   * identities rather than selecting one operation by map overwrite.
   *
-  * A table is built from the one before it, so that the bindings of a collection the evaluation
-  * reused cost nothing: it records which bindings come from each top-level collection, and which
-  * bindings of the table before it this one dropped.
+  * A table is built from the one before it, so that the bindings of a collection or a row the
+  * evaluation reused cost nothing: it records the bindings of each row of each top-level
+  * collection, and which bindings of the table before it this one dropped.
   */
 final class BindingTable[+Msg] private (
   private val entries: Map[BindingId, BindingOperation[Msg]],
   private val retired: Map[BindingId, BindingTable.Retired[Msg]],
-  // The bindings outside every collection, and those of each top-level collection.
+  // The bindings outside every collection, and those of each row of each top-level collection.
   private val looseIds: Vector[BindingId],
-  private val collectionIds: Map[TemplateId, Vector[BindingId]],
+  private val collections: Map[TemplateId, BindingTable.Collection[Msg]],
   // The table this one was built from, and the bindings of it that this one dropped.
   private val base: AnyRef,
   private val dropped: Vector[(BindingId, BindingOperation[Msg])]):
@@ -69,6 +69,10 @@ final class BindingTable[+Msg] private (
   def isEmpty: Boolean = entries.isEmpty
 
   def ids: Vector[BindingId] = entries.keysIterator.toVector
+
+  /** The bindings of each row of top-level collection `id`. */
+  private[render] def rowGroups(id: TemplateId): BindingTable.Collection[Msg] =
+    collections.getOrElse(id, Map.empty)
 
   /** This table, also retaining the bindings `previous` resolved and this one does not.
     *
@@ -93,7 +97,7 @@ final class BindingTable[+Msg] private (
     val capped =
       if all.size <= BindingTable.RetiredCapacity then all
       else all.toVector.sortBy(_._2.at).takeRight(BindingTable.RetiredCapacity).toMap
-    BindingTable(entries, capped, looseIds, collectionIds, base, dropped)
+    BindingTable(entries, capped, looseIds, collections, base, dropped)
 end BindingTable
 
 object BindingTable:
@@ -111,17 +115,43 @@ object BindingTable:
 
   private object NoBase
 
-  /** The bindings of the rows of one collection, its nested collections included. */
-  private[render] type Rows[+Msg] = Vector[(BindingId, BindingOperation[Msg])]
+  /** The bindings of one row, those of the collections it holds included. */
+  private[render] type Row[+Msg] = Vector[(BindingId, BindingOperation[Msg])]
 
-  /** Builds the table of one evaluation from `base`, the table of the evaluation it follows. */
+  /** The bindings of the rows of one collection that render any, by row. */
+  private[render] type Collection[+Msg] = Map[RowId, Row[Msg]]
+
+  /** The rows of collection `id` collected so far, from `prior`, its rows before. When
+    * `keepsOthers`, the rows of `prior` not collected again keep their bindings unless removed.
+    */
+  final private class Collecting[Msg](
+    val id: TemplateId,
+    val prior: Collection[Msg],
+    val keepsOthers: Boolean):
+    // The rows of `prior` this evaluation renders again, and their bindings now.
+    val rendered              = mutable.ArrayBuffer.empty[RowId]
+    var kept: Collection[Msg] = prior
+    // The rows `prior` does not hold.
+    val fresh = Map.newBuilder[RowId, Row[Msg]]
+
+  /** Builds the table of one evaluation from `base`, the table of the evaluation it follows.
+    *
+    * A row of a top-level collection the evaluation keeps keeps its bindings from `base`: building
+    * the table removes and adds only the bindings of the rows the evaluation removes, adds or
+    * evaluates again.
+    */
   final private[render] class Builder[Msg](base: BindingTable[Msg] = BindingTable.empty):
-    // The bindings outside every collection, then those of each collection being evaluated.
+    // The bindings outside every collection, then those of each row being evaluated.
     private val levels =
       mutable.ArrayBuffer(mutable.ArrayBuffer.empty[(BindingId, BindingOperation[Msg])])
-    private val added                = mutable.HashSet.empty[BindingId]
-    private val evaluatedCollections = mutable.LinkedHashMap.empty[TemplateId, Rows[Msg]]
-    private val reusedCollections    = mutable.LinkedHashMap.empty[TemplateId, Rows[Msg]]
+    // The collections being collected, the outermost first.
+    private val open        = mutable.ArrayBuffer.empty[Collecting[Msg]]
+    private val added       = mutable.HashSet.empty[BindingId]
+    private val collections = mutable.LinkedHashMap.empty[TemplateId, Collection[Msg]]
+    // The rows of top-level collections that `base` does not hold, and those of `base` this table
+    // does not hold.
+    private val addedRows   = mutable.ArrayBuffer.empty[Row[Msg]]
+    private val removedRows = mutable.ArrayBuffer.empty[Row[Msg]]
 
     def add(id: BindingId, operation: BindingOperation[Msg]): Either[RenderError, Unit] =
       if !added.add(id) then Left(RenderError.DuplicateBinding(id))
@@ -129,51 +159,113 @@ object BindingTable:
         levels.last += id -> operation
         Right(())
 
-    /** Starts collecting the bindings of the rows of a collection. */
-    def enterRows(): Unit = levels += mutable.ArrayBuffer.empty
+    /** Starts collecting the bindings of the rows of collection `id`. */
+    def enterRows(id: TemplateId): Unit =
+      val prior = if open.isEmpty then base.rowGroups(id) else Map.empty[RowId, Row[Msg]]
+      open += Collecting(id, prior, keepsOthers = false)
 
-    /** Ends collecting the bindings of the rows of collection `id`, and returns them. */
-    def exitRows(id: TemplateId): Rows[Msg] =
-      val rows = levels.remove(levels.length - 1).toVector
-      if levels.length == 1 then evaluatedCollections.update(id, rows) else levels.last ++= rows
+    /** Starts collecting the bindings of the rows of collection `id` that the evaluation evaluates
+      * again or removes: the others keep their bindings in `previous`, those of its rows in the
+      * previous evaluation.
+      */
+    def enterChangedRows(id: TemplateId, previous: Collection[Msg]): Unit =
+      val prior = if open.isEmpty then base.rowGroups(id) else previous
+      open += Collecting(id, prior, keepsOthers = true)
+
+    /** Drops the bindings of row `id` of the collection the last `enterChangedRows` started. */
+    def removeRow(id: RowId): Unit =
+      val collection = open.last
+      collection.prior.get(id).foreach { prior =>
+        collection.kept -= id
+        if open.length == 1 then removedRows += prior
+      }
+
+    /** Ends collecting the bindings of the rows of the collection the last `enterRows` started, and
+      * returns them.
+      */
+    def exitRows(): Collection[Msg] =
+      val collection = open.remove(open.length - 1)
+      val kept       =
+        if collection.keepsOthers || collection.rendered.length == collection.prior.size then
+          collection.kept
+        else
+          val rendered = collection.rendered.toSet
+          val removed  = collection.prior.filterNot((id, _) => rendered.contains(id))
+          removedRows ++= removed.valuesIterator
+          collection.kept -- removed.keysIterator
+      val fresh = collection.fresh.result()
+      val rows  =
+        if fresh.isEmpty then kept
+        else if kept.isEmpty then fresh
+        else kept ++ fresh
+      if open.isEmpty then collections.update(collection.id, rows)
+      else rows.valuesIterator.foreach(levels.last ++= _)
       rows
 
     /** Starts collecting the bindings of one row of the collection being collected. */
     def enterRow(): Unit = levels += mutable.ArrayBuffer.empty
 
-    /** Ends collecting the bindings of the row the last `enterRow` started, and returns them. */
-    def exitRow(): Rows[Msg] =
+    /** Ends collecting the bindings of row `id`, which the last `enterRow` started, and returns
+      * them.
+      */
+    def exitRow(id: RowId): Row[Msg] =
       val row = levels.remove(levels.length - 1).toVector
-      levels.last ++= row
+      collect(id, row)
       row
 
-    /** Keeps `row`, the bindings of a row in the previous evaluation, in the collection being
+    /** Ends collecting the bindings of a row that the collection being collected renders only for
+      * this evaluation, which the last `enterRow` started: they belong to what holds the
+      * collection, and so are not kept with its rows.
+      */
+    def exitTransientRow(): Unit =
+      val row = levels.remove(levels.length - 1)
+      levels.last ++= row: Unit
+
+    /** Keeps `row`, the bindings of row `id` in the previous evaluation, in the collection being
       * collected. A duplicate among them and the rest is found when the table is built.
       */
-    def keepRow(row: Rows[Msg]): Unit = levels.last ++= row
+    def keepRow(id: RowId, row: Row[Msg]): Unit = collect(id, row)
+
+    private def collect(id: RowId, row: Row[Msg]): Unit =
+      val collection = open.last
+      val topLevel   = open.length == 1
+      collection.prior.get(id) match
+        case Some(prior) =>
+          if !collection.keepsOthers then collection.rendered += id
+          if !(prior eq row) then
+            collection.kept =
+              if row.isEmpty then collection.kept - id else collection.kept.updated(id, row)
+            if topLevel then
+              addedRows += row
+              removedRows += prior
+        case None if row.nonEmpty =>
+          collection.fresh += id -> row
+          if topLevel then addedRows += row
+        case None => ()
 
     /** Keeps the bindings of the rows of collection `id`, reused from the previous evaluation. */
-    def reuseRows(id: TemplateId, rows: Rows[Msg]): Either[RenderError, Unit] =
-      if levels.length == 1 then
-        reusedCollections.update(id, rows)
+    def reuseRows(id: TemplateId, rows: Collection[Msg]): Either[RenderError, Unit] =
+      if open.isEmpty then
+        val prior = base.rowGroups(id)
+        if !(prior eq rows) then
+          addedRows ++= rows.valuesIterator
+          removedRows ++= prior.valuesIterator
+        collections.update(id, rows)
         Right(())
       else
-        rows.foldLeft[Either[RenderError, Unit]](Right(())) { case (result, (id, operation)) =>
-          result.flatMap(_ => add(id, operation))
+        rows.valuesIterator.flatten.foldLeft[Either[RenderError, Unit]](Right(())) {
+          case (result, (bindingId, operation)) => result.flatMap(_ => add(bindingId, operation))
         }
 
     def result(): Either[RenderError, BindingTable[Msg]] =
       val loose = levels.head
-      // A reused top-level collection keeps its bindings from `base`.
-      val keptIds = reusedCollections.keysIterator.filter(base.collectionIds.contains).toSet
-      val removed = base.looseIds ++ base.collectionIds.iterator.collect {
-        case (id, ids) if !keptIds.contains(id) => ids
+      val gone  = base.collections.iterator.collect {
+        case (id, rows) if !collections.contains(id) => rows.valuesIterator
       }.flatten
+      val removed = (base.looseIds.iterator ++
+        (removedRows.iterator ++ gone).flatMap(_.iterator.map(_._1))).toVector
       val start      = base.entries -- removed
-      val newlyAdded = loose.iterator ++ evaluatedCollections.valuesIterator.flatten ++
-        reusedCollections.iterator.collect {
-          case (id, rows) if !keptIds.contains(id) => rows
-        }.flatten
+      val newlyAdded = loose.iterator ++ addedRows.iterator.flatten
       val entries = newlyAdded.foldLeft[Either[RenderError, Map[BindingId, BindingOperation[Msg]]]](
         Right(start)
       ) { case (result, (id, operation)) =>
@@ -183,20 +275,15 @@ object BindingTable:
         )
       }
       entries.map { all =>
-        val collectionIds = base.collectionIds.filter((id, _) => keptIds.contains(id)) ++
-          (evaluatedCollections.iterator ++ reusedCollections.iterator.filterNot((id, _) =>
-            keptIds.contains(id)
-          )).map((id, rows) => id -> rows.map(_._1))
         val dropped = removed.iterator.filterNot(all.contains).map(id => id -> base.entries(id))
         BindingTable(
           all,
           Map.empty,
           loose.iterator.map(_._1).toVector,
-          collectionIds,
+          collections.toMap,
           base,
           dropped.toVector
         )
       }
-    end result
   end Builder
 end BindingTable

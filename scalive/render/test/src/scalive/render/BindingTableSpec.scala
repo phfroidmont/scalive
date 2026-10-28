@@ -6,6 +6,7 @@ import zio.ZIO
 import zio.test.*
 
 import scalive.*
+import scalive.streams.*
 
 object BindingTableSpec extends ZIOSpecDefault:
   private enum FormMsg:
@@ -392,6 +393,132 @@ object BindingTableSpec extends ZIOSpecDefault:
         firstChange != secondChange,
         second.bindings.resolve(firstChange).isEmpty
       )
+    },
+    test("rebuilds only the binding groups of the stream rows a turn inserts or deletes") {
+      final case class Row(id: Int)
+      final case class Feed(stream: LiveStream[Row])
+      val identity = LiveStreamIdentity.fresh()
+      def entry(row: Row) = LiveStreamEntry(s"rows-${row.id}", row)
+      def stream(rows: Vector[Row], inserted: Vector[Row], deleted: Vector[Row]) =
+        LiveStream(
+          identity,
+          "rows",
+          1L,
+          rows.map(entry),
+          inserted.map(row => LiveStreamInsert(entry(row), StreamAt.Last, None, false)),
+          deleted.map(entry(_).domId),
+          reset = false
+        )
+      val rows     = Vector.tabulate(5)(Row(_))
+      val added    = Row(5)
+      val compiled = RenderProgram.compile[Feed, Int] { feed =>
+        div(feed.map(_.stream).renderIn(ul)(row => li(on.click(row)((row, _) => row.id))))
+      }
+      def groups(render: RenderCandidate[Int]) =
+        val stream = render.tree.root.children.head.asInstanceOf[EvaluatedNode.Element]
+          .children.head.asInstanceOf[EvaluatedNode.Stream]
+        render.bindings.rowGroups(stream.id).values.toVector
+      def rebuilt(previous: RenderCandidate[Int], next: RenderCandidate[Int]) =
+        groups(next).count(group => !groups(previous).exists(_ eq group))
+
+      for
+        program  <- ZIO.fromEither(compiled)
+        first    <- program.evaluate(Feed(stream(rows, Vector.empty, Vector.empty)))
+        inserted <- program.evaluate(
+                      Feed(stream(rows :+ added, Vector(added), Vector.empty)),
+                      Some(first.commit)
+                    )
+        deleted <- program.evaluate(
+                     Feed(stream(rows.drop(1) :+ added, Vector.empty, Vector(rows.head))),
+                     Some(inserted.commit)
+                   )
+      yield assertTrue(
+        groups(inserted).size == 6,
+        rebuilt(first, inserted) == 1,
+        groups(deleted).size == 5,
+        rebuilt(inserted, deleted) == 0,
+        inserted.bindings.size == 6,
+        deleted.bindings.size == 5
+      )
+    },
+    test("keeps the bindings of a stream row only its operations render for that turn only") {
+      final case class Row(id: Int)
+      final case class Feed(stream: LiveStream[Row])
+      val identity = LiveStreamIdentity.fresh()
+      def entry(row: Row) = LiveStreamEntry(s"rows-${row.id}", row)
+      def stream(generation: Long, inserted: Vector[LiveStreamInsert[Row]], deleted: Vector[Row]) =
+        val rows = Vector(Row(0), Row(1), Row(2)).filterNot(deleted.contains)
+        LiveStream(identity, "rows", generation, rows.map(entry), inserted, deleted.map(entry(_).domId), reset = false)
+      // A limit of 3 prunes the row it inserts at once.
+      val pruned   = LiveStreamInsert(entry(Row(3)), StreamAt.Last, Some(StreamLimit.KeepFirst(3)), false)
+      val compiled = RenderProgram.compile[Feed, Int] { feed =>
+        div(feed.map(_.stream).renderIn(ul)(row => li(on.click(row)((row, _) => row.id))))
+      }
+
+      for
+        program  <- ZIO.fromEither(compiled)
+        first    <- program.evaluate(Feed(stream(1L, Vector.empty, Vector.empty)))
+        inserted <- program.evaluate(Feed(stream(2L, Vector(pruned), Vector.empty)), Some(first.commit))
+        deleted  <- program.evaluate(Feed(stream(3L, Vector.empty, Vector(Row(0)))), Some(inserted.commit))
+      yield assertTrue(
+        inserted.bindings.size == 4,
+        deleted.bindings.size == 2
+      )
+    },
+    test("retires the bindings of a row a collection removes and keeps those of the others") {
+      final case class Row(id: Int)
+      val compiled = RenderProgram.compile[Vector[Row], Int] { rows =>
+        div(rows.splitBy(_.id)((id, _) => button(on.click(id))))
+      }
+      val now = Instant.EPOCH
+
+      for
+        program <- ZIO.fromEither(compiled)
+        first   <- program.evaluate(Vector(Row(1), Row(2), Row(3)))
+        base = first.commit
+        second <- program.evaluate(Vector(Row(1), Row(3)), Some(base))
+        committed = second.commit.retiring(base, now)
+        removed   = base.bindings.ids.filterNot(committed.bindings.ids.contains)
+      yield assertTrue(
+        removed.size == 1,
+        committed.bindings.size == 2,
+        message(committed.bindings.resolveRetired(removed.head, now)).contains(2)
+      )
+    },
+    test("drops the bindings of a row that renders none any more, and adds them back") {
+      final case class Row(id: Int, active: Boolean)
+      val compiled = RenderProgram.compile[Vector[Row], Int] { rows =>
+        div(rows.splitBy(_.id)((id, row) => div(row.map(_.active).when(button(on.click(id))))))
+      }
+      val active   = Vector(Row(1, true), Row(2, true))
+      val inactive = Vector(Row(1, true), Row(2, false))
+
+      for
+        program <- ZIO.fromEither(compiled)
+        first   <- program.evaluate(active)
+        base = first.commit
+        second <- program.evaluate(inactive, Some(base))
+        hidden = second.commit
+        third <- program.evaluate(active, Some(hidden))
+      yield assertTrue(
+        base.bindings.size == 2,
+        hidden.bindings.size == 1,
+        third.bindings.ids.toSet == base.bindings.ids.toSet
+      )
+    },
+    test("rejects a row binding that duplicates one in a kept row") {
+      final case class Row(id: Int, formId: String)
+      val compiled = RenderProgram.compile[Vector[Row], Int] { rows =>
+        div(rows.splitBy(identity)((row, _) => form(idAttr := row.formId, on.change(_ => row.id))))
+      }
+
+      for
+        program   <- ZIO.fromEither(compiled)
+        first     <- program.evaluate(Vector(Row(1, "form-1")))
+        duplicate <- program
+                       .evaluate(Vector(Row(1, "form-1"), Row(2, "form-1")), Some(first.commit))
+                       .either
+      yield assertTrue(duplicate.left.exists(_.isInstanceOf[RenderError.DuplicateBinding]))
     }
   )
 

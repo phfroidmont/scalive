@@ -108,10 +108,10 @@ What still visits every row:
   row vector, then checks the whole row order against the stream's entries. When operations the
   stream merged do not replay to its entries, such as an entry inserted, then another, then the
   first updated, the rows are found by DOM id, which costs a map of them.
-- A keyed list whose items changed (`KeyedRowsBenchmark`), as upstream walks every entry of a
-  changed comprehension: it compares every item, though a kept row now costs less (a turn
-  updating one row of 1,000 allocates 3.25 MB instead of 3.63 MB in `renderDiffAndEncode`, and of
-  10,000 rows 31.4 MB instead of 37.2 MB).
+- A `splitBy` or `splitByIndex` collection whose items changed (`KeyedRowsBenchmark`), as upstream
+  walks every entry of a changed Phoenix comprehension: it compares every entry, though a kept row
+  now costs less (a turn updating one row of 1,000 allocates 3.25 MB instead of 3.63 MB in
+  `renderDiffAndEncode`, and of 10,000 rows 31.4 MB instead of 37.2 MB).
 - A row that builds its own outside signal, such as `selected.map(_ == id)` in the row function,
   costs one indexed signal, sampled every turn the collection is evaluated: the bindings guide
   advises folding such state into the entries.

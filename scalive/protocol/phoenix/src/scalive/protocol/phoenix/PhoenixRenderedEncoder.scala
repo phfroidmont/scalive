@@ -1267,12 +1267,12 @@ private[scalive] object PhoenixRenderedEncoder:
             case Some(template) => updated.copy(replaced = updated.replaced + template)
             case None           => updated.copy(structural = true)
         }
-    case RenderChange.Keyed(id, rows) =>
+    case RenderChange.Keyed(id, rowCount, rows) =>
       val targets = findKeyed(current.root, id)
       targets match
         case Vector()       => Left(PhoenixEncodingError.UnknownTarget(id))
         case Vector(target) =>
-          applyKeyedChange(target, rows, context).map { case (keyed, update) =>
+          applyKeyedChange(target, rowCount, rows, context).map { case (keyed, update) =>
             current.copy(
               root = replaceKeyed(current.root, id, keyed),
               changedSlots = current.changedSlots ++ update.changedSlots,
@@ -1396,46 +1396,36 @@ private[scalive] object PhoenixRenderedEncoder:
 
   private def applyKeyedChange(
     keyed: ProjectedKeyed,
+    rowCount: Int,
     changes: Vector[KeyedRowChange],
     context: ProjectionContext
   ): Either[PhoenixEncodingError, (ProjectedKeyed, ProgramUpdate)] =
-    val oldRows                          = keyed.rows
-    lazy val oldIndexes: Map[RowId, Int] =
-      oldRows.iterator.zipWithIndex.map((row, index) => row.id -> index).toMap
-    // Rows mostly keep their positions, so a row is looked up at its new index first, and by key
-    // only when the rows moved. -1 when the old rows do not hold it.
-    def oldIndex(id: RowId, index: Int): Int =
-      if index < oldRows.length && oldRows(index).id == id then index
-      else oldIndexes.getOrElse(id, -1)
-
-    validateKeyedChanges(oldRows.length, changes, oldIndex, oldIndexes.contains).flatMap { _ =>
-      val rows       = Vector.newBuilder[ProjectedKeyedRow]
-      val updates    = Vector.newBuilder[ProjectedKeyedRowUpdate]
-      val slots      = Set.newBuilder[TemplateSlotId]
-      val components = Set.newBuilder[Int]
-      val streams    = Set.newBuilder[TemplateId]
-      val targets    = Set.newBuilder[TemplateId]
-      val replaced   = Set.newBuilder[TemplateId]
+    validateKeyedChanges(keyed.rows, rowCount, changes).flatMap { _ =>
+      val changedRows = new Array[ProjectedKeyedRow](changes.length)
+      val updates     = Vector.newBuilder[ProjectedKeyedRowUpdate]
+      val slots       = Set.newBuilder[TemplateSlotId]
+      val components  = Set.newBuilder[Int]
+      val streams     = Set.newBuilder[TemplateId]
+      val targets     = Set.newBuilder[TemplateId]
+      val replaced    = Set.newBuilder[TemplateId]
       boundary:
-        var index = 0
-        while index < changes.length do
-          changes(index) match
-            case KeyedRowChange.Insert(row) =>
+        var position = 0
+        while position < changes.length do
+          changes(position) match
+            case KeyedRowChange.Insert(index, row) =>
               val before = context.projectedCids.toSet
               project(row.child, None, context) match
                 case Left(error)  => break(Left(error))
                 case Right(child) =>
                   components ++= context.projectedCids.toSet -- before
-                  rows += ProjectedKeyedRow(row.id, child)
+                  changedRows(position) = ProjectedKeyedRow(row.id, child)
                   updates += ProjectedKeyedRowUpdate.whole(index)
-            case KeyedRowChange.Retain(id, rowChanges) =>
-              val previous = oldIndex(id, index)
-              val oldRow   = oldRows(previous)
-              val moved    = previous != index
+            case KeyedRowChange.Retain(index, oldIndex, _, rowChanges) =>
+              val oldRow = keyed.rows(oldIndex)
+              val moved  = oldIndex != index
               if rowChanges.isEmpty then
-                // A kept row that did not change contributes nothing, nor does it when it moved.
-                rows += oldRow
-                if moved then updates += ProjectedKeyedRowUpdate(index, Some(previous), None, false)
+                changedRows(position) = oldRow
+                if moved then updates += ProjectedKeyedRowUpdate(index, Some(oldIndex), None, false)
               else
                 applyChanges(oldRow.child, rowChanges, context) match
                   case Left(error)   => break(Left(error))
@@ -1443,11 +1433,11 @@ private[scalive] object PhoenixRenderedEncoder:
                     val changed = update.structural || update.changedSlots.nonEmpty ||
                       update.changedStreams.nonEmpty || update.changedKeyedTargets.nonEmpty ||
                       update.replaced.nonEmpty
-                    rows += oldRow.copy(child = update.root)
+                    changedRows(position) = oldRow.copy(child = update.root)
                     if moved || changed then
                       updates += ProjectedKeyedRowUpdate(
                         index,
-                        if moved then Some(previous) else None,
+                        if moved then Some(oldIndex) else None,
                         if changed && !update.structural then Some(update.changes) else None,
                         full = update.structural
                       )
@@ -1457,7 +1447,7 @@ private[scalive] object PhoenixRenderedEncoder:
                     targets ++= update.changedKeyedTargets
                     replaced ++= update.replaced
           end match
-          index += 1
+          position += 1
         end while
         val aggregate = ProgramUpdate(
           ProjectedNode(keyed.id, Vector.empty),
@@ -1470,7 +1460,7 @@ private[scalive] object PhoenixRenderedEncoder:
         )
         Right(
           keyed.copy(
-            rows = rows.result(),
+            rows = keyedRows(keyed.rows, rowCount, changes, changedRows),
             updates = updates.result(),
             includeStatics = false,
             changed = true
@@ -1479,29 +1469,85 @@ private[scalive] object PhoenixRenderedEncoder:
     }
   end applyKeyedChange
 
-  /** Checks in one pass that the changes name each row once, retain only rows the old rows hold,
-    * and insert only rows they do not.
+  // Patching a vector copies a path of its tree, so beyond this many rows rebuilding it is cheaper.
+  private val maxPatchedKeyedRows = 32
+
+  /** The rows after a validated keyed change, in which `changedRows` are the rows of `changes`. Few
+    * changes patch the old rows, and more rebuild them once.
+    */
+  private def keyedRows(
+    oldRows: Vector[ProjectedKeyedRow],
+    rowCount: Int,
+    changes: Vector[KeyedRowChange],
+    changedRows: Array[ProjectedKeyedRow]
+  ): Vector[ProjectedKeyedRow] =
+    if changes.length <= maxPatchedKeyedRows then
+      var rows     = oldRows.take(rowCount)
+      var position = 0
+      while position < changes.length do
+        val index = changes(position).index
+        rows =
+          if index < rows.length then rows.updated(index, changedRows(position))
+          else rows :+ changedRows(position)
+        position += 1
+      rows
+    else
+      val rows     = Vector.newBuilder[ProjectedKeyedRow]
+      var position = 0
+      var index    = 0
+      while index < rowCount do
+        if position < changes.length && changes(position).index == index then
+          rows += changedRows(position)
+          position += 1
+        else rows += oldRows(index)
+        index += 1
+      rows.result()
+
+  /** Checks that a keyed change lists its rows by ascending index, that each index it does not list
+    * keeps an old row, and that the new rows hold each row once: a retained row is the old row at
+    * its old index, which no other row keeps, and an inserted row is not an old row.
     */
   private def validateKeyedChanges(
-    oldCount: Int,
-    changes: Vector[KeyedRowChange],
-    oldIndex: (RowId, Int) => Int,
-    isOld: RowId => Boolean
+    oldRows: Vector[ProjectedKeyedRow],
+    rowCount: Int,
+    changes: Vector[KeyedRowChange]
   ): Either[PhoenixEncodingError, Unit] =
-    val retained = java.util.BitSet(oldCount)
-    val inserted = mutable.HashSet.empty[RowId]
-    var valid    = true
-    var index    = 0
-    while valid && index < changes.length do
-      valid = changes(index) match
-        case KeyedRowChange.Retain(id, _) =>
-          val previous = oldIndex(id, index)
-          val unique   = previous >= 0 && !retained.get(previous)
-          if unique then retained.set(previous)
-          unique
-        case KeyedRowChange.Insert(row) => !isOld(row.id) && inserted.add(row.id)
-      index += 1
+    val listed   = java.util.BitSet()
+    val retained = java.util.BitSet()
+    val inserted = mutable.LongMap.empty[Unit]
+    var previous = -1
+    var appended = 0
+    var valid    = rowCount >= 0
+    var position = 0
+    while valid && position < changes.length do
+      val change = changes(position)
+      val index  = change.index
+      valid = previous < index && index < rowCount
+      if valid then
+        listed.set(index)
+        if index >= oldRows.length then appended += 1
+        previous = index
+        valid = change match
+          case KeyedRowChange.Retain(_, oldIndex, id, _) =>
+            val known = 0 <= oldIndex && oldIndex < oldRows.length &&
+              oldRows(oldIndex).id == id && !retained.get(oldIndex)
+            if known then retained.set(oldIndex)
+            known
+          case KeyedRowChange.Insert(_, row) =>
+            val unique = !inserted.contains(row.id.value)
+            if unique then inserted.update(row.id.value, ())
+            unique
+      position += 1
+    // Each index past the old rows holds a listed row.
+    valid &&= appended == math.max(rowCount - oldRows.length, 0)
+    // A retained row does not stay at its old index too.
+    var oldIndex = retained.nextSetBit(0)
+    while valid && oldIndex >= 0 do
+      valid = oldIndex >= rowCount || listed.get(oldIndex)
+      oldIndex = retained.nextSetBit(oldIndex + 1)
+    valid &&= inserted.isEmpty || !oldRows.exists(row => inserted.contains(row.id.value))
     if valid then Right(()) else Left(PhoenixEncodingError.InvalidKeyedRowChange)
+  end validateKeyedChanges
 
   private def applyChanges(
     root: ProjectedNode,
@@ -2461,7 +2507,7 @@ private[scalive] object PhoenixRenderedEncoder:
             Left(PhoenixEncodingError.DuplicateStreamIdentity)
           else Right(())
         }
-      case (result, RenderChange.Keyed(id, _)) =>
+      case (result, RenderChange.Keyed(id, _, _)) =>
         result.flatMap(_ =>
           if targets.add(id) then Right(()) else Left(PhoenixEncodingError.DuplicateTarget(id))
         )

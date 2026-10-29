@@ -1550,6 +1550,32 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
         after._2.toJson == """{"0":{"k":{"4":{"0":{"0":"X2"}},"kc":5}}}"""
       )
     },
+    test("keeps the new order of a keyed change that moves many rows") {
+      val compiled = RenderProgram.compile[Vector[Int], Nothing](items =>
+        div(items.splitBy(identity)((_, item) => span(item.map(_.toString))))
+      )
+      val before = Vector.range(0, 50)
+      // Removes row 10 and appends row 50: the 39 rows after it move up.
+      val after = before.patch(10, Nil, 1) :+ 50
+
+      for
+        program <- ZIO.fromEither(compiled)
+        first   <- program.evaluate(before)
+        initial <- ZIO.fromEither(PhoenixRenderedEncoder.initial(first.tree))
+        next    <- program.evaluate(after, Some(first.commit))
+        updated <- ZIO.fromEither(
+                     PhoenixRenderedEncoder.update(initial._1, TreeDiffer.diff(first.tree, next.tree))
+                   )
+        html <- ZIO.fromEither(PhoenixRenderedEncoder.html(updated._1))
+        rows = field(dynamic(updated._2), "k").asInstanceOf[Json.Obj]
+      yield assertTrue(
+        html == after.map(value => s"<span>$value</span>").mkString("<div>", "", "</div>"),
+        field(rows, "10") == Json.Num(11),
+        field(rows, "48") == Json.Num(49),
+        field(rows, "kc") == Json.Num(50),
+        rows.fields.length == 39 + 1 + 2
+      )
+    },
     test("rejects invalid keyed row deltas before changing reusable state") {
       val compiled = RenderProgram.compile[Vector[(String, String)], Nothing](items =>
         div(items.splitBy(_._1)((_, item) => span(item.map(_._2))))
@@ -1566,16 +1592,40 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
         reorderDelta = TreeDiffer.diff(first.tree, reordered.tree)
         reorderedBase = reordered.commit
         (revision, keyedId, retainedRows) = reorderDelta match
-          case RenderDelta.Update(revision, Vector(RenderChange.Keyed(id, rows))) =>
+          case RenderDelta.Update(revision, Vector(RenderChange.Keyed(id, _, rows))) =>
             (revision, id, rows)
           case _ => throw AssertionError("expected one keyed reorder")
+        firstKeyed = first.tree.root.children.head.asInstanceOf[EvaluatedNode.Keyed]
+        Vector(aId, bId) = firstKeyed.rows.map(_.id): @unchecked
+        keyedUpdate = (rowCount: Int, rows: Vector[KeyedRowChange]) =>
+                        RenderDelta.Update(revision, Vector(RenderChange.Keyed(keyedId, rowCount, rows)))
         duplicateRetain = PhoenixRenderedEncoder.update(
                             initial._1,
-                            RenderDelta.Update(
-                              revision,
-                              Vector(RenderChange.Keyed(keyedId, Vector.fill(2)(retainedRows.head)))
+                            keyedUpdate(
+                              2,
+                              Vector(
+                                KeyedRowChange.Retain(0, 1, bId, Vector.empty),
+                                KeyedRowChange.Retain(1, 1, bId, Vector.empty)
+                              )
                             )
                           )
+        // Index 0 keeps the row it held, which the change also moves to index 1.
+        duplicateKept = PhoenixRenderedEncoder.update(
+                          initial._1,
+                          keyedUpdate(2, Vector(KeyedRowChange.Retain(1, 0, aId, Vector.empty)))
+                        )
+        // Index 2 is neither listed nor held by an old row.
+        missingRow = PhoenixRenderedEncoder.update(initial._1, keyedUpdate(3, Vector.empty))
+        unordered = PhoenixRenderedEncoder.update(
+                      initial._1,
+                      keyedUpdate(
+                        2,
+                        Vector(
+                          KeyedRowChange.Retain(1, 0, aId, Vector.empty),
+                          KeyedRowChange.Retain(0, 1, bId, Vector.empty)
+                        )
+                      )
+                    )
         recovered <- ZIO.fromEither(PhoenixRenderedEncoder.update(initial._1, reorderDelta))
         inserted <- program.evaluate(
                       Vector("b" -> "B", "a" -> "A", "c" -> "C"),
@@ -1583,14 +1633,14 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
                     )
         insertDelta = TreeDiffer.diff(reordered.tree, inserted.tree)
         (insertRevision, insertId, insertRows) = insertDelta match
-          case RenderDelta.Update(revision, Vector(RenderChange.Keyed(id, rows))) =>
+          case RenderDelta.Update(revision, Vector(RenderChange.Keyed(id, _, rows))) =>
             (revision, id, rows)
           case _ => throw AssertionError("expected one keyed insertion")
         insertedState <- ZIO.fromEither(
                            PhoenixRenderedEncoder.update(recovered._1, insertDelta)
                          )
         existingInsert = PhoenixRenderedEncoder.update(insertedState._1, insertDelta)
-        insertedRow = insertRows.collectFirst { case KeyedRowChange.Insert(row) => row }
+        insertedRow = insertRows.collectFirst { case KeyedRowChange.Insert(_, row) => row }
           .getOrElse(throw AssertionError("expected an inserted row"))
         unknownRetain = PhoenixRenderedEncoder.update(
                           recovered._1,
@@ -1599,10 +1649,8 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
                             Vector(
                               RenderChange.Keyed(
                                 insertId,
-                                retainedRows :+ KeyedRowChange.Retain(
-                                  insertedRow.id,
-                                  Vector.empty
-                                )
+                                2,
+                                Vector(KeyedRowChange.Retain(1, 1, insertedRow.id, Vector.empty))
                               )
                             )
                           )
@@ -1614,7 +1662,11 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
                               Vector(
                                 RenderChange.Keyed(
                                   insertId,
-                                  insertRows :+ KeyedRowChange.Insert(insertedRow)
+                                  4,
+                                  Vector(
+                                    KeyedRowChange.Insert(2, insertedRow),
+                                    KeyedRowChange.Insert(3, insertedRow)
+                                  )
                                 )
                               )
                             )
@@ -1628,17 +1680,28 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
                                           keyedId,
                                           first.tree.root.children.head
                                         ),
-                                        RenderChange.Keyed(keyedId, retainedRows)
+                                        RenderChange.Keyed(keyedId, 2, retainedRows)
                                       )
                                     )
                                   )
+        unknownTarget = PhoenixRenderedEncoder.update(
+                          initial._1,
+                          RenderDelta.Update(
+                            revision,
+                            Vector(RenderChange.Keyed(first.tree.root.id, 2, Vector.empty))
+                          )
+                        )
         stillUsable <- ZIO.fromEither(PhoenixRenderedEncoder.update(initial._1, reorderDelta))
       yield assertTrue(
         duplicateRetain == Left(PhoenixEncodingError.InvalidKeyedRowChange),
+        duplicateKept == Left(PhoenixEncodingError.InvalidKeyedRowChange),
+        missingRow == Left(PhoenixEncodingError.InvalidKeyedRowChange),
+        unordered == Left(PhoenixEncodingError.InvalidKeyedRowChange),
         unknownRetain == Left(PhoenixEncodingError.InvalidKeyedRowChange),
         existingInsert == Left(PhoenixEncodingError.InvalidKeyedRowChange),
         duplicateInsert == Left(PhoenixEncodingError.InvalidKeyedRowChange),
         duplicateSemanticTarget == Left(PhoenixEncodingError.DuplicateTarget(keyedId)),
+        unknownTarget == Left(PhoenixEncodingError.UnknownTarget(first.tree.root.id)),
         recovered._2.fields.nonEmpty,
         stillUsable._2 == recovered._2
       )

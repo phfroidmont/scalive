@@ -170,7 +170,7 @@ object FormControlRenderingSpec extends ZIOSpecDefault:
         updateDelta match
           case RenderDelta.Update(_, changes) =>
             changes.exists {
-              case RenderChange.Keyed(_, Vector(KeyedRowChange.Retain(_, nested))) =>
+              case RenderChange.Keyed(_, _, Vector(KeyedRowChange.Retain(_, _, _, nested))) =>
                 nested.exists(_.isInstanceOf[RenderChange.Text]) &&
                 !nested.exists(_.isInstanceOf[RenderChange.Replace])
               case _ => false

@@ -1727,6 +1727,307 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
         )
       )
     },
+    test("rows that differ only in key-derived statics share one template") {
+      val compiled = RenderProgram.compile[Vector[(String, String)], Nothing](items =>
+        ul(
+          items.splitBy(_._1)((key, item) =>
+            li(idAttr := s"row-$key", dataAttr("key") := key, item.map(_._2))
+          )
+        )
+      )
+      val row = (key: String, value: String) =>
+        Json.Obj(
+          "0" -> Json.Obj(
+            "s" -> Json.Num(0),
+            "0" -> Json.Str(s"$key\" data-key=\"$key"),
+            "1" -> Json.Str(value)
+          )
+        )
+
+      for
+        program <- ZIO.fromEither(compiled)
+        first   <- program.evaluate(Vector("a" -> "A", "b" -> "B", "c" -> "C"))
+        initial <- ZIO.fromEither(PhoenixRenderedEncoder.initial(first.tree))
+        html    <- ZIO.fromEither(PhoenixRenderedEncoder.html(initial._1))
+      yield assertTrue(
+        dynamic(initial._2) == Json.Obj(
+          "s" -> Json.Arr(Json.Str(""), Json.Str("")),
+          "k" -> Json.Obj(
+            "0"  -> row("a", "A"),
+            "1"  -> row("b", "B"),
+            "2"  -> row("c", "C"),
+            "kc" -> Json.Num(3)
+          ),
+          "p" -> Json.Obj(
+            "0" -> Json.Arr(Json.Str("<li id=\"row-"), Json.Str("\">"), Json.Str("</li>"))
+          )
+        ),
+        PhoenixClient.join(initial._2).html == html
+      )
+    },
+    test("rows inserted by a diff share one template across key-derived statics") {
+      val compiled = RenderProgram.compile[Vector[String], Nothing](items =>
+        ul(items.splitBy(identity)((key, item) => li(idAttr := s"row-$key", item)))
+      )
+      val row = (key: String) =>
+        Json.Obj("0" -> Json.Obj("s" -> Json.Num(0), "0" -> Json.Str(key), "1" -> Json.Str(key)))
+
+      for
+        program  <- ZIO.fromEither(compiled)
+        first    <- program.evaluate(Vector.empty)
+        initial  <- ZIO.fromEither(PhoenixRenderedEncoder.initial(first.tree))
+        inserted <- program.evaluate(Vector("a", "b", "c"), Some(first.commit))
+        updated  <- ZIO.fromEither(
+                     PhoenixRenderedEncoder.update(
+                       initial._1,
+                       TreeDiffer.diff(first.tree, inserted.tree)
+                     )
+                   )
+        html <- ZIO.fromEither(PhoenixRenderedEncoder.html(updated._1))
+        client = PhoenixClient.join(initial._2)
+        _      = client.patch(updated._2)
+      yield assertTrue(
+        updated._2 == Json.Obj(
+          "0" -> Json.Obj(
+            "k" -> Json.Obj(
+              "0"  -> row("a"),
+              "1"  -> row("b"),
+              "2"  -> row("c"),
+              "kc" -> Json.Num(3)
+            ),
+            "p" -> Json.Obj(
+              "0" -> Json.Arr(Json.Str("<li id=\"row-"), Json.Str("\">"), Json.Str("</li>"))
+            )
+          )
+        ),
+        client.html == html
+      )
+    },
+    test("numbers a later diff of a row as the browser holds its lifted statics") {
+      val compiled = RenderProgram.compile[Vector[(String, String)], Nothing](items =>
+        ul(
+          items.splitBy(_._1)((key, item) =>
+            li(idAttr := s"row-$key", cls := item.map(_._2), span(s"Item $key"), item.map(_._2))
+          )
+        )
+      )
+      val firstValue = Vector("a" -> "A", "b" -> "B", "c" -> "C")
+
+      for
+        program <- ZIO.fromEither(compiled)
+        first   <- program.evaluate(firstValue)
+        initial <- ZIO.fromEither(PhoenixRenderedEncoder.initial(first.tree))
+        changed <- program.evaluate(firstValue.updated(1, "b" -> "B2"), Some(first.commit))
+        updated <- ZIO.fromEither(
+                     PhoenixRenderedEncoder.update(
+                       initial._1,
+                       TreeDiffer.diff(first.tree, changed.tree)
+                     )
+                   )
+        html <- ZIO.fromEither(PhoenixRenderedEncoder.html(updated._1))
+        client = PhoenixClient.join(initial._2)
+        _      = client.patch(updated._2)
+      yield assertTrue(
+        field(dynamic(initial._2), "p") == Json.Obj(
+          "0" -> Json.Arr(
+            Json.Str("<li id=\"row-"),
+            Json.Str("\""),
+            Json.Str("><span>Item "),
+            Json.Str("</span>"),
+            Json.Str("</li>")
+          )
+        ),
+        updated._2 == Json.Obj(
+          "0" -> Json.Obj(
+            "k" -> Json.Obj(
+              "1"  -> Json.Obj(
+                "0" -> Json.Obj("1" -> Json.Str(" class=\"B2\""), "3" -> Json.Str("B2"))
+              ),
+              "kc" -> Json.Num(3)
+            )
+          )
+        ),
+        client.html == html,
+        html == "<ul><li id=\"row-a\" class=\"A\"><span>Item a</span>A</li>" +
+          "<li id=\"row-b\" class=\"B2\"><span>Item b</span>B2</li>" +
+          "<li id=\"row-c\" class=\"C\"><span>Item c</span>C</li></ul>"
+      )
+    },
+    test("shapes a template sent again in full anew") {
+      val compiled = RenderProgram.compile[Vector[(String, Boolean, String)], Nothing](items =>
+        ul(
+          items.splitBy(_._1)((key, item) =>
+            li(
+              idAttr := s"row-$key",
+              item.map(_._2).choose(
+                span(idAttr := s"on-$key"),
+                span(idAttr := s"off-$key", item.map(_._3))
+              )
+            )
+          )
+        )
+      )
+      val on       = Vector(("a", true, "A"), ("b", true, "B"), ("c", true, "C"))
+      val off      = Vector(("a", true, "A"), ("b", false, "B"), ("c", false, "C"))
+      val renamed  = off.updated(1, ("b", false, "B2"))
+      val str = (value: String) => Json.Str(value)
+      def keyed(fields: (String, Json)*): Json.Obj = Json.Obj("0" -> Json.Obj(fields*))
+      def rowsDiff(rows: (String, Json)*): Json.Obj = Json.Obj((rows :+ ("kc" -> Json.Num(3)))*)
+      val onRow = (key: String) =>
+        Json.Obj(
+          "0" -> Json.Obj("s" -> Json.Num(1), "0" -> str(key), "1" -> Json.Obj("s" -> Json.Num(0), "0" -> str(key)))
+        )
+      val offBranch = (key: String, text: String) =>
+        Json.Obj("0" -> Json.Obj("1" -> Json.Obj("s" -> Json.Num(0), "0" -> str(key), "1" -> str(text))))
+
+      for
+        program     <- ZIO.fromEither(compiled)
+        first       <- program.evaluate(on)
+        initial     <- ZIO.fromEither(PhoenixRenderedEncoder.initial(first.tree))
+        switched    <- program.evaluate(off, Some(first.commit))
+        afterSwitch <- ZIO.fromEither(
+                         PhoenixRenderedEncoder.update(
+                           initial._1,
+                           TreeDiffer.diff(first.tree, switched.tree)
+                         )
+                       )
+        changed     <- program.evaluate(renamed, Some(switched.commit))
+        afterChange <- ZIO.fromEither(
+                         PhoenixRenderedEncoder.update(
+                           afterSwitch._1,
+                           TreeDiffer.diff(switched.tree, changed.tree)
+                         )
+                       )
+        html <- ZIO.fromEither(PhoenixRenderedEncoder.html(afterChange._1))
+        client = PhoenixClient.join(initial._2)
+        _      = client.patch(afterSwitch._2)
+        _      = client.patch(afterChange._2)
+      yield assertTrue(
+        dynamic(initial._2) == Json.Obj(
+          "s" -> Json.Arr(str(""), str("")),
+          "k" -> rowsDiff("0" -> onRow("a"), "1" -> onRow("b"), "2" -> onRow("c")),
+          "p" -> Json.Obj(
+            "0" -> Json.Arr(str("<span id=\"on-"), str("\"></span>")),
+            "1" -> Json.Arr(str("<li id=\"row-"), str("\">"), str("</li>"))
+          )
+        ),
+        afterSwitch._2 == keyed(
+          "k" -> rowsDiff("1" -> offBranch("b", "B"), "2" -> offBranch("c", "C")),
+          "p" -> Json.Obj("0" -> Json.Arr(str("<span id=\"off-"), str("\">"), str("</span>")))
+        ),
+        afterChange._2 == keyed(
+          "k" -> rowsDiff("1" -> Json.Obj("0" -> Json.Obj("1" -> Json.Obj("1" -> str("B2")))))
+        ),
+        client.html == html,
+        html == "<ul><li id=\"row-a\"><span id=\"on-a\"></span></li>" +
+          "<li id=\"row-b\"><span id=\"off-b\">B2</span></li>" +
+          "<li id=\"row-c\"><span id=\"off-c\">C</span></li></ul>"
+      )
+    },
+    test("keeps the template of a row built differently by its key apart") {
+      val compiled = RenderProgram.compile[Vector[(String, String)], Nothing](items =>
+        ul(
+          items.splitBy(_._1)((key, item) =>
+            if key == "b" then li(idAttr := s"row-$key", item.map(_._2), "!", item.map(_._2))
+            else li(idAttr := s"row-$key", item.map(_._2))
+          )
+        )
+      )
+      val str = (value: String) => Json.Str(value)
+
+      for
+        program <- ZIO.fromEither(compiled)
+        first   <- program.evaluate(Vector("a" -> "A", "b" -> "B", "c" -> "C"))
+        initial <- ZIO.fromEither(PhoenixRenderedEncoder.initial(first.tree))
+        html    <- ZIO.fromEither(PhoenixRenderedEncoder.html(initial._1))
+      yield assertTrue(
+        dynamic(initial._2) == Json.Obj(
+          "s" -> Json.Arr(str(""), str("")),
+          "k" -> Json.Obj(
+            "0"  -> Json.Obj("0" -> Json.Obj("s" -> Json.Num(0), "0" -> str("a"), "1" -> str("A"))),
+            "1"  -> Json.Obj("0" -> Json.Obj("s" -> Json.Num(1), "0" -> str("B"), "1" -> str("B"))),
+            "2"  -> Json.Obj("0" -> Json.Obj("s" -> Json.Num(0), "0" -> str("c"), "1" -> str("C"))),
+            "kc" -> Json.Num(3)
+          ),
+          "p" -> Json.Obj(
+            "0" -> Json.Arr(str("<li id=\"row-"), str("\">"), str("</li>")),
+            "1" -> Json.Arr(str("<li id=\"row-b\">"), str("!"), str("</li>"))
+          )
+        ),
+        PhoenixClient.join(initial._2).html == html
+      )
+    },
+    test("keeps templates apart when sending them as one would not be shorter") {
+      val compiled = RenderProgram.compile[Vector[(String, String)], Nothing](items =>
+        div(
+          items.splitBy(_._1)((key, item) =>
+            if key == "a" then li(item.map(_._2)) else span(item.map(_._2))
+          )
+        )
+      )
+      val row = (template: Int, value: String) =>
+        Json.Obj("0" -> Json.Obj("s" -> Json.Num(template), "0" -> Json.Str(value)))
+
+      for
+        program <- ZIO.fromEither(compiled)
+        first   <- program.evaluate(Vector("a" -> "A", "b" -> "B"))
+        initial <- ZIO.fromEither(PhoenixRenderedEncoder.initial(first.tree))
+      yield assertTrue(
+        dynamic(initial._2) == Json.Obj(
+          "s" -> Json.Arr(Json.Str(""), Json.Str("")),
+          "k" -> Json.Obj("0" -> row(0, "A"), "1" -> row(1, "B"), "kc" -> Json.Num(2)),
+          "p" -> Json.Obj(
+            "0" -> Json.Arr(Json.Str("<li>"), Json.Str("</li>")),
+            "1" -> Json.Arr(Json.Str("<span>"), Json.Str("</span>"))
+          )
+        )
+      )
+    },
+    test("rows of a collection nested in rows share templates through the outer table") {
+      val compiled = RenderProgram.compile[Vector[(String, Vector[String])], Nothing](groups =>
+        div(
+          groups.splitBy(_._1)((group, items) =>
+            li(
+              idAttr := s"group-$group",
+              ul(items.map(_._2).splitBy(identity)((item, _) => li(dataAttr("item") := item)))
+            )
+          )
+        )
+      )
+      val str   = (value: String) => Json.Str(value)
+      val inner = (keys: Vector[String]) =>
+        Json.Obj(
+          "s" -> Json.Arr(str(""), str("")),
+          "k" -> Json.Obj(
+            (keys.zipWithIndex.map((key, index) =>
+              index.toString -> Json.Obj("0" -> Json.Obj("s" -> Json.Num(0), "0" -> str(key)))
+            ) :+ ("kc" -> Json.Num(keys.length)))*
+          )
+        )
+      val outer = (suffix: String, keys: Vector[String]) =>
+        Json.Obj("0" -> Json.Obj("s" -> Json.Num(2), "0" -> str(suffix), "1" -> inner(keys)))
+
+      for
+        program <- ZIO.fromEither(compiled)
+        first   <- program.evaluate(Vector("g1" -> Vector("x", "y"), "g2" -> Vector("z", "w")))
+        initial <- ZIO.fromEither(PhoenixRenderedEncoder.initial(first.tree))
+        html    <- ZIO.fromEither(PhoenixRenderedEncoder.html(initial._1))
+      yield assertTrue(
+        dynamic(initial._2) == Json.Obj(
+          "s" -> Json.Arr(str(""), str("")),
+          "k" -> Json.Obj(
+            "0"  -> outer("1", Vector("x", "y")),
+            "1"  -> outer("2", Vector("z", "w")),
+            "kc" -> Json.Num(2)
+          ),
+          "p" -> Json.Obj(
+            "0" -> Json.Arr(str("<li data-item=\""), str("\"></li>")),
+            "2" -> Json.Arr(str("<li id=\"group-g"), str("\"><ul>"), str("</ul></li>"))
+          )
+        ),
+        PhoenixClient.join(initial._2).html == html
+      )
+    },
     test("sends a changed component's slot only where the browser would skip it") {
       val rootCompiled = RenderProgram.compile[Int, Nothing](count =>
         div(

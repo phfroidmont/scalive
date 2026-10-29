@@ -753,25 +753,23 @@ private[scalive] object PhoenixRenderedEncoder:
         attribute.name == "data-scalive-csrf" &&
           attribute.value.contains(AttributeValue.Text("true"))
       )
-      val visibleAttributes = element.attributes.filterNot(_.name == "data-scalive-csrf")
-      val attributes        = traverse(visibleAttributes)(projectAttribute)
-      attributes.flatMap { projectedAttributes =>
-        opening ++= projectedAttributes
-        componentRootCid.foreach(cid =>
-          opening += ProjectedPart.Static(s" data-phx-component=\"$cid\"")
-        )
-        opening += endOfOpeningTag
-        if csrfMarker then
-          context.csrfToken.foreach(token =>
-            opening += ProjectedPart.Static(
-              s"<input type=\"hidden\" name=\"_csrf_token\" value=\"${Escaping.escape(token)}\">"
-            )
+      element.attributes.foreach(attribute =>
+        if attribute.name != "data-scalive-csrf" then projectAttribute(attribute, opening)
+      )
+      componentRootCid.foreach(cid =>
+        opening += ProjectedPart.Static(s" data-phx-component=\"$cid\"")
+      )
+      opening += endOfOpeningTag
+      if csrfMarker then
+        context.csrfToken.foreach(token =>
+          opening += ProjectedPart.Static(
+            s"<input type=\"hidden\" name=\"_csrf_token\" value=\"${Escaping.escape(token)}\">"
           )
-        traverse(element.children)(child => project(child, None, context)).map { children =>
-          children.foreach(child => opening += child)
-          if !element.void then opening += tag.close
-          ProjectedNode(element.id, opening.result())
-        }
+        )
+      traverse(element.children)(child => project(child, None, context)).map { children =>
+        children.foreach(child => opening += child)
+        if !element.void then opening += tag.close
+        ProjectedNode(element.id, opening.result())
       }
     // What can take another shape has statics of its own, as a Phoenix conditional does.
     case flash: EvaluatedNode.Flash =>
@@ -936,24 +934,38 @@ private[scalive] object PhoenixRenderedEncoder:
           case None     => Right(())
 
   private def projectAttribute(
-    attribute: EvaluatedAttribute
-  ): Either[PhoenixEncodingError, ProjectedPart] =
+    attribute: EvaluatedAttribute,
+    parts: mutable.Builder[ProjectedPart, Vector[ProjectedPart]]
+  ): Unit =
     val value = projectAttributeValue(attribute.name, attribute.value)
-    if attribute.slot.nonEmpty then
-      Right(ProjectedPart.Dynamic(attribute.slot.get, value, Some(attribute.name)))
-    else
-      value match
-        case text: String                           => Right(ProjectedPart.Static(text))
-        case target: ProjectedValue.ComponentTarget => Right(ProjectedPart.Target(target))
+    attribute.value match
+      case Some(AttributeValue.Composite(static, _)) if attribute.slot.nonEmpty =>
+        parts += ProjectedPart.Static(s" ${attribute.name}=\"${Escaping.escape(static)}")
+        parts += ProjectedPart.Dynamic(attribute.slot.get, value, Some(attribute.name))
+        parts += closingQuote
+      case Some(AttributeValue.Composite(static, dynamic)) =>
+        val text = if dynamic.isEmpty then static else s"$static $dynamic"
+        parts += ProjectedPart.Static(s" ${attribute.name}=\"${Escaping.escape(text)}\"")
+      case _ if attribute.slot.nonEmpty =>
+        parts += ProjectedPart.Dynamic(attribute.slot.get, value, Some(attribute.name))
+      case _ =>
+        value match
+          case text: String                           => parts += ProjectedPart.Static(text)
+          case target: ProjectedValue.ComponentTarget => parts += ProjectedPart.Target(target)
 
+  private val closingQuote: ProjectedPart = ProjectedPart.Static("\"")
+
+  // A composite value's static tokens are in the statics, so its slot holds the dynamic ones.
   private def projectAttributeValue(
     name: String,
     attributeValue: Option[AttributeValue]
   ): ProjectedValue =
     attributeValue match
-      case None                                      => ""
-      case Some(AttributeValue.Presence)             => s" $name"
-      case Some(AttributeValue.Text(text))           => s" $name=\"${Escaping.escape(text)}\""
+      case None                                       => ""
+      case Some(AttributeValue.Presence)              => s" $name"
+      case Some(AttributeValue.Text(text))            => s" $name=\"${Escaping.escape(text)}\""
+      case Some(AttributeValue.Composite(_, dynamic)) =>
+        if dynamic.isEmpty then "" else s" ${Escaping.escape(dynamic)}"
       case Some(AttributeValue.ComponentTarget(ref)) =>
         ProjectedValue.ComponentTarget(
           ref.asInstanceOf[Object],

@@ -12,14 +12,15 @@ trait ComplexHtmlKeys extends NamespacedHtmlKeys:
   /** Defines the element's space-separated CSS classes.
     *
     * Repeated modifiers contribute tokens to one `class` attribute. Values are split on HTML ASCII
-    * whitespace, empty tokens are discarded, and duplicate tokens retain their first position.
+    * whitespace and empty tokens are discarded. Static tokens come first, then the dynamic ones,
+    * each in encounter order, and duplicate tokens retain their first position.
     */
   val cls: CompositeHtmlAttr = CompositeHtmlAttr("class")
 
   /** Defines the space-separated relationship types of a linked resource.
     *
     * For example, a stylesheet link uses `rel := "stylesheet"`. Repeated modifiers contribute
-    * tokens to one attribute in encounter order.
+    * tokens to one attribute: static tokens first, then the dynamic ones, each in encounter order.
     */
   lazy val rel: CompositeHtmlAttr = CompositeHtmlAttr("rel")
 
@@ -27,8 +28,8 @@ trait ComplexHtmlKeys extends NamespacedHtmlKeys:
     *
     * Prefer an HTML element with the required native semantics when one exists; use `role` only
     * when additional semantics are necessary. The value is emitted without validating ARIA role
-    * names. Repeated modifiers append fallback role tokens in encounter order; user agents use the
-    * first supported role.
+    * names. Repeated modifiers append fallback role tokens: static tokens first, then the dynamic
+    * ones, each in encounter order. User agents use the first supported role.
     *
     * See: [[http://www.w3.org/TR/role-attribute/#s_role_module_attributes]]
     */

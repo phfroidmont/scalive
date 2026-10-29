@@ -134,9 +134,13 @@ What still visits every row:
 
 - An insertion into or a deletion from a stream whose rows hold components: the stream evaluates
   every row, as only a stream without components takes the path through its changed rows, and the
-  kernel then compares the render's component declarations with the committed ones (see
-  [Turns and components](#turns-and-components)). A turn that leaves such a stream as it is no
-  longer visits its rows' components (#10).
+  kernel then indexes the committed component declarations of the stream's owner to find those the
+  render carries over (see [Turns and components](#turns-and-components)). Inserting the first card
+  of a stream of cards again, which updates its row in place, costs 296 KB and 0.20 ms at 100
+  cards (300 components) and 1.87 MB and 0.92 ms at 1,000 (`ComponentTurnBenchmark.streamInsert`,
+  2026-10-29, 8 iterations of 1 s): about 1.75 KB per card. A turn that leaves such a stream as it
+  is no longer visits its rows' components (#10): a click on the root of the same page costs 122 KB
+  at 100 cards and 138 KB at 1,000 (`rootClick`, `layout=stream`).
 - A stream after a reset, or whose rows render something no signal tracks (a nested LiveView, a
   stream, or a flash).
 - An insertion at an index, or with a limit, still costs O(rows) to place: it patches or trims the
@@ -207,7 +211,10 @@ each turn, and a row of `componentList` keeps 109 B less there (1,557 B to 1,448
 
 Every component renders again when the runtime-owned state it reads, the shown flash and the
 uploads, differs from the one it last rendered with: the committed state records that root model,
-or none when components rendered with different ones in a turn, as when one puts a flash.
+or none when components rendered with different ones in a turn, as when one puts a flash. A flash
+a component puts mid-turn therefore shows in the same turn in every component, including those
+declared before it, which the turn renders again with the new flash. This is intended (decided
+on 2026-10-29 in the review of #10).
 
 What still grows with the number of components:
 
@@ -215,6 +222,10 @@ What still grows with the number of components:
   one owner: the kernel then indexes the owner's committed declarations by identity, which costs
   O(declarations) for that owner. A change of one component's props among 1,000 siblings is such a
   turn.
+- A turn that targets a component, by an action, a component update or an untracked read: each
+  owner on the way, whose declarations are unchanged, searches them once for each component the
+  turn targets, which costs O(declarations) of that owner per target. A click on one card of 1,000
+  searches the root's declarations once for that card.
 - A root, or a component, that renders again walks every child of each element it evaluates again,
   without allocating for a component it carries: what the remaining 40 B per card of the static
   layout are, with the element's new child vector.

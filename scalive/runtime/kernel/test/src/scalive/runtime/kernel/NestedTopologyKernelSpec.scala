@@ -21,6 +21,8 @@ object NestedTopologyKernelSpec extends ZIOSpecDefault:
       div(liveView("component-child", Child))
 
   private object Environment extends ComponentEnvironment[Int, Int]:
+    type RenderInputs = Unit
+    def renderInputs(model: Int): Unit = ()
     def mount[P, M, A](id: ComponentInstanceId, component: LiveComponent[P, M, A], props: P, draft: TurnDraft[Int, Int]) =
       ZIO.succeed(ComponentCallbackResult(props.asInstanceOf[A], draft, ComponentEnvironmentState(Object())))
     def update[P, M, A](id: ComponentInstanceId, component: LiveComponent[P, M, A], props: P, model: A, state: ComponentEnvironmentState, draft: TurnDraft[Int, Int]) =

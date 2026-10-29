@@ -1861,13 +1861,17 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     action: Option[ComponentInstanceId],
     start: Model,
     consistent: Boolean):
-    private val strayed    = AtomicBoolean(false)
-    private var targetedBy = Option.empty[Map[ComponentKey, ComponentUpdateRequest]]
-    private var targeted   = Set.empty[ComponentInstanceId]
+    private val strayed     = AtomicBoolean(false)
+    private var targetedBy  = Option.empty[Map[ComponentKey, ComponentUpdateRequest]]
+    private var targeted    = Set.empty[ComponentInstanceId]
+    private val startInputs = componentEnvironment.renderInputs(start)
+
+    private def readsStart(draft: TurnDraft[Msg, Model]): Boolean =
+      componentEnvironment.renderInputs(draft.model) == startInputs
 
     /** Whether the turn stages every component, given its draft so far. */
     def everything(draft: TurnDraft[Msg, Model]): Boolean =
-      !consistent || !componentEnvironment.sameRenderState(start, draft.model)
+      !consistent || !readsStart(draft)
 
     /** The committed components the turn stages, given the component updates pending so far. */
     def targets(updates: Map[ComponentKey, ComponentUpdateRequest]): Set[ComponentInstanceId] =
@@ -1886,7 +1890,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
 
     /** Records that a component rendered, or was kept, with the render state of `draft`. */
     def rendered(draft: TurnDraft[Msg, Model]): Unit =
-      if !componentEnvironment.sameRenderState(start, draft.model) then strayed.set(true)
+      if !readsStart(draft) then strayed.set(true)
 
     /** The root model whose render state every live component last rendered with after the turn, if
       * they all did with the same.
@@ -1929,7 +1933,10 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                  initialDraft.model,
                  previous
                    .flatMap(_.componentRenderBasis)
-                   .exists(componentEnvironment.sameRenderState(_, initialDraft.model))
+                   .exists(basis =>
+                     componentEnvironment.renderInputs(basis) ==
+                       componentEnvironment.renderInputs(initialDraft.model)
+                   )
                )
       roots <- stageRequirements(
                  root.componentRequirements,
@@ -2657,12 +2664,10 @@ final private[scalive] class SessionKernel[Msg, Model] private (
           pendingUpdates <- updates.get
         yield
           visits.rendered(currentDraft)
+          val inputs = componentEnvironment.renderInputs(currentDraft.model)
           def unchanged(component: MountedComponent[Msg]): Option[Vector[MountedComponent[Msg]]] =
-            val state = componentEnvironment.renderState(
-              component.id,
-              currentDraft,
-              component.environmentState
-            )
+            val state =
+              componentEnvironment.renderState(component.id, inputs, component.environmentState)
             val rendersAgain = !action.exists(_._1 == component.id) &&
               !pendingUpdates.contains(component.key) && component.rendersAgain(state)
             if !rendersAgain then None
@@ -2909,8 +2914,11 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                                        (
                                          finalProps,
                                          refreshed.model,
-                                         componentEnvironment
-                                           .renderState(id, refreshed.draft, refreshed.state)
+                                         componentEnvironment.renderState(
+                                           id,
+                                           componentEnvironment.renderInputs(refreshed.draft.model),
+                                           refreshed.state
+                                         )
                                        ),
                                        old.map(_.render),
                                        scope
@@ -2967,7 +2975,9 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                                       postChildResult.model,
                                       componentEnvironment.renderState(
                                         id,
-                                        postChildResult.draft,
+                                        componentEnvironment.renderInputs(
+                                          postChildResult.draft.model
+                                        ),
                                         postChildResult.state
                                       )
                                     ),

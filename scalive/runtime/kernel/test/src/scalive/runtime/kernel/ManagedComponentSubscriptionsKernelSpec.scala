@@ -55,6 +55,9 @@ object ManagedComponentSubscriptionsKernelSpec extends ZIOSpecDefault:
     messages: Ref[Int],
     failCandidate: Ref[Boolean]
   ) extends ComponentEnvironment[RootMessage, Boolean]:
+    type RenderInputs = Unit
+    def renderInputs(model: Boolean): Unit = ()
+
     private def start(
       id: ComponentInstanceId,
       subscription: Subscription,

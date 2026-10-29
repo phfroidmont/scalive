@@ -195,12 +195,53 @@ object TreeDifferSpec extends ZIOSpecDefault:
         TreeDiffer.diff(first.tree, updated.tree) match
           case RenderDelta.Update(
                 _,
-                Vector(RenderChange.Keyed(id, Vector(KeyedRowChange.Retain(rowId, changes))))
+                Vector(RenderChange.Keyed(id, 1, Vector(KeyedRowChange.Retain(0, 0, rowId, changes))))
               ) =>
             id == keyed.id && rowId == keyed.rows.head.id &&
               changes.exists(_.isInstanceOf[RenderChange.Text]) &&
               !changes.exists(_.isInstanceOf[RenderChange.Replace])
           case _ => false
+      )
+    },
+    test("lists only the changed rows of keyed rows kept in order") {
+      val compiled = RenderProgram.compile[Vector[(String, String)], Nothing] { items =>
+        div(items.splitBy(_._1)((_, item) => span(item.map(_._2))))
+      }
+
+      for
+        program <- ZIO.fromEither(compiled)
+        first   <- program.evaluate(Vector("a" -> "A", "b" -> "B", "c" -> "C"))
+        updated <- program.evaluate(
+                     Vector("a" -> "A", "b" -> "updated", "c" -> "C"),
+                     Some(first.commit)
+                   )
+        keyed = updated.tree.root.children.head.asInstanceOf[EvaluatedNode.Keyed]
+      yield assertTrue(
+        TreeDiffer.diff(first.tree, updated.tree) match
+          case RenderDelta.Update(
+                _,
+                Vector(RenderChange.Keyed(id, 3, Vector(KeyedRowChange.Retain(1, 1, rowId, changes))))
+              ) =>
+            id == keyed.id && rowId == keyed.rows(1).id &&
+              changes.exists(_.isInstanceOf[RenderChange.Text])
+          case _ => false
+      )
+    },
+    test("reports only the new row count when the last keyed rows are removed") {
+      val compiled = RenderProgram.compile[Vector[(String, String)], Nothing] { items =>
+        div(items.splitBy(_._1)((_, item) => span(item.map(_._2))))
+      }
+
+      for
+        program <- ZIO.fromEither(compiled)
+        first   <- program.evaluate(Vector("a" -> "A", "b" -> "B"))
+        removed <- program.evaluate(Vector("a" -> "A"), Some(first.commit))
+        keyed = removed.tree.root.children.head.asInstanceOf[EvaluatedNode.Keyed]
+      yield assertTrue(
+        TreeDiffer.diff(first.tree, removed.tree) == RenderDelta.Update(
+          removed.tree.revision,
+          Vector(RenderChange.Keyed(keyed.id, 1, Vector.empty))
+        )
       )
     },
     test("diffs the rows of a stream whose operations were already sent") {
@@ -235,7 +276,7 @@ object TreeDifferSpec extends ZIOSpecDefault:
           case _ => false
       )
     },
-    test("reports the complete new keyed row order on reorder") {
+    test("reports each moved keyed row with its previous index on reorder") {
       val compiled = RenderProgram.compile[Vector[(String, String)], Nothing] { items =>
         div(items.splitBy(_._1)((_, item) => span(item.map(_._2))))
       }
@@ -247,12 +288,15 @@ object TreeDifferSpec extends ZIOSpecDefault:
         keyed = reordered.tree.root.children.head.asInstanceOf[EvaluatedNode.Keyed]
       yield assertTrue(
         TreeDiffer.diff(first.tree, reordered.tree) match
-          case RenderDelta.Update(_, Vector(RenderChange.Keyed(id, rows))) =>
-            id == keyed.id && rows == keyed.rows.map(row => KeyedRowChange.Retain(row.id, Vector.empty))
+          case RenderDelta.Update(_, Vector(RenderChange.Keyed(id, rowCount, rows))) =>
+            id == keyed.id && rowCount == 2 && rows == Vector(
+              KeyedRowChange.Retain(0, 1, keyed.rows(0).id, Vector.empty),
+              KeyedRowChange.Retain(1, 0, keyed.rows(1).id, Vector.empty)
+            )
           case _ => false
       )
     },
-    test("represents keyed insertion and removal by the complete new order") {
+    test("represents keyed insertion and removal by the rows that moved or were inserted") {
       val compiled = RenderProgram.compile[Vector[(String, String)], Nothing] { items =>
         div(items.splitBy(_._1)((_, item) => span(item.map(_._2))))
       }
@@ -261,18 +305,14 @@ object TreeDifferSpec extends ZIOSpecDefault:
         program <- ZIO.fromEither(compiled)
         first   <- program.evaluate(Vector("a" -> "A", "b" -> "B"))
         changed <- program.evaluate(Vector("b" -> "B", "c" -> "C"), Some(first.commit))
-        oldKeyed = first.tree.root.children.head.asInstanceOf[EvaluatedNode.Keyed]
-        keyed    = changed.tree.root.children.head.asInstanceOf[EvaluatedNode.Keyed]
+        keyed = changed.tree.root.children.head.asInstanceOf[EvaluatedNode.Keyed]
       yield assertTrue(
         TreeDiffer.diff(first.tree, changed.tree) match
-          case RenderDelta.Update(_, Vector(RenderChange.Keyed(id, rows))) =>
-            id == keyed.id && rows == Vector(
-              KeyedRowChange.Retain(keyed.rows.head.id, Vector.empty),
-              KeyedRowChange.Insert(keyed.rows(1))
-            ) && !rows.exists {
-              case KeyedRowChange.Retain(rowId, _) => rowId == oldKeyed.rows.head.id
-              case KeyedRowChange.Insert(_)        => false
-            }
+          case RenderDelta.Update(_, Vector(RenderChange.Keyed(id, rowCount, rows))) =>
+            id == keyed.id && rowCount == 2 && rows == Vector(
+              KeyedRowChange.Retain(0, 1, keyed.rows.head.id, Vector.empty),
+              KeyedRowChange.Insert(1, keyed.rows(1))
+            )
           case _ => false
       )
     },
@@ -288,15 +328,21 @@ object TreeDifferSpec extends ZIOSpecDefault:
         keyed = changed.tree.root.children.head.asInstanceOf[EvaluatedNode.Keyed]
       yield assertTrue(
         TreeDiffer.diff(first.tree, changed.tree) match
-          case RenderDelta.Update(_, Vector(RenderChange.Keyed(id, rows))) =>
-            id == keyed.id && rows.map {
-              case KeyedRowChange.Retain(rowId, _) => rowId
-              case KeyedRowChange.Insert(row)      => row.id
-            } == keyed.rows.map(_.id) && rows.headOption.exists {
-              case KeyedRowChange.Retain(_, changes) =>
-                changes.exists(_.isInstanceOf[RenderChange.Text])
-              case KeyedRowChange.Insert(_) => false
-            }
+          case RenderDelta.Update(
+                _,
+                Vector(
+                  RenderChange.Keyed(
+                    id,
+                    2,
+                    Vector(
+                      KeyedRowChange.Retain(0, 1, movedId, changes),
+                      KeyedRowChange.Retain(1, 0, keptId, Vector())
+                    )
+                  )
+                )
+              ) =>
+            id == keyed.id && movedId == keyed.rows(0).id && keptId == keyed.rows(1).id &&
+              changes.exists(_.isInstanceOf[RenderChange.Text])
           case _ => false
       )
     },
@@ -316,7 +362,7 @@ object TreeDifferSpec extends ZIOSpecDefault:
         TreeDiffer.diff(first.tree, changed.tree) match
           case RenderDelta.Update(
                 _,
-                Vector(RenderChange.Keyed(id, Vector(KeyedRowChange.Retain(_, changes))))
+                Vector(RenderChange.Keyed(id, 1, Vector(KeyedRowChange.Retain(0, 0, _, changes))))
               ) =>
             id == keyed.id && changes.exists {
               case RenderChange.Replace(replacedId, _: EvaluatedNode.Choice) =>

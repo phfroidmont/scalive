@@ -149,7 +149,24 @@ What still visits every row:
 - A `splitBy` or `splitByIndex` collection whose items changed (`KeyedRowsBenchmark`), as upstream
   walks every entry of a changed Phoenix comprehension: it compares every entry, though a kept row
   now costs less (a turn updating one row of 1,000 allocates 3.25 MB instead of 3.63 MB in
-  `renderDiffAndEncode`, and of 10,000 rows 31.4 MB instead of 37.2 MB).
+  `renderDiffAndEncode`, and of 10,000 rows 31.4 MB instead of 37.2 MB). A row kept in place
+  and unchanged now costs almost nothing besides that comparison (#11): a keyed change lists only
+  the rows inserted and the rows that changed or moved, with their old index, and the new row
+  count; rows in the same order are compared by position without a map of the old rows; and the
+  encoder gathers what the rows changed once per change and records only the rows the browser
+  receives something of, so building the payload and clearing what it sent skip the others. Per
+  kept row of a one-row update, measured as (10,000 − 1,000 rows) / 9,000 on
+  `gc.alloc.rate.norm` (`KeyedRowsBenchmark`, `operation=update`, 2026-10-29):
+
+  | Step | Before | After |
+  |---|---|---|
+  | `semanticDiff` | 274 B (308 KB, 2.78 MB) | 16 B (21 KB, 166 KB) |
+  | `phoenixEncoding` | 2,283 B (2.38 MB, 22.9 MB) | 16 B (32 KB, 179 KB) |
+  | `renderDiffAndEncode` | 3,119 B (3.25 MB, 31.3 MB) | 597 B (0.60 MB, 5.98 MB) |
+
+  What is left of `renderDiffAndEncode` is evaluating the collection. A reorder, removal or
+  reintroduction lists every row that moved, so it still costs each such row, though less than
+  before (at 1,000 rows, 1.37 MB instead of 3.45 MB for a reorder in `renderDiffAndEncode`).
 - A row that builds its own outside signal, such as `selected.map(_ == id)` in the row function,
   costs one indexed signal, sampled every turn the collection is evaluated: the bindings guide
   advises folding such state into the entries.

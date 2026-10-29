@@ -552,16 +552,12 @@ private[scalive] object PhoenixRenderedEncoder:
       val value = statics(position)
       value.substring(prefix, value.length - suffix)
 
-  /** Templates sent as the one at `index`, whose `statics` have a hole where they differ. `lifted`
-    * holds the positions of the holes, which every rendered object of these templates sends among
-    * its dynamics.
+  /** Templates sent as the one at `index`, whose `statics` have a hole where they differ. Every
+    * rendered object of these templates sends the text of each hole among its dynamics.
     */
-  final private case class MergedTemplate(
-    index: Int,
-    statics: Vector[String],
-    holes: Vector[Hole],
-    lifted: Vector[Int]):
+  final private case class MergedTemplate(index: Int, statics: Vector[String], holes: Vector[Hole]):
     private val reference = "s" -> Json.Num(index)
+    private val lifted    = holes.map(_.position)
     private val inline    = NodeStatics(own = false, lifted)
     private val own       = NodeStatics(own = true, lifted)
 
@@ -587,7 +583,6 @@ private[scalive] object PhoenixRenderedEncoder:
           key += 1
       }
       shaped.result()
-  end MergedTemplate
 
   private object MergedTemplate:
     /** The templates at `group`, which have as many statics, merged into one, or None when sending
@@ -621,7 +616,7 @@ private[scalive] object PhoenixRenderedEncoder:
           current.clear()
       }
       statics += current.result()
-      val merged = MergedTemplate(group.head, statics.result(), holes, holes.map(_.position))
+      val merged = MergedTemplate(group.head, statics.result(), holes)
 
       val apart = group.map(index => entryLength(index, templates(index))).sum
       // Each hole adds a dynamic, after those the rendered object already sends.

@@ -53,10 +53,10 @@ with at each static they differ in, and sends what is left among each row's dyna
 rows do. It does so only for a group that encodes shorter that way, and records which statics each
 row it sent received so, to number later diffs of that row as the browser does. The join payload
 of `InitialRenderBenchmark` at 1,000 rows went from 170,836 B to 80,153 B, for 0.7 KB more
-allocated per row while encoding it (10.3 to 11.0 KB, 2026-10-29). Render memory is unchanged, as
-each row still compiles its own template, and so is the encoder's retained memory: a node holds
-how its statics were sent in the field that said whether they are its own, through instances its
-rows share.
+allocated per row while encoding it (10.3 to 11.0 KB before #9, 2026-10-29). Render memory is
+unchanged, as each row still compiles its own template, and so is the encoder's retained memory: a
+node holds how its statics were sent in the field that said whether they are its own, through
+instances its rows share.
 
 On the encoder side, the remaining 1,221 B are mostly parts vectors (about 390 B), 8
 `ProjectedNode` (256 B) and 5 branch summaries (280 B). Two smaller savings were measured and not
@@ -79,7 +79,7 @@ A first render allocates per row, in `InitialRenderBenchmark`:
 | Step | Allocated per row |
 |---|---|
 | Evaluation | 11.2 KB (15.1 KB before #5 and #6) |
-| Initial Phoenix payload | 11.0 KB (10.3 KB before #8) |
+| Initial Phoenix payload | 9.4 KB (10.3 KB before #8 and #9) |
 | Disconnected HTML | 7.5 KB |
 
 This is garbage, not retained memory: it matters for mount latency and GC pressure when many

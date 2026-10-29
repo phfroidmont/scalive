@@ -40,9 +40,9 @@ alloc UnrelatedChangeBenchmark.evaluate rowCount=1000 9328
 alloc UnrelatedChangeBenchmark.phoenixEncoding rowCount=1000 6808
 alloc UnrelatedChangeBenchmark.semanticDiff rowCount=1000 3216
 retained componentList.data 77
-retained componentList.encoder 1542
+retained componentList.encoder 1557
 retained componentList.render 1962
-retained componentList.total 3581
+retained componentList.total 3596
 retained keyedList.data 77
 retained keyedList.encoder 1221
 retained keyedList.render 2576

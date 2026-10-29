@@ -50,7 +50,8 @@ final private[scalive] class PhoenixRenderedState private[phoenix] (
   private[phoenix] val streamRefs: Map[PhoenixRenderedEncoder.IdentityKey, String],
   private[phoenix] val nextStreamRef: Long,
   private[phoenix] val csrfToken: Option[String],
-  private[phoenix] val pendingDeletionCids: Set[Int]):
+  private[phoenix] val pendingDeletionCids: Set[Int],
+  private[phoenix] val componentStatics: PhoenixRenderedEncoder.ComponentStatics):
 
   private[scalive] def cidForToken(token: Object): Option[Int] =
     tokenCids.get(PhoenixRenderedEncoder.IdentityKey(token))
@@ -75,7 +76,8 @@ final private[scalive] class PhoenixRenderedState private[phoenix] (
       streamRefs,
       nextStreamRef,
       csrfToken,
-      pendingDeletionCids ++ cids.filter(components.contains)
+      pendingDeletionCids ++ cids.filter(components.contains),
+      componentStatics.removed(cids)
     )
 
   private[scalive] def destroyComponents(
@@ -101,7 +103,8 @@ final private[scalive] class PhoenixRenderedState private[phoenix] (
       retainedStreamRefs,
       nextStreamRef,
       csrfToken,
-      pendingDeletionCids -- acknowledged
+      pendingDeletionCids -- acknowledged,
+      componentStatics.removed(deleted)
     ) -> deleted
 end PhoenixRenderedState
 
@@ -140,6 +143,11 @@ private[scalive] object PhoenixRenderedEncoder:
     final case class Keyed(value: ProjectedKeyed)   extends ProjectedPart
     final case class Stream(value: ProjectedStream) extends ProjectedPart
     final case class StreamDomId(value: String)     extends ProjectedPart
+
+    /** The CID on a component's root element. The browser adds it to the statics it renders, so
+      * only the HTML the server renders holds it, and instances of a component share statics.
+      */
+    final case class ComponentRoot(cid: Int) extends ProjectedPart
 
   /** How a node's statics are sent. One with `own` statics is sent within its parent as a nested
     * rendered object, so replacing it resends that object and nothing around it. `lifted` holds the
@@ -250,8 +258,10 @@ private[scalive] object PhoenixRenderedEncoder:
         val parts   = node.parts.iterator
         while parts.hasNext do
           parts.next() match
-            case ProjectedPart.Static(_) | ProjectedPart.Target(_) => ()
-            case ProjectedPart.Dynamic(slot, _, _)                 =>
+            case ProjectedPart.Static(_) | ProjectedPart.Target(_) |
+                ProjectedPart.ComponentRoot(_) =>
+              ()
+            case ProjectedPart.Dynamic(slot, _, _) =>
               builder.slotMin = math.min(builder.slotMin, slot.value)
               builder.slotMax = math.max(builder.slotMax, slot.value)
               builder.dynamics += 1
@@ -284,7 +294,7 @@ private[scalive] object PhoenixRenderedEncoder:
       while leaf && index < parts.length do
         leaf = parts(index) match
           case _: ProjectedPart.Static | _: ProjectedPart.Dynamic | _: ProjectedPart.Target |
-              _: ProjectedPart.StreamDomId =>
+              _: ProjectedPart.StreamDomId | _: ProjectedPart.ComponentRoot =>
             true
           case _ => false
         index += 1
@@ -424,6 +434,105 @@ private[scalive] object PhoenixRenderedEncoder:
     // Components whose CID slot the diff sends again, only so that it reaches them.
     touchedComponents: Set[Int] = Set.empty)
 
+  /** The statics the browser holds for a component: those of its rendered object, and of each
+    * nested rendered object in it, by the key of the dynamic holding it. A comprehension is not
+    * part of it, as it always sends its own statics.
+    *
+    * The browser builds a component whose `s` is another one's CID from the statics of that one,
+    * and resolves each nested rendered object that has no `s` from the one at the same key. A
+    * component may share statics with another of the same tree, whatever renders them.
+    */
+  final private[phoenix] case class StaticTree(
+    statics: Json,
+    nested: Vector[(String, StaticTree)]):
+    // Computed once, as the index of the trees the browser holds hashes it at each lookup.
+    override val hashCode: Int = (statics, nested).##
+
+    /** This tree after the browser merges `diff`, a diff of a rendered object of this tree. */
+    def patched(diff: Json.Obj): StaticTree =
+      val next = nested.map { entry =>
+        val (key, tree) = entry
+        diff.get(key) match
+          case Some(value: Json.Obj) =>
+            val patched =
+              if value.get("s").nonEmpty then StaticTree.of(value) else tree.patched(value)
+            if patched eq tree then entry else key -> patched
+          case _ => entry
+      }
+      if next.indices.forall(index => next(index) eq nested(index)) then this
+      else StaticTree(statics, next)
+
+    /** `rendered`, a rendered object of this tree sent in full, with `statics` as its `s` and no
+      * `s` in the nested rendered objects the browser resolves from it.
+      */
+    def sharing(rendered: Json.Obj, statics: Option[Json]): Json.Obj =
+      Json.Obj(rendered.fields.flatMap {
+        case ("s", _)                       => statics.map("s" -> _)
+        case field @ (key, value: Json.Obj) =>
+          nested
+            .collectFirst { case (`key`, tree) => key -> tree.sharing(value, None) }
+            .orElse(Some(field))
+        case field => Some(field)
+      })
+  end StaticTree
+
+  private[phoenix] object StaticTree:
+    /** The tree of `rendered`, a rendered object sent in full. */
+    def of(rendered: Json.Obj): StaticTree =
+      val nested        = Vector.newBuilder[(String, StaticTree)]
+      var statics: Json = Json.Null
+      rendered.fields.foreach {
+        case ("s", value)                                     => statics = value
+        case (key, value: Json.Obj) if value.get("k").isEmpty => nested += key -> of(value)
+        case _                                                => ()
+      }
+      StaticTree(statics, nested.result())
+
+  /** The static tree of each component the browser holds and may share, with the components holding
+    * each tree. A component pending deletion is not in it, as the browser may drop it.
+    *
+    * The components of a tree share one instance of it, as many components hold the same one.
+    */
+  final private[phoenix] class ComponentStatics private (
+    private val trees: Map[Int, StaticTree],
+    private val holders: Map[StaticTree, Holders]):
+    def tree(cid: Int): Option[StaticTree] = trees.get(cid)
+
+    /** A component other than `cid` holding `tree`. */
+    def holder(tree: StaticTree, cid: Int): Option[Int] =
+      holders.get(tree).flatMap(_.cids.find(_ != cid))
+
+    def updated(cid: Int, tree: StaticTree): ComponentStatics =
+      if trees.get(cid).contains(tree) then this
+      else
+        val rest    = removed(Vector(cid))
+        val current = rest.holders.getOrElse(tree, Holders(tree, Set.empty))
+        ComponentStatics(
+          rest.trees.updated(cid, current.tree),
+          rest.holders.updated(current.tree, current.copy(cids = current.cids + cid))
+        )
+
+    def removed(cids: Iterable[Int]): ComponentStatics =
+      cids.foldLeft(this) { (all, cid) =>
+        all.trees.get(cid) match
+          case None       => all
+          case Some(tree) =>
+            val current = all.holders(tree)
+            val others  = current.cids - cid
+            ComponentStatics(
+              all.trees - cid,
+              if others.isEmpty then all.holders - tree
+              else all.holders.updated(tree, current.copy(cids = others))
+            )
+      }
+  end ComponentStatics
+
+  private[phoenix] object ComponentStatics:
+    val empty: ComponentStatics = ComponentStatics(Map.empty, Map.empty)
+
+  /** The components holding a tree, with the instance of the tree they share. */
+  final private[phoenix] case class Holders(tree: StaticTree, cids: Set[Int])
+
   /** The components one render reaches, with the index its `phx-target` values resolve against. */
   final private class Components(
     all: Map[Int, ProjectedComponent],
@@ -432,7 +541,9 @@ private[scalive] object PhoenixRenderedEncoder:
     // The statics the payload sent each stream, which the state then records as sent.
     val sentStatics: SentStatics = SentStatics(),
     // How the payload sent the statics of each rendered object it sent in full.
-    val sentLifts: SentLifts = SentLifts()):
+    val sentLifts: SentLifts = SentLifts(),
+    // The static tree the browser holds for each component the payload sent, once it merges it.
+    val sentTrees: mutable.Map[Int, StaticTree] = mutable.Map.empty):
     /** These components, recording nothing as sent, for rows flattened only to shape statics. */
     def unsent: Components = Components(all, active)
 
@@ -454,6 +565,7 @@ private[scalive] object PhoenixRenderedEncoder:
       active.toVector
         .flatMap(cid => keys(all(cid)).map(key => IdentityKey(key) -> cid))
         .groupMap(_._1)(_._2).view.mapValues(_.toSet).toMap
+  end Components
 
   final private class SentStatics extends java.util.IdentityHashMap[ProjectedStream, StreamStatics]
 
@@ -924,6 +1036,11 @@ private[scalive] object PhoenixRenderedEncoder:
           component.copy(root = clearNode(component.root, previousComponent.map(_.root)))
         )
     }
+    // A payload sending the root in full makes the browser drop the components it held.
+    val heldStatics = if previous.isEmpty then ComponentStatics.empty else state.componentStatics
+    val componentStatics = sent.sentTrees.foldLeft(heldStatics) { case (all, (cid, tree)) =>
+      all.updated(cid, tree)
+    }
     PhoenixRenderedState(
       root,
       components,
@@ -934,7 +1051,8 @@ private[scalive] object PhoenixRenderedEncoder:
       state.streamRefs,
       state.nextStreamRef,
       state.csrfToken,
-      state.pendingDeletionCids
+      state.pendingDeletionCids,
+      componentStatics
     )
   end clearPending
 
@@ -994,9 +1112,7 @@ private[scalive] object PhoenixRenderedEncoder:
       element.attributes.foreach(attribute =>
         if attribute.name != "data-scalive-csrf" then projectAttribute(attribute, opening)
       )
-      componentRootCid.foreach(cid =>
-        opening += ProjectedPart.Static(s" data-phx-component=\"$cid\"")
-      )
+      componentRootCid.foreach(cid => opening += ProjectedPart.ComponentRoot(cid))
       opening += endOfOpeningTag
       if csrfMarker then
         context.csrfToken.foreach(token =>
@@ -1698,7 +1814,8 @@ private[scalive] object PhoenixRenderedEncoder:
       streamRefs,
       context.nextStreamRef,
       context.csrfToken,
-      context.pendingDeletionCids -- reachable.active
+      context.pendingDeletionCids -- reachable.active,
+      previous.fold(ComponentStatics.empty)(_.componentStatics)
     )
   end finish
 
@@ -1893,13 +2010,15 @@ private[scalive] object PhoenixRenderedEncoder:
     private def touching(cids: Set[Int]): SparseChanges =
       changes.copy(touchedComponents = changes.touchedComponents ++ cids)
 
+  // The browser drops the components it holds when it receives the root's statics.
   private def componentObject(
     components: Components,
     cids: Set[Int]
   ): Either[PhoenixEncodingError, Json.Obj] =
+    val sharing = SharedStatics(ComponentStatics.empty, components)
     traverse(cids.toVector.sorted)(cid =>
       rendered(components(cid).root, components, None, None).map(value =>
-        cid.toString -> value.add("r", Json.Num(1))
+        cid.toString -> sharing.share(cid, value).add("r", Json.Num(1))
       )
     ).map(fields => Json.Obj(fields*))
 
@@ -1908,12 +2027,43 @@ private[scalive] object PhoenixRenderedEncoder:
     components: Components,
     cids: Map[Int, Option[SparseChanges]]
   ): Either[PhoenixEncodingError, Json.Obj] =
+    val sharing = SharedStatics(previous.componentStatics, components)
     traverse(cids.toVector.sortBy(_._1)) { case (cid, changes) =>
       val previousRoot = previous.components.get(cid).map(_.root)
       rendered(components(cid).root, components, changes, None, previousRoot).map { value =>
-        cid.toString -> (if changes.isEmpty then value.add("r", Json.Num(1)) else value)
+        cid.toString ->
+          (if changes.isEmpty then sharing.share(cid, value).add("r", Json.Num(1))
+           else sharing.merged(cid, value))
       }
     }.map(fields => Json.Obj(fields*))
+
+  /** Shares the statics of the components one payload sends in full with a component the browser
+    * `held` before it, or one sent earlier in the payload, and records in `components` the static
+    * tree the browser then holds for each component the payload sends.
+    */
+  final private class SharedStatics(held: ComponentStatics, components: Components):
+    // The first component of each tree the payload sends with its own statics.
+    private val sent = mutable.HashMap.empty[StaticTree, Int]
+
+    /** `rendered`, the component `cid` sent in full, referring to the statics of another component
+      * of the same tree when there is one.
+      */
+    def share(cid: Int, rendered: Json.Obj): Json.Obj =
+      val tree = StaticTree.of(rendered)
+      components.sentTrees.update(cid, tree)
+      held.holder(tree, cid).map(-_).orElse(sent.get(tree)) match
+        case Some(reference) => tree.sharing(rendered, Some(Json.Num(reference)))
+        case None            =>
+          sent.update(tree, cid)
+          rendered
+
+    /** Records the tree the browser holds once it merges `diff`, a diff of the component `cid`. */
+    def merged(cid: Int, diff: Json.Obj): Json.Obj =
+      held.tree(cid).foreach { tree =>
+        val next = tree.patched(diff)
+        if !(next eq tree) then components.sentTrees.update(cid, next)
+      }
+      diff
 
   /** Encodes `root` as a rendered object: in full when `changes` is None, and otherwise only what
     * changed since `previous`, the projection the client holds. In full, its statics are a
@@ -1999,6 +2149,7 @@ private[scalive] object PhoenixRenderedEncoder:
             None
           case ProjectedPart.Stream(stream) =>
             streamJson(stream, None, components, None, templates).map(dynamic).left.toOption
+          case ProjectedPart.ComponentRoot(_) => None
       error
     end loop
 
@@ -2049,8 +2200,10 @@ private[scalive] object PhoenixRenderedEncoder:
             result.flatMap { _ =>
               val previousPart = previousParts.map(_(position))
               part match
-                case ProjectedPart.Static(_) | ProjectedPart.Target(_) => Right(())
-                case ProjectedPart.Dynamic(slot, value: String, _)     =>
+                case ProjectedPart.Static(_) | ProjectedPart.Target(_) |
+                    ProjectedPart.ComponentRoot(_) =>
+                  Right(())
+                case ProjectedPart.Dynamic(slot, value: String, _) =>
                   next(Option.when(changes.slots.contains(slot))(Json.Str(value)))
                   Right(())
                 case ProjectedPart.Dynamic(slot, value: ProjectedValue.ComponentTarget, _) =>
@@ -2353,6 +2506,8 @@ private[scalive] object PhoenixRenderedEncoder:
           stream.rows.foldLeft(result)((current, row) => current.flatMap(_ => loop(row.child)))
         case (result, ProjectedPart.StreamDomId(value)) =>
           result.map(_ => output.append(value)).map(_ => ())
+        case (result, ProjectedPart.ComponentRoot(cid)) =>
+          result.map(_ => output.append(s" data-phx-component=\"$cid\"")).map(_ => ())
       }
 
     loop(root).map(_ => output.result())

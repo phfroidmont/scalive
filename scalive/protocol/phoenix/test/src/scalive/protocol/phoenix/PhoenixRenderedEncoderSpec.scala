@@ -1089,7 +1089,7 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
         removed._1.streamRef(identity).contains("0"),
         destroyed._1.streamRef(identity).isEmpty,
         field(component, "s") == Json.Arr(
-          Json.Str("<div data-phx-component=\"1\">"),
+          Json.Str("<div>"),
           Json.Str("</div>")
         ),
         field(component, "r") == Json.Num(1),
@@ -2683,20 +2683,13 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
           "c" -> Json.Obj(
             "1" -> Json.Obj(
               "s" -> Json.Arr(
-                Json.Str("<span data-phx-component=\"1\">"),
+                Json.Str("<span>"),
                 Json.Str("</span>")
               ),
               "0" -> Json.Str("left"),
               "r" -> Json.Num(1)
             ),
-            "2" -> Json.Obj(
-              "s" -> Json.Arr(
-                Json.Str("<span data-phx-component=\"2\">"),
-                Json.Str("</span>")
-              ),
-              "0" -> Json.Str("right"),
-              "r" -> Json.Num(1)
-            )
+            "2" -> Json.Obj("s" -> Json.Num(1), "0" -> Json.Str("right"), "r" -> Json.Num(1))
           )
         ),
         encoded._1.cidForToken(leftToken).contains(1),
@@ -2902,7 +2895,7 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
           "c" -> Json.Obj(
             "1" -> Json.Obj(
               "s" -> Json.Arr(
-                Json.Str("<span data-phx-component=\"1\">"),
+                Json.Str("<span>"),
                 Json.Str("</span>")
               ),
               "0" -> Json.Str("child"),
@@ -2987,7 +2980,7 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
         field(field(row, "0").asInstanceOf[Json.Obj], "0") == Json.Num(1),
         component == Json.Obj(
           "s" -> Json.Arr(
-            Json.Str("<span data-phx-component=\"1\">"),
+            Json.Str("<span>"),
             Json.Str("</span>")
           ),
           "0" -> Json.Str("after"),
@@ -3048,15 +3041,9 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
       yield assertTrue(
         replaced._2 == Json.Obj(
           "0" -> Json.Num(2),
+          // The replaced component is still in the browser while it merges the diff.
           "c" -> Json.Obj(
-            "2" -> Json.Obj(
-              "s" -> Json.Arr(
-                Json.Str("<span data-phx-component=\"2\">"),
-                Json.Str("</span>")
-              ),
-              "0" -> Json.Str("child"),
-              "r" -> Json.Num(1)
-            )
+            "2" -> Json.Obj("s" -> Json.Num(-1), "0" -> Json.Str("child"), "r" -> Json.Num(1))
           )
         ),
         replaced._1.cidForToken(firstToken).contains(1),
@@ -3158,7 +3145,7 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
             ),
             "2" -> Json.Obj(
               "s" -> Json.Arr(
-                Json.Str("<span data-phx-component=\"2\">"),
+                Json.Str("<span>"),
                 Json.Str("</span>")
               ),
               "0" -> Json.Str("inner"),

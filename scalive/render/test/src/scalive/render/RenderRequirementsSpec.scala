@@ -141,6 +141,62 @@ object RenderRequirementsSpec extends ZIOSpecDefault:
           "<div>before<span>inside</span>after</div>"
       )
     },
+    test("a render carries the components it declares again with their committed resolutions") {
+      val rootCompiled = RenderProgram.compile[(Int, String), Nothing] { model =>
+        div(
+          model.map(_._1.toString),
+          component(PlainComponent, "static").render("static"),
+          component(PlainComponent, "signal").render(model.map(_._2))
+        )
+      }
+      val childCompiled = RenderProgram.compile[String, String](value => span(value))
+      def resolution(
+        requirement: ComponentRequirement[Nothing],
+        token: Object,
+        child: RenderCandidate[String]
+      ) =
+        requirement.resolve(
+          ComponentRef.runtime(token).asInstanceOf[ComponentRef[requirement.Message]],
+          token,
+          child.asInstanceOf[RenderCandidate[requirement.Message]]
+        )
+      def resolveAll(candidate: RenderCandidate[Nothing], child: RenderCandidate[String]) =
+        candidate.resolveComponents(
+          candidate.componentRequirements.map(resolution(_, Object(), child))
+        )
+      def componentNode(render: RenderCandidate[Nothing], index: Int) =
+        render.tree.root.children(index).asInstanceOf[EvaluatedNode.Component]
+
+      for
+        rootProgram  <- ZIO.fromEither(rootCompiled)
+        childProgram <- ZIO.fromEither(childCompiled)
+        child        <- childProgram.evaluate("inside")
+        first        <- rootProgram.evaluate(1 -> "a")
+        committed    <- ZIO.fromEither(resolveAll(first, child)).map(_.commit)
+        same         <- rootProgram.evaluate(2 -> "a", Some(committed))
+        kept         <- ZIO.fromEither(same.resolveComponents(Vector.empty))
+        changed      <- rootProgram.evaluate(2 -> "b", Some(committed))
+        unresolved    = changed.resolveComponents(Vector.empty)
+        staticNode    = committed.tree.root.children(1)
+        replacement   = Object()
+        replaced     <- ZIO.fromEither(
+                          same.resolveComponents(
+                            Vector(resolution(same.componentRequirements.head, replacement, child))
+                          )
+                        )
+      yield assertTrue(
+        same.componentRequirements eq committed.componentRequirements,
+        componentNode(same, 1) eq staticNode,
+        kept.tree.root.children(1) eq staticNode,
+        changed.componentRequirements.head eq committed.componentRequirements.head,
+        !(changed.componentRequirements(1) eq committed.componentRequirements(1)),
+        componentNode(changed, 1) eq staticNode,
+        componentNode(changed, 2).resolution.isEmpty,
+        unresolved.left.exists(_.isInstanceOf[RenderError.UnresolvedComponents]),
+        componentNode(replaced, 1).resolution.exists(_.instanceToken eq replacement),
+        componentNode(replaced, 2) eq committed.tree.root.children(2)
+      )
+    },
     test("component resolution leaves child candidate rollback ownership untouched") {
       val rootCompiled = RenderProgram.compile[Unit, Nothing](_ =>
         div(component(PlainComponent, "child").render("props"))

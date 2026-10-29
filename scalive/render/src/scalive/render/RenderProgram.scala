@@ -80,15 +80,22 @@ final class RenderProgram[Input, Msg] private (
         case Some(committed) if committed.scope.isClosed =>
           Left(RenderError.ClosedCommittedRender())
         case Some(committed) =>
-          Right((committed.signalEvaluation, Some(committed.tree.root), committed.bindings))
-        case None => Right((SignalEvaluation.empty, None, BindingTable.empty))
+          Right(
+            (
+              committed.signalEvaluation,
+              Some(committed.tree.root),
+              committed.bindings,
+              committed.componentRequirements
+            )
+          )
+        case None => Right((SignalEvaluation.empty, None, BindingTable.empty, Vector.empty))
     }
 
     ZIO.fromEither(candidateScope.beginEvaluation()).flatMap { _ =>
       val candidateRows = RenderProgram.CandidateRows()
       (for
         previousValues <- ZIO.fromEither(previousState)
-        (signalState, previousRoot, previousBindings) = previousValues
+        (signalState, previousRoot, previousBindings, previousComponents) = previousValues
         candidate <-
           ZIO.fromEither(RenderRevision.next(signalState.revision)).flatMap { revision =>
             val transaction  = SignalEvaluation.begin(signalState, revision, source, input)
@@ -106,6 +113,7 @@ final class RenderProgram[Input, Msg] private (
                     changed,
                     previousRoot,
                     previousBindings,
+                    previousComponents,
                     revision,
                     transaction,
                     candidateScope,
@@ -128,7 +136,7 @@ final class RenderProgram[Input, Msg] private (
       committed.signalEvaluation.samples.get(source).exists(_.value == input)
 
   // The same input renders the same again when the render read nothing that signals do not track.
-  // Its requirements are kept, so that its components are staged and resolved into it again.
+  // It carries over every component it declares, with what the runtime resolved into it.
   private def reuse(
     committed: CommittedRender[Msg],
     candidateScope: CandidateScope
@@ -154,6 +162,7 @@ final class RenderProgram[Input, Msg] private (
     inputChanged: Boolean,
     previousRoot: Option[EvaluatedNode.Element],
     previousBindings: BindingTable[Msg],
+    previousComponents: Vector[ComponentRequirement[Msg]],
     revision: RenderRevision,
     transaction: SignalEvaluation.Transaction,
     candidateScope: CandidateScope,
@@ -169,6 +178,7 @@ final class RenderProgram[Input, Msg] private (
             template,
             previousRoot,
             previousBindings,
+            previousComponents,
             revision,
             transaction,
             flash,
@@ -183,7 +193,7 @@ final class RenderProgram[Input, Msg] private (
                 EvaluatedTree(root, identity),
                 bindings,
                 transaction.result,
-                requirements.components.toVector,
+                requirements.components,
                 requirements.nested.toVector,
                 requirements.streams.toVector,
                 candidateScope,
@@ -290,7 +300,13 @@ object RenderProgram:
     branches: Vector[(Any, Vector[NodeTemplate[Msg]])])
       extends NodeTemplate[Msg]
 
-  final private case class ComponentTemplate[+Msg](id: TemplateId, spec: ComponentSpec[Msg])
+  /** A component declaration, and the requirement it always makes when its id and props are not
+    * signals: the same one each render, which tells the runtime it is the declaration it resolved.
+    */
+  final private case class ComponentTemplate[+Msg](
+    id: TemplateId,
+    spec: ComponentSpec[Msg],
+    constant: Option[ComponentRequirement[Msg]])
       extends NodeTemplate[Msg]
 
   final private case class NestedTemplate(id: TemplateId, spec: NestedViewSpec)
@@ -343,7 +359,18 @@ object RenderProgram:
     signals: SignalEvaluation.RowsEvaluation,
     bindings: BindingTable.Collection[Msg],
     rows: Map[RowId, EvaluatedRow[Msg]],
-    components: Vector[ComponentRequirement[Msg]])
+    components: Vector[ComponentRequirement[Msg]]):
+    // The committed node last found to be `node` as resolution filled it in, so that rows kept turn
+    // after turn are compared once.
+    private var resolvedInto: EvaluatedNode = null
+
+    /** Whether `committed` is `node` as resolution filled it in. */
+    def resolvesInto(committed: EvaluatedNode): Boolean =
+      if committed eq resolvedInto then true
+      else
+        val same = EvaluatedTree.resolvedFrom(committed, node)
+        if same then resolvedInto = committed
+        same
 
   private object StreamTemplate:
     final class State[A, Msg]:
@@ -499,14 +526,76 @@ object RenderProgram:
     val candidateRows: CandidateRows,
     val requirements: Requirements[Msg])
 
-  final private class Requirements[Msg]:
-    val components = ArrayBuffer.empty[ComponentRequirement[Msg]]
-    val nested     = ArrayBuffer.empty[NestedRequirement]
-    val streams    = ArrayBuffer.empty[StreamRequirement[Msg]]
+  /** What one render declares. Its components are `committed`, those the committed render declared,
+    * for as long as it declares the same ones in the same order, so that a render declaring its
+    * committed components again returns them as they were, without copying them.
+    */
+  final private class Requirements[Msg](committed: Vector[ComponentRequirement[Msg]]):
+    val nested  = ArrayBuffer.empty[NestedRequirement]
+    val streams = ArrayBuffer.empty[StreamRequirement[Msg]]
+
+    // How many components of `committed` the render declared again, in order, until it declared
+    // another one; from then on, every component it declared.
+    private var shared   = 0
+    private var declared = Option.empty[ArrayBuffer[ComponentRequirement[Msg]]]
+
+    def componentCount: Int = declared.fold(shared)(_.length)
+
+    def declare(requirement: ComponentRequirement[Msg]): Unit =
+      if declared.isEmpty && shared < committed.length && (committed(shared) eq requirement) then
+        shared += 1
+      else diverged() += requirement
+
+    def declareAll(requirements: Vector[ComponentRequirement[Msg]]): Unit =
+      if declared.isEmpty && committedAt(shared, requirements) then shared += requirements.length
+      else diverged() ++= requirements
 
     /** The components declared since `count` of them were. */
     def componentsSince(count: Int): Vector[ComponentRequirement[Msg]] =
-      if count == components.length then Vector.empty else components.view.drop(count).toVector
+      if count == componentCount then Vector.empty
+      else
+        declared match
+          case None         => committed.slice(count, shared)
+          case Some(buffer) => buffer.view.drop(count).toVector
+
+    /** Forgets the components declared after the first `count`. */
+    def keepComponents(count: Int): Unit = declared match
+      case None         => shared = count
+      case Some(buffer) => buffer.dropRightInPlace(buffer.length - count)
+
+    /** The committed component declared at `location`. */
+    def committedFor(location: TemplateId): Option[ComponentRequirement[Msg]] =
+      if declared.isEmpty && shared < committed.length && committed(shared).location == location
+      then Some(committed(shared))
+      else
+        if byLocation == null then
+          byLocation =
+            committed.iterator.map(requirement => requirement.location -> requirement).toMap
+        byLocation.get(location)
+
+    private var byLocation: Map[TemplateId, ComponentRequirement[Msg]] = null
+
+    def components: Vector[ComponentRequirement[Msg]] = declared match
+      case None if shared == committed.length => committed
+      case None                               => committed.take(shared)
+      case Some(buffer)                       => buffer.toVector
+
+    private def committedAt(offset: Int, requirements: Vector[ComponentRequirement[Msg]]): Boolean =
+      if offset + requirements.length > committed.length then false
+      else
+        // A loop rather than `forall`, which would box each index.
+        var index = 0
+        while index < requirements.length && (committed(offset + index) eq requirements(index)) do
+          index += 1
+        index == requirements.length
+
+    private def diverged(): ArrayBuffer[ComponentRequirement[Msg]] = declared match
+      case Some(buffer) => buffer
+      case None         =>
+        val buffer = ArrayBuffer.from(committed.view.take(shared))
+        declared = Some(buffer)
+        buffer
+  end Requirements
 
   private object FlashTemplate:
     final class State:
@@ -1072,7 +1161,7 @@ object RenderProgram:
           for
             _  <- validateComponentSpec(spec)
             id <- allocator.template()
-          yield ComponentTemplate(id, spec)
+          yield ComponentTemplate(id, spec, constantRequirement(id, spec))
         case Mod.Content.NestedView(spec) =>
           for
             _ <- spec match
@@ -1460,6 +1549,7 @@ object RenderProgram:
     template: ElementTemplate[Msg],
     previous: Option[EvaluatedNode.Element],
     previousBindings: BindingTable[Msg],
+    previousComponents: Vector[ComponentRequirement[Msg]],
     revision: RenderRevision,
     transaction: SignalEvaluation.Transaction,
     flash: Map[FlashKey, FlashValue],
@@ -1470,7 +1560,7 @@ object RenderProgram:
   ] =
     val bindings      = BindingTable.Builder[Msg](previousBindings)
     val commitActions = ArrayBuffer.empty[() => Unit]
-    val requirements  = Requirements[Msg]()
+    val requirements  = Requirements[Msg](previousComponents)
     val evaluation    = Evaluation(
       revision,
       transaction,
@@ -1560,15 +1650,41 @@ object RenderProgram:
     val evaluated = RefArray[EvaluatedNode](children.length)
     var index     = 0
     while index < children.length do
-      evaluateNode(
-        children(index),
-        previousChild(previous, index),
-        evaluation
-      ) match
-        case Right(child) => evaluated(index) = child
-        case Left(error)  => return Left(error)
+      val kept = keptComponent(children(index), previous, index, evaluation.requirements)
+      if kept != null then evaluated(index) = kept
+      else
+        evaluateNode(
+          children(index),
+          previousChild(previous, index),
+          evaluation
+        ) match
+          case Right(child) => evaluated(index) = child
+          case Left(error)  => return Left(error)
       index += 1
     Right(evaluated.toVector)
+
+  /** The committed node at `index` of `previous`, declaring `template` again, when `template`
+    * declares a component that cannot change and that node holds its resolution, as `evaluateNode`
+    * keeps it; null otherwise. It allocates nothing, for an element that declares many.
+    */
+  private def keptComponent[Msg](
+    template: NodeTemplate[Msg],
+    previous: Option[EvaluatedNode.Element],
+    index: Int,
+    requirements: Requirements[Msg]
+  ): EvaluatedNode.Component =
+    template match
+      case component: ComponentTemplate[Msg] if component.constant.nonEmpty =>
+        previous match
+          case Some(element) if index < element.children.length =>
+            element.children(index) match
+              case old: EvaluatedNode.Component
+                  if old.id == component.id && old.resolution.nonEmpty =>
+                requirements.declare(component.constant.get)
+                old
+              case _ => null
+          case _ => null
+      case _ => null
 
   private def previousAttribute(
     previous: Option[EvaluatedNode.Element],
@@ -1686,18 +1802,41 @@ object RenderProgram:
           evaluation
         )
       // Signals track a component's declaration. A kept row or collection declares its components
-      // again from what it recorded, and the runtime resolves them into it on every turn.
+      // again from what it recorded, and keeps their committed nodes, as does a declaration that
+      // cannot change: the runtime resolves into the render only the others.
       case template: ComponentTemplate[Msg] =>
-        evaluateComponentRequirement(template.id, template.spec, evaluation.transaction).map {
-          requirement =>
-            evaluation.requirements.components += requirement
-            EvaluatedNode.Component(
-              template.id,
-              requirement.applicationId,
-              None,
-              evaluation.revision
+        (template.constant, previous) match
+          case (Some(requirement), Some(old: EvaluatedNode.Component))
+              if old.id == template.id && old.resolution.nonEmpty =>
+            evaluation.requirements.declare(requirement)
+            Right(old)
+          case (Some(requirement), _) =>
+            evaluation.requirements.declare(requirement)
+            Right(
+              EvaluatedNode.Component(
+                template.id,
+                requirement.applicationId,
+                None,
+                evaluation.revision
+              )
             )
-        }
+          case (None, Some(old: EvaluatedNode.Component))
+              if old.id == template.id && old.resolution.nonEmpty &&
+                unchangedDeclaration(template.spec, evaluation.transaction) &&
+                evaluation.requirements.committedFor(template.id).nonEmpty =>
+            evaluation.requirements.declare(evaluation.requirements.committedFor(template.id).get)
+            Right(old)
+          case (None, _) =>
+            evaluateComponentRequirement(template.id, template.spec, evaluation.transaction).map {
+              requirement =>
+                evaluation.requirements.declare(requirement)
+                EvaluatedNode.Component(
+                  template.id,
+                  requirement.applicationId,
+                  None,
+                  evaluation.revision
+                )
+            }
       case template: NestedTemplate =>
         evaluation.transaction.markUntracked()
         evaluateNestedRequirement(template.id, template.spec, evaluation.transaction).map {
@@ -1846,7 +1985,7 @@ object RenderProgram:
     val reusable = (last, old) match
       case (Some(rows), Some(committed))
           if unchanged && !rows.signals.untracked &&
-            EvaluatedTree.resolvedFrom(committed, rows.node) &&
+            rows.resolvesInto(committed) &&
             evaluation.transaction.allUnchanged(rows.signals.outside) =>
         Some(rows -> committed)
       case _ => None
@@ -1865,11 +2004,11 @@ object RenderProgram:
     reusable match
       case Some((rows, committed)) =>
         evaluation.bindings.reuseRows(id, rows.bindings).map { _ =>
-          evaluation.requirements.components ++= rows.components
+          evaluation.requirements.declareAll(rows.components)
           committed
         }
       case None =>
-        val declared  = evaluation.requirements.components.length
+        val declared  = evaluation.requirements.componentCount
         val evaluated = (last, old) match
           case (Some(rows), Some(committed)) if changesOnly =>
             evaluation.bindings.enterChangedRows(id, rows.bindings)
@@ -2214,13 +2353,14 @@ object RenderProgram:
     requirements: Requirements[Msg]
   ): Unit =
     val held = evaluated.iterator.filterNot(_.transient).map(row => row.row.domId -> row).toMap
-    requirements.components.dropRightInPlace(requirements.components.length - declared)
+    requirements.keepComponents(declared)
     rows.foreach(row =>
-      held.get(row.domId).foreach(requirements.components ++= _.record.components)
+      held
+        .get(row.domId).foreach(evaluatedRow =>
+          requirements.declareAll(evaluatedRow.record.components)
+        )
     )
-    evaluated.foreach(row =>
-      if row.transient then requirements.components ++= row.record.components
-    )
+    evaluated.foreach(row => if row.transient then requirements.declareAll(row.record.components))
 
   /** The rows of `stream` in order: `previous`, its rows before its operations, of the DOM ids
     * `retained`, after them, with `evaluated`, the rows it holds that it evaluated, in place of
@@ -2581,7 +2721,7 @@ object RenderProgram:
     val reusable = (last, old) match
       case (Some(rows), Some(committed))
           if !rows.signals.untracked && evaluation.transaction.unchanged(items) &&
-            EvaluatedTree.resolvedFrom(committed, rows.node) &&
+            rows.resolvesInto(committed) &&
             evaluation.transaction.allUnchanged(rows.signals.outside) =>
         Some(rows -> committed)
       case _ => None
@@ -2589,11 +2729,11 @@ object RenderProgram:
     reusable match
       case Some((rows, committed)) =>
         evaluation.bindings.reuseRows(id, rows.bindings).map { _ =>
-          evaluation.requirements.components ++= rows.components
+          evaluation.requirements.declareAll(rows.components)
           committed
         }
       case None =>
-        val declared = evaluation.requirements.components.length
+        val declared = evaluation.requirements.componentCount
         evaluation.bindings.enterRows(id)
         val evaluated = withinRows(
           evaluation.transaction,
@@ -2776,11 +2916,11 @@ object RenderProgram:
     kept match
       case Some(keptRow @ (_, row)) =>
         evaluation.bindings.keepRow(id, row.bindings)
-        evaluation.requirements.components ++= row.components
+        evaluation.requirements.declareAll(row.components)
         Right(keptRow)
       case None =>
         evaluation.transaction.bindSource(source, item).flatMap { _ =>
-          val declared = evaluation.requirements.components.length
+          val declared = evaluation.requirements.componentCount
           evaluation.transaction.enterRow(id)
           evaluation.bindings.enterRow()
           val evaluated = evaluateNode(
@@ -2813,6 +2953,38 @@ object RenderProgram:
     keys.find(key => !seen.add(key)) match
       case Some(key) => Left(RenderError.DuplicateKey(key))
       case None      => Right(seen)
+
+  private def constantRequirement[OwnerMsg](
+    location: TemplateId,
+    spec: ComponentSpec[OwnerMsg]
+  ): Option[ComponentRequirement[OwnerMsg]] = spec match
+    case ComponentSpec.Plain(component, applicationId, props) =>
+      componentId(applicationId).toOption.map(id =>
+        ComponentRequirement.Plain(location, id, component, props)
+      )
+    case ComponentSpec.Output(component, applicationId, props, onOutput) =>
+      componentId(applicationId).toOption.map(id =>
+        ComponentRequirement.WithOutput(location, id, component, props, onOutput)
+      )
+    case _ => None
+
+  /** Whether the signals `spec` declares its component from are unchanged since the committed
+    * render. One that fails to sample is not: evaluating the declaration reports it.
+    */
+  private def unchangedDeclaration(
+    spec: ComponentSpec[?],
+    transaction: SignalEvaluation.Transaction
+  ): Boolean =
+    def unchanged(signal: Signal[?]) =
+      transaction.sample(signal).exists(transaction.unchanged)
+    spec match
+      case ComponentSpec.PlainSignal(_, _, props)         => unchanged(props)
+      case ComponentSpec.OutputSignal(_, _, props, _)     => unchanged(props)
+      case ComponentSpec.Dynamic(_, applicationId, props) =>
+        unchanged(applicationId) && unchanged(props)
+      case ComponentSpec.OutputDynamic(_, applicationId, props, _) =>
+        unchanged(applicationId) && unchanged(props)
+      case _: ComponentSpec.Plain[?, ?, ?] | _: ComponentSpec.Output[?, ?, ?, ?, ?] => true
 
   private def evaluateComponentRequirement[OwnerMsg](
     location: TemplateId,

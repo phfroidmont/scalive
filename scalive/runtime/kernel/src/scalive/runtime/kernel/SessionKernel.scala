@@ -764,7 +764,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                   token.owner match
                     case OwnerId.Root(_)                 => true
                     case OwnerId.Component(_, component) =>
-                      state.committed.components.values.exists(_.id == component)
+                      state.committed.components.isLive(component)
                 case _ => false
               }
               if running then guardActiveTurn(state, work, Some(tracked))(execute)
@@ -1680,12 +1680,8 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                                      )
                                    )
                       componentResult <- stageComponents(
-                                           discovery.componentRequirements,
-                                           previous
-                                             .map(_.components).getOrElse(
-                                               ComponentForest.empty
-                                                 .asInstanceOf[ComponentForest[Msg]]
-                                             ),
+                                           discovery,
+                                           previous,
                                            componentAction,
                                            draft
                                          )
@@ -1701,6 +1697,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                                     )
                       rootRender      = stabilized._1
                       finalComponents = stabilized._2
+                      _         <- validateRedeclarations(rootRender, finalComponents.forest)
                       revision  <- identity(TurnRevision.fresh())
                       finalized <- prepareNestedTopology(
                                      rootRender,
@@ -1712,11 +1709,11 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                       nestedComponents = finalized._2
                       topology         = finalized._3
                       _ <- uploadRollback.set(nestedComponents.draft.uploadRollback)
-                      finalComponentIds = nestedComponents.forest.components.map(_.id).toSet
+                      finalForest = nestedComponents.forest
                       reconciledDraft <- phase(SessionStage.Validation)(
                                            logic.reconcileUploads(
                                              nestedComponents.draft,
-                                             finalComponentIds
+                                             finalForest.isLive
                                            )
                                          ).tap(next => uploadRollback.set(next.uploadRollback))
                       _ <- ZIO.foreachDiscard(nestedComponents.forest.components) {
@@ -1748,9 +1745,9 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                               ResourceIndex.empty[ManagedResource]
                             ),
                           reconciledDraft.resourceOperations,
-                          finalComponentIds,
+                          finalForest.isLive,
                           id =>
-                            finalComponentIds(id) ||
+                            finalForest.isLive(id) ||
                               previous.exists(_.components.contains(id)),
                           auxiliaryScope
                         )
@@ -1793,6 +1790,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                       finalDraft,
                       render,
                       nestedComponents.forest,
+                      componentResult.visits.basis,
                       nestedComponents.outputs,
                       topology,
                       resources,
@@ -1825,35 +1823,124 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     forest: ComponentForestCandidate[Msg],
     // The committed forest, with the dormant component that handled the action, if any.
     retained: ComponentForest[Msg],
-    resolutions: Vector[ComponentResolution],
     outputs: Vector[ComponentOutput[Msg]],
     draft: TurnDraft[Msg, Model],
+    visits: Visits,
     staged: Ref[Vector[StagedComponent[Msg]]],
     identities: Ref[Set[ComponentKey]],
     outputRef: Ref[Vector[ComponentOutput[Msg]]],
     draftRef: Ref[TurnDraft[Msg, Model]],
     updates: Ref[Map[ComponentKey, ComponentUpdateRequest]])
 
+  /** The components a committed render declares, and the ids of the components they declare, in
+    * order.
+    */
+  final private case class Declarations(
+    requirements: Vector[ComponentRequirement[?]],
+    ids: Vector[ComponentInstanceId])
+
+  private object Declarations:
+    val empty: Declarations = Declarations(Vector.empty, Vector.empty)
+
+    def of(component: MountedComponent[Msg]): Declarations =
+      Declarations(component.render.componentRequirements, component.children)
+
+  /** Which of the components a render carries over from the committed render a turn stages: the
+    * target of its action and of each pending component update, each component whose render read
+    * what signals do not track, and their ancestors, through which the turn reaches them. The turn
+    * stages every component instead when they would not read the runtime-owned render state they
+    * last rendered with, from which each one may render differently.
+    *
+    * @param start
+    *   the root model the turn starts staging from
+    * @param consistent
+    *   whether every live component last rendered with the render state of `start`
+    */
+  final private class Visits(
+    forest: ComponentForest[Msg],
+    action: Option[ComponentInstanceId],
+    start: Model,
+    consistent: Boolean):
+    private val strayed    = AtomicBoolean(false)
+    private var targetedBy = Option.empty[Map[ComponentKey, ComponentUpdateRequest]]
+    private var targeted   = Set.empty[ComponentInstanceId]
+
+    /** Whether the turn stages every component, given its draft so far. */
+    def everything(draft: TurnDraft[Msg, Model]): Boolean =
+      !consistent || !componentEnvironment.sameRenderState(start, draft.model)
+
+    /** The committed components the turn stages, given the component updates pending so far. */
+    def targets(updates: Map[ComponentKey, ComponentUpdateRequest]): Set[ComponentInstanceId] =
+      if targetedBy.exists(_ eq updates) then targeted
+      else
+        val seeds = action.iterator ++ updateTargets(updates).iterator ++ forest.untracked.iterator
+        targeted = seeds.foldLeft(Set.empty[ComponentInstanceId])(withAncestors)
+        targetedBy = Some(updates)
+        targeted
+
+    /** The committed components `updates` target. */
+    def updateTargets(
+      updates: Map[ComponentKey, ComponentUpdateRequest]
+    ): Set[ComponentInstanceId] =
+      updates.keysIterator.flatMap(forest.byKey).map(_.id).toSet
+
+    /** Records that a component rendered, or was kept, with the render state of `draft`. */
+    def rendered(draft: TurnDraft[Msg, Model]): Unit =
+      if !componentEnvironment.sameRenderState(start, draft.model) then strayed.set(true)
+
+    /** The root model whose render state every live component last rendered with after the turn, if
+      * they all did with the same.
+      */
+    def basis: Option[Model] = if strayed.get() then None else Some(start)
+
+    @scala.annotation.tailrec
+    private def withAncestors(
+      all: Set[ComponentInstanceId],
+      id: ComponentInstanceId
+    ): Set[ComponentInstanceId] =
+      if all.contains(id) then all
+      else
+        forest.get(id).flatMap(_.parent) match
+          case Some(parent) => withAncestors(all + id, parent)
+          case None         => all + id
+  end Visits
+
   private def stageComponents(
-    requirements: Vector[ComponentRequirement[Msg]],
-    previous: ComponentForest[Msg],
+    root: RenderCandidate[Msg],
+    previous: Option[Committed[Msg, Model]],
     action: Option[(ComponentInstanceId, ComponentAction)],
     initialDraft: TurnDraft[Msg, Model]
   ): ZIO[Any, SessionFailure, StagedComponentsResult] =
+    val committed =
+      previous.map(_.components).getOrElse(ComponentForest.empty.asInstanceOf[ComponentForest[Msg]])
     for
       identities <- Ref.make(Set.empty[ComponentKey])
       outputs    <- Ref.make(Vector.empty[ComponentOutput[Msg]])
       staged     <- Ref.make(Vector.empty[StagedComponent[Msg]])
       draftRef   <- Ref.make(initialDraft)
       updates    <- Ref.make(lastComponentUpdates(initialDraft.componentUpdates))
-      dormant    <- actOnDormant(previous, action, outputs, draftRef, updates)
-      retained       = dormant.fold(previous)(acted => previous.updated(acted.component))
+      dormant    <- actOnDormant(committed, action, outputs, draftRef, updates)
+      retained       = dormant.fold(committed)(acted => committed.updated(acted.component))
       discardDormant = ZIO.foreachDiscard(dormant)(_.discard)
+      stagedAction   = if dormant.isEmpty then action else None
+      visits         = Visits(
+                 retained,
+                 stagedAction.map(_._1),
+                 initialDraft.model,
+                 previous
+                   .flatMap(_.componentRenderBasis)
+                   .exists(componentEnvironment.sameRenderState(_, initialDraft.model))
+               )
       roots <- stageRequirements(
-                 requirements,
+                 root.componentRequirements,
+                 root.unresolvedComponents,
+                 previous.fold(Declarations.empty)(value =>
+                   Declarations(value.render.componentRequirements, value.components.roots)
+                 ),
                  None,
                  retained,
-                 if dormant.isEmpty then action else None,
+                 stagedAction,
+                 visits,
                  identities,
                  outputs,
                  staged,
@@ -1869,32 +1956,48 @@ final private[scalive] class SessionKernel[Msg, Model] private (
       emitted      <- outputs.get
       resultDraft  <- draftRef.get
       finalUpdates <- updates.get
-      _            <- ZIO
-             .foreachDiscard(values) { value =>
-               finalUpdates.get(value.key) match
-                 case Some(request) if !value.appliedUpdate.exists(_ eq request) =>
-                   ZIO.fail(
-                     SessionFailure.StageFailed(
-                       SessionStage.Validation,
-                       s"component update journal changed after '${value.key.applicationId}' was staged"
-                     )
-                   )
-                 case _ => ZIO.unit
-             }.onError(_ => ZIO.foreachDiscard(values)(_.discard) *> discardDormant)
-      resolutions = roots.map(_._2)
-      forest      = ComponentForestCandidate(roots.map(_._1), values, resolutions, dormant)
+      forest = ComponentForestCandidate(roots, values, dormant, retained)
+      _ <- validateUpdateJournal(forest, finalUpdates)
+             .onError(_ => ZIO.foreachDiscard(values)(_.discard) *> discardDormant)
     yield StagedComponentsResult(
       forest,
       retained,
-      resolutions,
       emitted,
       resultDraft.copy(componentUpdates = Vector.empty),
+      visits,
       staged,
       identities,
       outputs,
       draftRef,
       updates
     )
+    end for
+  end stageComponents
+
+  /** Fails when a component update reached a component after the turn staged it, or kept it without
+    * staging it: the component then renders without it.
+    */
+  private def validateUpdateJournal(
+    forest: ComponentForestCandidate[Msg],
+    updates: Map[ComponentKey, ComponentUpdateRequest]
+  ): IO[SessionFailure, Unit] =
+    def changed(key: ComponentKey) =
+      ZIO.fail(
+        SessionFailure.StageFailed(
+          SessionStage.Validation,
+          s"component update journal changed after '${key.applicationId}' was staged"
+        )
+      )
+    val stagedKeys = forest.components.iterator.map(_.key).toSet
+    ZIO.foreachDiscard(forest.components) { value =>
+      updates.get(value.key) match
+        case Some(request) if !value.appliedUpdate.exists(_ eq request) => changed(value.key)
+        case _                                                          => ZIO.unit
+    } *> ZIO.foreachDiscard(updates.keys) { key =>
+      val kept = !stagedKeys.contains(key) &&
+        forest.previous.byKey(key).exists(component => forest.isLive(component.id))
+      ZIO.when(kept)(changed(key)).unit
+    }
 
   /** Runs `action` when it targets a component the page no longer renders but the browser has not
     * destroyed yet, such as a click sent before an update removed it. Phoenix likewise lets a
@@ -2019,7 +2122,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
             renderPhase(
               renderProgram.evaluateIn(currentDraft.model, previousRender, scope)
             ).onError(_ => scope.closeFromOwner).flatMap { nextRender =>
-              reconcileRootRequirements(nextRender.componentRequirements, previous, staging)
+              reconcileRootRequirements(nextRender, previousRender, previous, staging)
                 .onError(_ => nextRender.discard).flatMap { reconciled =>
                   stabilizeRootGraph(
                     nextRender,
@@ -2034,46 +2137,59 @@ final private[scalive] class SessionKernel[Msg, Model] private (
           }
     }
 
+  /** Stages the components `render`, the root rendered again, declares, keeping each root component
+    * staged so far that it declares with the props it was staged for, and dropping the others.
+    */
   private def reconcileRootRequirements(
-    requirements: Vector[ComponentRequirement[Msg]],
+    render: RenderCandidate[Msg],
+    previousRender: Option[CommittedRender[Msg]],
     previous: ComponentForest[Msg],
     staging: StagedComponentsResult
   ): ZIO[Any, SessionFailure, StagedComponentsResult] =
+    val requirements = render.componentRequirements
+    val unresolved   = render.unresolvedComponents
+    val committed    = previousRender.fold(Declarations.empty)(value =>
+      Declarations(value.componentRequirements, previous.roots)
+    )
     for
       values <- staging.staged.get
-      roots       = values.filter(_.parent.isEmpty)
-      retainedIds =
-        requirements.flatMap(requirement => roots.find(_.matches(requirement)).map(_.id)).toSet
-      removedIds = roots.iterator.map(_.id).filterNot(retainedIds).toSet
+      roots     = values.filter(_.parent.isEmpty)
+      rootsById = roots.map(component => component.id -> component).toMap
+      byKey     = roots.map(component => component.key -> component).toMap
+      carried   = carriedIds(requirements, unresolved, committed)
+      kept      = requirements.indices.iterator.flatMap { index =>
+               val requirement = requirements(index)
+               val candidate   = carried(index) match
+                 case Some(id) => rootsById.get(id)
+                 case None     => byKey.get(componentKey(requirement))
+               candidate.filter(_.matches(requirement)).map(_.id)
+             }.toSet
+      removedIds = roots.iterator.map(_.id).filterNot(kept).toSet
       _          <- removeStagedComponents(removedIds, staging.staged, staging.identities)
-      reconciled <- ZIO.foreach(requirements) { requirement =>
-                      staging.staged.get.flatMap { current =>
-                        current.find(component =>
-                          component.parent.isEmpty && component.matches(requirement)
-                        ) match
-                          case Some(component) =>
-                            ZIO.succeed(component.id -> component.resolutionFor(requirement))
-                          case None =>
-                            stageComponent(
-                              requirement,
-                              None,
-                              previous,
-                              None,
-                              staging.identities,
-                              staging.outputRef,
-                              staging.staged,
-                              staging.draftRef,
-                              staging.updates
-                            )
-                      }
-                    }
-      snapshot <- snapshotStagedComponents(
-                    staging.copy(
-                      forest = staging.forest.copy(roots = reconciled.map(_._1)),
-                      resolutions = reconciled.map(_._2)
+      reconciled <- stageRequirements(
+                      requirements,
+                      unresolved,
+                      committed,
+                      None,
+                      previous,
+                      None,
+                      staging.visits,
+                      staging.identities,
+                      staging.outputRef,
+                      staging.staged,
+                      staging.draftRef,
+                      staging.updates,
+                      requirement =>
+                        byKey
+                          .get(componentKey(requirement))
+                          .filter(component => kept(component.id) && component.matches(requirement))
                     )
+      snapshot <- snapshotStagedComponents(
+                    staging.copy(forest = staging.forest.copy(roots = reconciled))
                   )
     yield snapshot
+    end for
+  end reconcileRootRequirements
 
   private def snapshotStagedComponents(
     staging: StagedComponentsResult
@@ -2083,15 +2199,46 @@ final private[scalive] class SessionKernel[Msg, Model] private (
       outputs <- staging.outputRef.get
       draft   <- staging.draftRef.get
     yield staging.copy(
-      forest = ComponentForestCandidate(
-        staging.forest.roots,
-        values,
-        staging.resolutions,
-        staging.forest.dormantAction
-      ),
+      forest = staging.forest.copy(components = values),
       outputs = outputs,
       draft = draft.copy(componentUpdates = Vector.empty)
     )
+
+  /** Fails when a component the turn staged for a new declaration is still declared where its
+    * committed render was: two declarations of one component identity. A declaration the turn did
+    * not stage is not otherwise compared with the new ones.
+    */
+  private def validateRedeclarations(
+    root: RenderCandidate[Msg],
+    forest: ComponentForestCandidate[Msg]
+  ): IO[SessionFailure, Unit] =
+    def declaredBy(owner: Option[ComponentInstanceId]): Vector[ComponentRequirement[?]] =
+      owner match
+        case None        => root.componentRequirements
+        case Some(value) =>
+          forest
+            .staged(value).map(_.declares)
+            .orElse(forest.previous.get(value).map(_.render.componentRequirements))
+            .getOrElse(Vector.empty)
+    def stillDeclared(committed: MountedComponent[Msg]): Boolean =
+      committed.parent.forall(forest.isLive) &&
+        declaredBy(committed.parent).exists(_ eq committed.declaration)
+    ZIO.foreachDiscard(forest.components) { component =>
+      forest.previous.get(component.id) match
+        case Some(committed)
+            if !(component.declaration eq committed.declaration) &&
+              (component.parent != committed.parent ||
+                component.declaration.location != committed.declaration.location) &&
+              stillDeclared(committed) =>
+          ZIO.fail(
+            SessionFailure.StageFailed(
+              SessionStage.Validation,
+              s"duplicate component identity '${component.key.applicationId}'"
+            )
+          )
+        case _ => ZIO.unit
+    }
+  end validateRedeclarations
 
   private def prepareNestedTopology(
     root: RenderCandidate[Msg],
@@ -2180,29 +2327,30 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                        staged.map(component => nestedById.getOrElse(component.id, component)),
                        failed
                      )
-      rebuilt         = finalStaged.map(component => component.id -> component).toMap
-      rootResolutions = nestedRoot.componentRequirements.zip(components.forest.roots).map {
-                          case (requirement, id) => rebuilt(id).resolutionFor(requirement)
+      rootResolutions = finalStaged.collect {
+                          case component if component.parent.isEmpty => component.resolution
                         }
       finalRoot <- ZIO
                      .fromEither(nestedRoot.resolveComponents(rootResolutions))
                      .mapError(error => failed(error.getMessage))
-      finalForest = components.forest.copy(components = finalStaged, resolutions = rootResolutions)
+      finalForest = components.forest.copy(components = finalStaged)
     yield (
       finalRoot,
-      components.copy(forest = finalForest, resolutions = rootResolutions),
+      components.copy(forest = finalForest),
       prepared
     )
     end for
   end prepareNestedTopology
 
-  /** `staged` with the children of each component resolved into its render. */
+  /** `staged` with the staged children of each component resolved into its render. The others it
+    * carries over hold the resolution committed for them.
+    */
   private def rebuildComponents(
     staged: Vector[StagedComponent[Msg]],
     failed: String => SessionFailure
   ): ZIO[Any, SessionFailure, Vector[StagedComponent[Msg]]] =
     ZIO.suspendSucceed {
-      val byId = staged.map(component => component.id -> component).toMap
+      val children = staged.groupBy(_.parent)
       // A component is reached from each of its ancestors as well, so it is rebuilt once.
       val rebuilt =
         scala.collection.mutable.HashMap.empty[ComponentInstanceId, StagedComponent[Msg]]
@@ -2213,27 +2361,17 @@ final private[scalive] class SessionKernel[Msg, Model] private (
           case kept: StagedComponent.Kept[Msg]                  => ZIO.succeed(kept)
           case value: StagedComponent.Rendered[Msg, ?, ?, ?, ?] =>
             rebuilt.get(value.id) match
-              case Some(done)                     => ZIO.succeed(done)
-              case None if value.children.isEmpty => ZIO.succeed(value)
-              case None                           => resolveChildren(value)
+              case Some(done) => ZIO.succeed(done)
+              case None       => resolveChildren(value)
 
       def resolveChildren(
         component: StagedComponent.Rendered[Msg, ?, ?, ?, ?]
       ): ZIO[Any, SessionFailure, StagedComponent[Msg]] =
         for
           childResolutions <-
-            ZIO.foreach(
-              component.candidate.componentRequirements.zip(component.children)
-            ) { case (requirement, childId) =>
-              ZIO
-                .fromOption(byId.get(childId))
-                .orElseFail(
-                  failed(
-                    s"component '${component.key.applicationId}' child graph is inconsistent"
-                  )
-                ).flatMap(rebuild)
-                .map(_.resolutionFor(requirement))
-            }
+            ZIO.foreach(children.getOrElse(Some(component.id), Vector.empty))(child =>
+              rebuild(child).map(_.resolution)
+            )
           next <-
             ZIO
               .fromEither(component.resolvingComponents(childResolutions))
@@ -2266,62 +2404,202 @@ final private[scalive] class SessionKernel[Msg, Model] private (
           ZIO.foreachDiscard(removed)(_.discard)
       }
 
+  private def componentKey(requirement: ComponentRequirement[?]): ComponentKey =
+    ComponentKey(
+      ComponentDefinitionIdentity(requirement.definition.asInstanceOf[AnyRef]),
+      requirement.applicationId
+    )
+
+  /** The id of the committed component each of `requirements` carries over from `committed`, or
+    * none for one declared anew. A requirement the render leaves `unresolved` is declared anew.
+    */
+  private def carriedIds(
+    requirements: Vector[ComponentRequirement[?]],
+    unresolved: Set[TemplateId],
+    committed: Declarations
+  ): Vector[Option[ComponentInstanceId]] =
+    val index = java.util.IdentityHashMap[AnyRef, ComponentInstanceId]()
+    committed.requirements.indices.foreach(position =>
+      index.put(committed.requirements(position), committed.ids(position))
+    )
+    requirements.map(requirement =>
+      if unresolved.contains(requirement.location) then None
+      else Option(index.get(requirement))
+    )
+
+  /** Stages the components `requirements`, which the render of `parent` declares, need staged: each
+    * one they declare anew, and each one they carry over from `committed` that `visits` reaches.
+    * The target of `action` goes first, then those of the component updates pending, as Phoenix
+    * updates them before rendering; then the others, in order. `restaged` gives the component
+    * already staged for a requirement, if any. Returns the ids of the components `requirements`
+    * declare, in order.
+    */
   private def stageRequirements[Owner](
     requirements: Vector[ComponentRequirement[Owner]],
+    unresolved: Set[TemplateId],
+    committed: Declarations,
     parent: Option[ComponentInstanceId],
     previous: ComponentForest[Msg],
     action: Option[(ComponentInstanceId, ComponentAction)],
+    visits: Visits,
     identities: Ref[Set[ComponentKey]],
     outputs: Ref[Vector[ComponentOutput[Msg]]],
     staged: Ref[Vector[StagedComponent[Msg]]],
     draft: Ref[TurnDraft[Msg, Model]],
-    updates: Ref[Map[ComponentKey, ComponentUpdateRequest]]
-  ): ZIO[Any, SessionFailure, Vector[(ComponentInstanceId, ComponentResolution)]] =
-    updates.get.flatMap { pendingUpdates =>
-      val indexed = requirements.zipWithIndex
-      val ordered = indexed.sortBy { case (requirement, index) =>
-        val key = ComponentKey(
-          ComponentDefinitionIdentity(requirement.definition.asInstanceOf[AnyRef]),
-          requirement.applicationId
-        )
-        val actionPriority = action.exists { case (target, _) =>
-          previous.byKey(key).exists(_.id == target)
-        }
-        if actionPriority then -2
-        else if pendingUpdates.contains(key) then -1
-        else index
-      }
-      ZIO
-        .foreach(ordered) { case (requirement, index) =>
+    updates: Ref[Map[ComponentKey, ComponentUpdateRequest]],
+    restaged: ComponentRequirement[Owner] => Option[StagedComponent[Msg]] =
+      (_: ComponentRequirement[Owner]) => None
+  ): ZIO[Any, SessionFailure, Vector[ComponentInstanceId]] =
+    // Whether the render declares the committed components in their committed order, so that the
+    // committed ids are its own. Otherwise, the id each requirement carries over, if any.
+    val unchanged = (requirements eq committed.requirements) && unresolved.isEmpty
+    val carried   =
+      if unchanged then Vector.empty else carriedIds(requirements, unresolved, committed)
+    val count = requirements.length
+    // The ids of the components staged, by position.
+    val stagedIds = scala.collection.mutable.HashMap.empty[Int, ComponentInstanceId]
+
+    // The first position from `from` that the turn visits, skipping those it staged already.
+    def nextVisit(
+      from: Int,
+      currentDraft: TurnDraft[Msg, Model],
+      pending: Map[ComponentKey, ComponentUpdateRequest]
+    ): Int =
+      if from >= count then count
+      else if visits.everything(currentDraft) then
+        var position = from
+        while position < count && stagedIds.contains(position) do position += 1
+        position
+      else
+        val targets = visits.targets(pending)
+        if unchanged then
+          targets.iterator
+            .map(target => nextPosition(target, from))
+            .foldLeft(count)(math.min)
+        else
+          var position = from
+          while position < count && (stagedIds.contains(position) ||
+              carried(position).exists(id => !targets.contains(id)))
+          do position += 1
+          position
+
+    // The first position from `from` that declares committed component `id` and is not staged.
+    def nextPosition(id: ComponentInstanceId, from: Int): Int =
+      val position = committed.ids.indexOf(id, from)
+      if position < 0 then count
+      else if stagedIds.contains(position) then nextPosition(id, position + 1)
+      else position
+
+    def stageAt(position: Int): ZIO[Any, SessionFailure, Unit] =
+      val requirement = requirements(position)
+      val result      = restaged(requirement) match
+        case Some(component) =>
+          ZIO.unless(component.declaration eq requirement)(
+            staged.update(
+              _.map(value =>
+                if value.id == component.id then value.redeclared(requirement) else value
+              )
+            )
+          ) *> ZIO.succeed(component.id)
+        case None =>
           stageComponent(
             requirement,
             parent,
             previous,
             action,
+            visits,
             identities,
             outputs,
             staged,
             draft,
             updates
-          ).map(index -> _)
-        }.map(_.sortBy(_._1).map(_._2))
-    }
+          )
+      result.map(id => stagedIds.update(position, id))
+
+    def stageInOrder(from: Int): ZIO[Any, SessionFailure, Unit] =
+      draft.get.zip(updates.get).flatMap { (currentDraft, pending) =>
+        val position = nextVisit(from, currentDraft, pending)
+        if position >= count then ZIO.unit
+        else stageAt(position) *> stageInOrder(position + 1)
+      }
+
+    def committedId(position: Int): ComponentInstanceId =
+      if unchanged then committed.ids(position) else carried(position).get
+
+    for
+      pending <- updates.get
+      first = prioritized(requirements, carried, committed, unchanged, previous, action, pending)
+      _ <- ZIO.foreachDiscard(first)(stageAt)
+      _ <- stageInOrder(0)
+    yield
+      if unchanged then committed.ids
+      else
+        requirements.indices
+          .map(position => stagedIds.getOrElse(position, committedId(position))).toVector
+  end stageRequirements
+
+  /** The positions of `requirements` staged before the others: the target of `action`, then those
+    * of `pending` component updates, each in order.
+    */
+  private def prioritized(
+    requirements: Vector[ComponentRequirement[?]],
+    carried: Vector[Option[ComponentInstanceId]],
+    committed: Declarations,
+    unchanged: Boolean,
+    previous: ComponentForest[Msg],
+    action: Option[(ComponentInstanceId, ComponentAction)],
+    pending: Map[ComponentKey, ComponentUpdateRequest]
+  ): Vector[Int] =
+    if action.isEmpty && pending.isEmpty then Vector.empty
+    else
+      val target        = action.map(_._1)
+      val updateTargets = pending.keysIterator.flatMap(previous.byKey).map(_.id).toSet
+      if unchanged then
+        // Each committed component is declared once, at its committed position.
+        val first   = target.map(committed.ids.indexOf(_)).filter(_ >= 0).toVector
+        val updated = updateTargets.iterator
+          .map(committed.ids.indexOf(_)).filter(position =>
+            position >= 0 && !first.contains(position)
+          )
+        first ++ updated.toVector.sorted
+      else prioritizedDeclarations(requirements, carried, previous, target, updateTargets, pending)
+
+  private def prioritizedDeclarations(
+    requirements: Vector[ComponentRequirement[?]],
+    carried: Vector[Option[ComponentInstanceId]],
+    previous: ComponentForest[Msg],
+    target: Option[ComponentInstanceId],
+    updateTargets: Set[ComponentInstanceId],
+    pending: Map[ComponentKey, ComponentUpdateRequest]
+  ): Vector[Int] =
+    // The committed component a position declares, and whether a pending update targets it.
+    def declared(position: Int): (Option[ComponentInstanceId], Boolean) =
+      carried(position) match
+        case Some(id) => Some(id) -> updateTargets.contains(id)
+        case None     =>
+          val key = componentKey(requirements(position))
+          previous.byKey(key).map(_.id) -> pending.contains(key)
+    val priorities = requirements.indices.iterator.flatMap { position =>
+      val (id, updated) = declared(position)
+      if id.nonEmpty && id == target then Some(-2 -> position)
+      else if updated then Some(-1 -> position)
+      else None
+    }.toVector
+    priorities.sorted.map(_._2)
 
   private def stageComponent[Owner](
     requirement: ComponentRequirement[Owner],
     parent: Option[ComponentInstanceId],
     previousForest: ComponentForest[Msg],
     action: Option[(ComponentInstanceId, ComponentAction)],
+    visits: Visits,
     identities: Ref[Set[ComponentKey]],
     outputs: Ref[Vector[ComponentOutput[Msg]]],
     staged: Ref[Vector[StagedComponent[Msg]]],
     draft: Ref[TurnDraft[Msg, Model]],
     updates: Ref[Map[ComponentKey, ComponentUpdateRequest]]
-  ): ZIO[Any, SessionFailure, (ComponentInstanceId, ComponentResolution)] =
-    val key = ComponentKey(
-      ComponentDefinitionIdentity(requirement.definition.asInstanceOf[AnyRef]),
-      requirement.applicationId
-    )
+  ): ZIO[Any, SessionFailure, ComponentInstanceId] =
+    val key       = componentKey(requirement)
     val duplicate = identities.modify { seen =>
       if seen.contains(key) then true -> seen else false -> (seen + key)
     }
@@ -2336,23 +2614,25 @@ final private[scalive] class SessionKernel[Msg, Model] private (
         )
       else
         val previous = previousForest.byKey(key)
-        unchangedSubtree(requirement, previous, previousForest, action, draft, updates).flatMap {
-          case Some(subtree) => keep(requirement, subtree, identities, staged)
-          case None          =>
-            stageTypedComponent(
-              requirement,
-              key,
-              parent,
-              previous,
-              previousForest,
-              action,
-              identities,
-              outputs,
-              staged,
-              draft,
-              updates
-            )
-        }
+        unchangedSubtree(requirement, previous, previousForest, action, visits, draft, updates)
+          .flatMap {
+            case Some(subtree) => keep(requirement, subtree, parent, identities, staged)
+            case None          =>
+              stageTypedComponent(
+                requirement,
+                key,
+                parent,
+                previous,
+                previousForest,
+                action,
+                visits,
+                identities,
+                outputs,
+                staged,
+                draft,
+                updates
+              )
+          }
     }
   end stageComponent
 
@@ -2366,6 +2646,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     previous: Option[MountedComponent[Msg]],
     forest: ComponentForest[Msg],
     action: Option[(ComponentInstanceId, ComponentAction)],
+    visits: Visits,
     draft: Ref[TurnDraft[Msg, Model]],
     updates: Ref[Map[ComponentKey, ComponentUpdateRequest]]
   ): UIO[Option[Vector[MountedComponent[Msg]]]] =
@@ -2375,6 +2656,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
           currentDraft   <- draft.get
           pendingUpdates <- updates.get
         yield
+          visits.rendered(currentDraft)
           def unchanged(component: MountedComponent[Msg]): Option[Vector[MountedComponent[Msg]]] =
             val state = componentEnvironment.renderState(
               component.id,
@@ -2395,14 +2677,17 @@ final private[scalive] class SessionKernel[Msg, Model] private (
           unchanged(declared)
       case _ => ZIO.none
 
-  /** Keeps `subtree`, a component `requirement` declares then its descendants, as committed. */
+  /** Keeps `subtree`, a component `requirement` declares in the render of `parent` then its
+    * descendants, as committed.
+    */
   private def keep(
     requirement: ComponentRequirement[?],
     subtree: Vector[MountedComponent[Msg]],
+    parent: Option[ComponentInstanceId],
     identities: Ref[Set[ComponentKey]],
     staged: Ref[Vector[StagedComponent[Msg]]]
-  ): ZIO[Any, SessionFailure, (ComponentInstanceId, ComponentResolution)] =
-    val declared    = subtree.head.declaredBy(requirement)
+  ): ZIO[Any, SessionFailure, ComponentInstanceId] =
+    val declared    = subtree.head.declaredBy(requirement, parent)
     val descendants = subtree.tail
     for
       duplicate <- identities.modify { seen =>
@@ -2418,7 +2703,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
              )
            }
       _ <- staged.update(_ ++ (declared +: descendants).map(StagedComponent.Kept(_)))
-    yield declared.id -> declared.resolution(requirement)
+    yield declared.id
 
   private def stageTypedComponent[Owner](
     requirement: ComponentRequirement[Owner],
@@ -2427,12 +2712,13 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     erasedPrevious: Option[MountedComponent[Msg]],
     previousForest: ComponentForest[Msg],
     action: Option[(ComponentInstanceId, ComponentAction)],
+    visits: Visits,
     identities: Ref[Set[ComponentKey]],
     outputs: Ref[Vector[ComponentOutput[Msg]]],
     staged: Ref[Vector[StagedComponent[Msg]]],
     draft: Ref[TurnDraft[Msg, Model]],
     updates: Ref[Map[ComponentKey, ComponentUpdateRequest]]
-  ): ZIO[Any, SessionFailure, (ComponentInstanceId, ComponentResolution)] =
+  ): ZIO[Any, SessionFailure, ComponentInstanceId] =
     type P = requirement.Props
     type M = requirement.Message
     type A = requirement.Model
@@ -2615,6 +2901,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                     appliedRequest <- updates.get.map(_.get(key))
                     _              <- stateOwner.set(Some(refreshed.state)) *>
                            recordComponentDraft(draft, updates, refreshed.draft)
+                    _         <- ZIO.succeed(visits.rendered(refreshed.draft))
                     scope     <- CandidateScope.make.tap(value => scopeOwner.set(Some(value)))
                     candidate <- restore(
                                    renderPhase(
@@ -2633,9 +2920,12 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                     childResult <- restore(
                                      stageRequirements(
                                        candidate.componentRequirements,
+                                       candidate.unresolvedComponents,
+                                       old.fold(Declarations.empty)(Declarations.of),
                                        Some(id),
                                        previousForest,
                                        action,
+                                       visits,
                                        identities,
                                        outputs,
                                        staged,
@@ -2666,6 +2956,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                         ZIO.succeed(candidate)
                       else
                         candidate.discard *>
+                          ZIO.succeed(visits.rendered(postChildResult.draft)) *>
                           CandidateScope.make.tap(value => scopeOwner.set(Some(value))).flatMap {
                             replacementScope =>
                               restore(
@@ -2696,9 +2987,12 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                         removeStagedSubtree(id, staged, identities) *>
                           stageRequirements(
                             finalCandidate.componentRequirements,
+                            finalCandidate.unresolvedComponents,
+                            old.fold(Declarations.empty)(Declarations.of),
                             Some(id),
                             previousForest,
                             None,
+                            visits,
                             identities,
                             outputs,
                             staged,
@@ -2737,17 +3031,17 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                                     program,
                                     resolved,
                                     parent,
-                                    finalChildResult.map(_._1),
+                                    finalChildResult,
                                     after.state,
                                     postChildRequest,
                                     requirement.outputMapper.map(_.asInstanceOf[O => Msg]),
                                     erasedPrevious,
+                                    requirement,
                                     discardEnvironmentCandidate(id, old, after.state) *>
                                       ZIO.when(old.isEmpty)(program.close).unit
                                   )
                     _ <- staged.update(_ :+ stagedValue)
-                    resolution = requirement.resolve(ref, ref.asInstanceOf[AnyRef], resolved)
-                  yield id -> resolution).onExit {
+                  yield id).onExit {
                     case Exit.Success(_) => ZIO.unit
                     case Exit.Failure(_) =>
                       scopeOwner.get.flatMap(ZIO.foreachDiscard(_)(_.closeFromOwner)) *>
@@ -2840,7 +3134,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     left: Vector[ComponentRequirement[Owner]],
     right: Vector[ComponentRequirement[Owner]]
   ): Boolean =
-    left.size == right.size && left.zip(right).forall { case (a, b) =>
+    (left eq right) || left.size == right.size && left.zip(right).forall { case (a, b) =>
       (a.definition.asInstanceOf[AnyRef] eq b.definition.asInstanceOf[AnyRef]) &&
       a.applicationId == b.applicationId && a.props == b.props
     }
@@ -3376,6 +3670,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                render,
                published,
                forest,
+               candidate.componentRenderBasis,
                candidate.resources,
                candidate.managedResources,
                candidate.auxiliaryScope,

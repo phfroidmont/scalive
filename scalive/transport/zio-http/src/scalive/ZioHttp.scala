@@ -2025,6 +2025,8 @@ object ZioHttp:
       Vector(
         activeAdmission.get.flatMap(ZIO.foreachDiscard(_)(_.remove)),
         supervisor.close,
+        // A closed transport has no joined view, though the monitor of each may not have run yet.
+        joined.set(Map.empty),
         writer.close,
         observer.failTransportFrames
       )

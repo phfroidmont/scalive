@@ -167,18 +167,19 @@ object ComponentRuntimeSpec extends ZIOSpecDefault:
       for
         environment <- ConnectedComponentEnvironment.make[Unit, Int](metadata, LifecycleId(1L))
         mounted     <- environment.mount(id, definition, (), TurnDraft(root))
-        read = (state: RootState[Unit, Int]) =>
-                 environment.renderState(id, TurnDraft(state), mounted.state)
+        inputs = (state: RootState[Unit, Int]) => environment.renderInputs(state)
+        read   = (state: RootState[Unit, Int]) =>
+                 environment.renderState(id, inputs(state), mounted.state)
+        same   = (previous: RootState[Unit, Int], next: RootState[Unit, Int]) =>
+                 inputs(previous) == inputs(next)
         pairs = states.flatMap(previous =>
-                  states.map(next =>
-                    environment.sameRenderState(previous, next) == (read(previous) == read(next))
-                  )
+                  states.map(next => same(previous, next) == (read(previous) == read(next)))
                 )
       yield assertTrue(
         pairs.forall(identity),
-        environment.sameRenderState(states(0), states(1)),
-        !environment.sameRenderState(states(0), states(2)),
-        environment.sameRenderState(states(0), states(3))
+        same(states(0), states(1)),
+        !same(states(0), states(2)),
+        same(states(0), states(3))
       )
     },
     test("runs mount, update, render and after-render and routes outputs through the owner") {

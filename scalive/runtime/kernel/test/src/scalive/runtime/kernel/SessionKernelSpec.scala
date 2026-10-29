@@ -133,6 +133,8 @@ object SessionKernelSpec extends ZIOSpecDefault:
       div(model.map(_.toString))
 
   private val componentEnvironment = new ComponentEnvironment[Int, Int]:
+    type RenderInputs = Unit
+    def renderInputs(model: Int): Unit = ()
     def mount[P, M, A](
       id: ComponentInstanceId,
       component: LiveComponent[P, M, A],

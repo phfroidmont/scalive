@@ -585,20 +585,21 @@ private[scalive] object ComponentUpdateRequest:
 
 /** Connection-owned lifecycle contexts are adapted at this protocol-neutral boundary. */
 trait ComponentEnvironment[RootMsg, RootModel]:
+  /** What every component reads of the root model when it renders, such as flash and uploads. */
+  type RenderInputs
+
+  /** The render inputs of root model `model`. A turn that leaves them equal renders a component
+    * whose environment state is unchanged only when it has another reason to.
+    */
+  def renderInputs(model: RootModel): RenderInputs
+
   /** The runtime-owned state that one render of component `id` reads: flash, uploads, and streams.
     */
   def renderState(
     id: ComponentInstanceId,
-    draft: TurnDraft[RootMsg, RootModel],
+    inputs: RenderInputs,
     state: ComponentEnvironmentState
-  ): RenderState =
-    Option(draft.model).fold(RenderState.empty)(_ => RenderState.empty)
-
-  /** Whether each component whose environment state is unchanged reads the same state from
-    * `renderState` under root model `next` as under `previous`. A turn renders such a component
-    * only when it has another reason to; override it with `renderState`.
-    */
-  def sameRenderState(previous: RootModel, next: RootModel): Boolean = true
+  ): RenderState = RenderState.empty
 
   def mount[P, M, A](
     id: ComponentInstanceId,
@@ -665,7 +666,9 @@ end ComponentEnvironment
 private[scalive] object ComponentEnvironment:
   def unavailable[RootMsg, RootModel]: ComponentEnvironment[RootMsg, RootModel] =
     new ComponentEnvironment:
-      private def missing[A]: Task[A] =
+      type RenderInputs = Unit
+      def renderInputs(model: RootModel): Unit = ()
+      private def missing[A]: Task[A]          =
         ZIO.fail(IllegalStateException("component lifecycle context environment was not installed"))
       def mount[P, M, A](
         id: ComponentInstanceId,

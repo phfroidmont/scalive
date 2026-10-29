@@ -571,6 +571,7 @@ object RenderProgram:
         extends AttributeTemplate[Nothing]:
       val static: String         = staticTokens.mkString(" ")
       val staticSet: Set[String] = staticTokens.toSet
+      require(static.nonEmpty, s"composite attribute $name has no static token")
     final case class Binding[Msg](
       name: String,
       valueSlot: TemplateSlotId,

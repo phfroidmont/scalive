@@ -463,14 +463,12 @@ private[scalive] object PhoenixRenderedEncoder:
     */
   final private class TemplateTable:
     private val indexes = mutable.LinkedHashMap.empty[Vector[String], Int]
-    // The rendered objects that refer to a template, and the template each refers to.
-    private val users     = mutable.ArrayBuffer.empty[ProjectedNode]
-    private val userIndex = mutable.ArrayBuilder.ofInt()
+    // The rendered objects that refer to a template, each with the template it refers to.
+    private val users = mutable.ArrayBuffer.empty[(ProjectedNode, Int)]
 
     def reference(node: ProjectedNode, statics: Vector[String]): Int =
       val index = indexes.getOrElseUpdate(statics, indexes.size)
-      users += node
-      userIndex += index
+      users += node -> index
       index
 
     /** `payload`, which refers to this table, with its `p`. Records in `lifts` how it sent the
@@ -480,9 +478,8 @@ private[scalive] object PhoenixRenderedEncoder:
       if indexes.isEmpty then payload
       else
         val templates = indexes.keys.toVector
-        val used      = userIndex.result()
         val useCounts = Array.ofDim[Int](templates.length)
-        used.foreach(index => useCounts(index) += 1)
+        users.foreach((_, index) => useCounts(index) += 1)
         val merges = Array.fill(templates.length)(Option.empty[MergedTemplate])
         templates.indices.groupBy(templates(_).length).valuesIterator.foreach { group =>
           if group.length > 1 then
@@ -490,9 +487,8 @@ private[scalive] object PhoenixRenderedEncoder:
               group.foreach(index => merges(index) = Some(merged))
             }
         }
-        users.indices.foreach { user =>
-          val node    = users(user)
-          val statics = merges(used(user)) match
+        users.foreach { (node, index) =>
+          val statics = merges(index) match
             case Some(merged) => merged.nodeStatics(node.ownStatics)
             case None         => if node.ownStatics then NodeStatics.Own else NodeStatics.Inline
           lifts.put(node, statics): Unit
@@ -552,16 +548,12 @@ private[scalive] object PhoenixRenderedEncoder:
       val value = statics(position)
       value.substring(prefix, value.length - suffix)
 
-  /** Templates sent as the one at `index`, whose `statics` have a hole where they differ. `lifted`
-    * holds the positions of the holes, which every rendered object of these templates sends among
-    * its dynamics.
+  /** Templates sent as the one at `index`, whose `statics` have a hole where they differ. Every
+    * rendered object of these templates sends the text of each hole among its dynamics.
     */
-  final private case class MergedTemplate(
-    index: Int,
-    statics: Vector[String],
-    holes: Vector[Hole],
-    lifted: Vector[Int]):
+  final private case class MergedTemplate(index: Int, statics: Vector[String], holes: Vector[Hole]):
     private val reference = "s" -> Json.Num(index)
+    private val lifted    = holes.map(_.position)
     private val inline    = NodeStatics(own = false, lifted)
     private val own       = NodeStatics(own = true, lifted)
 
@@ -587,7 +579,6 @@ private[scalive] object PhoenixRenderedEncoder:
           key += 1
       }
       shaped.result()
-  end MergedTemplate
 
   private object MergedTemplate:
     /** The templates at `group`, which have as many statics, merged into one, or None when sending
@@ -621,7 +612,7 @@ private[scalive] object PhoenixRenderedEncoder:
           current.clear()
       }
       statics += current.result()
-      val merged = MergedTemplate(group.head, statics.result(), holes, holes.map(_.position))
+      val merged = MergedTemplate(group.head, statics.result(), holes)
 
       val apart = group.map(index => entryLength(index, templates(index))).sum
       // Each hole adds a dynamic, after those the rendered object already sends.
@@ -656,7 +647,7 @@ private[scalive] object PhoenixRenderedEncoder:
 
     private def digits(value: Int): Int = value.toString.length
 
-    // The length of `text` as a JSON string, quotes included.
+    // The length in UTF-8 bytes of `text` as a JSON string, quotes included.
     private def jsonLength(text: String): Int =
       var length = 2
       var index  = 0
@@ -667,7 +658,11 @@ private[scalive] object PhoenixRenderedEncoder:
              char == '\b' || char == '\f'
            then 2
            else if char < ' ' then 6
-           else 1)
+           else if char < 0x80 then 1
+           else if char < 0x800 then 2
+           // Each half of a surrogate pair, which takes 4 bytes.
+           else if char.isSurrogate then 2
+           else 3)
         index += 1
       length
   end MergedTemplate

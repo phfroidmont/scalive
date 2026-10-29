@@ -1983,6 +1983,35 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
         )
       )
     },
+    test("keeps templates apart when sending them as one would take more UTF-8 bytes") {
+      val prefix   = "x" * 149
+      val compiled = RenderProgram.compile[Vector[Int], Nothing](items =>
+        div(
+          items.splitBy(identity)((key, _) =>
+            if key < 10 then li(prefix + "é") else li(prefix + "ø")
+          )
+        )
+      )
+      val row = (template: Int) => Json.Obj("0" -> Json.Obj("s" -> Json.Num(template)))
+
+      for
+        program <- ZIO.fromEither(compiled)
+        first   <- program.evaluate(Vector.range(0, 20))
+        initial <- ZIO.fromEither(PhoenixRenderedEncoder.initial(first.tree))
+      yield assertTrue(
+        dynamic(initial._2) == Json.Obj(
+          "s" -> Json.Arr(Json.Str(""), Json.Str("")),
+          "k" -> Json.Obj(
+            (Vector.range(0, 20).map(key => key.toString -> row(if key < 10 then 0 else 1)) :+
+              ("kc" -> Json.Num(20)))*
+          ),
+          "p" -> Json.Obj(
+            "0" -> Json.Arr(Json.Str(s"<li>${prefix}é</li>")),
+            "1" -> Json.Arr(Json.Str(s"<li>${prefix}ø</li>"))
+          )
+        )
+      )
+    },
     test("rows of a collection nested in rows share templates through the outer table") {
       val compiled = RenderProgram.compile[Vector[(String, Vector[String])], Nothing](groups =>
         div(

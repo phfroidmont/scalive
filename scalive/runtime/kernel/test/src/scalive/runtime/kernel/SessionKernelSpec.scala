@@ -133,6 +133,8 @@ object SessionKernelSpec extends ZIOSpecDefault:
       div(model.map(_.toString))
 
   private val componentEnvironment = new ComponentEnvironment[Int, Int]:
+    type RenderInputs = Unit
+    def renderInputs(model: Int): Unit = ()
     def mount[P, M, A](
       id: ComponentInstanceId,
       component: LiveComponent[P, M, A],
@@ -2028,21 +2030,26 @@ object SessionKernelSpec extends ZIOSpecDefault:
         yield assertTrue(count == 1)
       }
     },
-    test("upload reconciliation receives the exact retained component ids") {
+    test("upload reconciliation receives exactly the retained components") {
       ZIO.scoped {
         val instance = component(retainedComponent, "retained-upload-owner")
         for
-          seen    <- Ref.make(Vector.empty[Set[ComponentInstanceId]])
+          seen    <- Ref.make(Vector.empty[ComponentInstanceId => Boolean])
           program <- ZIO.fromEither(RenderProgram.compile[Int, Int](_ => div(instance.render(1))))
           (outbound, _) <- recordingOutbound
           logic = standardLogic().copy(reconcileUploads =
-                    (draft, activeIds) => seen.update(_ :+ activeIds).as(draft)
+                    (draft, active) => seen.update(_ :+ active).as(draft)
                   )
           kernel    <- SessionKernel.start(config, logic, program, outbound, componentEnvironment)
           committed <- kernel.inspect
           observed  <- seen.get
-          expected = committed.components.values.map(_.id).toSet
-        yield assertTrue(expected.nonEmpty, observed == Vector(expected))
+          expected = committed.components.values.map(_.id)
+        yield assertTrue(
+          expected.nonEmpty,
+          observed.size == 1,
+          expected.forall(observed.head),
+          !observed.head(ComponentInstanceId(Long.MaxValue))
+        )
       }
     },
     test("configuration validates mailbox, continuation, and navigation bounds") {

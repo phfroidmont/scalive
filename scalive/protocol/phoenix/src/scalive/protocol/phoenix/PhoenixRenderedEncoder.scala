@@ -50,7 +50,8 @@ final private[scalive] class PhoenixRenderedState private[phoenix] (
   private[phoenix] val streamRefs: Map[PhoenixRenderedEncoder.IdentityKey, String],
   private[phoenix] val nextStreamRef: Long,
   private[phoenix] val csrfToken: Option[String],
-  private[phoenix] val pendingDeletionCids: Set[Int]):
+  private[phoenix] val pendingDeletionCids: Set[Int],
+  private[phoenix] val componentStatics: PhoenixRenderedEncoder.ComponentStatics):
 
   private[scalive] def cidForToken(token: Object): Option[Int] =
     tokenCids.get(PhoenixRenderedEncoder.IdentityKey(token))
@@ -75,7 +76,8 @@ final private[scalive] class PhoenixRenderedState private[phoenix] (
       streamRefs,
       nextStreamRef,
       csrfToken,
-      pendingDeletionCids ++ cids.filter(components.contains)
+      pendingDeletionCids ++ cids.filter(components.contains),
+      componentStatics.removed(cids)
     )
 
   private[scalive] def destroyComponents(
@@ -101,7 +103,8 @@ final private[scalive] class PhoenixRenderedState private[phoenix] (
       retainedStreamRefs,
       nextStreamRef,
       csrfToken,
-      pendingDeletionCids -- acknowledged
+      pendingDeletionCids -- acknowledged,
+      componentStatics.removed(deleted)
     ) -> deleted
 end PhoenixRenderedState
 
@@ -140,6 +143,11 @@ private[scalive] object PhoenixRenderedEncoder:
     final case class Keyed(value: ProjectedKeyed)   extends ProjectedPart
     final case class Stream(value: ProjectedStream) extends ProjectedPart
     final case class StreamDomId(value: String)     extends ProjectedPart
+
+    /** The CID on a component's root element. The browser adds it to the statics it renders, so
+      * only the HTML the server renders holds it, and instances of a component share statics.
+      */
+    final case class ComponentRoot(cid: Int) extends ProjectedPart
 
   /** How a node's statics are sent. One with `own` statics is sent within its parent as a nested
     * rendered object, so replacing it resends that object and nothing around it. `lifted` holds the
@@ -250,8 +258,10 @@ private[scalive] object PhoenixRenderedEncoder:
         val parts   = node.parts.iterator
         while parts.hasNext do
           parts.next() match
-            case ProjectedPart.Static(_) | ProjectedPart.Target(_) => ()
-            case ProjectedPart.Dynamic(slot, _, _)                 =>
+            case ProjectedPart.Static(_) | ProjectedPart.Target(_) |
+                ProjectedPart.ComponentRoot(_) =>
+              ()
+            case ProjectedPart.Dynamic(slot, _, _) =>
               builder.slotMin = math.min(builder.slotMin, slot.value)
               builder.slotMax = math.max(builder.slotMax, slot.value)
               builder.dynamics += 1
@@ -284,7 +294,7 @@ private[scalive] object PhoenixRenderedEncoder:
       while leaf && index < parts.length do
         leaf = parts(index) match
           case _: ProjectedPart.Static | _: ProjectedPart.Dynamic | _: ProjectedPart.Target |
-              _: ProjectedPart.StreamDomId =>
+              _: ProjectedPart.StreamDomId | _: ProjectedPart.ComponentRoot =>
             true
           case _ => false
         index += 1
@@ -306,7 +316,8 @@ private[scalive] object PhoenixRenderedEncoder:
           idMax = math.max(idMax, child.idMax)
           slotMin = math.min(slotMin, child.slotMin)
           slotMax = math.max(slotMax, child.slotMax)
-        if child.cids.nonEmpty then cids = cids ++ child.cids
+        // A node whose CIDs one child holds shares that child's set rather than copying it.
+        if child.cids.nonEmpty then cids = if cids.isEmpty then child.cids else cids ++ child.cids
         if child.streams.nonEmpty then streams = streams ++ child.streams
 
       def result(): Summary = Summary(idMin, idMax, slotMin, slotMax, cids, streams, dynamics)
@@ -318,14 +329,20 @@ private[scalive] object PhoenixRenderedEncoder:
     root: ProjectedNode)
   final private[phoenix] case class ProjectedStreamRow(domId: String, child: ProjectedNode)
   final private[phoenix] case class ProjectedKeyedRow(id: RowId, child: ProjectedNode)
+  // What the browser receives of the row at `index`, by the index the row had before when it moved.
   final private[phoenix] case class ProjectedKeyedRowUpdate(
+    index: Int,
     oldIndex: Option[Int],
     changes: Option[SparseChanges],
     full: Boolean)
+  private[phoenix] object ProjectedKeyedRowUpdate:
+    def whole(index: Int): ProjectedKeyedRowUpdate =
+      ProjectedKeyedRowUpdate(index, None, None, full = true)
   final private[phoenix] case class ProjectedKeyed(
     id: TemplateId,
     rows: Vector[ProjectedKeyedRow],
-    updates: Vector[Option[ProjectedKeyedRowUpdate]],
+    // By ascending index, only for the rows the browser receives something of.
+    updates: Vector[ProjectedKeyedRowUpdate],
     includeStatics: Boolean,
     changed: Boolean)
   final private[phoenix] case class ProjectedStreamInsert(
@@ -418,6 +435,105 @@ private[scalive] object PhoenixRenderedEncoder:
     // Components whose CID slot the diff sends again, only so that it reaches them.
     touchedComponents: Set[Int] = Set.empty)
 
+  /** The statics the browser holds for a component: those of its rendered object, and of each
+    * nested rendered object in it, by the key of the dynamic holding it. A comprehension is not
+    * part of it, as it always sends its own statics.
+    *
+    * The browser builds a component whose `s` is another one's CID from the statics of that one,
+    * and resolves each nested rendered object that has no `s` from the one at the same key. A
+    * component may share statics with another of the same tree, whatever renders them.
+    */
+  final private[phoenix] case class StaticTree(
+    statics: Json,
+    nested: Vector[(String, StaticTree)]):
+    // Computed once, as the index of the trees the browser holds hashes it at each lookup.
+    override val hashCode: Int = (statics, nested).##
+
+    /** This tree after the browser merges `diff`, a diff of a rendered object of this tree. */
+    def patched(diff: Json.Obj): StaticTree =
+      val next = nested.map { entry =>
+        val (key, tree) = entry
+        diff.get(key) match
+          case Some(value: Json.Obj) =>
+            val patched =
+              if value.get("s").nonEmpty then StaticTree.of(value) else tree.patched(value)
+            if patched eq tree then entry else key -> patched
+          case _ => entry
+      }
+      if next.indices.forall(index => next(index) eq nested(index)) then this
+      else StaticTree(statics, next)
+
+    /** `rendered`, a rendered object of this tree sent in full, with `statics` as its `s` and no
+      * `s` in the nested rendered objects the browser resolves from it.
+      */
+    def sharing(rendered: Json.Obj, statics: Option[Json]): Json.Obj =
+      Json.Obj(rendered.fields.flatMap {
+        case ("s", _)                       => statics.map("s" -> _)
+        case field @ (key, value: Json.Obj) =>
+          nested
+            .collectFirst { case (`key`, tree) => key -> tree.sharing(value, None) }
+            .orElse(Some(field))
+        case field => Some(field)
+      })
+  end StaticTree
+
+  private[phoenix] object StaticTree:
+    /** The tree of `rendered`, a rendered object sent in full. */
+    def of(rendered: Json.Obj): StaticTree =
+      val nested        = Vector.newBuilder[(String, StaticTree)]
+      var statics: Json = Json.Null
+      rendered.fields.foreach {
+        case ("s", value)                                     => statics = value
+        case (key, value: Json.Obj) if value.get("k").isEmpty => nested += key -> of(value)
+        case _                                                => ()
+      }
+      StaticTree(statics, nested.result())
+
+  /** The static tree of each component the browser holds and may share, with the components holding
+    * each tree. A component pending deletion is not in it, as the browser may drop it.
+    *
+    * The components of a tree share one instance of it, as many components hold the same one.
+    */
+  final private[phoenix] class ComponentStatics private (
+    private val trees: Map[Int, StaticTree],
+    private val holders: Map[StaticTree, Holders]):
+    def tree(cid: Int): Option[StaticTree] = trees.get(cid)
+
+    /** A component other than `cid` holding `tree`. */
+    def holder(tree: StaticTree, cid: Int): Option[Int] =
+      holders.get(tree).flatMap(_.cids.find(_ != cid))
+
+    def updated(cid: Int, tree: StaticTree): ComponentStatics =
+      if trees.get(cid).contains(tree) then this
+      else
+        val rest    = removed(Vector(cid))
+        val current = rest.holders.getOrElse(tree, Holders(tree, Set.empty))
+        ComponentStatics(
+          rest.trees.updated(cid, current.tree),
+          rest.holders.updated(current.tree, current.copy(cids = current.cids + cid))
+        )
+
+    def removed(cids: Iterable[Int]): ComponentStatics =
+      cids.foldLeft(this) { (all, cid) =>
+        all.trees.get(cid) match
+          case None       => all
+          case Some(tree) =>
+            val current = all.holders(tree)
+            val others  = current.cids - cid
+            ComponentStatics(
+              all.trees - cid,
+              if others.isEmpty then all.holders - tree
+              else all.holders.updated(tree, current.copy(cids = others))
+            )
+      }
+  end ComponentStatics
+
+  private[phoenix] object ComponentStatics:
+    val empty: ComponentStatics = ComponentStatics(Map.empty, Map.empty)
+
+  /** The components holding a tree, with the instance of the tree they share. */
+  final private[phoenix] case class Holders(tree: StaticTree, cids: Set[Int])
+
   /** The components one render reaches, with the index its `phx-target` values resolve against. */
   final private class Components(
     all: Map[Int, ProjectedComponent],
@@ -426,7 +542,9 @@ private[scalive] object PhoenixRenderedEncoder:
     // The statics the payload sent each stream, which the state then records as sent.
     val sentStatics: SentStatics = SentStatics(),
     // How the payload sent the statics of each rendered object it sent in full.
-    val sentLifts: SentLifts = SentLifts()):
+    val sentLifts: SentLifts = SentLifts(),
+    // The static tree the browser holds for each component the payload sent, once it merges it.
+    val sentTrees: mutable.Map[Int, StaticTree] = mutable.Map.empty):
     /** These components, recording nothing as sent, for rows flattened only to shape statics. */
     def unsent: Components = Components(all, active)
 
@@ -448,6 +566,7 @@ private[scalive] object PhoenixRenderedEncoder:
       active.toVector
         .flatMap(cid => keys(all(cid)).map(key => IdentityKey(key) -> cid))
         .groupMap(_._1)(_._2).view.mapValues(_.toSet).toMap
+  end Components
 
   final private class SentStatics extends java.util.IdentityHashMap[ProjectedStream, StreamStatics]
 
@@ -846,9 +965,7 @@ private[scalive] object PhoenixRenderedEncoder:
               val previousRows = previousPart
                 .collect { case ProjectedPart.Keyed(value) => value.rows }
                 .getOrElse(Vector.empty)
-              val rows = clearRows(keyed.rows, previousRows)(_.id, _.child)((row, child) =>
-                row.copy(child = child)
-              )
+              val rows = clearRows(keyed.rows, previousRows)
               if (rows eq keyed.rows) && keyed.updates.isEmpty && !keyed.includeStatics &&
                 !keyed.changed
               then part
@@ -891,24 +1008,22 @@ private[scalive] object PhoenixRenderedEncoder:
     end clearNode
 
     // Rows mostly keep their positions, so a row's previous instance is looked up by position
-    // first, and by key only when the rows moved.
-    def clearRows[Row <: AnyRef, Key](
-      rows: Vector[Row],
-      previous: Vector[Row]
-    )(
-      key: Row => Key,
-      child: Row => ProjectedNode
-    )(
-      withChild: (Row, ProjectedNode) => Row
-    ): Vector[Row] =
-      lazy val previousByKey = previous.iterator.map(row => key(row) -> child(row)).toMap
+    // first, and by key only when the rows moved. A row kept as it was, with nothing to record, is
+    // kept without being visited.
+    def clearRows(
+      rows: Vector[ProjectedKeyedRow],
+      previous: Vector[ProjectedKeyedRow]
+    ): Vector[ProjectedKeyedRow] =
+      lazy val previousByKey = previous.iterator.map(row => row.id -> row.child).toMap
       mapKeepingInstances(rows) { (row, position) =>
-        val previousChild =
-          if position < previous.length && key(previous(position)) == key(row) then
-            Some(child(previous(position)))
-          else previousByKey.get(key(row))
-        val cleared = clearNode(child(row), previousChild)
-        if cleared eq child(row) then row else withChild(row, cleared)
+        val inPlace = position < previous.length && previous(position).id == row.id
+        if inPlace && (previous(position).child eq row.child) && sentLifts.get(row.child) == null
+        then row
+        else
+          val previousChild =
+            if inPlace then Some(previous(position).child) else previousByKey.get(row.id)
+          val cleared = clearNode(row.child, previousChild)
+          if cleared eq row.child then row else row.copy(child = cleared)
       }
     val root = clearNode(state.root, previous.map(_.root))
     // The other components are as they were when the payload that sent them was made.
@@ -922,6 +1037,11 @@ private[scalive] object PhoenixRenderedEncoder:
           component.copy(root = clearNode(component.root, previousComponent.map(_.root)))
         )
     }
+    // A payload sending the root in full makes the browser drop the components it held.
+    val heldStatics = if previous.isEmpty then ComponentStatics.empty else state.componentStatics
+    val componentStatics = sent.sentTrees.foldLeft(heldStatics) { case (all, (cid, tree)) =>
+      all.updated(cid, tree)
+    }
     PhoenixRenderedState(
       root,
       components,
@@ -932,7 +1052,8 @@ private[scalive] object PhoenixRenderedEncoder:
       state.streamRefs,
       state.nextStreamRef,
       state.csrfToken,
-      state.pendingDeletionCids
+      state.pendingDeletionCids,
+      componentStatics
     )
   end clearPending
 
@@ -992,9 +1113,7 @@ private[scalive] object PhoenixRenderedEncoder:
       element.attributes.foreach(attribute =>
         if attribute.name != "data-scalive-csrf" then projectAttribute(attribute, opening)
       )
-      componentRootCid.foreach(cid =>
-        opening += ProjectedPart.Static(s" data-phx-component=\"$cid\"")
-      )
+      componentRootCid.foreach(cid => opening += ProjectedPart.ComponentRoot(cid))
       opening += endOfOpeningTag
       if csrfMarker then
         context.csrfToken.foreach(token =>
@@ -1020,7 +1139,7 @@ private[scalive] object PhoenixRenderedEncoder:
       traverse(keyed.rows)(row =>
         project(row.child, None, context).map(ProjectedKeyedRow(row.id, _))
       ).map { rows =>
-        val updates = rows.map(_ => Some(ProjectedKeyedRowUpdate(None, None, full = true)))
+        val updates = rows.indices.map(ProjectedKeyedRowUpdate.whole).toVector
         ProjectedNode(
           keyed.id,
           Vector(
@@ -1265,12 +1384,12 @@ private[scalive] object PhoenixRenderedEncoder:
             case Some(template) => updated.copy(replaced = updated.replaced + template)
             case None           => updated.copy(structural = true)
         }
-    case RenderChange.Keyed(id, rows) =>
+    case RenderChange.Keyed(id, rowCount, rows) =>
       val targets = findKeyed(current.root, id)
       targets match
         case Vector()       => Left(PhoenixEncodingError.UnknownTarget(id))
         case Vector(target) =>
-          applyKeyedChange(target, rows, context).map { case (keyed, update) =>
+          applyKeyedChange(target, rowCount, rows, context).map { case (keyed, update) =>
             current.copy(
               root = replaceKeyed(current.root, id, keyed),
               changedSlots = current.changedSlots ++ update.changedSlots,
@@ -1394,101 +1513,158 @@ private[scalive] object PhoenixRenderedEncoder:
 
   private def applyKeyedChange(
     keyed: ProjectedKeyed,
+    rowCount: Int,
     changes: Vector[KeyedRowChange],
     context: ProjectionContext
   ): Either[PhoenixEncodingError, (ProjectedKeyed, ProgramUpdate)] =
-    val indexedOldRows = keyed.rows.zipWithIndex
-    val oldRows        = indexedOldRows.map { case (row, index) => row.id -> (row, index) }.toMap
-    validateKeyedChanges(indexedOldRows.map(_._1.id), changes).flatMap { _ =>
-      changes
-        .foldLeft[
-          Either[
-            PhoenixEncodingError,
-            (Vector[ProjectedKeyedRow], Vector[Option[ProjectedKeyedRowUpdate]], ProgramUpdate)
-          ]
-        ](
-          Right(
-            (
-              Vector.empty,
-              Vector.empty,
-              ProgramUpdate(ProjectedNode(keyed.id, Vector.empty), Set.empty, false, Set.empty)
-            )
-          )
-        ) {
-          case (result, KeyedRowChange.Insert(row)) =>
-            result.flatMap { case (rows, updates, aggregate) =>
+    validateKeyedChanges(keyed.rows, rowCount, changes).flatMap { _ =>
+      val changedRows = new Array[ProjectedKeyedRow](changes.length)
+      val updates     = Vector.newBuilder[ProjectedKeyedRowUpdate]
+      val slots       = Set.newBuilder[TemplateSlotId]
+      val components  = Set.newBuilder[Int]
+      val streams     = Set.newBuilder[TemplateId]
+      val targets     = Set.newBuilder[TemplateId]
+      val replaced    = Set.newBuilder[TemplateId]
+      boundary:
+        var position = 0
+        while position < changes.length do
+          changes(position) match
+            case KeyedRowChange.Insert(index, row) =>
               val before = context.projectedCids.toSet
-              project(row.child, None, context).map { child =>
-                val added = context.projectedCids.toSet -- before
-                (
-                  rows :+ ProjectedKeyedRow(row.id, child),
-                  updates :+ Some(ProjectedKeyedRowUpdate(None, None, full = true)),
-                  aggregate.copy(changedComponents = aggregate.changedComponents ++ added)
-                )
-              }
-            }
-          case (result, KeyedRowChange.Retain(id, rowChanges)) =>
-            result.flatMap { case (rows, updates, aggregate) =>
-              oldRows.get(id) match
-                case None                     => Left(PhoenixEncodingError.UnknownTarget(keyed.id))
-                case Some((oldRow, oldIndex)) =>
-                  applyChanges(oldRow.child, rowChanges, context).map { update =>
-                    val newIndex = rows.length
-                    val moved    = oldIndex != newIndex
-                    val changed  = update.structural || update.changedSlots.nonEmpty ||
+              project(row.child, None, context) match
+                case Left(error)  => break(Left(error))
+                case Right(child) =>
+                  components ++= context.projectedCids.toSet -- before
+                  changedRows(position) = ProjectedKeyedRow(row.id, child)
+                  updates += ProjectedKeyedRowUpdate.whole(index)
+            case KeyedRowChange.Retain(index, oldIndex, _, rowChanges) =>
+              val oldRow = keyed.rows(oldIndex)
+              val moved  = oldIndex != index
+              if rowChanges.isEmpty then
+                changedRows(position) = oldRow
+                if moved then updates += ProjectedKeyedRowUpdate(index, Some(oldIndex), None, false)
+              else
+                applyChanges(oldRow.child, rowChanges, context) match
+                  case Left(error)   => break(Left(error))
+                  case Right(update) =>
+                    val changed = update.structural || update.changedSlots.nonEmpty ||
                       update.changedStreams.nonEmpty || update.changedKeyedTargets.nonEmpty ||
                       update.replaced.nonEmpty
-                    val rowUpdate =
-                      if !moved && !changed then None
-                      else
-                        Some(
-                          ProjectedKeyedRowUpdate(
-                            if moved then Some(oldIndex) else None,
-                            if changed && !update.structural then Some(update.changes) else None,
-                            full = update.structural
-                          )
-                        )
-                    (
-                      rows :+ oldRow.copy(child = update.root),
-                      updates :+ rowUpdate,
-                      aggregate.copy(
-                        changedSlots = aggregate.changedSlots ++ update.changedSlots,
-                        changedComponents = aggregate.changedComponents ++ update.changedComponents,
-                        changedStreams = aggregate.changedStreams ++ update.changedStreams,
-                        changedKeyedTargets = aggregate.changedKeyedTargets ++
-                          update.changedKeyedTargets,
-                        replaced = aggregate.replaced ++ update.replaced
+                    changedRows(position) = oldRow.copy(child = update.root)
+                    if moved || changed then
+                      updates += ProjectedKeyedRowUpdate(
+                        index,
+                        if moved then Some(oldIndex) else None,
+                        if changed && !update.structural then Some(update.changes) else None,
+                        full = update.structural
                       )
-                    )
-                  }
-            }
-        }.map { case (rows, updates, aggregate) =>
+                    slots ++= update.changedSlots
+                    components ++= update.changedComponents
+                    streams ++= update.changedStreams
+                    targets ++= update.changedKeyedTargets
+                    replaced ++= update.replaced
+          end match
+          position += 1
+        end while
+        val aggregate = ProgramUpdate(
+          ProjectedNode(keyed.id, Vector.empty),
+          slots.result(),
+          structural = false,
+          components.result(),
+          streams.result(),
+          targets.result(),
+          replaced.result()
+        )
+        Right(
           keyed.copy(
-            rows = rows,
-            updates = updates,
+            rows = keyedRows(keyed.rows, rowCount, changes, changedRows),
+            updates = updates.result(),
             includeStatics = false,
             changed = true
           ) -> aggregate
-        }
+        )
     }
   end applyKeyedChange
 
+  // Patching a vector copies a path of its tree, so beyond this many rows rebuilding it is cheaper.
+  private val maxPatchedKeyedRows = 32
+
+  /** The rows after a validated keyed change, in which `changedRows` are the rows of `changes`. Few
+    * changes patch the old rows, and more rebuild them once.
+    */
+  private def keyedRows(
+    oldRows: Vector[ProjectedKeyedRow],
+    rowCount: Int,
+    changes: Vector[KeyedRowChange],
+    changedRows: Array[ProjectedKeyedRow]
+  ): Vector[ProjectedKeyedRow] =
+    if changes.length <= maxPatchedKeyedRows then
+      var rows     = oldRows.take(rowCount)
+      var position = 0
+      while position < changes.length do
+        val index = changes(position).index
+        rows =
+          if index < rows.length then rows.updated(index, changedRows(position))
+          else rows :+ changedRows(position)
+        position += 1
+      rows
+    else
+      val rows     = Vector.newBuilder[ProjectedKeyedRow]
+      var position = 0
+      var index    = 0
+      while index < rowCount do
+        if position < changes.length && changes(position).index == index then
+          rows += changedRows(position)
+          position += 1
+        else rows += oldRows(index)
+        index += 1
+      rows.result()
+
+  /** Checks that a keyed change lists its rows by ascending index, that each index it does not list
+    * keeps an old row, and that the new rows hold each row once: a retained row is the old row at
+    * its old index, which no other row keeps, and an inserted row is not an old row.
+    */
   private def validateKeyedChanges(
-    oldIds: Vector[RowId],
+    oldRows: Vector[ProjectedKeyedRow],
+    rowCount: Int,
     changes: Vector[KeyedRowChange]
   ): Either[PhoenixEncodingError, Unit] =
-    val oldCounts = oldIds.groupMapReduce(identity)(_ => 1)(_ + _)
-    val outputIds = changes.map {
-      case KeyedRowChange.Insert(row)   => row.id
-      case KeyedRowChange.Retain(id, _) => id
-    }
-    val uniqueOutput = outputIds.distinct.size == outputIds.size
-    val validSources = changes.forall {
-      case KeyedRowChange.Retain(id, _) => oldCounts.get(id).contains(1)
-      case KeyedRowChange.Insert(row)   => !oldCounts.contains(row.id)
-    }
-    if uniqueOutput && validSources then Right(())
-    else Left(PhoenixEncodingError.InvalidKeyedRowChange)
+    val listed   = java.util.BitSet()
+    val retained = java.util.BitSet()
+    val inserted = mutable.LongMap.empty[Unit]
+    var previous = -1
+    var appended = 0
+    var valid    = rowCount >= 0
+    var position = 0
+    while valid && position < changes.length do
+      val change = changes(position)
+      val index  = change.index
+      valid = previous < index && index < rowCount
+      if valid then
+        listed.set(index)
+        if index >= oldRows.length then appended += 1
+        previous = index
+        valid = change match
+          case KeyedRowChange.Retain(_, oldIndex, id, _) =>
+            val known = 0 <= oldIndex && oldIndex < oldRows.length &&
+              oldRows(oldIndex).id == id && !retained.get(oldIndex)
+            if known then retained.set(oldIndex)
+            known
+          case KeyedRowChange.Insert(_, row) =>
+            val unique = !inserted.contains(row.id.value)
+            if unique then inserted.update(row.id.value, ())
+            unique
+      position += 1
+    // Each index past the old rows holds a listed row.
+    valid &&= appended == math.max(rowCount - oldRows.length, 0)
+    // A retained row does not stay at its old index too.
+    var oldIndex = retained.nextSetBit(0)
+    while valid && oldIndex >= 0 do
+      valid = oldIndex >= rowCount || listed.get(oldIndex)
+      oldIndex = retained.nextSetBit(oldIndex + 1)
+    valid &&= inserted.isEmpty || !oldRows.exists(row => inserted.contains(row.id.value))
+    if valid then Right(()) else Left(PhoenixEncodingError.InvalidKeyedRowChange)
+  end validateKeyedChanges
 
   private def applyChanges(
     root: ProjectedNode,
@@ -1639,7 +1815,8 @@ private[scalive] object PhoenixRenderedEncoder:
       streamRefs,
       context.nextStreamRef,
       context.csrfToken,
-      context.pendingDeletionCids -- reachable.active
+      context.pendingDeletionCids -- reachable.active,
+      previous.fold(ComponentStatics.empty)(_.componentStatics)
     )
   end finish
 
@@ -1834,13 +2011,15 @@ private[scalive] object PhoenixRenderedEncoder:
     private def touching(cids: Set[Int]): SparseChanges =
       changes.copy(touchedComponents = changes.touchedComponents ++ cids)
 
+  // The browser drops the components it holds when it receives the root's statics.
   private def componentObject(
     components: Components,
     cids: Set[Int]
   ): Either[PhoenixEncodingError, Json.Obj] =
+    val sharing = SharedStatics(ComponentStatics.empty, components)
     traverse(cids.toVector.sorted)(cid =>
       rendered(components(cid).root, components, None, None).map(value =>
-        cid.toString -> value.add("r", Json.Num(1))
+        cid.toString -> sharing.share(cid, value).add("r", Json.Num(1))
       )
     ).map(fields => Json.Obj(fields*))
 
@@ -1849,12 +2028,43 @@ private[scalive] object PhoenixRenderedEncoder:
     components: Components,
     cids: Map[Int, Option[SparseChanges]]
   ): Either[PhoenixEncodingError, Json.Obj] =
+    val sharing = SharedStatics(previous.componentStatics, components)
     traverse(cids.toVector.sortBy(_._1)) { case (cid, changes) =>
       val previousRoot = previous.components.get(cid).map(_.root)
       rendered(components(cid).root, components, changes, None, previousRoot).map { value =>
-        cid.toString -> (if changes.isEmpty then value.add("r", Json.Num(1)) else value)
+        cid.toString ->
+          (if changes.isEmpty then sharing.share(cid, value).add("r", Json.Num(1))
+           else sharing.merged(cid, value))
       }
     }.map(fields => Json.Obj(fields*))
+
+  /** Shares the statics of the components one payload sends in full with a component the browser
+    * `held` before it, or one sent earlier in the payload, and records in `components` the static
+    * tree the browser then holds for each component the payload sends.
+    */
+  final private class SharedStatics(held: ComponentStatics, components: Components):
+    // The first component of each tree the payload sends with its own statics.
+    private val sent = mutable.HashMap.empty[StaticTree, Int]
+
+    /** `rendered`, the component `cid` sent in full, referring to the statics of another component
+      * of the same tree when there is one.
+      */
+    def share(cid: Int, rendered: Json.Obj): Json.Obj =
+      val tree = StaticTree.of(rendered)
+      components.sentTrees.update(cid, tree)
+      held.holder(tree, cid).map(-_).orElse(sent.get(tree)) match
+        case Some(reference) => tree.sharing(rendered, Some(Json.Num(reference)))
+        case None            =>
+          sent.update(tree, cid)
+          rendered
+
+    /** Records the tree the browser holds once it merges `diff`, a diff of the component `cid`. */
+    def merged(cid: Int, diff: Json.Obj): Json.Obj =
+      held.tree(cid).foreach { tree =>
+        val next = tree.patched(diff)
+        if !(next eq tree) then components.sentTrees.update(cid, next)
+      }
+      diff
 
   /** Encodes `root` as a rendered object: in full when `changes` is None, and otherwise only what
     * changed since `previous`, the projection the client holds. In full, its statics are a
@@ -1940,6 +2150,7 @@ private[scalive] object PhoenixRenderedEncoder:
             None
           case ProjectedPart.Stream(stream) =>
             streamJson(stream, None, components, None, templates).map(dynamic).left.toOption
+          case ProjectedPart.ComponentRoot(_) => None
       error
     end loop
 
@@ -1990,8 +2201,10 @@ private[scalive] object PhoenixRenderedEncoder:
             result.flatMap { _ =>
               val previousPart = previousParts.map(_(position))
               part match
-                case ProjectedPart.Static(_) | ProjectedPart.Target(_) => Right(())
-                case ProjectedPart.Dynamic(slot, value: String, _)     =>
+                case ProjectedPart.Static(_) | ProjectedPart.Target(_) |
+                    ProjectedPart.ComponentRoot(_) =>
+                  Right(())
+                case ProjectedPart.Dynamic(slot, value: String, _) =>
                   next(Option.when(changes.slots.contains(slot))(Json.Str(value)))
                   Right(())
                 case ProjectedPart.Dynamic(slot, value: ProjectedValue.ComponentTarget, _) =>
@@ -2049,65 +2262,74 @@ private[scalive] object PhoenixRenderedEncoder:
     sparseChanges: Option[SparseChanges],
     templates: Option[TemplateTable]
   ): Either[PhoenixEncodingError, Json.Obj] =
-    lazy val previousRows =
-      previous.fold(Map.empty[RowId, ProjectedNode])(
-        _.rows.iterator.map(row => row.id -> row.child).toMap
-      )
-    val explicit =
-      if sparseChanges.isEmpty then
-        keyed.rows.map(_ => Some(ProjectedKeyedRowUpdate(None, None, full = true)))
-      else keyed.updates.padTo(keyed.rows.length, None)
-    val touched = sparseChanges.fold(Set.empty[Int])(_.touchedComponents)
-    val updates = keyed.rows.zip(explicit).map { case (row, update) =>
-      update match
-        // A row's own diff still has to reach the components it holds.
-        case Some(update) if !update.full && row.child.cids.exists(touched.contains) =>
-          val changes = update.changes.getOrElse(SparseChanges(Set.empty, Set.empty))
-          Some(update.copy(changes = Some(changes.touching(touched))))
-        case Some(update) => Some(update)
-        case None         =>
-          sparseChanges.collect {
-            case changes if changes.replaced.contains(row.child.id) =>
-              ProjectedKeyedRowUpdate(None, None, full = true)
-            case changes
-                if !keptRow(row.child, previousRows.get(row.id).exists(_ eq row.child), changes) &&
-                  rowChanged(row.child, changes) =>
-              ProjectedKeyedRowUpdate(None, Some(changes), full = false)
-          }
-    }
+    val previousRows           = previous.fold(Vector.empty[ProjectedKeyedRow])(_.rows)
+    lazy val previousRowsByKey =
+      previousRows.iterator.map(row => row.id -> row.child).toMap
+    // Rows mostly keep their positions, so a row's previous instance is looked up where the row
+    // was first, and by key only when it is not there.
+    def previousChild(row: ProjectedKeyedRow, at: Int): Option[ProjectedNode] =
+      if at < previousRows.length && previousRows(at).id == row.id then Some(previousRows(at).child)
+      else previousRowsByKey.get(row.id)
+    def keptInstance(row: ProjectedKeyedRow, at: Int): Boolean =
+      if at < previousRows.length && previousRows(at).id == row.id then
+        previousRows(at).child eq row.child
+      else previousRowsByKey.get(row.id).exists(_ eq row.child)
+
+    val updates = sparseChanges match
+      case None          => keyed.rows.indices.map(ProjectedKeyedRowUpdate.whole).toVector
+      case Some(changes) =>
+        val touched  = changes.touchedComponents
+        val selected = Vector.newBuilder[ProjectedKeyedRowUpdate]
+        var explicit = 0
+        var index    = 0
+        while index < keyed.rows.length do
+          val row = keyed.rows(index)
+          if explicit < keyed.updates.length && keyed.updates(explicit).index == index then
+            val update = keyed.updates(explicit)
+            explicit += 1
+            // A row's own diff still has to reach the components it holds.
+            if !update.full && row.child.cids.exists(touched.contains) then
+              val rowChanges = update.changes.getOrElse(SparseChanges(Set.empty, Set.empty))
+              selected += update.copy(changes = Some(rowChanges.touching(touched)))
+            else selected += update
+          else if changes.replaced.nonEmpty && changes.replaced.contains(row.child.id) then
+            selected += ProjectedKeyedRowUpdate.whole(index)
+          else if !keptRow(row.child, keptInstance(row, index), changes) &&
+            rowChanged(row.child, changes)
+          then selected += ProjectedKeyedRowUpdate(index, None, Some(changes), full = false)
+          index += 1
+        selected.result()
     val shouldEmit = sparseChanges.isEmpty || keyed.changed ||
-      sparseChanges.exists(_.keyedTargets.contains(keyed.id)) || updates.exists(_.nonEmpty)
+      sparseChanges.exists(_.keyedTargets.contains(keyed.id)) || updates.nonEmpty
     if !shouldEmit then Right(Json.Obj.empty)
     else
       val table = templates.getOrElse(TemplateTable())
-      traverse(keyed.rows.zip(updates).zipWithIndex) { case ((row, update), index) =>
-        update match
-          case None         => Right(None)
-          case Some(change) =>
-            val child =
-              if change.full then rendered(row.child, components, None, Some(table))
-              else
-                change.changes match
-                  case Some(changes) =>
-                    rendered(
-                      row.child,
-                      components,
-                      Some(changes),
-                      Some(table),
-                      previousRows.get(row.id)
-                    )
-                  case None => Right(Json.Obj.empty)
-            child.map { payload =>
-              val boxed       = Json.Obj("0" -> payload)
-              val value: Json = change.oldIndex match
-                case None                                        => boxed
-                case Some(oldIndex) if payload == Json.Obj.empty => Json.Num(oldIndex)
-                case Some(oldIndex) => Json.Arr(Json.Num(oldIndex), boxed)
-              Some(index.toString -> value)
-            }
+      traverse(updates) { update =>
+        val row   = keyed.rows(update.index)
+        val child =
+          if update.full then rendered(row.child, components, None, Some(table))
+          else
+            update.changes match
+              case Some(changes) =>
+                rendered(
+                  row.child,
+                  components,
+                  Some(changes),
+                  Some(table),
+                  previousChild(row, update.oldIndex.getOrElse(update.index))
+                )
+              case None => Right(Json.Obj.empty)
+        child.map { payload =>
+          val boxed       = Json.Obj("0" -> payload)
+          val value: Json = update.oldIndex match
+            case None                                        => boxed
+            case Some(oldIndex) if payload == Json.Obj.empty => Json.Num(oldIndex)
+            case Some(oldIndex)                              => Json.Arr(Json.Num(oldIndex), boxed)
+          update.index.toString -> value
+        }
       }.map { entries =>
-        val move        = updates.exists(_.flatMap(_.oldIndex).nonEmpty)
-        val keyedFields = entries.flatten ++ Vector("kc" -> Json.Num(keyed.rows.length)) ++
+        val move        = updates.exists(_.oldIndex.nonEmpty)
+        val keyedFields = entries ++ Vector("kc" -> Json.Num(keyed.rows.length)) ++
           (if move then Vector("km" -> Json.Bool(true)) else Vector.empty)
         val fields = (if sparseChanges.isEmpty || keyed.includeStatics then
                         Vector("s" -> Json.Arr(Json.Str(""), Json.Str("")))
@@ -2285,6 +2507,8 @@ private[scalive] object PhoenixRenderedEncoder:
           stream.rows.foldLeft(result)((current, row) => current.flatMap(_ => loop(row.child)))
         case (result, ProjectedPart.StreamDomId(value)) =>
           result.map(_ => output.append(value)).map(_ => ())
+        case (result, ProjectedPart.ComponentRoot(cid)) =>
+          result.map(_ => output.append(s" data-phx-component=\"$cid\"")).map(_ => ())
       }
 
     loop(root).map(_ => output.result())
@@ -2439,7 +2663,7 @@ private[scalive] object PhoenixRenderedEncoder:
             Left(PhoenixEncodingError.DuplicateStreamIdentity)
           else Right(())
         }
-      case (result, RenderChange.Keyed(id, _)) =>
+      case (result, RenderChange.Keyed(id, _, _)) =>
         result.flatMap(_ =>
           if targets.add(id) then Right(()) else Left(PhoenixEncodingError.DuplicateTarget(id))
         )

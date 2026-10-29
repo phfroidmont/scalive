@@ -642,12 +642,12 @@ final private[scalive] case class UploadRegistry private (
 
   def retireMissingComponents(
     lifecycle: LifecycleId,
-    retained: Set[ComponentInstanceId]
+    retained: ComponentInstanceId => Boolean
   ): UploadRemoval =
     retireWhere(
       {
         case OwnerId.Component(ownerLifecycle, component) =>
-          ownerLifecycle == lifecycle && !retained.contains(component)
+          ownerLifecycle == lifecycle && !retained(component)
         case OwnerId.Root(_) => false
       },
       LiveUploadAbortReason.ComponentRemoved

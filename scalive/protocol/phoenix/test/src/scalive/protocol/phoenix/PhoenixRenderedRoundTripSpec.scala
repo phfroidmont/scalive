@@ -59,9 +59,14 @@ object PhoenixRenderedRoundTripSpec extends ZIOSpecDefault:
       component(Label, "outer").render(page.map(_.title)),
       page
         .map(_.open).when(
-          p("inner ", component(Label, "inner").render(page.map(_.title)))
+          p(
+            "inner ",
+            component(Label, "inner").render(page.map(_.title.reverse)),
+            component(Label, "laterList").render(page.map(_.title))
+          )
         ),
       component(Label, "wrap").render(page.map(_.title)),
+      component(Label, "list").render(page.map(_.title)),
       page.map(_.mode).choose(0 -> em("zero"), 1 -> b(page.map(_.title)))
     )
 
@@ -71,12 +76,22 @@ object PhoenixRenderedRoundTripSpec extends ZIOSpecDefault:
       value.map(_.startsWith("b")).when(em("starts with b"))
     )
 
+  private def listView(value: Signal[String]): HtmlElement[Nothing] =
+    ul(value.map(_.toVector.distinct.map(_.toString)).splitBy(identity)((char, _) => li(char)))
+
   // Shows nothing of its own, so only the component it holds changes.
   private def wrapView(value: Signal[String]): HtmlElement[Nothing] =
     div(cls := "wrap", component(Label, "nested").render(value))
 
   private val views =
-    Map("outer" -> labelView, "inner" -> labelView, "wrap" -> wrapView, "nested" -> labelView)
+    Map(
+      "outer"     -> labelView,
+      "inner"     -> labelView,
+      "wrap"      -> wrapView,
+      "nested"    -> labelView,
+      "list"      -> listView,
+      "laterList" -> listView
+    )
 
   private val tokens = views.map((id, _) => id -> Object())
 

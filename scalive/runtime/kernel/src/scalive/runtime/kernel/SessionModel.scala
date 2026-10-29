@@ -296,11 +296,14 @@ final private[scalive] case class SessionLogic[Msg, Model](
     _: Model,
     _: Vector[StreamRequirement[Msg]]
   ) => ZIO.unit,
+  // Receives whether the page renders each component after the turn.
   reconcileUploads: (
     TurnDraft[Msg, Model],
-    Set[ComponentInstanceId]
-  ) => Task[TurnDraft[Msg, Model]] = (draft: TurnDraft[Msg, Model], _: Set[ComponentInstanceId]) =>
-    ZIO.succeed(draft),
+    ComponentInstanceId => Boolean
+  ) => Task[TurnDraft[Msg, Model]] = (
+    draft: TurnDraft[Msg, Model],
+    _: ComponentInstanceId => Boolean
+  ) => ZIO.succeed(draft),
   retireUploads: UploadRetirementPlan => UIO[Unit] = (plan: UploadRetirementPlan) =>
     ZIO.foreachDiscard(plan.instructions) {
       case UploadRetirementInstruction.Cleanup(operation) =>
@@ -346,6 +349,11 @@ sealed private[scalive] trait MountedComponent[OwnerMsg]:
   def environmentState: ComponentEnvironmentState
   def mapOutput(output: Output): Option[OwnerMsg]
 
+  /** The requirement that last declared this component: one of those of its parent's render, or of
+    * the root's.
+    */
+  def declaration: ComponentRequirement[?]
+
   /** Whether this component renders its committed render again when its runtime-owned state is
     * `state`.
     */
@@ -356,11 +364,17 @@ sealed private[scalive] trait MountedComponent[OwnerMsg]:
     (requirement.definition.asInstanceOf[AnyRef] eq definition.asInstanceOf[AnyRef]) &&
       requirement.applicationId == key.applicationId && requirement.props == inputProps
 
-  /** This component, sending its output where `requirement`, which declares it again, sends it. */
-  def declaredBy(requirement: ComponentRequirement[?]): MountedComponent[OwnerMsg]
+  /** This component as `requirement` declares it again in the render of `parent`: sending its
+    * output where `requirement` sends it.
+    */
+  def declaredBy(
+    requirement: ComponentRequirement[?],
+    parent: Option[ComponentInstanceId]
+  ): MountedComponent[OwnerMsg]
 
-  /** Resolves `requirement` to this component's committed render. */
-  def resolution(requirement: ComponentRequirement[?]): ComponentResolution =
+  /** Resolves the declaration of this component to its committed render. */
+  def resolution: ComponentResolution =
+    val requirement = declaration
     requirement.resolve(
       ref.asInstanceOf[ComponentRef[requirement.Message]],
       ref.asInstanceOf[AnyRef],
@@ -389,7 +403,8 @@ final private[kernel] case class MountedComponentValue[OwnerMsg, Props0, Message
   parent: Option[ComponentInstanceId],
   children: Vector[ComponentInstanceId],
   environmentState: ComponentEnvironmentState,
-  outputMapper: Option[Output0 => OwnerMsg])
+  outputMapper: Option[Output0 => OwnerMsg],
+  declaration: ComponentRequirement[?])
     extends MountedComponent[OwnerMsg]:
   type Props   = Props0
   type Message = Message0
@@ -400,13 +415,17 @@ final private[kernel] case class MountedComponentValue[OwnerMsg, Props0, Message
   def rendersAgain(state: RenderState): Boolean =
     program.rendersAgain((props, model, state), render)
 
-  def declaredBy(requirement: ComponentRequirement[?]): MountedComponent[OwnerMsg] =
-    val declared = requirement.outputMapper.map(_.asInstanceOf[Output0 => OwnerMsg])
-    // A template declares a component with the same mapper each time it renders.
-    val same = (outputMapper, declared) match
-      case (Some(current), Some(next)) => current eq next
-      case (current, next)             => current.isEmpty && next.isEmpty
-    if same then this else copy(outputMapper = declared)
+  def declaredBy(
+    requirement: ComponentRequirement[?],
+    parent: Option[ComponentInstanceId]
+  ): MountedComponent[OwnerMsg] =
+    if (requirement eq declaration) && parent == this.parent then this
+    else
+      copy(
+        parent = parent,
+        outputMapper = requirement.outputMapper.map(_.asInstanceOf[Output0 => OwnerMsg]),
+        declaration = requirement
+      )
 
   def retiringBindingsOf(
     previous: MountedComponent[OwnerMsg],
@@ -424,7 +443,9 @@ final private[scalive] case class ComponentForest[OwnerMsg] private (
   roots: Vector[ComponentInstanceId],
   private val entries: Map[ComponentInstanceId, MountedComponent[OwnerMsg]],
   private val refs: Map[AnyRef, ComponentInstanceId],
-  private val keys: Map[ComponentKey, ComponentInstanceId]):
+  private val keys: Map[ComponentKey, ComponentInstanceId],
+  // The components whose render read something signals do not track, so render on every turn.
+  private[kernel] val untracked: Set[ComponentInstanceId]):
   def get(id: ComponentInstanceId): Option[MountedComponent[OwnerMsg]] = entries.get(id)
   def values: Vector[MountedComponent[OwnerMsg]]                       =
     def descendants(ids: Vector[ComponentInstanceId]): Vector[MountedComponent[OwnerMsg]] =
@@ -437,17 +458,23 @@ final private[scalive] case class ComponentForest[OwnerMsg] private (
     entries.values.toVector.sortBy(_.id.value)
   private[kernel] def byKey(key: ComponentKey): Option[MountedComponent[OwnerMsg]] =
     keys.get(key).flatMap(entries.get)
+
+  /** Whether the page renders component `id`: its parent does, and declares it. */
+  private[kernel] def isLive(id: ComponentInstanceId): Boolean =
+    ComponentForest.isLive(id, roots, entries.get(_).map(_.parent), entries.get(_).map(_.children))
+
   private[kernel] def isDormant(id: ComponentInstanceId): Boolean =
-    entries.contains(id) && !values.exists(_.id == id)
+    entries.contains(id) && !isLive(id)
 
   /** This forest after a turn that renders `roots` and commits `components`. */
   private[kernel] def committing(
     roots: Vector[ComponentInstanceId],
     components: Iterable[MountedComponent[OwnerMsg]]
   ): ComponentForest[OwnerMsg] =
-    var nextEntries = entries
-    var nextRefs    = refs
-    var nextKeys    = keys
+    var nextEntries   = entries
+    var nextRefs      = refs
+    var nextKeys      = keys
+    var nextUntracked = untracked
     components.foreach { component =>
       entries.get(component.id) match
         case Some(current) if current eq component => ()
@@ -457,8 +484,11 @@ final private[scalive] case class ComponentForest[OwnerMsg] private (
           nextEntries = nextEntries.updated(component.id, component)
           nextRefs = nextRefs.updated(component.ref.asInstanceOf[AnyRef], component.id)
           nextKeys = nextKeys.updated(component.key, component.id)
+      nextUntracked =
+        if component.render.readsUntracked then nextUntracked + component.id
+        else nextUntracked - component.id
     }
-    ComponentForest(roots, nextEntries, nextRefs, nextKeys)
+    ComponentForest(roots, nextEntries, nextRefs, nextKeys, nextUntracked)
 
   private[kernel] def updated(value: MountedComponent[OwnerMsg]): ComponentForest[OwnerMsg] =
     committing(roots, Vector(value))
@@ -481,7 +511,21 @@ end ComponentForest
 
 private[scalive] object ComponentForest:
   val empty: ComponentForest[Nothing] =
-    ComponentForest(Vector.empty, Map.empty, Map.empty, Map.empty)
+    ComponentForest(Vector.empty, Map.empty, Map.empty, Map.empty, Set.empty)
+
+  /** Whether `id` is reachable from `roots`, given the parent and children of each component. */
+  @scala.annotation.tailrec
+  private[kernel] def isLive(
+    id: ComponentInstanceId,
+    roots: Vector[ComponentInstanceId],
+    parentOf: ComponentInstanceId => Option[Option[ComponentInstanceId]],
+    childrenOf: ComponentInstanceId => Option[Vector[ComponentInstanceId]]
+  ): Boolean =
+    parentOf(id) match
+      case None               => false
+      case Some(None)         => roots.contains(id)
+      case Some(Some(parent)) =>
+        childrenOf(parent).exists(_.contains(id)) && isLive(parent, roots, parentOf, childrenOf)
   private[kernel] def apply[OwnerMsg](
     roots: Vector[ComponentInstanceId],
     values: Vector[MountedComponent[OwnerMsg]]
@@ -541,14 +585,22 @@ private[scalive] object ComponentUpdateRequest:
 
 /** Connection-owned lifecycle contexts are adapted at this protocol-neutral boundary. */
 trait ComponentEnvironment[RootMsg, RootModel]:
+  /** What every component reads of the root model when it renders, such as flash and uploads. */
+  type RenderInputs
+
+  /** The render inputs of root model `model`. A turn that leaves them equal renders a component
+    * whose environment state is unchanged only when it has another reason to.
+    */
+  def renderInputs(model: RootModel): RenderInputs
+
   /** The runtime-owned state that one render of component `id` reads: flash, uploads, and streams.
     */
   def renderState(
     id: ComponentInstanceId,
-    draft: TurnDraft[RootMsg, RootModel],
+    inputs: RenderInputs,
     state: ComponentEnvironmentState
-  ): RenderState =
-    Option(draft.model).fold(RenderState.empty)(_ => RenderState.empty)
+  ): RenderState = RenderState.empty
+
   def mount[P, M, A](
     id: ComponentInstanceId,
     component: LiveComponent[P, M, A],
@@ -614,7 +666,9 @@ end ComponentEnvironment
 private[scalive] object ComponentEnvironment:
   def unavailable[RootMsg, RootModel]: ComponentEnvironment[RootMsg, RootModel] =
     new ComponentEnvironment:
-      private def missing[A]: Task[A] =
+      type RenderInputs = Unit
+      def renderInputs(model: RootModel): Unit = ()
+      private def missing[A]: Task[A]          =
         ZIO.fail(IllegalStateException("component lifecycle context environment was not installed"))
       def mount[P, M, A](
         id: ComponentInstanceId,
@@ -682,6 +736,9 @@ final private[scalive] case class Committed[Msg, Model](
   // published turn sends that commit's changes too.
   published: EvaluatedTree,
   components: ComponentForest[Msg],
+  // The root model whose runtime-owned render state every live component last rendered or was
+  // kept with, if they all did with the same.
+  componentRenderBasis: Option[Model],
   resources: PreparedResources,
   managedResources: ResourceIndex[ManagedResource],
   auxiliaryScope: CandidateScope,
@@ -739,6 +796,7 @@ final private[scalive] case class TurnCandidate[Msg, Model](
   draft: TurnDraft[Msg, Model],
   render: RenderCandidate[Msg],
   components: ComponentForestCandidate[Msg],
+  componentRenderBasis: Option[Model],
   outputs: Vector[ComponentOutput[Msg]],
   topology: PreparedNestedTopology,
   resources: PreparedResources,
@@ -839,11 +897,26 @@ final private[scalive] case class TurnResult(
   revision: TurnRevision,
   delta: RenderDelta)
 
+/** The components of a page after a turn: `previous`, the committed forest, with the components the
+  * turn staged, `components`, in place of theirs. The turn leaves the others as committed.
+  */
 final private[kernel] case class ComponentForestCandidate[OwnerMsg](
   roots: Vector[ComponentInstanceId],
   components: Vector[StagedComponent[OwnerMsg]],
-  resolutions: Vector[ComponentResolution],
-  dormantAction: Option[DormantAction[OwnerMsg]])
+  dormantAction: Option[DormantAction[OwnerMsg]],
+  previous: ComponentForest[OwnerMsg]):
+  private lazy val byId = components.iterator.map(component => component.id -> component).toMap
+
+  def staged(id: ComponentInstanceId): Option[StagedComponent[OwnerMsg]] = byId.get(id)
+
+  /** Whether the page renders component `id` after the turn. */
+  def isLive(id: ComponentInstanceId): Boolean =
+    ComponentForest.isLive(
+      id,
+      roots,
+      id => byId.get(id).map(_.parent).orElse(previous.get(id).map(_.parent)),
+      id => byId.get(id).map(_.children).orElse(previous.get(id).map(_.children))
+    )
 
 /** A component the page no longer renders, but the browser has not destroyed yet, after it handled
   * the turn's action. It stays dormant: only its model and environment state change.
@@ -869,10 +942,20 @@ sealed private[kernel] trait StagedComponent[OwnerMsg]:
   def environmentState: ComponentEnvironmentState
   def appliedUpdate: Option[ComponentUpdateRequest]
 
+  /** The requirement the turn staged this component for. */
+  def declaration: ComponentRequirement[?]
+
+  /** The components the render of this component declares. */
+  def declares: Vector[ComponentRequirement[?]]
+
   /** Whether `requirement` declares this component with the props it was staged for. */
   def matches(requirement: ComponentRequirement[?]): Boolean
 
-  def resolutionFor(requirement: ComponentRequirement[?]): ComponentResolution
+  /** This component, staged for `requirement`, which declares it as it was staged. */
+  def redeclared(requirement: ComponentRequirement[?]): StagedComponent[OwnerMsg]
+
+  /** Resolves the declaration of this component to its staged render. */
+  def resolution: ComponentResolution
 
   /** The component to commit, still resolving for a while the bindings its last render dropped. */
   def committed(now: Instant): MountedComponent[OwnerMsg]
@@ -882,6 +965,7 @@ sealed private[kernel] trait StagedComponent[OwnerMsg]:
 
   /** Releases what the turn staged for this component, when its commit failed. */
   def abortCommitted: UIO[Unit]
+end StagedComponent
 
 private[kernel] object StagedComponent:
   /** A component the turn rendered: it is new, it ran a callback, its input changed, or one of its
@@ -906,13 +990,23 @@ private[kernel] object StagedComponent:
     appliedUpdate: Option[ComponentUpdateRequest],
     outputMapper: Option[O => OwnerMsg],
     previous: Option[MountedComponent[OwnerMsg]],
+    declaration: ComponentRequirement[?],
     release: UIO[Unit])
       extends StagedComponent[OwnerMsg]:
+    def declares: Vector[ComponentRequirement[?]] = candidate.componentRequirements
+
     def matches(requirement: ComponentRequirement[?]): Boolean =
       (requirement.definition.asInstanceOf[AnyRef] eq definition.asInstanceOf[AnyRef]) &&
         requirement.applicationId == key.applicationId && requirement.props == inputProps
 
-    def resolutionFor(requirement: ComponentRequirement[?]): ComponentResolution =
+    def redeclared(requirement: ComponentRequirement[?]): StagedComponent[OwnerMsg] =
+      copy(
+        outputMapper = requirement.outputMapper.map(_.asInstanceOf[O => OwnerMsg]),
+        declaration = requirement
+      )
+
+    def resolution: ComponentResolution =
+      val requirement = declaration
       requirement.resolve(
         ref.asInstanceOf[ComponentRef[requirement.Message]],
         ref.asInstanceOf[AnyRef],
@@ -927,7 +1021,9 @@ private[kernel] object StagedComponent:
     def resolvingComponents(
       resolutions: Vector[ComponentResolution]
     ): Either[RenderError, Rendered[OwnerMsg, P, M, A, O]] =
-      candidate.resolveComponents(resolutions).map(next => copy(candidate = next))
+      candidate
+        .resolveComponents(resolutions)
+        .map(next => if next eq candidate then this else copy(candidate = next))
 
     def committed(now: Instant): MountedComponent[OwnerMsg] =
       val value = MountedComponentValue[OwnerMsg, P, M, A, O](
@@ -943,7 +1039,8 @@ private[kernel] object StagedComponent:
         parent,
         children,
         environmentState,
-        outputMapper
+        outputMapper,
+        declaration
       )
       previous.fold(value)(value.retiringBindingsOf(_, now))
 
@@ -958,14 +1055,18 @@ private[kernel] object StagedComponent:
     */
   final case class Kept[OwnerMsg](component: MountedComponent[OwnerMsg])
       extends StagedComponent[OwnerMsg]:
-    def id: ComponentInstanceId                             = component.id
-    def key: ComponentKey                                   = component.key
-    def parent: Option[ComponentInstanceId]                 = component.parent
-    def children: Vector[ComponentInstanceId]               = component.children
-    def environmentState: ComponentEnvironmentState         = component.environmentState
-    def appliedUpdate: Option[ComponentUpdateRequest]       = None
-    def matches(requirement: ComponentRequirement[?])       = component.declaredAs(requirement)
-    def resolutionFor(requirement: ComponentRequirement[?]) = component.resolution(requirement)
+    def id: ComponentInstanceId                          = component.id
+    def key: ComponentKey                                = component.key
+    def parent: Option[ComponentInstanceId]              = component.parent
+    def children: Vector[ComponentInstanceId]            = component.children
+    def environmentState: ComponentEnvironmentState      = component.environmentState
+    def appliedUpdate: Option[ComponentUpdateRequest]    = None
+    def declaration: ComponentRequirement[?]             = component.declaration
+    def declares: Vector[ComponentRequirement[?]]        = component.render.componentRequirements
+    def matches(requirement: ComponentRequirement[?])    = component.declaredAs(requirement)
+    def redeclared(requirement: ComponentRequirement[?]) =
+      Kept(component.declaredBy(requirement, component.parent))
+    def resolution: ComponentResolution                     = component.resolution
     def committed(now: Instant): MountedComponent[OwnerMsg] = component
     // The committed state owns everything a kept component holds.
     def discard: UIO[Unit]        = ZIO.unit

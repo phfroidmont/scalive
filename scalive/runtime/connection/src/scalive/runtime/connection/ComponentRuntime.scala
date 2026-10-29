@@ -23,14 +23,19 @@ final private[connection] class ConnectedComponentEnvironment[RootMsg, RootModel
 
   private type Draft = TurnDraft[RootMsg, RootState[RootMsg, RootModel]]
 
+  type RenderInputs = ComponentRenderInputs
+
+  def renderInputs(model: RootState[RootMsg, RootModel]): ComponentRenderInputs =
+    ComponentRenderInputs(model.flash.shown, model.uploads)
+
   override def renderState(
     id: ComponentInstanceId,
-    draft: Draft,
+    inputs: ComponentRenderInputs,
     state: ComponentEnvironmentState
   ): RenderState =
     OwnerRenderState(
-      draft.model.flash.shown,
-      draft.model.uploads,
+      inputs.flash,
+      inputs.uploads,
       OwnerId.Component(lifecycle, id),
       ownerEpoch,
       streamStore(state)
@@ -303,6 +308,11 @@ private[connection] object ConnectedComponentEnvironment:
       closed    <- Ref.make(Set.empty[ComponentInstanceId])
       discarded <- Ref.make(Set.empty[ComponentInstanceId])
     yield new ConnectedComponentEnvironment(metadata, lifecycle, ownerEpoch, closed, discarded)
+
+/** What every component reads of the root state when it renders. */
+final private[connection] case class ComponentRenderInputs(
+  flash: Map[FlashKey, FlashValue],
+  uploads: UploadRegistry)
 
 final private case class ComponentState[P, M, A](
   hooks: ComponentHookRegistry[P, M, A],

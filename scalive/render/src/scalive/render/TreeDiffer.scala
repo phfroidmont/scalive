@@ -1,11 +1,17 @@
 package scalive.render
 
+import scala.collection.mutable
+
 /** One protocol-neutral semantic change within an evaluated tree. */
 enum RenderChange:
   case Text(slot: TemplateSlotId, value: String, raw: Boolean)
   case Attribute(slot: TemplateSlotId, name: String, value: Option[AttributeValue])
   case Replace(id: TemplateId, node: EvaluatedNode)
-  case Keyed(id: TemplateId, rows: Vector[KeyedRowChange])
+
+  /** A keyed container now holding `rowCount` rows. `rows` lists, by ascending index, the rows
+    * inserted and the retained rows that changed or moved; every other index keeps the row it held.
+    */
+  case Keyed(id: TemplateId, rowCount: Int, rows: Vector[KeyedRowChange])
   case Stream(
     id: TemplateId,
     identity: scalive.streams.LiveStreamIdentity,
@@ -15,10 +21,14 @@ enum RenderChange:
   /** A child-program delta scoped by the exact semantic component instance that owns its ids. */
   case Component(instanceToken: Object, delta: RenderDelta)
 
-/** One row in the complete new order of a keyed-container change. */
+/** One row of a keyed-container change, at `index` in the new order. */
 enum KeyedRowChange:
-  case Insert(row: EvaluatedNode.KeyedRow)
-  case Retain(id: RowId, changes: Vector[RenderChange])
+  def index: Int
+
+  case Insert(index: Int, row: EvaluatedNode.KeyedRow)
+
+  /** The row that was at `oldIndex`, with what changed in it. */
+  case Retain(index: Int, oldIndex: Int, id: RowId, changes: Vector[RenderChange])
 
 /** Exact semantic difference between committed and candidate render trees. */
 enum RenderDelta:
@@ -85,20 +95,32 @@ object TreeDiffer:
           left.children.zip(right.children).flatMap(diffNode)
         else Vector(RenderChange.Replace(left.id, right))
       case (left: EvaluatedNode.Keyed, right: EvaluatedNode.Keyed) if left.id == right.id =>
-        val oldRows = left.rows.map(row => row.id -> row).toMap
-        val rows    = right.rows.map { newRow =>
-          oldRows.get(newRow.id) match
-            case Some(oldRow) =>
-              KeyedRowChange.Retain(newRow.id, diffNode(oldRow.child, newRow.child))
-            case None => KeyedRowChange.Insert(newRow)
-        }
-        val sameOrder     = sameBy(left.rows, right.rows)(_.id)
-        val unchangedRows = rows.forall {
-          case KeyedRowChange.Retain(_, changes) => changes.isEmpty
-          case KeyedRowChange.Insert(_)          => false
-        }
-        if sameOrder && unchangedRows then Vector.empty
-        else Vector(RenderChange.Keyed(right.id, rows))
+        val rows = Vector.newBuilder[KeyedRowChange]
+        if sameBy(left.rows, right.rows)(_.id) then
+          // Rows in the same order are compared by position, without mapping the old rows.
+          var index = 0
+          while index < right.rows.length do
+            val row     = right.rows(index)
+            val changes = diffNode(left.rows(index).child, row.child)
+            if changes.nonEmpty then rows += KeyedRowChange.Retain(index, index, row.id, changes)
+            index += 1
+        else
+          val oldIndexes = mutable.LongMap[Int]()
+          oldIndexes.sizeHint(left.rows.length)
+          left.rows.indices.foreach(index => oldIndexes.update(left.rows(index).id.value, index))
+          var index = 0
+          while index < right.rows.length do
+            val row      = right.rows(index)
+            val oldIndex = oldIndexes.getOrElse(row.id.value, -1)
+            if oldIndex < 0 then rows += KeyedRowChange.Insert(index, row)
+            else
+              val changes = diffNode(left.rows(oldIndex).child, row.child)
+              if oldIndex != index || changes.nonEmpty then
+                rows += KeyedRowChange.Retain(index, oldIndex, row.id, changes)
+            index += 1
+        val changed = rows.result()
+        if changed.isEmpty && left.rows.length == right.rows.length then Vector.empty
+        else Vector(RenderChange.Keyed(right.id, right.rows.length, changed))
       case (left: EvaluatedNode.Component, right: EvaluatedNode.Component)
           if left.id == right.id && left.applicationId == right.applicationId =>
         (left.resolution, right.resolution) match

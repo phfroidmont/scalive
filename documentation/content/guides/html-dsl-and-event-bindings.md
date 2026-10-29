@@ -63,11 +63,14 @@ built-in @:apiSymbol(val:scalive.cls)`cls`@:@,
 
 @:sourceRegion(documentation/fixtures/guides/src/bindings/CartMarkup.scala, bindings-token-list)
 
-Values are split on HTML ASCII whitespace. Empty tokens are ignored, exact
-duplicate tokens keep their first position, and declaration order is preserved. The
-example therefore renders `class="panel selected expanded wide"` while `expanded`
-is `true`, and `class="panel selected wide"` otherwise. An attribute with no
-remaining tokens is omitted.
+Values are split on HTML ASCII whitespace and empty tokens are ignored. The
+tokens of static values come first, in declaration order, followed by the tokens
+of signals, optional signals, and selected modifiers, in declaration order. A
+token that already appeared is dropped. The example therefore renders
+`class="panel selected wide expanded"` while `expanded` is `true`, and
+`class="panel selected wide"` otherwise. An attribute with no remaining tokens is
+omitted. The static tokens stay in the page template, so an update sends only the
+dynamic ones, even across many rows.
 
 Static values, signals, optional signals, and directly selected modifiers can be
 mixed. Use @:apiSymbol(def:scalive.CompositeHtmlAttr.optional)`cls.optional(...)`@:@

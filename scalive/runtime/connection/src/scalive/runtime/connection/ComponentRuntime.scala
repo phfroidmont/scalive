@@ -36,6 +36,12 @@ final private[connection] class ConnectedComponentEnvironment[RootMsg, RootModel
       streamStore(state)
     )
 
+  override def sameRenderState(
+    previous: RootState[RootMsg, RootModel],
+    next: RootState[RootMsg, RootModel]
+  ): Boolean =
+    previous.flash.shown == next.flash.shown && previous.uploads == next.uploads
+
   def mount[P, M, A](
     id: ComponentInstanceId,
     component: LiveComponent[P, M, A],

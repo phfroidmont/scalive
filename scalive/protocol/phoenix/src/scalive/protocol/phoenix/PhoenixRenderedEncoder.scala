@@ -316,7 +316,8 @@ private[scalive] object PhoenixRenderedEncoder:
           idMax = math.max(idMax, child.idMax)
           slotMin = math.min(slotMin, child.slotMin)
           slotMax = math.max(slotMax, child.slotMax)
-        if child.cids.nonEmpty then cids = cids ++ child.cids
+        // A node whose CIDs one child holds shares that child's set rather than copying it.
+        if child.cids.nonEmpty then cids = if cids.isEmpty then child.cids else cids ++ child.cids
         if child.streams.nonEmpty then streams = streams ++ child.streams
 
       def result(): Summary = Summary(idMin, idMax, slotMin, slotMax, cids, streams, dynamics)

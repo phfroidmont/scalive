@@ -259,6 +259,11 @@ final case class CommittedRender[+Msg] private[render] (
   /** Closes this render after its replacement has become active. */
   def close: UIO[Unit] = scope.closeCommitted
 
+  /** Whether this render read something signals do not track, so that its input alone does not tell
+    * whether it would render the same again.
+    */
+  private[scalive] def readsUntracked: Boolean = signalEvaluation.untracked
+
   /** Returns whether this render's program generates `id`, now or in an earlier render, rather than
     * another program such as a component's.
     */
@@ -272,7 +277,13 @@ final case class CommittedRender[+Msg] private[render] (
     if previous eq this then this
     else copy(bindings = bindings.retiring(previous.bindings, now))
 
-/** Isolated render state awaiting lifecycle validation and commit. */
+/** Isolated render state awaiting lifecycle validation and commit.
+  *
+  * `componentRequirements` are the components the render declares, in order. It is the committed
+  * render's vector itself when the render declares the same ones in the same order. A declaration
+  * the render carries over from the committed render is the same requirement, and the tree holds
+  * the resolution committed for it; the tree leaves each other declaration unresolved.
+  */
 final case class RenderCandidate[+Msg] private[render] (
   tree: EvaluatedTree,
   bindings: BindingTable[Msg],
@@ -313,13 +324,20 @@ final case class RenderCandidate[+Msg] private[render] (
 
   private[render] def newRowScopes: Map[RowId, SignalScope] = commitTail.newRowScopes
 
-  /** Finalizes every component placeholder without evaluating the root render program again. */
+  /** Finalizes the component placeholders without evaluating the root render program again: each
+    * one the tree leaves unresolved needs a resolution, and one the render carried from the
+    * committed render is replaced only by the resolution it is given, if any.
+    */
   private[scalive] def resolveComponents(
     resolutions: Vector[ComponentResolution]
   ): Either[RenderError, RenderCandidate[Msg]] =
     EvaluatedTree
-      .resolveComponents(tree.root, componentRequirements, resolutions)
-      .map(root => copy(tree = tree.copy(root = root)))
+      .resolveComponents(tree.root, resolutions)
+      .map(root => if root eq tree.root then this else copy(tree = tree.copy(root = root)))
+
+  /** The declarations the tree leaves unresolved. */
+  private[scalive] def unresolvedComponents: Set[TemplateId] =
+    EvaluatedTree.unresolvedComponents(tree.root).toSet
 
   /** Finalizes every nested LiveView placeholder owned by this render program. */
   private[scalive] def resolveNested(
@@ -387,23 +405,20 @@ object EvaluatedTree:
         .flatMap(_.child.toVector).flatMap(tree => unresolvedNested(tree.root))
     case _: EvaluatedNode.Text => Vector.empty
 
-  private[render] def resolveComponents[Msg](
+  /** `root` with `resolutions` resolved into it. Each declaration `root` leaves unresolved needs
+    * one; a declaration it carries from the committed render already holds that render's, which a
+    * resolution replaces. Only what the resolutions add is checked: the instance tokens they hold
+    * differ from each other.
+    */
+  private[render] def resolveComponents(
     root: EvaluatedNode.Element,
-    requirements: Vector[ComponentRequirement[Msg]],
     resolutions: Vector[ComponentResolution]
   ): Either[RenderError, EvaluatedNode.Element] =
-    val expected = requirements.map(requirement => requirement.location -> requirement).toMap
     val supplied = resolutions.foldLeft[Either[RenderError, Map[TemplateId, ComponentResolution]]](
       Right(Map.empty)
     ) { (result, resolution) =>
       result.flatMap { all =>
-        if !expected.contains(resolution.location) then
-          Left(
-            RenderError.ComponentResolutionInvalid(
-              s"unknown component declaration ${resolution.location.value}"
-            )
-          )
-        else if all.contains(resolution.location) then
+        if all.contains(resolution.location) then
           Left(
             RenderError.ComponentResolutionInvalid(
               s"duplicate component resolution ${resolution.location.value}"
@@ -411,12 +426,6 @@ object EvaluatedTree:
           )
         else if resolution.instanceToken == null then
           Left(RenderError.ComponentResolutionInvalid("component instance token is null"))
-        else if resolution.applicationId != expected(resolution.location).applicationId then
-          Left(
-            RenderError.ComponentResolutionInvalid(
-              s"component application id mismatch at ${resolution.location.value}"
-            )
-          )
         else if unresolvedComponents(resolution.child.root).nonEmpty ||
           unresolvedNested(resolution.child.root).nonEmpty
         then
@@ -430,17 +439,34 @@ object EvaluatedTree:
     }
 
     supplied.flatMap { values =>
-      val missing = expected.keySet -- values.keySet
-      if missing.nonEmpty then Left(RenderError.UnresolvedComponents(missing.toVector))
+      if values.isEmpty && !root.holdsUnresolved then Right(root)
       else
-        resolveNode(root, values).flatMap { resolved =>
-          val element = resolved.asInstanceOf[EvaluatedNode.Element]
-          validateUniqueComponentTokens(element).map(_ => element)
+        val resolved = scala.collection.mutable.HashSet.empty[TemplateId]
+        resolveNode(root, values, resolved).flatMap { node =>
+          values.keysIterator.find(location => !resolved.contains(location)) match
+            case Some(location) =>
+              Left(
+                RenderError.ComponentResolutionInvalid(
+                  s"unknown component declaration ${location.value}"
+                )
+              )
+            case None =>
+              validateUniqueComponentTokens(values.valuesIterator.toVector)
+                .map(_ => node.asInstanceOf[EvaluatedNode.Element])
         }
     }
   end resolveComponents
 
   private[render] def resolveNested(
+    root: EvaluatedNode.Element,
+    requirements: Vector[NestedRequirement],
+    resolutions: Vector[NestedResolution]
+  ): Either[RenderError, EvaluatedNode.Element] =
+    // Nested LiveViews are not tracked by signals, so a render holds none it did not declare.
+    if requirements.isEmpty && resolutions.isEmpty then Right(root)
+    else resolveDeclaredNested(root, requirements, resolutions)
+
+  private def resolveDeclaredNested(
     root: EvaluatedNode.Element,
     requirements: Vector[NestedRequirement],
     resolutions: Vector[NestedResolution]
@@ -527,7 +553,7 @@ object EvaluatedTree:
         else resolveNestedNode(root, values).map(_.asInstanceOf[EvaluatedNode.Element])
       }
     end if
-  end resolveNested
+  end resolveDeclaredNested
 
   private def requiredNestedMetadata(resolution: NestedResolution): Vector[String] =
     Vector(
@@ -541,7 +567,8 @@ object EvaluatedTree:
     node: EvaluatedNode,
     resolutions: Map[TemplateId, NestedResolution]
   ): Either[RenderError, EvaluatedNode] = node match
-    case _ if !node.holdsResolvable   => Right(node)
+    // A render resolves nothing into a nested LiveView it keeps: it declares each one again.
+    case _ if !node.holdsUnresolved   => Right(node)
     case nested: EvaluatedNode.Nested =>
       resolutions
         .get(nested.id).map(value => nested.copy(resolution = Some(value))).toRight(
@@ -552,16 +579,27 @@ object EvaluatedTree:
 
   private def resolveNode(
     node: EvaluatedNode,
-    resolutions: Map[TemplateId, ComponentResolution]
+    resolutions: Map[TemplateId, ComponentResolution],
+    resolved: scala.collection.mutable.Set[TemplateId]
   ): Either[RenderError, EvaluatedNode] = node match
     case _ if !node.holdsResolvable         => Right(node)
     case component: EvaluatedNode.Component =>
-      resolutions.get(component.id) match
-        case Some(value) if component.resolution.exists(sameResolution(_, value)) =>
-          Right(component)
-        case Some(value) => Right(component.copy(resolution = Some(value)))
-        case None        => Left(RenderError.UnresolvedComponents(Vector(component.id)))
-    case other => resolveContents(other, resolveNode(_, resolutions))
+      // Without an option per component, as a resolution reaches each one the render holds.
+      val value = resolutions.getOrElse(component.id, null)
+      if value == null then
+        if component.resolution.nonEmpty then Right(component)
+        else Left(RenderError.UnresolvedComponents(Vector(component.id)))
+      else if value.applicationId != component.applicationId then
+        Left(
+          RenderError.ComponentResolutionInvalid(
+            s"component application id mismatch at ${component.id.value}"
+          )
+        )
+      else
+        resolved += component.id
+        if component.resolution.exists(sameResolution(_, value)) then Right(component)
+        else Right(component.copy(resolution = Some(value)))
+    case other => resolveContents(other, resolveNode(_, resolutions, resolved))
 
   // A component the runtime kept resolves to the instance and the committed render it held.
   private def sameResolution(held: ComponentResolution, next: ComponentResolution): Boolean =
@@ -713,7 +751,12 @@ object EvaluatedTree:
       same(nodes(index), evaluated(index))
     )
 
-  private def validateUniqueComponentTokens(root: EvaluatedNode): Either[RenderError, Unit] =
+  /** Rejects an instance token that `resolutions`, with the components their renders hold, hold
+    * twice.
+    */
+  private def validateUniqueComponentTokens(
+    resolutions: Vector[ComponentResolution]
+  ): Either[RenderError, Unit] =
     val seen = IdentityHashMap[Object, java.lang.Boolean]()
 
     def loop(node: EvaluatedNode): Either[RenderError, Unit] = node match
@@ -726,14 +769,7 @@ object EvaluatedTree:
       case component: EvaluatedNode.Component =>
         component.resolution match
           case None        => Left(RenderError.UnresolvedComponents(Vector(component.id)))
-          case Some(value) =>
-            if seen.put(value.instanceToken, java.lang.Boolean.TRUE) != null then
-              Left(
-                RenderError.ComponentResolutionInvalid(
-                  s"duplicate component instance token at declaration ${component.id.value}"
-                )
-              )
-            else loop(value.child.root)
+          case Some(value) => visit(value)
       case nested: EvaluatedNode.Nested =>
         nested.resolution match
           case None        => Left(RenderError.UnresolvedNested(Vector(nested.id)))
@@ -743,11 +779,22 @@ object EvaluatedTree:
               case None        => Right(())
       case _: EvaluatedNode.Text => Right(())
 
+    def visit(value: ComponentResolution): Either[RenderError, Unit] =
+      if seen.put(value.instanceToken, java.lang.Boolean.TRUE) != null then
+        Left(
+          RenderError.ComponentResolutionInvalid(
+            s"duplicate component instance token at declaration ${value.location.value}"
+          )
+        )
+      else loop(value.child.root)
+
     def loopAll(nodes: Vector[EvaluatedNode]): Either[RenderError, Unit] =
       nodes.foldLeft[Either[RenderError, Unit]](Right(()))((result, node) =>
         result.flatMap(_ => loop(node))
       )
 
-    loop(root)
+    resolutions.foldLeft[Either[RenderError, Unit]](Right(()))((result, value) =>
+      result.flatMap(_ => visit(value))
+    )
   end validateUniqueComponentTokens
 end EvaluatedTree

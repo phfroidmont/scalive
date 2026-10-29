@@ -4,8 +4,8 @@
 # Regenerate with `mill benchmarks.updateRegressionBaseline` after an intended change.
 alloc BindingsAndSignalsBenchmark.bindingLookup rowCount=1000 80009
 alloc BindingsAndSignalsBenchmark.changedInputEqualRenderedValues rowCount=1000 11192
-alloc ComponentTurnBenchmark.rootClick cardCount=100 layout=splitBy 897016
-alloc ComponentTurnBenchmark.rootClick cardCount=100 layout=static 904222
+alloc ComponentTurnBenchmark.rootClick cardCount=100 layout=splitBy 125097
+alloc ComponentTurnBenchmark.rootClick cardCount=100 layout=static 127359
 alloc InitialRenderBenchmark.evaluate rowCount=1000 11429482
 alloc InitialRenderBenchmark.html rowCount=1000 7717962
 alloc InitialRenderBenchmark.phoenixEncoding rowCount=1000 10331992
@@ -40,9 +40,9 @@ alloc UnrelatedChangeBenchmark.evaluate rowCount=1000 9328
 alloc UnrelatedChangeBenchmark.phoenixEncoding rowCount=1000 6808
 alloc UnrelatedChangeBenchmark.semanticDiff rowCount=1000 3216
 retained componentList.data 77
-retained componentList.encoder 1557
-retained componentList.render 1962
-retained componentList.total 3596
+retained componentList.encoder 1448
+retained componentList.render 1970
+retained componentList.total 3495
 retained keyedList.data 77
 retained keyedList.encoder 1221
 retained keyedList.render 2576

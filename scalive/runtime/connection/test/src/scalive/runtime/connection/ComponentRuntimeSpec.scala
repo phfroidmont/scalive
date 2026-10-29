@@ -149,6 +149,38 @@ object ComponentRuntimeSpec extends ZIOSpecDefault:
       div(instances.map(_.render(1, RootMsg.Output.apply))* )
 
   override def spec = suite("ComponentRuntimeSpec")(
+    test("root states give components the same render state exactly when they say so") {
+      val id     = ComponentInstanceId(1L)
+      val notice = FlashKind("notice")
+      val root   =
+        RootState[Unit, Int](0, URL.root, RootHookRegistry.fromStatic(LiveHooks.empty[Unit, Int]))
+      val states = Vector(
+        root,
+        root.copy(model = 1, pageTitle = Some("other")),
+        root.copy(flash = root.flash.put(notice.key, "hello")),
+        root.copy(flash = root.flash.put(notice.key, "hello").clear(notice.key))
+      )
+      val definition = new LiveComponent[Unit, Unit, Unit]:
+        def mount(props: Unit, ctx: MountContext) = ZIO.unit
+        def handleMessage(props: Unit, model: Unit, ctx: MessageContext) = _ => ZIO.unit
+        def view(props: Signal[Unit], model: Signal[Unit]) = div()
+      for
+        environment <- ConnectedComponentEnvironment.make[Unit, Int](metadata, LifecycleId(1L))
+        mounted     <- environment.mount(id, definition, (), TurnDraft(root))
+        read = (state: RootState[Unit, Int]) =>
+                 environment.renderState(id, TurnDraft(state), mounted.state)
+        pairs = states.flatMap(previous =>
+                  states.map(next =>
+                    environment.sameRenderState(previous, next) == (read(previous) == read(next))
+                  )
+                )
+      yield assertTrue(
+        pairs.forall(identity),
+        environment.sameRenderState(states(0), states(1)),
+        !environment.sameRenderState(states(0), states(2)),
+        environment.sameRenderState(states(0), states(3))
+      )
+    },
     test("runs mount, update, render and after-render and routes outputs through the owner") {
       ZIO.scoped {
         for

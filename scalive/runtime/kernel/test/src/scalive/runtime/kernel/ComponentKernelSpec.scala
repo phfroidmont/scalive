@@ -233,6 +233,170 @@ object ComponentKernelSpec extends ZIOSpecDefault:
         )
       }
     },
+    test("a turn that changes no component visits none of them") {
+      ZIO.scoped {
+        val events  = ConcurrentLinkedQueue[String]()
+        val visited = ConcurrentLinkedQueue[ComponentInstanceId]()
+        val environment = new FakeEnvironment(events):
+          override def renderState(
+            id: ComponentInstanceId,
+            draft: TurnDraft[Int, Int],
+            state: ComponentEnvironmentState
+          ) =
+            visited.add(id)
+            RenderState.empty
+        val definition = componentDefinition(events)
+        for
+          seen    <- Ref.make(Vector.empty[Int])
+          program <- ZIO.fromEither(
+                       RenderProgram.compile[Int, Int](model =>
+                         div(
+                           model.map(_.toString),
+                           component(definition, "static").render(1),
+                           model.map(_ => Vector(1, 2)).splitBy(identity) { (id, item) =>
+                             li(component(definition, s"row-$id").render(item))
+                           }
+                         )
+                       )
+                     )
+          kernel <- SessionKernel.start(config, logic(seen), program, Outbound(), environment)
+          _      <- kernel.submit(SessionCommand.Message(kernel.epoch, 1))
+          _      <- ZIO.succeed(visited.clear())
+          _      <- kernel.submit(SessionCommand.Message(kernel.epoch, 1))
+          root   <- kernel.inspect
+        yield assertTrue(
+          visited.isEmpty,
+          root.components.values.size == 3,
+          textValues(root.render.tree.root) == Vector("2", "1", "1", "2")
+        )
+      }
+    },
+    test("a component kept next to one whose props change keeps its committed render") {
+      ZIO.scoped {
+        val events     = ConcurrentLinkedQueue[String]()
+        val definition = componentDefinition(events)
+        def named(state: Committed[Int, Int], name: String) =
+          state.components.values.find(_.key.applicationId == name).get
+        for
+          seen    <- Ref.make(Vector.empty[Int])
+          program <- ZIO.fromEither(
+                       RenderProgram.compile[Int, Int](model =>
+                         div(
+                           component(definition, "kept").render(1),
+                           component(definition, "changed").render(model)
+                         )
+                       )
+                     )
+          kernel <- SessionKernel.start(config, logic(seen), program, Outbound(), FakeEnvironment(events))
+          before <- kernel.inspect
+          _      <- ZIO.succeed(events.clear())
+          _      <- kernel.submit(SessionCommand.Message(kernel.epoch, 5))
+          after  <- kernel.inspect
+          turnEvents = events.asScala.toVector
+        yield assertTrue(
+          named(after, "kept").render eq named(before, "kept").render,
+          named(after, "changed").props == 5,
+          turnEvents == Vector("update", "after-render"),
+          textValues(after.render.tree.root) == Vector("1", "0")
+        )
+      }
+    },
+    test("a turn that declares a kept component's identity again fails and keeps the committed state") {
+      ZIO.scoped {
+        val events     = ConcurrentLinkedQueue[String]()
+        val definition = componentDefinition(events)
+        for
+          seen    <- Ref.make(Vector.empty[Int])
+          program <- ZIO.fromEither(
+                       RenderProgram.compile[Int, Int](model =>
+                         div(
+                           component(definition, "same").render(1),
+                           model.map(_ > 0).when(span(component(definition, "same").render(2)))
+                         )
+                       )
+                     )
+          kernel <- SessionKernel.start(config, logic(seen), program, Outbound(), FakeEnvironment(events))
+          before <- kernel.inspect
+          failed <- kernel.submit(SessionCommand.Message(kernel.epoch, 1)).either
+        yield assertTrue(
+          failed.left.exists {
+            case SessionRejection.SessionFailed(SessionFailure.StageFailed(_, details)) =>
+              details.prettyPrint.contains("duplicate component identity 'same'")
+            case _ => false
+          },
+          before.components.values.map(_.props) == Vector(1)
+        )
+      }
+    },
+    test("a component the root stops declaring moves into a component declaring it") {
+      ZIO.scoped {
+        val events     = ConcurrentLinkedQueue[String]()
+        val moving     = component(componentDefinition(events), "moving")
+        val holder = new LiveComponent[Int, Int, Int]:
+          def mount(props: Int, ctx: MountContext) = ZIO.succeed(props)
+          def handleMessage(props: Int, model: Int, ctx: MessageContext) = message =>
+            ZIO.succeed(model + message)
+          def view(props: Signal[Int], model: Signal[Int]) = div(moving.render(1))
+        for
+          seen    <- Ref.make(Vector.empty[Int])
+          program <- ZIO.fromEither(
+                       RenderProgram.compile[Int, Int](model =>
+                         div(
+                           model.map(_ == 0).when(moving.render(1)),
+                           model.map(_ > 0).when(component(holder, "holder").render(1))
+                         )
+                       )
+                     )
+          kernel <- SessionKernel.start(config, logic(seen), program, Outbound(), FakeEnvironment(events))
+          before <- kernel.inspect
+          movingId = before.components.values.head.id
+          _     <- kernel.submitComponent(movingId, 4)
+          _     <- kernel.submit(SessionCommand.Message(kernel.epoch, 1))
+          after <- kernel.inspect
+          holderId = after.components.values.find(_.key.applicationId == "holder").map(_.id)
+          moved    = after.components.get(movingId)
+        yield assertTrue(
+          moved.exists(_.parent == holderId),
+          moved.exists(_.model == 5),
+          after.components.values.map(_.key.applicationId) == Vector("holder", "moving"),
+          textValues(after.render.tree.root) == Vector("5")
+        )
+      }
+    },
+    test("components render again when the render state they read changes, and only then") {
+      ZIO.scoped {
+        val events     = ConcurrentLinkedQueue[String]()
+        val notice     = FlashKind("notice")
+        def stateOf(model: Int) =
+          RenderState(Map(notice.key -> FlashValue(s"flash ${model / 10}", 0)))
+        val environment = new FakeEnvironment(events):
+          override def renderState(
+            id: ComponentInstanceId,
+            draft: TurnDraft[Int, Int],
+            state: ComponentEnvironmentState
+          ) = stateOf(draft.model)
+          override def sameRenderState(previous: Int, next: Int) =
+            stateOf(previous) == stateOf(next)
+        val definition = componentDefinition(events)
+        def afterRenders = events.iterator().asScala.count(_ == "after-render")
+        for
+          seen    <- Ref.make(Vector.empty[Int])
+          program <- ZIO.fromEither(
+                       RenderProgram.compile[Int, Int](model =>
+                         div(model.map(_.toString), component(definition, "reader").render(1))
+                       )
+                     )
+          kernel  <- SessionKernel.start(config, logic(seen), program, Outbound(), environment)
+          mounted  = afterRenders
+          _       <- kernel.submit(SessionCommand.Message(kernel.epoch, 1))
+          same     = afterRenders
+          _       <- kernel.submit(SessionCommand.Message(kernel.epoch, 10))
+          changed  = afterRenders
+          _       <- kernel.submit(SessionCommand.Message(kernel.epoch, 1))
+          again    = afterRenders
+        yield assertTrue(mounted == 1, same == 1, changed == 2, again == 2)
+      }
+    },
     test("a root turn keeps the rows of a collection that hold components") {
       ZIO.scoped {
         val events     = ConcurrentLinkedQueue[String]()
@@ -457,6 +621,7 @@ object ComponentKernelSpec extends ZIOSpecDefault:
             state: ComponentEnvironmentState
           ) =
             RenderState(if draft.model == 1 then Map(notice.key -> FlashValue("candidate flash", 0)) else Map.empty)
+          override def sameRenderState(previous: Int, next: Int) = (previous == 1) == (next == 1)
           override def message[P, M, A, O](id: ComponentInstanceId, component: LiveComponent[P, M, A], props: P, model: A, value: M, emit: O => Task[Unit], state: ComponentEnvironmentState, draft: TurnDraft[Int, Int]) =
             ZIO.succeed(ComponentCallbackResult(model, draft.copy(model = 1), state))
         for

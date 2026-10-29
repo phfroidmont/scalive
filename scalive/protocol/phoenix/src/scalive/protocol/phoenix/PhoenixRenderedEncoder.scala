@@ -656,7 +656,7 @@ private[scalive] object PhoenixRenderedEncoder:
 
     private def digits(value: Int): Int = value.toString.length
 
-    // The length of `text` as a JSON string, quotes included.
+    // The length in UTF-8 bytes of `text` as a JSON string, quotes included.
     private def jsonLength(text: String): Int =
       var length = 2
       var index  = 0
@@ -667,7 +667,11 @@ private[scalive] object PhoenixRenderedEncoder:
              char == '\b' || char == '\f'
            then 2
            else if char < ' ' then 6
-           else 1)
+           else if char < 0x80 then 1
+           else if char < 0x800 then 2
+           // Each half of a surrogate pair, which takes 4 bytes.
+           else if char.isSurrogate then 2
+           else 3)
         index += 1
       length
   end MergedTemplate

@@ -6,32 +6,34 @@ import scalive.*
   * encoder sends with one shared template.
   */
 class KeyDerivedRowsLiveView
-    extends LiveView[KeyDerivedRowsLiveView.Msg, Vector[KeyDerivedRowsLiveView.Row]]:
+    extends LiveView[KeyDerivedRowsLiveView.Msg, Vector[KeyDerivedRowsLiveView.Entry]]:
   import KeyDerivedRowsLiveView.*
 
-  def mount(ctx: MountContext) = ZIO.succeed(rows("a", "b", "c"))
+  def mount(ctx: MountContext) = ZIO.succeed(entries("a", "b", "c"))
 
-  def handleMessage(model: Vector[Row], ctx: MessageContext) =
-    case Msg.Add    => ZIO.succeed(model ++ rows("d", "e", "f"))
+  def handleMessage(model: Vector[Entry], ctx: MessageContext) =
+    case Msg.Add    => ZIO.succeed(model ++ entries("d", "e", "f"))
     case Msg.Rename =>
-      ZIO.succeed(model.map(row => if row.key == "b" then row.copy(label = "renamed") else row))
+      ZIO.succeed(
+        model.map(entry => if entry.key == "b" then entry.copy(label = "renamed") else entry)
+      )
     case Msg.Finish =>
-      ZIO.succeed(model.map(row => if row.key == "e" then row.copy(done = true) else row))
+      ZIO.succeed(model.map(entry => if entry.key == "e" then entry.copy(done = true) else entry))
 
-  override def view(model: Signal[Vector[Row]]) =
+  override def view(model: Signal[Vector[Entry]]) =
     div(
       button(idAttr := "add", on.click(Msg.Add), "Add"),
       button(idAttr := "rename", on.click(Msg.Rename), "Rename"),
       button(idAttr := "finish", on.click(Msg.Finish), "Finish"),
       ul(
         idAttr := "rows",
-        model.splitBy(_.key)((key, row) =>
+        model.splitBy(_.key)((key, entry) =>
           li(
             idAttr          := s"row-$key",
             dataAttr("key") := key,
             s"Row $key: ",
-            span(cls := "label", row.map(_.label)),
-            row
+            span(cls := "label", entry.map(_.label)),
+            entry
               .map(_.done).choose(
                 em(idAttr := s"done-$key", "done"),
                 em(idAttr := s"todo-$key", "todo")
@@ -43,9 +45,10 @@ class KeyDerivedRowsLiveView
 end KeyDerivedRowsLiveView
 
 object KeyDerivedRowsLiveView:
-  final case class Row(key: String, label: String, done: Boolean)
+  final case class Entry(key: String, label: String, done: Boolean)
 
   enum Msg:
     case Add, Rename, Finish
 
-  private def rows(keys: String*): Vector[Row] = keys.toVector.map(Row(_, "ready", done = false))
+  private def entries(keys: String*): Vector[Entry] =
+    keys.toVector.map(Entry(_, "ready", done = false))

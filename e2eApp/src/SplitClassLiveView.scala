@@ -6,15 +6,20 @@ import scalive.*
 class SplitClassLiveView extends LiveView[SplitClassLiveView.Msg, SplitClassLiveView.Model]:
   import SplitClassLiveView.*
 
-  def mount(ctx: MountContext) = ZIO.succeed(Model(Vector(Row(1, selected = true)), active = false))
+  def mount(ctx: MountContext) =
+    ZIO.succeed(Model(Vector(Entry(1, selected = true)), active = false))
 
   def handleMessage(model: Model, ctx: MessageContext) =
     case Msg.Add =>
-      ZIO.succeed(model.copy(rows = model.rows :+ Row(model.rows.size + 1, selected = false)))
+      ZIO.succeed(
+        model.copy(entries = model.entries :+ Entry(model.entries.size + 1, selected = false))
+      )
     case Msg.Toggle(id) =>
       ZIO.succeed(
-        model.copy(rows =
-          model.rows.map(row => if row.id == id then row.copy(selected = !row.selected) else row)
+        model.copy(entries =
+          model.entries.map(entry =>
+            if entry.id == id then entry.copy(selected = !entry.selected) else entry
+          )
         )
       )
     case Msg.Activate => ZIO.succeed(model.copy(active = !model.active))
@@ -29,11 +34,11 @@ class SplitClassLiveView extends LiveView[SplitClassLiveView.Msg, SplitClassLive
         cls    := "banner"
       ),
       ul(
-        model.map(_.rows).splitBy(_.id) { (id, row) =>
+        model.map(_.entries).splitBy(_.id) { (id, entry) =>
           li(
             idAttr := s"row-$id",
             cls    := "card big",
-            cls    := row.map(row => if row.selected then "selected" else ""),
+            cls    := entry.map(entry => if entry.selected then "selected" else ""),
             button(idAttr := s"toggle-$id", on.click(Msg.Toggle(id)), "Toggle")
           )
         }
@@ -42,8 +47,8 @@ class SplitClassLiveView extends LiveView[SplitClassLiveView.Msg, SplitClassLive
 end SplitClassLiveView
 
 object SplitClassLiveView:
-  final case class Row(id: Int, selected: Boolean)
-  final case class Model(rows: Vector[Row], active: Boolean)
+  final case class Entry(id: Int, selected: Boolean)
+  final case class Model(entries: Vector[Entry], active: Boolean)
 
   enum Msg:
     case Add

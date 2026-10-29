@@ -45,6 +45,19 @@ Rows sharing one compiled template would remove about a third of it, and needs r
 receive their key as a signal; it is not done, see
 [ADR 0001](adr/0001-row-functions-receive-plain-keys.md).
 
+On the wire, rows share templates even so (#8). Text a row builds from its key, such as
+`idAttr := s"row-$key"`, lands in its statics, so rows used to share a template in the payload's
+`p` only when they rendered the same static text, and each such row sent its own. The encoder now
+groups the templates of a payload that have as many statics, keeps the text they all start and end
+with at each static they differ in, and sends what is left among each row's dynamics, as stream
+rows do. It does so only for a group that encodes shorter that way, and records which statics each
+row it sent received so, to number later diffs of that row as the browser does. The join payload
+of `InitialRenderBenchmark` at 1,000 rows went from 170,836 B to 80,153 B, for 0.7 KB more
+allocated per row while encoding it (10.3 to 11.0 KB before #9, 2026-10-29). Render memory is
+unchanged, as each row still compiles its own template, and so is the encoder's retained memory: a
+node holds how its statics were sent in the field that said whether they are its own, through
+instances its rows share.
+
 On the encoder side, the remaining 1,221 B are mostly parts vectors (about 390 B), 8
 `ProjectedNode` (256 B) and 5 branch summaries (280 B). Two smaller savings were measured and not
 done:
@@ -66,7 +79,7 @@ A first render allocates per row, in `InitialRenderBenchmark`:
 | Step | Allocated per row |
 |---|---|
 | Evaluation | 11.2 KB (15.1 KB before #5 and #6) |
-| Initial Phoenix payload | 10.3 KB |
+| Initial Phoenix payload | 9.4 KB (10.3 KB before #8 and #9) |
 | Disconnected HTML | 7.5 KB |
 
 This is garbage, not retained memory: it matters for mount latency and GC pressure when many

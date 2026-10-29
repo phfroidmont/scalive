@@ -4,6 +4,8 @@ import scala.collection.mutable
 import scala.util.boundary
 import scala.util.boundary.break
 
+import zio.Chunk
+import zio.ChunkBuilder
 import zio.json.ast.Json
 
 import scalive.ComponentTarget
@@ -139,15 +141,28 @@ private[scalive] object PhoenixRenderedEncoder:
     final case class Stream(value: ProjectedStream) extends ProjectedPart
     final case class StreamDomId(value: String)     extends ProjectedPart
 
-  /** A projected node, which is itself a part of its parent in the same program. One with
-    * `ownStatics` is sent within its parent as a nested rendered object with statics of its own, so
-    * replacing it resends that object and nothing around it.
+  /** How a node's statics are sent. One with `own` statics is sent within its parent as a nested
+    * rendered object, so replacing it resends that object and nothing around it. `lifted` holds the
+    * positions of the statics the browser received among the dynamics of the node's rendered
+    * object, when it shares its template with others that differ in them.
+    *
+    * Nodes share these instances, so that a node holds one field for both.
     */
+  final private[phoenix] case class NodeStatics(own: Boolean, lifted: Vector[Int])
+
+  private[phoenix] object NodeStatics:
+    val Inline: NodeStatics = NodeStatics(own = false, Vector.empty)
+    val Own: NodeStatics    = NodeStatics(own = true, Vector.empty)
+
+  /** A projected node, which is itself a part of its parent in the same program. */
   final private[phoenix] case class ProjectedNode(
     id: TemplateId,
     parts: Vector[ProjectedPart],
-    ownStatics: Boolean = false)
+    statics: NodeStatics = NodeStatics.Inline)
       extends ProjectedPart:
+    private[phoenix] def ownStatics: Boolean = statics.own
+    private[phoenix] def lifted: Vector[Int] = statics.lifted
+
     // Computed once per instance. An update copies only the nodes on the path to what it changes,
     // so the summaries of everything else carry over. A leaf, which holds nothing but statics and
     // dynamics, as a text does, shares one summary and reads what it holds from its few parts, so
@@ -409,7 +424,9 @@ private[scalive] object PhoenixRenderedEncoder:
     // The CIDs the render reaches. The other components wait for the browser to destroy them.
     active: Set[Int],
     // The statics the payload sent each stream, which the state then records as sent.
-    val sentStatics: SentStatics = SentStatics()):
+    val sentStatics: SentStatics = SentStatics(),
+    // How the payload sent the statics of each rendered object it sent in full.
+    val sentLifts: SentLifts = SentLifts()):
     /** These components, recording nothing as sent, for rows flattened only to shape statics. */
     def unsent: Components = Components(all, active)
 
@@ -434,18 +451,226 @@ private[scalive] object PhoenixRenderedEncoder:
 
   final private class SentStatics extends java.util.IdentityHashMap[ProjectedStream, StreamStatics]
 
-  /** The statics of the nested templates in one comprehension, sent once as its `p`. */
+  /** How a payload sent the statics of each rendered object it sent in full. */
+  final private class SentLifts extends java.util.IdentityHashMap[ProjectedNode, NodeStatics]
+
+  /** The statics of the nested templates in one comprehension, sent once as its `p`.
+    *
+    * Templates with as many statics that differ only in some of them, such as rows that put their
+    * key in an attribute, are sent as one when that is shorter: each rendered object sends the text
+    * its template differs in among its dynamics, as stream rows do, so the browser renders the same
+    * HTML.
+    */
   final private class TemplateTable:
     private val indexes = mutable.LinkedHashMap.empty[Vector[String], Int]
+    // The rendered objects that refer to a template, and the template each refers to.
+    private val users     = mutable.ArrayBuffer.empty[ProjectedNode]
+    private val userIndex = mutable.ArrayBuilder.ofInt()
 
-    def reference(statics: Vector[String]): Int = indexes.getOrElseUpdate(statics, indexes.size)
+    def reference(node: ProjectedNode, statics: Vector[String]): Int =
+      val index = indexes.getOrElseUpdate(statics, indexes.size)
+      users += node
+      userIndex += index
+      index
 
-    def toJson: Option[Json.Obj] =
-      if indexes.isEmpty then None
+    /** `payload`, which refers to this table, with its `p`. Records in `lifts` how it sent the
+      * statics of each rendered object it holds.
+      */
+    def share(payload: Json.Obj, lifts: SentLifts): Json.Obj =
+      if indexes.isEmpty then payload
       else
-        Some(Json.Obj(indexes.toVector.map { case (statics, index) =>
+        val templates = indexes.keys.toVector
+        val used      = userIndex.result()
+        val useCounts = Array.ofDim[Int](templates.length)
+        used.foreach(index => useCounts(index) += 1)
+        val merges = Array.fill(templates.length)(Option.empty[MergedTemplate])
+        templates.indices.groupBy(templates(_).length).valuesIterator.foreach { group =>
+          if group.length > 1 then
+            MergedTemplate.of(group.toVector, templates, useCounts).foreach { merged =>
+              group.foreach(index => merges(index) = Some(merged))
+            }
+        }
+        users.indices.foreach { user =>
+          val node    = users(user)
+          val statics = merges(used(user)) match
+            case Some(merged) => merged.nodeStatics(node.ownStatics)
+            case None         => if node.ownStatics then NodeStatics.Own else NodeStatics.Inline
+          lifts.put(node, statics): Unit
+        }
+        val reshaped =
+          if merges.forall(_.isEmpty) then payload
+          else reshape(payload, templates, merges).asInstanceOf[Json.Obj]
+        val entries = templates.indices.flatMap { index =>
+          merges(index) match
+            case None                                  => Some(index -> templates(index))
+            case Some(merged) if merged.index == index => Some(index -> merged.statics)
+            case Some(_)                               => None
+        }
+        val table = Json.Obj(entries.map { (index, statics) =>
           index.toString -> Json.Arr(statics.map(Json.Str(_))*)
-        }*))
+        }*)
+        Json.Obj(reshaped.fields :+ ("p" -> table))
+  end TemplateTable
+
+  /** `json` with each rendered object whose template was merged referring to the merged one. */
+  private def reshape(
+    json: Json,
+    templates: Vector[Vector[String]],
+    merges: Array[Option[MergedTemplate]]
+  ): Json = json match
+    case obj: Json.Obj =>
+      // Null until a value changes, so that what is kept is not copied.
+      var changed: Array[(String, Json)] = null
+      val fields                         = obj.fields
+      var index                          = 0
+      while index < fields.length do
+        val (key, value) = fields(index)
+        val next         = reshape(value, templates, merges)
+        if !(next eq value) then
+          if changed == null then changed = fields.toArray
+          changed(index) = key -> next
+        index += 1
+      val current = if changed == null then fields else Chunk.fromArray(changed)
+      current.headOption match
+        // A rendered object sent in full: its statics, then its dynamics in order.
+        case Some(("s", Json.Num(value))) if merges(value.intValue).nonEmpty =>
+          val template = value.intValue
+          Json.Obj(merges(template).get.shape(templates(template), current))
+        case _ => if changed == null then obj else Json.Obj(current)
+    case array: Json.Arr =>
+      val elements = array.elements
+      val mapped   = elements.map(reshape(_, templates, merges))
+      if elements.indices.exists(index => !(mapped(index) eq elements(index))) then Json.Arr(mapped)
+      else array
+    case other => other
+
+  /** A static that merged templates differ in, sharing `prefix` characters before the text they
+    * differ in and `suffix` characters after it.
+    */
+  final private case class Hole(position: Int, prefix: Int, suffix: Int):
+    def text(statics: Vector[String]): String =
+      val value = statics(position)
+      value.substring(prefix, value.length - suffix)
+
+  /** Templates sent as the one at `index`, whose `statics` have a hole where they differ. `lifted`
+    * holds the positions of the holes, which every rendered object of these templates sends among
+    * its dynamics.
+    */
+  final private case class MergedTemplate(
+    index: Int,
+    statics: Vector[String],
+    holes: Vector[Hole],
+    lifted: Vector[Int]):
+    private val reference = "s" -> Json.Num(index)
+    private val inline    = NodeStatics(own = false, lifted)
+    private val own       = NodeStatics(own = true, lifted)
+
+    /** How a node sends its statics with this template, shared by the nodes that do. */
+    def nodeStatics(ownStatics: Boolean): NodeStatics = if ownStatics then own else inline
+
+    /** The fields of a rendered object of `statics`, sent in full as `fields`, with this template.
+      */
+    def shape(statics: Vector[String], fields: Chunk[(String, Json)]): Chunk[(String, Json)] =
+      val shaped = ChunkBuilder.make[(String, Json)](fields.length + holes.length)
+      shaped += reference
+      var hole = 0
+      var key  = 0
+      statics.indices.foreach { position =>
+        if hole < holes.length && holes(hole).position == position then
+          shaped += key.toString -> Json.Str(holes(hole).text(statics))
+          hole += 1
+          key += 1
+        if position < statics.length - 1 then
+          // The dynamics before the first hole keep their keys.
+          val field = fields(position + 1)
+          shaped += (if hole == 0 then field else key.toString -> field._2)
+          key += 1
+      }
+      shaped.result()
+  end MergedTemplate
+
+  private object MergedTemplate:
+    /** The templates at `group`, which have as many statics, merged into one, or None when sending
+      * them apart is shorter.
+      */
+    def of(
+      group: Vector[Int],
+      templates: Vector[Vector[String]],
+      useCounts: Array[Int]
+    ): Option[MergedTemplate] =
+      val first = templates(group.head)
+      val holes = first.indices.flatMap { position =>
+        val values = group.map(templates(_)(position))
+        Option.when(values.exists(_ != values.head))(hole(position, values))
+      }.toVector
+      val statics = Vector.newBuilder[String]
+      val current = StringBuilder()
+      var next    = 0
+      first.indices.foreach { position =>
+        val value = first(position)
+        if next < holes.length && holes(next).position == position then
+          val hole = holes(next)
+          current.append(value.substring(0, hole.prefix))
+          statics += current.result()
+          current.clear()
+          current.append(value.substring(value.length - hole.suffix))
+          next += 1
+        else current.append(value)
+        if position < first.length - 1 then
+          statics += current.result()
+          current.clear()
+      }
+      statics += current.result()
+      val merged = MergedTemplate(group.head, statics.result(), holes, holes.map(_.position))
+
+      val apart = group.map(index => entryLength(index, templates(index))).sum
+      // Each hole adds a dynamic, after those the rendered object already sends.
+      val dynamics  = first.length - 1
+      val addedKeys = (dynamics until dynamics + holes.length).map(key => digits(key) + 4).sum
+      val lifted    = group.map { index =>
+        val text = holes.map(hole => jsonLength(hole.text(templates(index)))).sum
+        useCounts(index) * (text + addedKeys)
+      }.sum
+      Option.when(entryLength(merged.index, merged.statics) + lifted < apart)(merged)
+    end of
+
+    /** A hole at `position`, keeping in the template what all of `values` start and end with. */
+    private def hole(position: Int, values: Vector[String]): Hole =
+      val shortest = values.map(_.length).min
+      var prefix   = 0
+      while prefix < shortest && values.forall(_.charAt(prefix) == values.head.charAt(prefix)) do
+        prefix += 1
+      var suffix                       = 0
+      def fromEnd(value: String): Char = value.charAt(value.length - 1 - suffix)
+      while prefix + suffix < shortest && values.forall(fromEnd(_) == fromEnd(values.head)) do
+        suffix += 1
+      // A hole never splits a surrogate pair, which JSON could not encode on either side of it.
+      if prefix > 0 && values.head.charAt(prefix - 1).isHighSurrogate then prefix -= 1
+      if suffix > 0 && values.head.charAt(values.head.length - suffix).isLowSurrogate then
+        suffix -= 1
+      Hole(position, prefix, suffix)
+
+    // The length of `"index":[statics],` in `p`.
+    private def entryLength(index: Int, statics: Vector[String]): Int =
+      digits(index) + 3 + 2 + statics.map(jsonLength).sum + statics.length - 1 + 1
+
+    private def digits(value: Int): Int = value.toString.length
+
+    // The length of `text` as a JSON string, quotes included.
+    private def jsonLength(text: String): Int =
+      var length = 2
+      var index  = 0
+      while index < text.length do
+        val char = text.charAt(index)
+        length +=
+          (if char == '"' || char == '\\' || char == '\n' || char == '\r' || char == '\t' ||
+             char == '\b' || char == '\f'
+           then 2
+           else if char < ' ' then 6
+           else 1)
+        index += 1
+      length
+  end MergedTemplate
 
   final private class ProjectionContext(
     state: Option[PhoenixRenderedState],
@@ -528,9 +753,9 @@ private[scalive] object PhoenixRenderedEncoder:
     for
       root  <- project(tree.root, None, context)
       state <- finish(root, context, validate = true, None)
-      sentStatics = SentStatics()
-      json <- fullPayload(state, sentStatics)
-    yield clearPending(None, state, context.changedCids, sentStatics) -> json
+      sent = Components(state.components, state.activeCids)
+      json <- fullPayload(state, sent)
+    yield clearPending(None, state, context.changedCids, sent) -> json
 
   /** Projects a disconnected render with fresh connection-local CIDs and inlines components. */
   private[scalive] def fullHtml(
@@ -541,8 +766,9 @@ private[scalive] object PhoenixRenderedEncoder:
     for
       root  <- project(tree.root, None, context)
       state <- finish(root, context, validate = true, None)
-      html  <- renderHtml(state.root, Components(state.components, state.activeCids))
-    yield clearPending(None, state, context.changedCids, SentStatics()) -> html
+      components = Components(state.components, state.activeCids)
+      html <- renderHtml(state.root, components)
+    yield clearPending(None, state, context.changedCids, components) -> html
 
   def update(
     state: PhoenixRenderedState,
@@ -554,20 +780,20 @@ private[scalive] object PhoenixRenderedEncoder:
       for
         root <- project(tree.root, None, context)
         next <- finish(root, context, validate = true, Some(state))
-        sentStatics = SentStatics()
-        json <- fullPayload(next, sentStatics)
-      yield clearPending(Some(state), next, context.changedCids, sentStatics) -> json
+        sent = Components(next.components, next.activeCids)
+        json <- fullPayload(next, sent)
+      yield clearPending(None, next, next.activeCids, sent) -> json
 
     case update: RenderDelta.Update =>
-      val context     = ProjectionContext(Some(state))
-      val sentStatics = SentStatics()
+      val context = ProjectionContext(Some(state))
       for
         result <- applyDelta(state.root, update, None, context)
         // A sparse update changes only what its diff reaches, which the differ derives from the
         // validated tree it follows; the whole graph is validated again when it is resent.
         next <- finish(result.root, context, validate = result.structural, Some(state))
+        sent = Components(next.components, next.activeCids)
         json <-
-          if result.structural then fullPayload(next, sentStatics)
+          if result.structural then fullPayload(next, sent)
           else
             val fullDiffCids = result.changedComponents ++ context.allocatedCids
             val pendingDiffs = fullDiffCids.iterator.map(_ -> Option.empty[SparseChanges]).toMap ++
@@ -575,8 +801,11 @@ private[scalive] object PhoenixRenderedEncoder:
             val diffs = pendingDiffs.map { case (cid, changes) =>
               if state.pendingDeletionCids.contains(cid) then cid -> None else cid -> changes
             }
-            sparsePayload(state, next, result.changes, diffs, sentStatics)
-      yield clearPending(Some(state), next, context.changedCids, sentStatics) -> json
+            sparsePayload(state, next, result.changes, diffs, sent)
+      yield
+        // A full payload sends every node again, so each is marked as sent anew.
+        if result.structural then clearPending(None, next, next.activeCids, sent) -> json
+        else clearPending(Some(state), next, context.changedCids, sent)           -> json
 
   private[scalive] def html(state: PhoenixRenderedState): Either[PhoenixEncodingError, String] =
     renderHtml(state.root, Components(state.components, state.activeCids))
@@ -591,15 +820,23 @@ private[scalive] object PhoenixRenderedEncoder:
     previous: Option[PhoenixRenderedState],
     state: PhoenixRenderedState,
     changedCids: Iterable[Int],
-    sentStatics: SentStatics
+    sent: Components
   ): PhoenixRenderedState =
-    // Records the stream statics the client now holds, so the next diff can tell if they changed.
-    // What has nothing to clear keeps its instance, and with it its summary.
+    val sentStatics = sent.sentStatics
+    val sentLifts   = sent.sentLifts
+
+    // Records the stream statics and lifted statics the client now holds, so the next diff can
+    // tell if they changed and number its dynamics as the client does. What has nothing to clear
+    // keeps its instance, and with it its summary.
     def clearNode(node: ProjectedNode, previous: Option[ProjectedNode]): ProjectedNode =
-      if previous.exists(_ eq node) then node
+      val statics = sentLifts.get(node)
+      if statics == null && previous.exists(_ eq node) then node
       else
-        val previousParts = previous.map(_.parts).filter(_.length == node.parts.length)
-        val parts         = mapKeepingInstances(node.parts) { (part, position) =>
+        // Everything in a node sent in full was sent in full, kept instances included.
+        val previousParts =
+          if statics != null then None
+          else previous.map(_.parts).filter(_.length == node.parts.length)
+        val parts = mapKeepingInstances(node.parts) { (part, position) =>
           val previousPart = previousParts.map(_(position))
           part match
             case child: ProjectedNode =>
@@ -652,7 +889,11 @@ private[scalive] object PhoenixRenderedEncoder:
             case part => part
           end match
         }
-        if parts eq node.parts then node else node.copy(parts = parts)
+        val cleared = if parts eq node.parts then node else node.copy(parts = parts)
+        if statics == null || (statics eq cleared.statics) then cleared
+        else cleared.copy(statics = statics)
+      end if
+    end clearNode
 
     // Rows mostly keep their positions, so a row's previous instance is looked up by position
     // first, and by key only when the rows moved.
@@ -774,11 +1015,11 @@ private[scalive] object PhoenixRenderedEncoder:
     // What can take another shape has statics of its own, as a Phoenix conditional does.
     case flash: EvaluatedNode.Flash =>
       traverse(flash.child.toVector)(child => project(child, None, context)).map(children =>
-        ProjectedNode(flash.id, children, ownStatics = true)
+        ProjectedNode(flash.id, children, statics = NodeStatics.Own)
       )
     case choice: EvaluatedNode.Choice =>
       traverse(choice.children)(child => project(child, None, context)).map(children =>
-        ProjectedNode(choice.id, children, ownStatics = true)
+        ProjectedNode(choice.id, children, statics = NodeStatics.Own)
       )
     case keyed: EvaluatedNode.Keyed =>
       traverse(keyed.rows)(row =>
@@ -837,7 +1078,7 @@ private[scalive] object PhoenixRenderedEncoder:
               Vector(ProjectedPart.Static(opening.result())) ++
                 children.map(ProjectedPart.Nested(_)) :+
                 ProjectedPart.Static("</div>"),
-              ownStatics = true
+              statics = NodeStatics.Own
             )
           }
     case stream: EvaluatedNode.Stream =>
@@ -1542,9 +1783,8 @@ private[scalive] object PhoenixRenderedEncoder:
 
   private def fullPayload(
     state: PhoenixRenderedState,
-    sentStatics: SentStatics
+    active: Components
   ): Either[PhoenixEncodingError, Json.Obj] =
-    val active = Components(state.components, state.activeCids, sentStatics)
     rendered(state.root, active, None, None).flatMap { root =>
       if active.isEmpty then Right(root)
       else componentObject(active, state.activeCids).map(value => root.add("c", value))
@@ -1555,9 +1795,8 @@ private[scalive] object PhoenixRenderedEncoder:
     state: PhoenixRenderedState,
     changed: SparseChanges,
     changedComponents: Map[Int, Option[SparseChanges]],
-    sentStatics: SentStatics
+    active: Components
   ): Either[PhoenixEncodingError, Json.Obj] =
-    val active        = Components(state.components, state.activeCids, sentStatics)
     val activeChanges = changedComponents.view.filterKeys(state.activeCids.contains).toMap
     rendered(state.root, active, Some(changed), None, Some(previous.root)).flatMap { root =>
       val touches =
@@ -1636,15 +1875,27 @@ private[scalive] object PhoenixRenderedEncoder:
     changes match
       case Some(sparseChanges) =>
         changedDynamics(root, previous, components, sparseChanges, templates)
-          .map(sent => Json.Obj(sent*))
+          .map(sent => Json.Obj(liftedKeys(root.lifted, sent)*))
       case None =>
         flatten(root, components, templates).map { case (statics, dynamics) =>
           val encodedStatics = templates match
-            case Some(table) => Json.Num(table.reference(statics))
+            case Some(table) => Json.Num(table.reference(root, statics))
             case None        => Json.Arr(statics.map(Json.Str(_))*)
           val sent = dynamics.zipWithIndex.map((value, index) => index.toString -> value)
           Json.Obj((("s" -> encodedStatics) +: sent)*)
         }
+
+  /** The dynamics of `sent`, by index, numbered as the browser holds them: after each of the
+    * `lifted` statics it received among them.
+    */
+  private def liftedKeys(lifted: Vector[Int], sent: Vector[(String, Json)])
+    : Vector[(String, Json)] =
+    if lifted.isEmpty then sent
+    else
+      sent.map { (key, value) =>
+        val index = key.toInt
+        (index + lifted.count(_ <= index)).toString -> value
+      }
 
   /** Splits `root` into its statics and dynamics. A node with statics of its own is one dynamic: a
     * nested rendered object.
@@ -1867,7 +2118,7 @@ private[scalive] object PhoenixRenderedEncoder:
                         Vector("s" -> Json.Arr(Json.Str(""), Json.Str("")))
                       else Vector.empty) :+
           ("k" -> Json.Obj(keyedFields*))
-        Json.Obj((fields ++ sharedTemplates(templates, table))*)
+        sharingTemplates(templates, table, components, Json.Obj(fields*))
       }
     end if
   end keyedJson
@@ -1929,7 +2180,7 @@ private[scalive] object PhoenixRenderedEncoder:
           (if includeStatics then Vector("s" -> Json.Arr(statics.values.map(Json.Str(_))*))
            else Vector.empty) ++
             Vector("k" -> Json.Obj(keyedFields*), "stream" -> metadata)
-        Json.Obj((fields ++ sharedTemplates(templates, table))*)
+        sharingTemplates(templates, table, components, Json.Obj(fields*))
   end streamJson
 
   /** The statics the rows of `stream` share before a payload adds the rows it sends: those the
@@ -1966,11 +2217,13 @@ private[scalive] object PhoenixRenderedEncoder:
     )
 
   // Only the outermost comprehension sends the table: the browser ignores a nested one's.
-  private def sharedTemplates(
+  private def sharingTemplates(
     inherited: Option[TemplateTable],
-    table: TemplateTable
-  ): Vector[(String, Json)] =
-    if inherited.nonEmpty then Vector.empty else table.toJson.map("p" -> _).toVector
+    table: TemplateTable,
+    components: Components,
+    payload: Json.Obj
+  ): Json.Obj =
+    if inherited.nonEmpty then payload else table.share(payload, components.sentLifts)
 
   // A row the update kept as it was, holding no component the diff has to reach, did not change.
   private def keptRow(row: ProjectedNode, kept: Boolean, changes: SparseChanges): Boolean =

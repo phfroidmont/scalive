@@ -104,9 +104,11 @@ class HtmlAttr[V](val name: String, val codec: Encoder[V, String]):
 /** A space-separated token attribute whose repeated modifiers contribute to one rendered value.
   *
   * Static values, signals, optional signals, and attribute modifiers selected by `choose` are split
-  * on HTML ASCII whitespace. Empty tokens are discarded, exact duplicate tokens retain their first
-  * position, and the attribute is omitted when no tokens remain. Ordinary [[HtmlAttr]] definitions
-  * remain scalar rather than composing.
+  * on HTML ASCII whitespace and empty tokens are discarded. The tokens of static values come first,
+  * in encounter order, followed by the tokens of signals, optional signals, and `choose`, in
+  * encounter order. A token that already appeared is dropped, and the attribute is omitted when no
+  * tokens remain. Static tokens stay in the page template, so an update sends only the others.
+  * Ordinary [[HtmlAttr]] definitions remain scalar rather than composing.
   */
 final class CompositeHtmlAttr(name: String) extends HtmlAttr[String](name, StringAsIsEncoder):
   /** Adds the whitespace-separated tokens of `value` to the attribute.

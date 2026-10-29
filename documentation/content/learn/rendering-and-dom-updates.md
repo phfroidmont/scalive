@@ -189,6 +189,13 @@ dynamic text, attributes, or staged subtrees produce updates for those positions
 rather than replacing the whole document. This normally preserves unaffected
 DOM nodes and their browser state.
 
+A token-list attribute such as `class` that mixes static and signal values,
+as in `cls := "card", cls := selected.map(...)`, keeps its static tokens in the
+page and updates only its dynamic ones. Static tokens therefore come first in
+the rendered value, as
+[composing token-list attributes](../guides/html-dsl-and-event-bindings.md#compose-token-list-attributes)
+describes.
+
 The diff encoding and generated binding identifiers are framework details.
 Application code should depend on models, messages, and rendered structure, not
 on a particular wire payload. See

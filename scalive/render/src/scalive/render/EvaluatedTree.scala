@@ -19,6 +19,12 @@ import scalive.streams.StreamLimit
 /** The semantic value of an evaluated HTML attribute before serialization. */
 enum AttributeValue:
   case Text(value: String)
+
+  /** A composite attribute's text: its static tokens, which stay in the template, then its dynamic
+    * tokens, which the attribute's slot carries. `static` is never empty; `dynamic` is empty when
+    * no dynamic token remains.
+    */
+  case Composite(static: String, dynamic: String)
   case Presence
   case ComponentTarget(ref: ComponentRef[Any])
 

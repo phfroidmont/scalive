@@ -562,6 +562,15 @@ object RenderProgram:
         extends AttributeTemplate[Nothing]
     final case class Composite(name: String, slot: TemplateSlotId, parts: Vector[CompositePart])
         extends AttributeTemplate[Nothing]
+    // The static tokens stay in the template, so the slot carries only the dynamic parts' tokens.
+    final case class SplitComposite(
+      name: String,
+      staticTokens: Vector[String],
+      slot: TemplateSlotId,
+      dynamicParts: Vector[CompositePart])
+        extends AttributeTemplate[Nothing]:
+      val static: String         = staticTokens.mkString(" ")
+      val staticSet: Set[String] = staticTokens.toSet
     final case class Binding[Msg](
       name: String,
       valueSlot: TemplateSlotId,
@@ -964,13 +973,21 @@ object RenderProgram:
       name: String,
       parts: Vector[CompositePart]
     ): Either[RenderError, AttributeTemplate[Nothing]] =
-      if parts.forall(!_.dynamic) then
-        val tokens = parts.flatMap {
-          case CompositePart.Static(tokens) => tokens
-          case _                            => Vector.empty
-        }
-        Right(AttributeTemplate.Static(name, compositeAttributeValue(tokens)))
-      else allocator.slot().map(slot => AttributeTemplate.Composite(name, slot, parts))
+      val staticTokens = parts.flatMap {
+        case CompositePart.Static(tokens) => tokens
+        case _                            => Vector.empty
+      }.distinct
+      val dynamicParts = parts.filter(_.dynamic)
+      if dynamicParts.isEmpty then
+        Right(AttributeTemplate.Static(name, compositeAttributeValue(staticTokens)))
+      // Without static tokens the whole attribute is one slot, so that it can be omitted when empty.
+      else if staticTokens.isEmpty then
+        allocator.slot().map(slot => AttributeTemplate.Composite(name, slot, dynamicParts))
+      else
+        allocator
+          .slot().map(slot =>
+            AttributeTemplate.SplitComposite(name, staticTokens, slot, dynamicParts)
+          )
 
     private def compileContent[Msg](
       content: Mod.Content[Msg]
@@ -2943,6 +2960,11 @@ object RenderProgram:
       case Composite(name, slot, parts) =>
         traverse(parts)(part => evaluateCompositePart(name, part, transaction))
           .map(tokens => attribute(OptionalSlotId(slot), compositeAttributeValue(tokens.flatten)))
+      case split @ SplitComposite(name, _, slot, parts) =>
+        traverse(parts)(part => evaluateCompositePart(name, part, transaction)).map { tokens =>
+          val dynamic = tokens.flatten.filterNot(split.staticSet.contains).distinct.mkString(" ")
+          attribute(OptionalSlotId(slot), Some(AttributeValue.Composite(split.static, dynamic)))
+        }
       case Binding(name, valueSlot, id, operation) =>
         val resolvedId = resolveBindingId(name, id, formId)
         bindings

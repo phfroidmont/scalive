@@ -53,7 +53,10 @@ private[scalive] object DeadChangeBindings:
   private def describe(element: EvaluatedNode.Element): String =
     val attributes = Described.flatMap(name =>
       element.attributes.find(_.name == name).flatMap(_.value).collect {
-        case AttributeValue.Text(value) => s" $name=\"${Escaping.escape(value)}\""
+        case AttributeValue.Text(value)                => s" $name=\"${Escaping.escape(value)}\""
+        case AttributeValue.Composite(static, dynamic) =>
+          val value = if dynamic.isEmpty then static else s"$static $dynamic"
+          s" $name=\"${Escaping.escape(value)}\""
       }
     )
     s"<${element.tag}${attributes.mkString}>"

@@ -1889,6 +1889,170 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
         html == HtmlRenderer.render(second.tree)
       )
     },
+    test("keeps static composite tokens in the statics and sends only the dynamic ones") {
+      val compiled = RenderProgram.compile[String, Nothing] { model =>
+        div(cls := "card big", cls := model)
+      }
+
+      for
+        program <- ZIO.fromEither(compiled)
+        first   <- program.evaluate("selected")
+        initial <- ZIO.fromEither(PhoenixRenderedEncoder.initial(first.tree))
+        second  <- program.evaluate("", Some(first.commit))
+        cleared <- ZIO.fromEither(
+                     PhoenixRenderedEncoder.update(
+                       initial._1,
+                       TreeDiffer.diff(first.tree, second.tree)
+                     )
+                   )
+        third    <- program.evaluate("wide  tall", Some(second.commit))
+        widened  <- ZIO.fromEither(
+                      PhoenixRenderedEncoder.update(
+                        cleared._1,
+                        TreeDiffer.diff(second.tree, third.tree)
+                      )
+                    )
+        html <- ZIO.fromEither(PhoenixRenderedEncoder.html(widened._1))
+      yield assertTrue(
+        initial._2 == Json.Obj(
+          "s" -> Json.Arr(Json.Str("<div class=\"card big"), Json.Str("\"></div>")),
+          "0" -> Json.Str(" selected")
+        ),
+        cleared._2 == Json.Obj("0" -> Json.Str("")),
+        HtmlRenderer.render(second.tree) == "<div class=\"card big\"></div>",
+        widened._2 == Json.Obj("0" -> Json.Str(" wide tall")),
+        html == "<div class=\"card big wide tall\"></div>",
+        html == HtmlRenderer.render(third.tree)
+      )
+    },
+    test("renders the same composite tokens, static first, on the first and the live render") {
+      val compiled = RenderProgram.compile[String, Nothing] { model =>
+        div(
+          span(cls := "base", cls := model),
+          span(cls := model, cls := "base"),
+          span(cls := "a", cls := model, cls := " b  a"),
+          span(cls := model.map(_ => "x a"), cls := "a b"),
+          span(rel := model, rel := "next"),
+          span(role := model.map(_ => "switch"), role := "button")
+        )
+      }
+
+      for
+        program <- ZIO.fromEither(compiled)
+        first   <- program.evaluate("x")
+        initial <- ZIO.fromEither(PhoenixRenderedEncoder.initial(first.tree))
+      yield
+        val expected =
+          "<div><span class=\"base x\"></span><span class=\"base x\"></span>" +
+            "<span class=\"a b x\"></span><span class=\"a b x\"></span>" +
+            "<span rel=\"next x\"></span><span role=\"button switch\"></span></div>"
+        assertTrue(
+          HtmlRenderer.render(first.tree) == expected,
+          PhoenixClient.join(initial._2).html == expected
+        )
+    },
+    test("drops dynamic composite tokens that repeat a static or an earlier one") {
+      val compiled = RenderProgram.compile[String, Nothing] { model =>
+        div(cls := "card", cls := model, cls := model.map(_ => "card new"))
+      }
+
+      for
+        program <- ZIO.fromEither(compiled)
+        first   <- program.evaluate("card selected selected")
+        initial <- ZIO.fromEither(PhoenixRenderedEncoder.initial(first.tree))
+      yield assertTrue(
+        initial._2 == Json.Obj(
+          "s" -> Json.Arr(Json.Str("<div class=\"card"), Json.Str("\"></div>")),
+          "0" -> Json.Str(" selected new")
+        )
+      )
+    },
+    test("sends a composite choice's tokens through the slot of the static ones") {
+      val compiled = RenderProgram.compile[Boolean, Nothing] { selected =>
+        div(cls := "card", selected.choose(cls := "selected", cls := ""))
+      }
+
+      for
+        program <- ZIO.fromEither(compiled)
+        first   <- program.evaluate(true)
+        initial <- ZIO.fromEither(PhoenixRenderedEncoder.initial(first.tree))
+        second  <- program.evaluate(false, Some(first.commit))
+        updated <- ZIO.fromEither(
+                     PhoenixRenderedEncoder.update(
+                       initial._1,
+                       TreeDiffer.diff(first.tree, second.tree)
+                     )
+                   )
+      yield assertTrue(
+        initial._2 == Json.Obj(
+          "s" -> Json.Arr(Json.Str("<div class=\"card"), Json.Str("\"></div>")),
+          "0" -> Json.Str(" selected")
+        ),
+        updated._2 == Json.Obj("0" -> Json.Str(""))
+      )
+    },
+    test("omits a composite attribute with only dynamic parts when it has no tokens") {
+      val compiled = RenderProgram.compile[String, Nothing] { model =>
+        div(cls := "", cls := model, cls.optional(model.map(_ => None)))
+      }
+
+      for
+        program <- ZIO.fromEither(compiled)
+        first   <- program.evaluate("")
+        initial <- ZIO.fromEither(PhoenixRenderedEncoder.initial(first.tree))
+        second  <- program.evaluate("on", Some(first.commit))
+        updated <- ZIO.fromEither(
+                     PhoenixRenderedEncoder.update(
+                       initial._1,
+                       TreeDiffer.diff(first.tree, second.tree)
+                     )
+                   )
+      yield assertTrue(
+        initial._2 == Json.Obj(
+          "s" -> Json.Arr(Json.Str("<div"), Json.Str("></div>")),
+          "0" -> Json.Str("")
+        ),
+        updated._2 == Json.Obj("0" -> Json.Str(" class=\"on\""))
+      )
+    },
+    test("keyed rows with the same static classes share one template") {
+      val compiled = RenderProgram.compile[Vector[String], Nothing](items =>
+        ul(
+          items.splitBy(identity)((_, item) =>
+            li(cls := "row", cls := item.map(value => if value == "b" then "on" else ""), item)
+          )
+        )
+      )
+      val row = (classes: String, value: String) =>
+        Json.Obj("0" -> Json.Obj("s" -> Json.Num(0), "0" -> Json.Str(classes), "1" -> Json.Str(value)))
+
+      for
+        program  <- ZIO.fromEither(compiled)
+        first    <- program.evaluate(Vector.empty)
+        initial  <- ZIO.fromEither(PhoenixRenderedEncoder.initial(first.tree))
+        inserted <- program.evaluate(Vector("a", "b", "c"), Some(first.commit))
+        updated  <- ZIO.fromEither(
+                     PhoenixRenderedEncoder.update(
+                       initial._1,
+                       TreeDiffer.diff(first.tree, inserted.tree)
+                     )
+                   )
+      yield assertTrue(
+        updated._2 == Json.Obj(
+          "0" -> Json.Obj(
+            "k" -> Json.Obj(
+              "0"  -> row("", "a"),
+              "1"  -> row(" on", "b"),
+              "2"  -> row("", "c"),
+              "kc" -> Json.Num(3)
+            ),
+            "p" -> Json.Obj(
+              "0" -> Json.Arr(Json.Str("<li class=\"row"), Json.Str("\">"), Json.Str("</li>"))
+            )
+          )
+        )
+      )
+    },
     test("uses stable dense slots and sparse updates without s") {
       val compiled = RenderProgram.compile[Model, Nothing] { model =>
         div(

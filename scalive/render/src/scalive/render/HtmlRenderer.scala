@@ -48,6 +48,11 @@ object HtmlRenderer:
           output
             .append(' ').append(attribute.name).append("=\"")
             .append(Escaping.escape(value)).append('"')
+        case AttributeValue.Composite(static, dynamic) =>
+          val value = if dynamic.isEmpty then static else s"$static $dynamic"
+          output
+            .append(' ').append(attribute.name).append("=\"")
+            .append(Escaping.escape(value)).append('"')
         case AttributeValue.ComponentTarget(_) =>
           throw IllegalStateException(
             s"component target attribute '${attribute.name}' requires protocol serialization"

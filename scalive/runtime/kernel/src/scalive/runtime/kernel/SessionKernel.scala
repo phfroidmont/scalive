@@ -2159,10 +2159,10 @@ final private[scalive] class SessionKernel[Msg, Model] private (
       roots     = values.filter(_.parent.isEmpty)
       rootsById = roots.map(component => component.id -> component).toMap
       byKey     = roots.map(component => component.key -> component).toMap
-      carried   = carriedIds(requirements, unresolved, committed)
+      carried   = Carried.of(requirements, unresolved, committed)
       kept      = requirements.indices.iterator.flatMap { index =>
                val requirement = requirements(index)
-               val candidate   = carried(index) match
+               val candidate   = carried.at(index) match
                  case Some(id) => rootsById.get(id)
                  case None     => byKey.get(componentKey(requirement))
                candidate.filter(_.matches(requirement)).map(_.id)
@@ -2407,22 +2407,47 @@ final private[scalive] class SessionKernel[Msg, Model] private (
       requirement.applicationId
     )
 
-  /** The id of the committed component each of `requirements` carries over from `committed`, or
-    * none for one declared anew. A requirement the render leaves `unresolved` is declared anew.
-    */
-  private def carriedIds(
-    requirements: Vector[ComponentRequirement[?]],
-    unresolved: Set[TemplateId],
-    committed: Declarations
-  ): Vector[Option[ComponentInstanceId]] =
-    val index = java.util.IdentityHashMap[AnyRef, ComponentInstanceId]()
-    committed.requirements.indices.foreach(position =>
-      index.put(committed.requirements(position), committed.ids(position))
-    )
-    requirements.map(requirement =>
-      if unresolved.contains(requirement.location) then None
-      else Option(index.get(requirement))
-    )
+  /** The committed component each requirement of a render declares again, if any. */
+  sealed private trait Carried:
+    def at(position: Int): Option[ComponentInstanceId]
+
+  private object Carried:
+    /** The render declares the committed components `ids` in their committed order, each once. */
+    final class InOrder(val ids: Vector[ComponentInstanceId]) extends Carried:
+      // Found once each: a turn looks up the components it targets at every step.
+      private val positions = scala.collection.mutable.HashMap.empty[ComponentInstanceId, Int]
+
+      def at(position: Int): Option[ComponentInstanceId] = Some(ids(position))
+
+      /** The position that declares committed component `id`, if any. */
+      def positionOf(id: ComponentInstanceId): Option[Int] =
+        Some(positions.getOrElseUpdate(id, ids.indexOf(id))).filter(_ >= 0)
+
+    /** The committed component each requirement declares again, if any, by position. */
+    final case class ByPosition(ids: Vector[Option[ComponentInstanceId]]) extends Carried:
+      def at(position: Int): Option[ComponentInstanceId] = ids(position)
+
+    /** What `requirements` carry over from `committed`. A requirement the render leaves
+      * `unresolved` is declared anew.
+      */
+    def of(
+      requirements: Vector[ComponentRequirement[?]],
+      unresolved: Set[TemplateId],
+      committed: Declarations
+    ): Carried =
+      if (requirements eq committed.requirements) && unresolved.isEmpty then InOrder(committed.ids)
+      else
+        val index = java.util.IdentityHashMap[AnyRef, ComponentInstanceId]()
+        committed.requirements.indices.foreach(position =>
+          index.put(committed.requirements(position), committed.ids(position))
+        )
+        ByPosition(
+          requirements.map(requirement =>
+            if unresolved.contains(requirement.location) then None
+            else Option(index.get(requirement))
+          )
+        )
+  end Carried
 
   /** Stages the components `requirements`, which the render of `parent` declares, need staged: each
     * one they declare anew, and each one they carry over from `committed` that the turn visits. The
@@ -2442,12 +2467,8 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     restaged: ComponentRequirement[Owner] => Option[StagedComponent[Msg]] =
       (_: ComponentRequirement[Owner]) => None
   ): ZIO[Any, SessionFailure, Vector[ComponentInstanceId]] =
-    // Whether the render declares the committed components in their committed order, so that the
-    // committed ids are its own. Otherwise, the id each requirement carries over, if any.
-    val unchanged = (requirements eq committed.requirements) && unresolved.isEmpty
-    val carried   =
-      if unchanged then Vector.empty else carriedIds(requirements, unresolved, committed)
-    val count = requirements.length
+    val carried = Carried.of(requirements, unresolved, committed)
+    val count   = requirements.length
     // The ids of the components staged, by position.
     val stagedIds = scala.collection.mutable.HashMap.empty[Int, ComponentInstanceId]
 
@@ -2464,23 +2485,18 @@ final private[scalive] class SessionKernel[Msg, Model] private (
         position
       else
         val targets = staging.visits.targets(pending)
-        if unchanged then
-          targets.iterator
-            .map(target => nextPosition(target, from))
-            .foldLeft(count)(math.min)
-        else
-          var position = from
-          while position < count && (stagedIds.contains(position) ||
-              carried(position).exists(id => !targets.contains(id)))
-          do position += 1
-          position
-
-    // The first position from `from` that declares committed component `id` and is not staged.
-    def nextPosition(id: ComponentInstanceId, from: Int): Int =
-      val position = committed.ids.indexOf(id, from)
-      if position < 0 then count
-      else if stagedIds.contains(position) then nextPosition(id, position + 1)
-      else position
+        carried match
+          case inOrder: Carried.InOrder =>
+            targets.iterator
+              .flatMap(inOrder.positionOf)
+              .filter(position => position >= from && !stagedIds.contains(position))
+              .foldLeft(count)(math.min)
+          case byPosition: Carried.ByPosition =>
+            var position = from
+            while position < count && (stagedIds.contains(position) ||
+                byPosition.at(position).exists(id => !targets.contains(id)))
+            do position += 1
+            position
 
     def stageAt(position: Int): ZIO[Any, SessionFailure, Unit] =
       val requirement = requirements(position)
@@ -2510,19 +2526,17 @@ final private[scalive] class SessionKernel[Msg, Model] private (
         else stageAt(position) *> stageInOrder(position + 1)
       }
 
-    def committedId(position: Int): ComponentInstanceId =
-      if unchanged then committed.ids(position) else carried(position).get
-
     for
       pending <- staging.updates.get
-      first = prioritized(requirements, carried, committed, unchanged, previous, action, pending)
+      first = prioritized(requirements, carried, previous, action, pending)
       _ <- ZIO.foreachDiscard(first)(stageAt)
       _ <- stageInOrder(0)
-    yield
-      if unchanged then committed.ids
-      else
+    yield carried match
+      case inOrder: Carried.InOrder => inOrder.ids
+      // A position that carries over no committed component is staged.
+      case byPosition: Carried.ByPosition =>
         requirements.indices
-          .map(position => stagedIds.getOrElse(position, committedId(position))).toVector
+          .map(position => stagedIds.getOrElse(position, byPosition.at(position).get)).toVector
   end stageRequirements
 
   /** The positions of `requirements` staged before the others: the target of `action`, then those
@@ -2530,9 +2544,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     */
   private def prioritized(
     requirements: Vector[ComponentRequirement[?]],
-    carried: Vector[Option[ComponentInstanceId]],
-    committed: Declarations,
-    unchanged: Boolean,
+    carried: Carried,
     previous: ComponentForest[Msg],
     action: Option[(ComponentInstanceId, ComponentAction)],
     pending: Map[ComponentKey, ComponentUpdateRequest]
@@ -2541,19 +2553,25 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     else
       val target        = action.map(_._1)
       val updateTargets = pending.keysIterator.flatMap(previous.byKey).map(_.id).toSet
-      if unchanged then
-        // Each committed component is declared once, at its committed position.
-        val first   = target.map(committed.ids.indexOf(_)).filter(_ >= 0).toVector
-        val updated = updateTargets.iterator
-          .map(committed.ids.indexOf(_)).filter(position =>
-            position >= 0 && !first.contains(position)
+      carried match
+        case inOrder: Carried.InOrder =>
+          val first   = target.flatMap(inOrder.positionOf).toVector
+          val updated = updateTargets.iterator
+            .flatMap(inOrder.positionOf).filterNot(first.contains)
+          first ++ updated.toVector.sorted
+        case byPosition: Carried.ByPosition =>
+          prioritizedDeclarations(
+            requirements,
+            byPosition,
+            previous,
+            target,
+            updateTargets,
+            pending
           )
-        first ++ updated.toVector.sorted
-      else prioritizedDeclarations(requirements, carried, previous, target, updateTargets, pending)
 
   private def prioritizedDeclarations(
     requirements: Vector[ComponentRequirement[?]],
-    carried: Vector[Option[ComponentInstanceId]],
+    carried: Carried.ByPosition,
     previous: ComponentForest[Msg],
     target: Option[ComponentInstanceId],
     updateTargets: Set[ComponentInstanceId],
@@ -2561,7 +2579,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
   ): Vector[Int] =
     // The committed component a position declares, and whether a pending update targets it.
     def declared(position: Int): (Option[ComponentInstanceId], Boolean) =
-      carried(position) match
+      carried.at(position) match
         case Some(id) => Some(id) -> updateTargets.contains(id)
         case None     =>
           val key = componentKey(requirements(position))

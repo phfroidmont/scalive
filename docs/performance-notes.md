@@ -58,6 +58,21 @@ unchanged, as each row still compiles its own template, and so is the encoder's 
 node holds how its statics were sent in the field that said whether they are its own, through
 instances its rows share.
 
+Components share statics on the wire too (#12). A component sent in full sends `"s": -cid` when
+a component the browser holds, and that is not pending deletion, has the same static tree, or
+`"s": cid` when one sent earlier in the payload has it, as upstream's `maybe_reuse_static` does; the
+nested rendered objects the browser then resolves from that component leave out their statics.
+The static tree is what the browser rebuilds, nested statics included, whatever component renders
+it, and the encoder state indexes the components by it, so a lookup does not depend on how many
+the browser holds (upstream gives up after 32). A component's root also no longer carries
+`data-phx-component` in its statics, which made every instance's differ: the browser adds it
+itself, and only the server-rendered HTML holds it. The join payload of `ComponentTurnBenchmark`'s
+page at 100 cards went from 25,435 B to 11,385 B (`static` layout; 17,443 B from dropping the
+attribute alone) and from 26,999 B to 12,949 B with `splitBy`; at 1,000 cards, 266,342 B to
+122,491 B and 281,403 B to 137,552 B (2026-10-29). The index costs a map entry and a set entry
+per component, and the components of one tree share one instance of it: `componentList.encoder`
+went from 1,542 B to 1,557 B, net of the attribute it no longer keeps.
+
 On the encoder side, the remaining 1,221 B are mostly parts vectors (about 390 B), 8
 `ProjectedNode` (256 B) and 5 branch summaries (280 B). Two smaller savings were measured and not
 done:

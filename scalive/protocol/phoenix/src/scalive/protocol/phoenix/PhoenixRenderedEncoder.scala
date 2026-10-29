@@ -318,14 +318,20 @@ private[scalive] object PhoenixRenderedEncoder:
     root: ProjectedNode)
   final private[phoenix] case class ProjectedStreamRow(domId: String, child: ProjectedNode)
   final private[phoenix] case class ProjectedKeyedRow(id: RowId, child: ProjectedNode)
+  // What the browser receives of the row at `index`, by the index the row had before when it moved.
   final private[phoenix] case class ProjectedKeyedRowUpdate(
+    index: Int,
     oldIndex: Option[Int],
     changes: Option[SparseChanges],
     full: Boolean)
+  private[phoenix] object ProjectedKeyedRowUpdate:
+    def whole(index: Int): ProjectedKeyedRowUpdate =
+      ProjectedKeyedRowUpdate(index, None, None, full = true)
   final private[phoenix] case class ProjectedKeyed(
     id: TemplateId,
     rows: Vector[ProjectedKeyedRow],
-    updates: Vector[Option[ProjectedKeyedRowUpdate]],
+    // By ascending index, only for the rows the browser receives something of.
+    updates: Vector[ProjectedKeyedRowUpdate],
     includeStatics: Boolean,
     changed: Boolean)
   final private[phoenix] case class ProjectedStreamInsert(
@@ -846,9 +852,7 @@ private[scalive] object PhoenixRenderedEncoder:
               val previousRows = previousPart
                 .collect { case ProjectedPart.Keyed(value) => value.rows }
                 .getOrElse(Vector.empty)
-              val rows = clearRows(keyed.rows, previousRows)(_.id, _.child)((row, child) =>
-                row.copy(child = child)
-              )
+              val rows = clearRows(keyed.rows, previousRows)
               if (rows eq keyed.rows) && keyed.updates.isEmpty && !keyed.includeStatics &&
                 !keyed.changed
               then part
@@ -891,24 +895,22 @@ private[scalive] object PhoenixRenderedEncoder:
     end clearNode
 
     // Rows mostly keep their positions, so a row's previous instance is looked up by position
-    // first, and by key only when the rows moved.
-    def clearRows[Row <: AnyRef, Key](
-      rows: Vector[Row],
-      previous: Vector[Row]
-    )(
-      key: Row => Key,
-      child: Row => ProjectedNode
-    )(
-      withChild: (Row, ProjectedNode) => Row
-    ): Vector[Row] =
-      lazy val previousByKey = previous.iterator.map(row => key(row) -> child(row)).toMap
+    // first, and by key only when the rows moved. A row kept as it was, with nothing to record, is
+    // kept without being visited.
+    def clearRows(
+      rows: Vector[ProjectedKeyedRow],
+      previous: Vector[ProjectedKeyedRow]
+    ): Vector[ProjectedKeyedRow] =
+      lazy val previousByKey = previous.iterator.map(row => row.id -> row.child).toMap
       mapKeepingInstances(rows) { (row, position) =>
-        val previousChild =
-          if position < previous.length && key(previous(position)) == key(row) then
-            Some(child(previous(position)))
-          else previousByKey.get(key(row))
-        val cleared = clearNode(child(row), previousChild)
-        if cleared eq child(row) then row else withChild(row, cleared)
+        val inPlace = position < previous.length && previous(position).id == row.id
+        if inPlace && (previous(position).child eq row.child) && sentLifts.get(row.child) == null
+        then row
+        else
+          val previousChild =
+            if inPlace then Some(previous(position).child) else previousByKey.get(row.id)
+          val cleared = clearNode(row.child, previousChild)
+          if cleared eq row.child then row else row.copy(child = cleared)
       }
     val root = clearNode(state.root, previous.map(_.root))
     // The other components are as they were when the payload that sent them was made.
@@ -1020,7 +1022,7 @@ private[scalive] object PhoenixRenderedEncoder:
       traverse(keyed.rows)(row =>
         project(row.child, None, context).map(ProjectedKeyedRow(row.id, _))
       ).map { rows =>
-        val updates = rows.map(_ => Some(ProjectedKeyedRowUpdate(None, None, full = true)))
+        val updates = rows.indices.map(ProjectedKeyedRowUpdate.whole).toVector
         ProjectedNode(
           keyed.id,
           Vector(
@@ -1397,98 +1399,109 @@ private[scalive] object PhoenixRenderedEncoder:
     changes: Vector[KeyedRowChange],
     context: ProjectionContext
   ): Either[PhoenixEncodingError, (ProjectedKeyed, ProgramUpdate)] =
-    val indexedOldRows = keyed.rows.zipWithIndex
-    val oldRows        = indexedOldRows.map { case (row, index) => row.id -> (row, index) }.toMap
-    validateKeyedChanges(indexedOldRows.map(_._1.id), changes).flatMap { _ =>
-      changes
-        .foldLeft[
-          Either[
-            PhoenixEncodingError,
-            (Vector[ProjectedKeyedRow], Vector[Option[ProjectedKeyedRowUpdate]], ProgramUpdate)
-          ]
-        ](
-          Right(
-            (
-              Vector.empty,
-              Vector.empty,
-              ProgramUpdate(ProjectedNode(keyed.id, Vector.empty), Set.empty, false, Set.empty)
-            )
-          )
-        ) {
-          case (result, KeyedRowChange.Insert(row)) =>
-            result.flatMap { case (rows, updates, aggregate) =>
+    val oldRows                          = keyed.rows
+    lazy val oldIndexes: Map[RowId, Int] =
+      oldRows.iterator.zipWithIndex.map((row, index) => row.id -> index).toMap
+    // Rows mostly keep their positions, so a row is looked up at its new index first, and by key
+    // only when the rows moved. -1 when the old rows do not hold it.
+    def oldIndex(id: RowId, index: Int): Int =
+      if index < oldRows.length && oldRows(index).id == id then index
+      else oldIndexes.getOrElse(id, -1)
+
+    validateKeyedChanges(oldRows.length, changes, oldIndex, oldIndexes.contains).flatMap { _ =>
+      val rows       = Vector.newBuilder[ProjectedKeyedRow]
+      val updates    = Vector.newBuilder[ProjectedKeyedRowUpdate]
+      val slots      = Set.newBuilder[TemplateSlotId]
+      val components = Set.newBuilder[Int]
+      val streams    = Set.newBuilder[TemplateId]
+      val targets    = Set.newBuilder[TemplateId]
+      val replaced   = Set.newBuilder[TemplateId]
+      boundary:
+        var index = 0
+        while index < changes.length do
+          changes(index) match
+            case KeyedRowChange.Insert(row) =>
               val before = context.projectedCids.toSet
-              project(row.child, None, context).map { child =>
-                val added = context.projectedCids.toSet -- before
-                (
-                  rows :+ ProjectedKeyedRow(row.id, child),
-                  updates :+ Some(ProjectedKeyedRowUpdate(None, None, full = true)),
-                  aggregate.copy(changedComponents = aggregate.changedComponents ++ added)
-                )
-              }
-            }
-          case (result, KeyedRowChange.Retain(id, rowChanges)) =>
-            result.flatMap { case (rows, updates, aggregate) =>
-              oldRows.get(id) match
-                case None                     => Left(PhoenixEncodingError.UnknownTarget(keyed.id))
-                case Some((oldRow, oldIndex)) =>
-                  applyChanges(oldRow.child, rowChanges, context).map { update =>
-                    val newIndex = rows.length
-                    val moved    = oldIndex != newIndex
-                    val changed  = update.structural || update.changedSlots.nonEmpty ||
+              project(row.child, None, context) match
+                case Left(error)  => break(Left(error))
+                case Right(child) =>
+                  components ++= context.projectedCids.toSet -- before
+                  rows += ProjectedKeyedRow(row.id, child)
+                  updates += ProjectedKeyedRowUpdate.whole(index)
+            case KeyedRowChange.Retain(id, rowChanges) =>
+              val previous = oldIndex(id, index)
+              val oldRow   = oldRows(previous)
+              val moved    = previous != index
+              if rowChanges.isEmpty then
+                // A kept row that did not change contributes nothing, nor does it when it moved.
+                rows += oldRow
+                if moved then updates += ProjectedKeyedRowUpdate(index, Some(previous), None, false)
+              else
+                applyChanges(oldRow.child, rowChanges, context) match
+                  case Left(error)   => break(Left(error))
+                  case Right(update) =>
+                    val changed = update.structural || update.changedSlots.nonEmpty ||
                       update.changedStreams.nonEmpty || update.changedKeyedTargets.nonEmpty ||
                       update.replaced.nonEmpty
-                    val rowUpdate =
-                      if !moved && !changed then None
-                      else
-                        Some(
-                          ProjectedKeyedRowUpdate(
-                            if moved then Some(oldIndex) else None,
-                            if changed && !update.structural then Some(update.changes) else None,
-                            full = update.structural
-                          )
-                        )
-                    (
-                      rows :+ oldRow.copy(child = update.root),
-                      updates :+ rowUpdate,
-                      aggregate.copy(
-                        changedSlots = aggregate.changedSlots ++ update.changedSlots,
-                        changedComponents = aggregate.changedComponents ++ update.changedComponents,
-                        changedStreams = aggregate.changedStreams ++ update.changedStreams,
-                        changedKeyedTargets = aggregate.changedKeyedTargets ++
-                          update.changedKeyedTargets,
-                        replaced = aggregate.replaced ++ update.replaced
+                    rows += oldRow.copy(child = update.root)
+                    if moved || changed then
+                      updates += ProjectedKeyedRowUpdate(
+                        index,
+                        if moved then Some(previous) else None,
+                        if changed && !update.structural then Some(update.changes) else None,
+                        full = update.structural
                       )
-                    )
-                  }
-            }
-        }.map { case (rows, updates, aggregate) =>
+                    slots ++= update.changedSlots
+                    components ++= update.changedComponents
+                    streams ++= update.changedStreams
+                    targets ++= update.changedKeyedTargets
+                    replaced ++= update.replaced
+          end match
+          index += 1
+        end while
+        val aggregate = ProgramUpdate(
+          ProjectedNode(keyed.id, Vector.empty),
+          slots.result(),
+          structural = false,
+          components.result(),
+          streams.result(),
+          targets.result(),
+          replaced.result()
+        )
+        Right(
           keyed.copy(
-            rows = rows,
-            updates = updates,
+            rows = rows.result(),
+            updates = updates.result(),
             includeStatics = false,
             changed = true
           ) -> aggregate
-        }
+        )
     }
   end applyKeyedChange
 
+  /** Checks in one pass that the changes name each row once, retain only rows the old rows hold,
+    * and insert only rows they do not.
+    */
   private def validateKeyedChanges(
-    oldIds: Vector[RowId],
-    changes: Vector[KeyedRowChange]
+    oldCount: Int,
+    changes: Vector[KeyedRowChange],
+    oldIndex: (RowId, Int) => Int,
+    isOld: RowId => Boolean
   ): Either[PhoenixEncodingError, Unit] =
-    val oldCounts = oldIds.groupMapReduce(identity)(_ => 1)(_ + _)
-    val outputIds = changes.map {
-      case KeyedRowChange.Insert(row)   => row.id
-      case KeyedRowChange.Retain(id, _) => id
-    }
-    val uniqueOutput = outputIds.distinct.size == outputIds.size
-    val validSources = changes.forall {
-      case KeyedRowChange.Retain(id, _) => oldCounts.get(id).contains(1)
-      case KeyedRowChange.Insert(row)   => !oldCounts.contains(row.id)
-    }
-    if uniqueOutput && validSources then Right(())
-    else Left(PhoenixEncodingError.InvalidKeyedRowChange)
+    val retained = java.util.BitSet(oldCount)
+    val inserted = mutable.HashSet.empty[RowId]
+    var valid    = true
+    var index    = 0
+    while valid && index < changes.length do
+      valid = changes(index) match
+        case KeyedRowChange.Retain(id, _) =>
+          val previous = oldIndex(id, index)
+          val unique   = previous >= 0 && !retained.get(previous)
+          if unique then retained.set(previous)
+          unique
+        case KeyedRowChange.Insert(row) => !isOld(row.id) && inserted.add(row.id)
+      index += 1
+    if valid then Right(()) else Left(PhoenixEncodingError.InvalidKeyedRowChange)
 
   private def applyChanges(
     root: ProjectedNode,
@@ -2049,65 +2062,74 @@ private[scalive] object PhoenixRenderedEncoder:
     sparseChanges: Option[SparseChanges],
     templates: Option[TemplateTable]
   ): Either[PhoenixEncodingError, Json.Obj] =
-    lazy val previousRows =
-      previous.fold(Map.empty[RowId, ProjectedNode])(
-        _.rows.iterator.map(row => row.id -> row.child).toMap
-      )
-    val explicit =
-      if sparseChanges.isEmpty then
-        keyed.rows.map(_ => Some(ProjectedKeyedRowUpdate(None, None, full = true)))
-      else keyed.updates.padTo(keyed.rows.length, None)
-    val touched = sparseChanges.fold(Set.empty[Int])(_.touchedComponents)
-    val updates = keyed.rows.zip(explicit).map { case (row, update) =>
-      update match
-        // A row's own diff still has to reach the components it holds.
-        case Some(update) if !update.full && row.child.cids.exists(touched.contains) =>
-          val changes = update.changes.getOrElse(SparseChanges(Set.empty, Set.empty))
-          Some(update.copy(changes = Some(changes.touching(touched))))
-        case Some(update) => Some(update)
-        case None         =>
-          sparseChanges.collect {
-            case changes if changes.replaced.contains(row.child.id) =>
-              ProjectedKeyedRowUpdate(None, None, full = true)
-            case changes
-                if !keptRow(row.child, previousRows.get(row.id).exists(_ eq row.child), changes) &&
-                  rowChanged(row.child, changes) =>
-              ProjectedKeyedRowUpdate(None, Some(changes), full = false)
-          }
-    }
+    val previousRows           = previous.fold(Vector.empty[ProjectedKeyedRow])(_.rows)
+    lazy val previousRowsByKey =
+      previousRows.iterator.map(row => row.id -> row.child).toMap
+    // Rows mostly keep their positions, so a row's previous instance is looked up where the row
+    // was first, and by key only when it is not there.
+    def previousChild(row: ProjectedKeyedRow, at: Int): Option[ProjectedNode] =
+      if at < previousRows.length && previousRows(at).id == row.id then Some(previousRows(at).child)
+      else previousRowsByKey.get(row.id)
+    def keptInstance(row: ProjectedKeyedRow, at: Int): Boolean =
+      if at < previousRows.length && previousRows(at).id == row.id then
+        previousRows(at).child eq row.child
+      else previousRowsByKey.get(row.id).exists(_ eq row.child)
+
+    val updates = sparseChanges match
+      case None          => keyed.rows.indices.map(ProjectedKeyedRowUpdate.whole).toVector
+      case Some(changes) =>
+        val touched  = changes.touchedComponents
+        val selected = Vector.newBuilder[ProjectedKeyedRowUpdate]
+        var explicit = 0
+        var index    = 0
+        while index < keyed.rows.length do
+          val row = keyed.rows(index)
+          if explicit < keyed.updates.length && keyed.updates(explicit).index == index then
+            val update = keyed.updates(explicit)
+            explicit += 1
+            // A row's own diff still has to reach the components it holds.
+            if !update.full && row.child.cids.exists(touched.contains) then
+              val rowChanges = update.changes.getOrElse(SparseChanges(Set.empty, Set.empty))
+              selected += update.copy(changes = Some(rowChanges.touching(touched)))
+            else selected += update
+          else if changes.replaced.nonEmpty && changes.replaced.contains(row.child.id) then
+            selected += ProjectedKeyedRowUpdate.whole(index)
+          else if !keptRow(row.child, keptInstance(row, index), changes) &&
+            rowChanged(row.child, changes)
+          then selected += ProjectedKeyedRowUpdate(index, None, Some(changes), full = false)
+          index += 1
+        selected.result()
     val shouldEmit = sparseChanges.isEmpty || keyed.changed ||
-      sparseChanges.exists(_.keyedTargets.contains(keyed.id)) || updates.exists(_.nonEmpty)
+      sparseChanges.exists(_.keyedTargets.contains(keyed.id)) || updates.nonEmpty
     if !shouldEmit then Right(Json.Obj.empty)
     else
       val table = templates.getOrElse(TemplateTable())
-      traverse(keyed.rows.zip(updates).zipWithIndex) { case ((row, update), index) =>
-        update match
-          case None         => Right(None)
-          case Some(change) =>
-            val child =
-              if change.full then rendered(row.child, components, None, Some(table))
-              else
-                change.changes match
-                  case Some(changes) =>
-                    rendered(
-                      row.child,
-                      components,
-                      Some(changes),
-                      Some(table),
-                      previousRows.get(row.id)
-                    )
-                  case None => Right(Json.Obj.empty)
-            child.map { payload =>
-              val boxed       = Json.Obj("0" -> payload)
-              val value: Json = change.oldIndex match
-                case None                                        => boxed
-                case Some(oldIndex) if payload == Json.Obj.empty => Json.Num(oldIndex)
-                case Some(oldIndex) => Json.Arr(Json.Num(oldIndex), boxed)
-              Some(index.toString -> value)
-            }
+      traverse(updates) { update =>
+        val row   = keyed.rows(update.index)
+        val child =
+          if update.full then rendered(row.child, components, None, Some(table))
+          else
+            update.changes match
+              case Some(changes) =>
+                rendered(
+                  row.child,
+                  components,
+                  Some(changes),
+                  Some(table),
+                  previousChild(row, update.oldIndex.getOrElse(update.index))
+                )
+              case None => Right(Json.Obj.empty)
+        child.map { payload =>
+          val boxed       = Json.Obj("0" -> payload)
+          val value: Json = update.oldIndex match
+            case None                                        => boxed
+            case Some(oldIndex) if payload == Json.Obj.empty => Json.Num(oldIndex)
+            case Some(oldIndex)                              => Json.Arr(Json.Num(oldIndex), boxed)
+          update.index.toString -> value
+        }
       }.map { entries =>
-        val move        = updates.exists(_.flatMap(_.oldIndex).nonEmpty)
-        val keyedFields = entries.flatten ++ Vector("kc" -> Json.Num(keyed.rows.length)) ++
+        val move        = updates.exists(_.oldIndex.nonEmpty)
+        val keyedFields = entries ++ Vector("kc" -> Json.Num(keyed.rows.length)) ++
           (if move then Vector("km" -> Json.Bool(true)) else Vector.empty)
         val fields = (if sparseChanges.isEmpty || keyed.includeStatics then
                         Vector("s" -> Json.Arr(Json.Str(""), Json.Str("")))

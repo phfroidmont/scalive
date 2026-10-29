@@ -134,7 +134,14 @@ What still visits every row:
 - A `splitBy` or `splitByIndex` collection whose items changed (`KeyedRowsBenchmark`), as upstream
   walks every entry of a changed Phoenix comprehension: it compares every entry, though a kept row
   now costs less (a turn updating one row of 1,000 allocates 3.25 MB instead of 3.63 MB in
-  `renderDiffAndEncode`, and of 10,000 rows 31.4 MB instead of 37.2 MB).
+  `renderDiffAndEncode`, and of 10,000 rows 31.4 MB instead of 37.2 MB). The encoder keeps a row
+  that did not change or move without allocating for it (#11): it looks a row up at its position
+  before building a map of the old rows, gathers what the rows changed once per change rather
+  than for each row, and records only the rows the browser receives something of, so building the
+  payload and clearing what it sent skip the others. Encoding a one-row update costs about 21 B
+  per kept row instead of 2,280 B (`KeyedRowsBenchmark.phoenixEncoding`, `operation=update`:
+  37 KB at 1,000 rows and 226 KB at 10,000, 2.4 MB and 22.9 MB before; 2026-10-29). The differ
+  still emits a change for every row, about 270 B per kept row.
 - A row that builds its own outside signal, such as `selected.map(_ == id)` in the row function,
   costs one indexed signal, sampled every turn the collection is evaluated: the bindings guide
   advises folding such state into the entries.

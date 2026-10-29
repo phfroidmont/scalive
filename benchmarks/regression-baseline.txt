@@ -9,14 +9,14 @@ alloc ComponentTurnBenchmark.rootClick cardCount=100 layout=static 904222
 alloc InitialRenderBenchmark.evaluate rowCount=1000 11429482
 alloc InitialRenderBenchmark.html rowCount=1000 7717962
 alloc InitialRenderBenchmark.phoenixEncoding rowCount=1000 10331992
-alloc KeyedRowsBenchmark.phoenixEncoding operation=reintroduction rowCount=1000 2697181
-alloc KeyedRowsBenchmark.phoenixEncoding operation=removal rowCount=1000 2657104
-alloc KeyedRowsBenchmark.phoenixEncoding operation=reorder rowCount=1000 2648415
-alloc KeyedRowsBenchmark.phoenixEncoding operation=update rowCount=1000 2376818
-alloc KeyedRowsBenchmark.renderDiffAndEncode operation=reintroduction rowCount=1000 3528494
-alloc KeyedRowsBenchmark.renderDiffAndEncode operation=removal rowCount=1000 3746405
-alloc KeyedRowsBenchmark.renderDiffAndEncode operation=reorder rowCount=1000 3468185
-alloc KeyedRowsBenchmark.renderDiffAndEncode operation=update rowCount=1000 3246301
+alloc KeyedRowsBenchmark.phoenixEncoding operation=reintroduction rowCount=1000 828574
+alloc KeyedRowsBenchmark.phoenixEncoding operation=removal rowCount=1000 795992
+alloc KeyedRowsBenchmark.phoenixEncoding operation=reorder rowCount=1000 1080366
+alloc KeyedRowsBenchmark.phoenixEncoding operation=update rowCount=1000 36435
+alloc KeyedRowsBenchmark.renderDiffAndEncode operation=reintroduction rowCount=1000 1660589
+alloc KeyedRowsBenchmark.renderDiffAndEncode operation=removal rowCount=1000 1757468
+alloc KeyedRowsBenchmark.renderDiffAndEncode operation=reorder rowCount=1000 1884060
+alloc KeyedRowsBenchmark.renderDiffAndEncode operation=update rowCount=1000 905653
 alloc KeyedRowsBenchmark.semanticDiff operation=reintroduction rowCount=1000 303998
 alloc KeyedRowsBenchmark.semanticDiff operation=removal rowCount=1000 304438
 alloc KeyedRowsBenchmark.semanticDiff operation=reorder rowCount=1000 304535

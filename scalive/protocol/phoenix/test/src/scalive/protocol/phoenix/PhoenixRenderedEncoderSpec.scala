@@ -2,6 +2,7 @@ package scalive.protocol.phoenix
 
 import zio.Task
 import zio.ZIO
+import zio.json.EncoderOps
 import zio.json.ast.Json
 import zio.test.*
 
@@ -14,6 +15,7 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
   final case class StreamItem(id: String, label: String)
   final case class NestedStreamItem(id: String, nested: LiveStream[StreamItem])
   final case class KeyedStreamItem(id: String, values: Vector[(String, String)])
+  final case class KeyedRow(id: String, label: String, holdsComponent: Boolean, values: Vector[String])
 
   private def stream(
     identity: LiveStreamIdentity,
@@ -1458,6 +1460,94 @@ object PhoenixRenderedEncoderSpec extends ZIOSpecDefault:
         field(streamDiff, "p") == Json.Obj(
           "0" -> Json.Arr(Json.Str("<span>"), Json.Str("</span>"))
         )
+      )
+    },
+    test("encodes kept, changed, moved and inserted keyed rows in one change") {
+      val rootCompiled = RenderProgram.compile[Vector[KeyedRow], Nothing](items =>
+        ul(
+          items.splitBy(_.id)((_, item) =>
+            li(
+              span(item.map(_.label)),
+              item.map(_.holdsComponent).when(component(TestComponent, "row").render("held")),
+              ol(item.map(_.values).splitBy(identity)((_, value) => b(value)))
+            )
+          )
+        )
+      )
+      val childCompiled = RenderProgram.compile[String, Nothing](value => span(value))
+      val token         = Object()
+      val ref           = ComponentRef.runtime[String](token)
+      def row(id: String, label: String, values: String*): KeyedRow =
+        KeyedRow(id, label, holdsComponent = id == "a", values.toVector)
+
+      def resolved(
+        candidate: RenderCandidate[Nothing],
+        child: RenderCandidate[Nothing]
+      ): Either[Throwable, RenderCandidate[Nothing]] =
+        candidate.resolveComponents(
+          Vector(resolve(candidate.componentRequirements.head, ref, token, child))
+        )
+
+      for
+        rootProgram  <- ZIO.fromEither(rootCompiled)
+        childProgram <- ZIO.fromEither(childCompiled)
+        firstChild   <- childProgram.evaluate("held")
+        firstRoot    <- rootProgram.evaluate(
+                       Vector(row("a", "A", "1"), row("b", "B"), row("c", "C", "1"), row("d", "D"))
+                     )
+        first     <- ZIO.fromEither(resolved(firstRoot, firstChild))
+        initial   <- ZIO.fromEither(PhoenixRenderedEncoder.initial(first.tree))
+        nextChild <- childProgram.evaluate("held", Some(firstChild.commit))
+        nextRoot  <- rootProgram.evaluate(
+                      Vector(
+                        row("a", "A", "1"),
+                        row("c", "C", "2", "1"),
+                        row("b", "B"),
+                        row("d", "changed"),
+                        row("x", "X", "1")
+                      ),
+                      Some(first.commit)
+                    )
+        next    <- ZIO.fromEither(resolved(nextRoot, nextChild))
+        updated <- ZIO.fromEither(
+                     PhoenixRenderedEncoder.update(initial._1, TreeDiffer.diff(first.tree, next.tree))
+                   )
+        html      <- ZIO.fromEither(PhoenixRenderedEncoder.html(updated._1))
+        lastChild <- childProgram.evaluate("held", Some(nextChild.commit))
+        lastRoot  <- rootProgram.evaluate(
+                      Vector(
+                        row("a", "A", "1"),
+                        row("c", "C", "2", "1"),
+                        row("b", "B"),
+                        row("d", "changed"),
+                        row("x", "X2", "1")
+                      ),
+                      Some(next.commit)
+                    )
+        last  <- ZIO.fromEither(resolved(lastRoot, lastChild))
+        after <- ZIO.fromEither(
+                   PhoenixRenderedEncoder.update(updated._1, TreeDiffer.diff(next.tree, last.tree))
+                 )
+      yield assertTrue(
+        // Row 0 is kept as it was, so it is not sent; the component it holds is not either.
+        updated._2.toJson ==
+          """{"0":{"k":{""" +
+          """"1":[2,{"0":{"2":{"k":{"0":{"0":{"s":0,"0":"2"}},"1":0,"kc":2,"km":true}}}}],""" +
+          """"2":1,""" +
+          """"3":{"0":{"0":"changed"}},""" +
+          """"4":{"0":{"s":2,"0":"X","1":{"s":1},""" +
+          """"2":{"s":["",""],"k":{"0":{"0":{"s":0,"0":"1"}},"kc":1}}}},""" +
+          """"kc":5,"km":true},""" +
+          """"p":{"0":["<b>","</b>"],"1":[""],"2":["<li><span>","</span>","<ol>","</ol></li>"]}}}""",
+        html == "<ul>" +
+          """<li><span>A</span><span data-phx-component="1">held</span><ol><b>1</b></ol></li>""" +
+          "<li><span>C</span><ol><b>2</b><b>1</b></ol></li>" +
+          "<li><span>B</span><ol></ol></li>" +
+          "<li><span>changed</span><ol></ol></li>" +
+          "<li><span>X</span><ol><b>1</b></ol></li>" +
+          "</ul>",
+        // The next diff finds the rows as the browser now holds them.
+        after._2.toJson == """{"0":{"k":{"4":{"0":{"0":"X2"}},"kc":5}}}"""
       )
     },
     test("rejects invalid keyed row deltas before changing reusable state") {

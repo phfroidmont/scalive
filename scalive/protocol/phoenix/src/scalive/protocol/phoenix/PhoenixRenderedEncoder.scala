@@ -463,14 +463,12 @@ private[scalive] object PhoenixRenderedEncoder:
     */
   final private class TemplateTable:
     private val indexes = mutable.LinkedHashMap.empty[Vector[String], Int]
-    // The rendered objects that refer to a template, and the template each refers to.
-    private val users     = mutable.ArrayBuffer.empty[ProjectedNode]
-    private val userIndex = mutable.ArrayBuilder.ofInt()
+    // The rendered objects that refer to a template, each with the template it refers to.
+    private val users = mutable.ArrayBuffer.empty[(ProjectedNode, Int)]
 
     def reference(node: ProjectedNode, statics: Vector[String]): Int =
       val index = indexes.getOrElseUpdate(statics, indexes.size)
-      users += node
-      userIndex += index
+      users += node -> index
       index
 
     /** `payload`, which refers to this table, with its `p`. Records in `lifts` how it sent the
@@ -480,9 +478,8 @@ private[scalive] object PhoenixRenderedEncoder:
       if indexes.isEmpty then payload
       else
         val templates = indexes.keys.toVector
-        val used      = userIndex.result()
         val useCounts = Array.ofDim[Int](templates.length)
-        used.foreach(index => useCounts(index) += 1)
+        users.foreach((_, index) => useCounts(index) += 1)
         val merges = Array.fill(templates.length)(Option.empty[MergedTemplate])
         templates.indices.groupBy(templates(_).length).valuesIterator.foreach { group =>
           if group.length > 1 then
@@ -490,9 +487,8 @@ private[scalive] object PhoenixRenderedEncoder:
               group.foreach(index => merges(index) = Some(merged))
             }
         }
-        users.indices.foreach { user =>
-          val node    = users(user)
-          val statics = merges(used(user)) match
+        users.foreach { (node, index) =>
+          val statics = merges(index) match
             case Some(merged) => merged.nodeStatics(node.ownStatics)
             case None         => if node.ownStatics then NodeStatics.Own else NodeStatics.Inline
           lifts.put(node, statics): Unit

@@ -54,14 +54,25 @@ final class PhoenixClient private ():
     val changed = diff.get("c").map(obj).fold(Map.empty[String, Json.Obj])(_.fields.map {
       case (cid, value) => cid -> obj(value)
     }.toMap)
-    changed.foreach { case (cid, componentDiff) =>
-      components = components.updated(
-        cid,
-        components.get(cid) match
-          case Some(previous) if !has(componentDiff, "s") => cloneMerge(previous, componentDiff)
-          case _                                          => componentDiff
-      )
-    }
+    // cachedFindComponent: every component of the diff is resolved against those held before it.
+    val resolved = collection.mutable.Map.empty[String, Json.Obj]
+    def find(cid: String): Json.Obj = resolved.getOrElseUpdate(
+      cid, {
+        val componentDiff = changed.getOrElse(cid, fail(s"no component diff for CID $cid"))
+        componentDiff.get("s") match
+          // Statics shared with a component of this diff, or with one held before it.
+          case Some(Json.Num(shared)) =>
+            val source =
+              if shared.intValue > 0 then find(shared.intValue.toString)
+              else components.getOrElse((-shared.intValue).toString, fail(s"no CID $shared"))
+            cloneMerge(source, componentDiff, pruneMagicId = true).put("s", source.get("s").get)
+          case Some(_) => componentDiff
+          case None    =>
+            components.get(cid).fold(componentDiff)(cloneMerge(_, componentDiff))
+      }
+    )
+    changed.keys.foreach(find)
+    components = components ++ resolved
     changed.keySet
 
   private def renderComponent(
@@ -175,8 +186,13 @@ final class PhoenixClient private ():
     if has(target, "r") then merged.put(NewRender, Json.Bool(true)) else merged
 
   // How a component merges a diff: everything in it renders again, except the keyed entries a
-  // keyed diff does not reach.
-  private def cloneMerge(target: Json.Obj, source: Json.Obj): Json.Obj =
+  // keyed diff does not reach. A component sharing another's statics drops what tracked its
+  // elements in the page.
+  private def cloneMerge(
+    target: Json.Obj,
+    source: Json.Obj,
+    pruneMagicId: Boolean = false
+  ): Json.Obj =
     val merged =
       if has(source, "k") then mergeKeyed(target, source)
       else
@@ -184,14 +200,17 @@ final class PhoenixClient private ():
         Json.Obj(keys.map { key =>
           key -> ((source.get(key), target.get(key)) match
             case (Some(child: Json.Obj), Some(previous: Json.Obj)) if !has(child, "s") =>
-              cloneMerge(previous, child)
-            case (None, Some(previous: Json.Obj)) => cloneMerge(previous, Json.Obj())
-            case (Some(value), _)                 => value
-            case (None, Some(value))              => value
-            case (None, None)                     => fail(s"no value for $key")
+              cloneMerge(previous, child, pruneMagicId)
+            case (None, Some(previous: Json.Obj)) =>
+              cloneMerge(previous, Json.Obj(), pruneMagicId)
+            case (Some(value), _)    => value
+            case (None, Some(value)) => value
+            case (None, None)        => fail(s"no value for $key")
           )
         }*)
-    if has(target, "r") then merged.put(NewRender, Json.Bool(true)) else merged
+    if pruneMagicId then without(without(merged, MagicId), NewRender)
+    else if has(target, "r") then merged.put(NewRender, Json.Bool(true))
+    else merged
 
   private def mergeKeyed(target: Json.Obj, source: Json.Obj): Json.Obj =
     val previous = obj(target.get("k"))

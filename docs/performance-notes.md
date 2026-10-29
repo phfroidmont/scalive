@@ -16,7 +16,7 @@ tree the browser holds). `RetainedHeap` measures it per row:
 |---|---|---|---|---|
 | Keyed list | 77 B | 2,576 B | 1,221 B | 3,873 B |
 | Stream | 244 B | 1,692 B | 725 B | 2,661 B |
-| Keyed list, a component per row | 77 B | 1,962 B | 1,542 B | 3,581 B |
+| Keyed list, a component per row | 77 B | 1,970 B | 1,448 B | 3,495 B |
 
 Upstream keeps only the assigns, and nothing of a stream row once sent. For 100 connections
 showing 1,000 rows, Scalive keeps about 390 MB.
@@ -57,6 +57,21 @@ allocated per row while encoding it (10.3 to 11.0 KB before #9, 2026-10-29). Ren
 unchanged, as each row still compiles its own template, and so is the encoder's retained memory: a
 node holds how its statics were sent in the field that said whether they are its own, through
 instances its rows share.
+
+Components share statics on the wire too (#12). A component sent in full sends `"s": -cid` when
+a component the browser holds, and that is not pending deletion, has the same static tree, or
+`"s": cid` when one sent earlier in the payload has it, as upstream's `maybe_reuse_static` does; the
+nested rendered objects the browser then resolves from that component leave out their statics.
+The static tree is what the browser rebuilds, nested statics included, whatever component renders
+it, and the encoder state indexes the components by it, so a lookup does not depend on how many
+the browser holds (upstream gives up after 32). A component's root also no longer carries
+`data-phx-component` in its statics, which made every instance's differ: the browser adds it
+itself, and only the server-rendered HTML holds it. The join payload of `ComponentTurnBenchmark`'s
+page at 100 cards went from 25,435 B to 11,385 B (`static` layout; 17,443 B from dropping the
+attribute alone) and from 26,999 B to 12,949 B with `splitBy`; at 1,000 cards, 266,342 B to
+122,491 B and 281,403 B to 137,552 B (2026-10-29). The index costs a map entry and a set entry
+per component, and the components of one tree share one instance of it: `componentList.encoder`
+went from 1,542 B to 1,557 B, net of the attribute it no longer keeps.
 
 On the encoder side, the remaining 1,221 B are mostly parts vectors (about 390 B), 8
 `ProjectedNode` (256 B) and 5 branch summaries (280 B). Two smaller savings were measured and not
@@ -135,7 +150,24 @@ What still visits every row:
 - A `splitBy` or `splitByIndex` collection whose items changed (`KeyedRowsBenchmark`), as upstream
   walks every entry of a changed Phoenix comprehension: it compares every entry, though a kept row
   now costs less (a turn updating one row of 1,000 allocates 3.25 MB instead of 3.63 MB in
-  `renderDiffAndEncode`, and of 10,000 rows 31.4 MB instead of 37.2 MB).
+  `renderDiffAndEncode`, and of 10,000 rows 31.4 MB instead of 37.2 MB). A row kept in place
+  and unchanged now costs almost nothing besides that comparison (#11): a keyed change lists only
+  the rows inserted and the rows that changed or moved, with their old index, and the new row
+  count; rows in the same order are compared by position without a map of the old rows; and the
+  encoder gathers what the rows changed once per change and records only the rows the browser
+  receives something of, so building the payload and clearing what it sent skip the others. Per
+  kept row of a one-row update, measured as (10,000 − 1,000 rows) / 9,000 on
+  `gc.alloc.rate.norm` (`KeyedRowsBenchmark`, `operation=update`, 2026-10-29):
+
+  | Step | Before | After |
+  |---|---|---|
+  | `semanticDiff` | 274 B (308 KB, 2.78 MB) | 16 B (21 KB, 166 KB) |
+  | `phoenixEncoding` | 2,283 B (2.38 MB, 22.9 MB) | 16 B (32 KB, 179 KB) |
+  | `renderDiffAndEncode` | 3,119 B (3.25 MB, 31.3 MB) | 597 B (0.60 MB, 5.98 MB) |
+
+  What is left of `renderDiffAndEncode` is evaluating the collection. A reorder, removal or
+  reintroduction lists every row that moved, so it still costs each such row, though less than
+  before (at 1,000 rows, 1.37 MB instead of 3.45 MB for a reorder in `renderDiffAndEncode`).
 - A row that builds its own outside signal, such as `selected.map(_ == id)` in the row function,
   costs one indexed signal, sampled every turn the collection is evaluated: the bindings guide
   advises folding such state into the entries.
@@ -167,6 +199,11 @@ cannot change, or whose signals did not change, with its committed node, and a k
 collection carries those it recorded. The kernel finds the carried declarations by identity, keeps
 their components without touching them, and resolves into the render only those it staged.
 Resolving and checking instance tokens cover what the turn supplies.
+
+Each component now also keeps the requirement that last declared it, 8 B more per row of
+`componentList` on the render side. In the encoder, a node whose CIDs all come from one child
+shares that child's set rather than copying it: the root's summary no longer copies every CID on
+each turn, and a row of `componentList` keeps 109 B less there (1,557 B to 1,448 B).
 
 Every component renders again when the runtime-owned state it reads, the shown flash and the
 uploads, differs from the one it last rendered with: the committed state records that root model,

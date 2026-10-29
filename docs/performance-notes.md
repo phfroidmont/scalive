@@ -117,10 +117,11 @@ which is the cost left at 10,000 rows (accepted, see below).
 
 What still visits every row:
 
-- A stream whose rows hold components. The kernel receives every collection's component
-  requirements in evaluation order each turn, so each row declares its components again. Visiting
-  only the changed rows would need the kernel to keep the requirements of each collection as a
-  persistent sequence.
+- An insertion into or a deletion from a stream whose rows hold components: the stream evaluates
+  every row, as only a stream without components takes the path through its changed rows, and the
+  kernel then compares the render's component declarations with the committed ones (see
+  [Turns and components](#turns-and-components)). A turn that leaves such a stream as it is no
+  longer visits its rows' components (#10).
 - A stream after a reset, or whose rows render something no signal tracks (a nested LiveView, a
   stream, or a flash).
 - An insertion at an index, or with a limit, still costs O(rows) to place: it patches or trims the
@@ -138,3 +139,49 @@ What still visits every row:
 - A row that builds its own outside signal, such as `selected.map(_ == id)` in the row function,
   costs one indexed signal, sampled every turn the collection is evaluated: the bindings guide
   advises folding such state into the entries.
+
+## Turns and components {#turns-and-components}
+
+A turn reaches only the components it may change (#10): those a render declares anew, the target
+of its action and of each component update, those whose render reads what signals do not track
+(a stream, a flash, a nested LiveView), and the ancestors of these. A click on the root of a page
+whose cards each hold two child components (`ComponentTurnBenchmark.rootClick`, 2026-10-29, 8
+iterations of 1 s, other benchmarks running alongside):
+
+| Cards (components) | Layout | Before | After |
+|---|---|---|---|
+| 100 (300) | static | 0.91 MB, 1.8 ms | 123 KB, 0.13 ms |
+| 1,000 (3,000) | static | 9.40 MB, 9.0 ms | 160 KB, 0.25 ms |
+| 100 (300) | `splitBy` | 0.91 MB, 2.2 ms | 121 KB, 0.15 ms |
+| 1,000 (3,000) | `splitBy` | 9.38 MB, 8.7 ms | 136 KB, 0.21 ms |
+
+Before, about 3 KB per component per turn went to the kernel resolving every component again,
+wherever it sat: listing, sorting, checking, keeping and resolving each one, then building maps and
+sets over all of them.
+
+A render now tells the kernel what it carried over without a separate list. Its
+`componentRequirements` are the committed render's vector itself when it declares the same
+components in the same order; a declaration it carries is the same requirement object, and the
+tree holds the resolution committed for it. The render carries a declaration whose id and props
+cannot change, or whose signals did not change, with its committed node, and a kept row or
+collection carries those it recorded. The kernel finds the carried declarations by identity, keeps
+their components without touching them, and resolves into the render only those it staged.
+Resolving and checking instance tokens cover what the turn supplies.
+
+Every component renders again when the runtime-owned state it reads, the shown flash and the
+uploads, differs from the one it last rendered with: the committed state records that root model,
+or none when components rendered with different ones in a turn, as when one puts a flash.
+
+What still grows with the number of components:
+
+- A render that declares a component anew, or no longer declares one, among the declarations of
+  one owner: the kernel then indexes the owner's committed declarations by identity, which costs
+  O(declarations) for that owner. A change of one component's props among 1,000 siblings is such a
+  turn.
+- A root, or a component, that renders again walks every child of each element it evaluates again,
+  without allocating for a component it carries: what the remaining 40 B per card of the static
+  layout are, with the element's new child vector.
+- The Phoenix encoder gathers the streams of every component at the end of each update, which is
+  most of the time left at 1,000 cards (about 0.1 ms).
+- A turn in which the flash or the uploads change visits every component, as each may render
+  differently.

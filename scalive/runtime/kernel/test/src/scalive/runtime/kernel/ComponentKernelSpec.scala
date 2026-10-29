@@ -646,6 +646,43 @@ object ComponentKernelSpec extends ZIOSpecDefault:
         yield assertTrue(texts.contains("candidate flash"))
       }
     },
+    test("a flash a component puts shows in the components declared before it in the same turn") {
+      ZIO.scoped {
+        val events = ConcurrentLinkedQueue[String]()
+        val notice = FlashKind("notice")
+        val definition = new LiveComponent[Int, Int, Int]:
+          def mount(props: Int, ctx: MountContext) = ZIO.succeed(props)
+          def handleMessage(props: Int, model: Int, ctx: MessageContext) = message => ZIO.succeed(model + message)
+          def view(props: Signal[Int], model: Signal[Int]) =
+            div(flash(notice)(message => span(message)))
+        val before = component(definition, "before")
+        val putter = component(definition, "putter")
+        val environment = new FakeEnvironment(events):
+          override def renderInputs(model: Int) = model
+          override def renderState(
+            id: ComponentInstanceId,
+            inputs: Int,
+            state: ComponentEnvironmentState
+          ) =
+            RenderState(if inputs == 1 then Map(notice.key -> FlashValue("put flash", 0)) else Map.empty)
+          override def message[P, M, A, O](id: ComponentInstanceId, component: LiveComponent[P, M, A], props: P, model: A, value: M, emit: O => Task[Unit], state: ComponentEnvironmentState, draft: TurnDraft[Int, Int]) =
+            ZIO.succeed(ComponentCallbackResult(model, draft.copy(model = 1), state))
+        for
+          seen    <- Ref.make(Vector.empty[Int])
+          program <- ZIO.fromEither(
+                       RenderProgram.compile[Int, Int](_ => div(before.render(1), putter.render(1)))
+                     )
+          kernel  <- SessionKernel.start(config, logic(seen), program, Outbound(), environment)
+          initial <- kernel.inspect
+          target   = initial.components.values.find(_.key.applicationId == "putter").get
+          _       <- kernel.submitComponent(target.id, 1)
+          after   <- kernel.inspect
+        yield assertTrue(
+          textValues(initial.render.tree.root).isEmpty,
+          textValues(after.render.tree.root) == Vector("put flash", "put flash")
+        )
+      }
+    },
     test("root flash topology stabilizes to final component requirements without rerunning source") {
       ZIO.scoped {
         val notice      = FlashKind("root-topology")

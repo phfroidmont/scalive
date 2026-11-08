@@ -3381,6 +3381,59 @@ object ZioHttpSpec extends ZIOSpecDefault:
         )
       })
     },
+    test("a text message split across continuation frames is assembled before decoding") {
+      object View extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        def view(model: Signal[Unit]) = div()
+      val application = scalive.Live.router(scalive.live -> View)
+      val heartbeat   = PhoenixEnvelope.encode(
+        PhoenixEnvelope(PhoenixRef.Null, PhoenixRef.Value("1"), "phoenix", "heartbeat", Json.Obj.empty)
+      )
+      val bytes = Chunk.fromArray(heartbeat.getBytes(java.nio.charset.StandardCharsets.UTF_8))
+
+      zio.test.Live.live(withServer(application) { port =>
+        for
+          page   <- bootstrap(port)
+          socket <- connect(port, page)
+          _      <- socket.channel.send(
+                 ChannelEvent.read(WebSocketFrame.Text(heartbeat.take(10), false))
+               )
+          _ <- socket.channel.send(
+                 ChannelEvent.read(WebSocketFrame.Continuation(bytes.slice(10, 20), false))
+               )
+          _ <- socket.channel.send(
+                 ChannelEvent.read(WebSocketFrame.Continuation(bytes.drop(20), true))
+               )
+          reply <- socket.receiveReply("1", "phoenix")
+          _     <- socket.close
+        yield assertTrue(status(reply) == "ok")
+      })
+    },
+    test("a text message split inside a UTF-8 character fails instead of corrupting it") {
+      // ZIO HTTP decodes a first text fragment that ends mid-character to a replacement character.
+      val firstFragment = WebSocketFrame.Text("[null,\"\uFFFD", false)
+      for
+        split <- Ref.make(Option.empty[ZioHttp.DataMessage])
+        _     <- ZioHttp.collectFragment(split, firstFragment)
+        splitResult <- ZioHttp
+                         .collectFragment(
+                           split,
+                           WebSocketFrame.Continuation(Chunk(0xa9.toByte, '"'.toByte, ']'.toByte), true)
+                         ).either
+        literal <- Ref.make(Option.empty[ZioHttp.DataMessage])
+        _       <- ZioHttp.collectFragment(literal, firstFragment)
+        literalResult <- ZioHttp.collectFragment(
+                           literal,
+                           WebSocketFrame.Continuation(Chunk('"'.toByte, ']'.toByte), true)
+                         )
+      yield assertTrue(
+        splitResult.left.map(_.getMessage) ==
+          Left("websocket text message was split inside a UTF-8 character"),
+        literalResult.collect { case ZioHttp.DataMessage.Text(bytes, _) =>
+          String(bytes.toArray, java.nio.charset.StandardCharsets.UTF_8)
+        } == Some("[null,\"\uFFFD\"]")
+      )
+    },
     test("a connected handler failure is logged once as an error with its cause and lifecycle") {
       val crash = BrowserToServerEvent[Json]("crash")
       object CrashingView extends LiveView[Unit, Unit]:

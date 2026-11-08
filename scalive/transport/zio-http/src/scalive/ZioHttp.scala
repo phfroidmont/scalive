@@ -1828,7 +1828,7 @@ object ZioHttp:
     supervisor: ConnectionSupervisor,
     joined: Ref[Map[String, JoinedLifecycle]],
     uploads: Ref[Map[String, JoinedUpload]],
-    uploadFrame: Ref[Option[Chunk[Byte]]],
+    partialMessage: Ref[Option[DataMessage]],
     registration: Ref[Option[ZioHttpSecurity.RootClaims]],
     activeAdmission: Ref[Option[PreparedAdmission]],
     transportAdmission: TransportAdmission,
@@ -1840,11 +1840,8 @@ object ZioHttp:
     def receiveEnvelope(envelope: PhoenixEnvelope): ZIO[R & Scope, Throwable, Unit] =
       termination.routeOrFail(handleEnvelope(envelope))
 
-    def receiveText(text: String): ZIO[R & Scope, Throwable, Unit] =
-      termination.route(
-        ZIO
-          .fromEither(PhoenixEnvelope.decode(text).left.map(Exception(_))).flatMap(handleEnvelope)
-      )
+    private def decodeText(text: String): ZIO[R & Scope, Throwable, Unit] =
+      ZIO.fromEither(PhoenixEnvelope.decode(text).left.map(Exception(_))).flatMap(handleEnvelope)
 
     private def handleEnvelope(envelope: PhoenixEnvelope): ZIO[R & Scope, Throwable, Unit] =
       addressedEnvelope(envelope).flatMap(dispatchEnvelope)
@@ -1954,10 +1951,15 @@ object ZioHttp:
         case Right(PhoenixInbound.UploadLeave(joinRef, ref, topic, _)) =>
           leaveUpload(uploads, writer, joinRef, ref, topic)
 
-    def receiveBinary(frame: WebSocketFrame): Task[Unit] = termination.route(
-      collectUploadFrame(uploadFrame, frame)
-        .flatMap(ZIO.foreachDiscard(_)(offerUploadChunk(uploads, writer, _)))
-    )
+    def receiveFragment(frame: WebSocketFrame): ZIO[R & Scope, Throwable, Unit] =
+      termination.route(
+        collectFragment(partialMessage, frame).flatMap {
+          case None                             => ZIO.unit
+          case Some(DataMessage.Text(bytes, _)) =>
+            decodeText(String(bytes.toArray, StandardCharsets.UTF_8))
+          case Some(DataMessage.Binary(bytes)) => offerUploadChunk(uploads, writer, bytes)
+        }
+      )
 
     def receiveBinary(bytes: Chunk[Byte]): Task[Unit] =
       if bytes.length <= MaxFramePayloadBytes then
@@ -2075,7 +2077,7 @@ object ZioHttp:
                     )
       joined          <- Ref.make(Map.empty[String, JoinedLifecycle])
       uploads         <- Ref.make(Map.empty[String, JoinedUpload])
-      uploadFrame     <- Ref.make(Option.empty[Chunk[Byte]])
+      partialMessage  <- Ref.make(Option.empty[DataMessage])
       registration    <- Ref.make(Option.empty[ZioHttpSecurity.RootClaims])
       activeAdmission <- Ref.make(Option.empty[PreparedAdmission])
       transportAdmission = TransportAdmission(
@@ -2094,7 +2096,7 @@ object ZioHttp:
       supervisor,
       joined,
       uploads,
-      uploadFrame,
+      partialMessage,
       registration,
       activeAdmission,
       transportAdmission,
@@ -2218,14 +2220,12 @@ object ZioHttp:
                      ).ignore
                  )
       receive = channel.receiveAll {
-                  case ChannelEvent.Read(WebSocketFrame.Text(text))
-                      if text.getBytes(java.nio.charset.StandardCharsets.UTF_8).length <=
-                        MaxFramePayloadBytes =>
-                    runtime.receiveText(text)
+                  case ChannelEvent.Read(frame: WebSocketFrame.Text) =>
+                    runtime.receiveFragment(frame)
                   case ChannelEvent.Read(frame: WebSocketFrame.Binary) =>
-                    runtime.receiveBinary(frame)
+                    runtime.receiveFragment(frame)
                   case ChannelEvent.Read(frame: WebSocketFrame.Continuation) =>
-                    runtime.receiveBinary(frame)
+                    runtime.receiveFragment(frame)
                   case ChannelEvent.Read(WebSocketFrame.Ping) =>
                     runtime.route(
                       channelGate.withPermit(channel.send(ChannelEvent.read(WebSocketFrame.pong)))
@@ -2240,46 +2240,58 @@ object ZioHttp:
       _ <- runtime.run(receive)
     yield ()
 
-  private def collectUploadFrame(
-    pending: Ref[Option[Chunk[Byte]]],
+  // A text or binary WebSocket message, possibly split across continuation frames.
+  private[scalive] enum DataMessage:
+    // ZIO HTTP decodes the first text fragment on its own, so a character split at its end
+    // arrives as U+FFFD; the raw bytes are lost and the next continuation byte reveals the split.
+    case Text(bytes: Chunk[Byte], firstFragmentEndsWithReplacement: Boolean)
+    case Binary(bytes: Chunk[Byte])
+
+    def bytes: Chunk[Byte]
+
+  private[scalive] def collectFragment(
+    pending: Ref[Option[DataMessage]],
     frame: WebSocketFrame
-  ): Task[Option[Chunk[Byte]]] =
+  ): Task[Option[DataMessage]] =
     pending
       .modify { current =>
-        frame match
-          case binary: WebSocketFrame.Binary if binary.isFinal =>
-            current match
-              case None    => frameResult(binary.bytes)
-              case Some(_) =>
-                Left(Exception("websocket binary message started before continuation completed")) ->
-                  None
-          case binary: WebSocketFrame.Binary =>
-            current match
-              case None    => fragmentResult(binary.bytes, complete = false)
-              case Some(_) =>
-                Left(Exception("websocket binary message started before continuation completed")) ->
-                  None
-          case continuation: WebSocketFrame.Continuation =>
-            current match
-              case None => Left(Exception("websocket continuation has no initial frame")) -> None
-              case Some(bytes) =>
-                fragmentResult(bytes ++ continuation.buffer, continuation.isFinal)
+        (current, frame) match
+          case (None, text: WebSocketFrame.Text) =>
+            val bytes = Chunk.fromArray(text.text.getBytes(StandardCharsets.UTF_8))
+            fragmentResult(DataMessage.Text(bytes, text.text.endsWith("\uFFFD")), text.isFinal)
+          case (None, binary: WebSocketFrame.Binary) =>
+            fragmentResult(DataMessage.Binary(binary.bytes), binary.isFinal)
+          case (Some(_), _: (WebSocketFrame.Text | WebSocketFrame.Binary)) =>
+            Left(Exception("websocket message started before continuation completed")) -> None
+          case (
+                Some(DataMessage.Text(bytes, endsWithReplacement)),
+                continuation: WebSocketFrame.Continuation
+              ) =>
+            val more = continuation.buffer
+            if endsWithReplacement && more.headOption.exists(isUtf8ContinuationByte) then
+              Left(Exception("websocket text message was split inside a UTF-8 character")) -> None
+            else
+              fragmentResult(
+                DataMessage.Text(bytes ++ more, endsWithReplacement && more.isEmpty),
+                continuation.isFinal
+              )
+          case (Some(DataMessage.Binary(bytes)), continuation: WebSocketFrame.Continuation) =>
+            fragmentResult(DataMessage.Binary(bytes ++ continuation.buffer), continuation.isFinal)
+          case (None, _: WebSocketFrame.Continuation) =>
+            Left(Exception("websocket continuation has no initial frame")) -> None
           case _ => Left(Exception("unsupported websocket data frame")) -> None
       }.flatMap(ZIO.fromEither(_))
 
-  private def frameResult(
-    bytes: Chunk[Byte]
-  ): (Either[Exception, Option[Chunk[Byte]]], Option[Chunk[Byte]]) =
-    fragmentResult(bytes, complete = true)
-
   private def fragmentResult(
-    bytes: Chunk[Byte],
+    message: DataMessage,
     complete: Boolean
-  ): (Either[Exception, Option[Chunk[Byte]]], Option[Chunk[Byte]]) =
-    if bytes.length > MaxFramePayloadBytes then
+  ): (Either[Exception, Option[DataMessage]], Option[DataMessage]) =
+    if message.bytes.length > MaxFramePayloadBytes then
       Left(Exception("websocket message exceeds maximum payload")) -> None
-    else if complete then Right(Some(bytes)) -> None
-    else Right(None)                         -> Some(bytes)
+    else if complete then Right(Some(message)) -> None
+    else Right(None)                           -> Some(message)
+
+  private def isUtf8ContinuationByte(byte: Byte): Boolean = (byte & 0xc0) == 0x80
 
   private[scalive] def lifecycleJoinAttempt(join: RootJoin): LifecycleJoinAttempt =
     def counter(name: String): Option[Long] =

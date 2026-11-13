@@ -44,6 +44,7 @@ private[scalive] enum RuntimeFailure:
   case IngressSaturated
   case Writer
   case UploadEntry
+  case MalformedMessage
   case RuntimeDefect
 
 private[scalive] enum RuntimeTerminal:
@@ -814,6 +815,7 @@ private[scalive] object RuntimeObserver:
     case RuntimeFailure.IngressSaturated => LifecycleFailure.IngressSaturated
     case RuntimeFailure.Writer           => LifecycleFailure.Stage(LifecycleFailureStage.Writer)
     case RuntimeFailure.UploadEntry      => LifecycleFailure.Stage(LifecycleFailureStage.Upload)
+    case RuntimeFailure.MalformedMessage => LifecycleFailure.MalformedMessage
     case RuntimeFailure.RuntimeDefect    => LifecycleFailure.Stage(LifecycleFailureStage.Runtime)
 
   def lifecycleStage(stage: SessionStage): LifecycleFailureStage = stage match

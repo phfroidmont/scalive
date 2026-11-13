@@ -1859,9 +1859,29 @@ object ZioHttp:
           current.fold(envelope)(joinRef => envelope.copy(joinRef = joinRef))
         }
 
+    // Like a Phoenix channel, a joined topic decodes its own messages, so a malformed one crashes
+    // only that channel. A message that no joined channel owns, or a malformed join, fails the
+    // socket.
+    private def rejectMalformed(envelope: PhoenixEnvelope, error: String): Task[Unit] =
+      if envelope.event == "phx_join" then ZIO.fail(Exception(error))
+      else
+        joined.get.zip(uploads.get).flatMap { (lifecycles, uploadChannels) =>
+          exactTopicGeneration(lifecycles, envelope.topic, envelope.joinRef, _.joinRef) match
+            case Some(lifecycle) => failMalformedLifecycle(lifecycle, error)
+            case None            =>
+              exactTopicGeneration(
+                uploadChannels,
+                envelope.topic,
+                envelope.joinRef,
+                _.joinRef
+              ) match
+                case Some(upload) => failMalformedUpload(uploads, writer, upload, error)
+                case None         => ZIO.fail(Exception(error))
+        }
+
     private def dispatchEnvelope(envelope: PhoenixEnvelope): ZIO[R & Scope, Throwable, Unit] =
       PhoenixProtocol.decodeEnvelope(envelope) match
-        case Left(error)                                   => ZIO.fail(Exception(error))
+        case Left(error)                                   => rejectMalformed(envelope, error)
         case Right(PhoenixInbound.Heartbeat(joinRef, ref)) =>
           writer.offer(PhoenixOutput.heartbeat(joinRef, ref))
         case Right(PhoenixInbound.Join(joinRef, ref, topic, payload)) =>
@@ -3386,6 +3406,38 @@ object ZioHttp:
   ): Map[String, String] =
     navigation.flash.view.map((kind, message) => kind.value -> message.encoded).toMap
 
+  private def logMalformedMessage(topic: String, error: String): UIO[Unit] =
+    ZIO.logAnnotate(
+      LogAnnotation(RuntimeLog.Topic, topic),
+      LogAnnotation(RuntimeLog.Reason, error)
+    )(ZIO.logWarning("Stopped a channel that received a malformed message"))
+
+  // The lifecycle monitor then reports the crash to the browser and cleans up, as for any failure.
+  private def failMalformedLifecycle(joined: JoinedLifecycle, error: String): UIO[Unit] =
+    logMalformedMessage(joined.topic.value, error) *>
+      joined.connection.abort(ConnectionError.MalformedMessage(error))
+
+  // Like a failed chunk, the crashed upload channel fails its entry and replays its last progress.
+  private def failMalformedUpload(
+    uploads: Ref[Map[String, JoinedUpload]],
+    writer: SerialWriter[PhoenixEnvelope],
+    upload: JoinedUpload,
+    error: String
+  ): Task[Unit] =
+    uploads
+      .modify { current =>
+        current.get(upload.topic) match
+          case Some(active) if active eq upload => true  -> current.removed(upload.topic)
+          case _                                => false -> current
+      }.flatMap {
+        case false => ZIO.unit
+        case true  =>
+          logMalformedMessage(upload.topic, error) *>
+            upload.connection.leaveUpload(upload.worker) *>
+            writer.offer(PhoenixOutput.channelError(upload.joinRef, upload.topic)) *>
+            offerFailedUploadProgress(upload)
+      }
+
   private def offerEvent(
     lifecycles: Ref[Map[String, JoinedLifecycle]],
     writer: SerialWriter[PhoenixEnvelope],
@@ -3402,9 +3454,10 @@ object ZioHttp:
               syncEventUploads(joined, event).flatMap { _ =>
                 event.cid match
                   case None =>
-                    ZIO.fromEither(event.toBindingPayload.left.map(Exception(_))).flatMap {
-                      payload => enqueueLifecycleEvent(joined, writer, eventRefs, event, payload)
-                    }
+                    event.toBindingPayload match
+                      case Left(error)    => failMalformedLifecycle(joined, error)
+                      case Right(payload) =>
+                        enqueueLifecycleEvent(joined, writer, eventRefs, event, payload)
                   case Some(cid) =>
                     offerComponentEvent(joined, writer, eventRefs, event, cid).flatMap {
                       case true  => ZIO.unit
@@ -3956,8 +4009,9 @@ object ZioHttp:
     ).flatMap {
       case None            => ZIO.succeed(false)
       case Some(component) =>
-        ZIO
-          .fromEither(event.toBindingPayload.left.map(Exception(_))).flatMap { payload =>
+        val submitted = event.toBindingPayload match
+          case Left(error)    => failMalformedLifecycle(joined, error)
+          case Right(payload) =>
             enqueueCorrelated(joined, writer, eventRefs) { command =>
               joined.connection.submitComponentEvent(
                 command,
@@ -3967,7 +4021,7 @@ object ZioHttp:
                 event.toLiveEvent
               )
             }.catchSome { case _: ConnectionError.SessionFailed => ZIO.unit }
-          }.as(true)
+        submitted.as(true)
     }
 
   private[scalive] def resolveComponentCid(

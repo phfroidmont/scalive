@@ -225,8 +225,14 @@ enum LifecycleFailure:
   /** A managed subscription stream died with a defect. */
   case SubscriptionDefect
 
+  /** The browser sent the lifecycle a message that Scalive could not decode. As in Phoenix, only
+    * this lifecycle stops, and the browser rejoins it.
+    */
+  case MalformedMessage
+
   /** The work was interrupted before it finished, for example because the lifecycle closed. */
   case Interrupted
+end LifecycleFailure
 
 /** Structured failure with an optional cause for logging and tracing.
   *

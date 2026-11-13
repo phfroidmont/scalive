@@ -1471,6 +1471,89 @@ object ZioHttpUploadSpec extends ZIOSpecDefault:
                   }
       yield result
     },
+    test("a malformed upload channel message crashes only that upload channel") {
+      for
+        fixture <- fixture()
+        result <- withServer(fixture.application) { port =>
+                    for
+                      page   <- bootstrap(port)
+                      socket <- connect(port, page)
+                      _      <- joinRoot(socket, page)
+                      refs <- (fixture.state.take *> fixture.state.take)
+                                .timeoutFail(Exception("upload refs timed out"))(5.seconds)
+                      topic = s"lv:${page.rootId}"
+                      hosted <- preflight(
+                                  socket,
+                                  topic,
+                                  "2",
+                                  refs.hostedRef,
+                                  Vector(entry("crashed", "crashed.txt", 5L))
+                                )
+                      token = hostedToken(hosted, "crashed")
+                      _     <- uploadJoin(socket, "crashed-join", "3", "lvu:crashed", token)
+                      accepted <- sendProgress(
+                                    socket,
+                                    topic,
+                                    "4",
+                                    refs.hostedRef.value,
+                                    "crashed",
+                                    60,
+                                    None,
+                                    Some(uploadEvent.value)
+                                  )
+                      _ <- socket.send(
+                             PhoenixEnvelope(
+                               PhoenixRef.Value("crashed-join"),
+                               PhoenixRef.Value("5"),
+                               "lvu:crashed",
+                               "phx_leave",
+                               Json.Obj("unexpected" -> Json.Bool(true))
+                             )
+                           )
+                      crashed <- socket.receive.repeatUntil(_.event == "phx_error")
+                      progress <- fixture.observedBrowserProgress.get
+                                    .repeatUntil(_.size >= 2)
+                                    .timeoutFail(Exception("progress replay timed out"))(5.seconds)
+                      aborts <- fixture.aborts.get
+                                  .repeatUntil(_.nonEmpty)
+                                  .timeoutFail(Exception("writer abort timed out"))(5.seconds)
+                      _ <- socket.sendBinary(
+                             binary("crashed-join", "6", "lvu:crashed", Chunk.single(1.toByte))
+                           )
+                      lateChunk <- socket.receiveReply("6", "lvu:crashed")
+                      _ <- socket.send(
+                             PhoenixEnvelope(
+                               PhoenixRef.Value("root-join"),
+                               PhoenixRef.Value("7"),
+                               topic,
+                               "event",
+                               Json.Obj(
+                                 "type"  -> Json.Str("click"),
+                                 "event" -> Json.Str(uploadEvent.value),
+                                 "value" -> Json.Obj.empty
+                               )
+                             )
+                           )
+                      rootReply <- socket.receiveReply("7", topic)
+                      open      <- socket.closed.isDone.map(!_)
+                      _         <- socket.close
+                    yield assertTrue(
+                      status(accepted) == "ok",
+                      crashed.topic == "lvu:crashed",
+                      crashed.joinRef == PhoenixRef.Value("crashed-join"),
+                      crashed.payload == Json.Obj("reason" -> Json.Str("channel_crash")),
+                      progress == Vector(60, 60),
+                      aborts.forall {
+                        case LiveUploadAbortReason.Failed(_) => true
+                        case _                               => false
+                      },
+                      reason(lateChunk) == "disallowed",
+                      status(rootReply) == "ok",
+                      open
+                    )
+                  }
+      yield result
+    },
     test("fragmented binary upload messages are assembled before routing") {
       for
         fixture <- fixture()

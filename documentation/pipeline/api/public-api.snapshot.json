@@ -26185,6 +26185,18 @@
       ]
     },
     {
+      "id" : "val:scalive.LifecycleFailure.MalformedMessage",
+      "ownerId" : "enum:scalive.LifecycleFailure",
+      "qualifiedName" : "scalive.LifecycleFailure.MalformedMessage",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleFailure.MalformedMessage:e116a58494f4c67f",
+          "signature" : "val MalformedMessage: LifecycleFailure"
+        }
+      ]
+    },
+    {
       "id" : "val:scalive.LifecycleFailure.Stage.stage",
       "ownerId" : "enum:scalive.LifecycleFailure.Stage",
       "qualifiedName" : "scalive.LifecycleFailure.Stage.stage",

@@ -3451,38 +3451,50 @@ object ZioHttp:
         correlatedEventRefs(joined.joinRef, joinRef, ref) match
           case Some(eventRefs) =>
             joined.eventGate.withPermit {
-              syncEventUploads(joined, event).flatMap { _ =>
-                event.cid match
-                  case None =>
-                    event.toBindingPayload match
-                      case Left(error)    => failMalformedLifecycle(joined, error)
-                      case Right(payload) =>
-                        enqueueLifecycleEvent(joined, writer, eventRefs, event, payload)
-                  case Some(cid) =>
-                    offerComponentEvent(joined, writer, eventRefs, event, cid).flatMap {
-                      case true  => ZIO.unit
-                      case false =>
-                        // The browser destroyed this component; Phoenix answers such an event with
-                        // an empty reply, which releases the element it locked for the event.
-                        ZIO.logAnnotate(RuntimeLog.Cid, cid.toString)(
-                          ZIO
-                            .logDebug("Ignored an event for a component the page no longer renders")
-                        ) *> writer.offer(PhoenixOutput.noop(joinRef, ref, topic))
-                    }
-              }
+              decodeEventUploads(event) match
+                case Left(error)    => failMalformedLifecycle(joined, error)
+                case Right(uploads) =>
+                  syncEventUploads(joined, event, uploads).flatMap { _ =>
+                    event.cid match
+                      case None =>
+                        event.toBindingPayload match
+                          case Left(error)    => failMalformedLifecycle(joined, error)
+                          case Right(payload) =>
+                            enqueueLifecycleEvent(joined, writer, eventRefs, event, payload)
+                      case Some(cid) =>
+                        offerComponentEvent(joined, writer, eventRefs, event, cid).flatMap {
+                          case true  => ZIO.unit
+                          case false =>
+                            // The browser destroyed this component; Phoenix answers such an event
+                            // with an empty reply, which releases the element it locked for it.
+                            ZIO.logAnnotate(RuntimeLog.Cid, cid.toString)(
+                              ZIO.logDebug(
+                                "Ignored an event for a component the page no longer renders"
+                              )
+                            ) *> writer.offer(PhoenixOutput.noop(joinRef, ref, topic))
+                        }
+                  }
             }
           case None => writer.offer(PhoenixOutput.error(joinRef, ref, topic, staleReason))
       case _ => writer.offer(PhoenixOutput.error(joinRef, ref, topic, staleReason))
     }
 
-  private def syncEventUploads(joined: JoinedLifecycle, event: RootEvent): Task[Unit] =
+  private def decodeEventUploads(
+    event: RootEvent
+  ): Either[String, Option[Vector[PhoenixUploadPreflight]]] =
     event.uploads match
-      case None      => ZIO.unit
-      case Some(raw) =>
+      case None      => Right(None)
+      case Some(raw) => PhoenixUploadProtocol.decodeEventUploads(raw).map(Some(_))
+
+  private def syncEventUploads(
+    joined: JoinedLifecycle,
+    event: RootEvent,
+    decoded: Option[Vector[PhoenixUploadPreflight]]
+  ): Task[Unit] =
+    decoded match
+      case None          => ZIO.unit
+      case Some(uploads) =>
         for
-          uploads <- ZIO.fromEither(
-                       PhoenixUploadProtocol.decodeEventUploads(raw).left.map(Exception(_))
-                     )
           component <- event.cid match
                          case None      => ZIO.none
                          case Some(cid) =>

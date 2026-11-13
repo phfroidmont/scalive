@@ -3253,6 +3253,21 @@ object ZioHttpSpec extends ZIOSpecDefault:
           "event" -> Json.Str(ping.value),
           "value" -> Json.Str("not an object"),
           "cid"   -> Json.Null
+        ),
+        // Decodes as an event, but its uploads cannot be decoded.
+        "event" -> Json.Obj(
+          "type"    -> Json.Str("click"),
+          "event"   -> Json.Str(ping.value),
+          "value"   -> Json.Obj.empty,
+          "cid"     -> Json.Null,
+          "uploads" -> Json.Obj("phx-upload" -> Json.Str("not an array"))
+        ),
+        "event" -> Json.Obj(
+          "type"    -> Json.Str("click"),
+          "event"   -> Json.Str(ping.value),
+          "value"   -> Json.Str("not an object"),
+          "cid"     -> Json.Null,
+          "uploads" -> Json.Obj("phx-upload" -> Json.Str("not an array"))
         )
       )
 

@@ -237,7 +237,8 @@ user who cannot edit, and replies with an error the JavaScript caller can read:
 receive a `LiveEvent` before ordinary typed handling. Its `kind`, `bindingId`,
 unmodified JSON `value`, normalized string `params`, optional component `cid`,
 and optional JSON `meta` expose the wire envelope. For an event pushed from
-JavaScript, `bindingId` is the event name.
+JavaScript, `bindingId` is the event name. `kind` is `None` for a `JS` command
+the client runs outside a DOM event, such as a `JS.push` in `dom.onMount`.
 
 A root raw hook sees root- and component-targeted envelopes, so inspect
 `event.cid` when target ownership matters. If it continues, Scalive turns the

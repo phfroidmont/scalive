@@ -490,7 +490,7 @@ object RootConnectionSpec extends ZIOSpecDefault:
           binding  = bindingFrom(joined)
           // A hook's `this.js().exec(...)` sends a rendered push with the type "hook".
           event = LiveEvent(
-                    kind = "hook",
+                    kind = Some("hook"),
                     bindingId = binding.encoded,
                     value = Json.Obj(),
                     params = Map.empty,
@@ -508,7 +508,7 @@ object RootConnectionSpec extends ZIOSpecDefault:
       ZIO.scoped {
         val reply = Json.Obj("result" -> Json.Str("accepted"))
         val event = LiveEvent(
-          kind = "hook",
+          kind = Some("hook"),
           bindingId = "sandbox:eval",
           value = Json.Obj("value" -> Json.Str("socket.assigns")),
           params = Map("value" -> "socket.assigns"),

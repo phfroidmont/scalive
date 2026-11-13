@@ -3650,7 +3650,7 @@ object ZioHttp:
       "progress"  -> Json.Num(progress.progress)
     )
     val liveEvent = LiveEvent(
-      kind = "progress",
+      kind = Some("progress"),
       bindingId = event,
       value = raw,
       params = values,

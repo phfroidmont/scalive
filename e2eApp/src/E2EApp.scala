@@ -69,6 +69,7 @@ object E2EApp extends ZIOAppDefault:
         live / "nested-component-update" -> NestedComponentUpdateLiveView(),
         live / "key-derived-rows"        -> KeyDerivedRowsLiveView(),
         live / "split-class"             -> SplitClassLiveView(),
+        live / "lifecycle-push"          -> LifecyclePushLiveView(),
         MissingItems.list                -> MissingItemsLiveView(),
         MissingItems.item                -> MissingItemLiveView(),
         live / "external-redirect"       -> ExternalRedirectLiveView(),

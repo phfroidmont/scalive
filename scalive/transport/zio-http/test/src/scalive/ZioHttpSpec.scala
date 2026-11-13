@@ -2940,6 +2940,48 @@ object ZioHttpSpec extends ZIOSpecDefault:
         )
       }
     },
+    test("an event with a null type, as phx-mounted sends, is handled without failing the socket") {
+      val opened       = BrowserToServerEvent[Json]("opened")
+      val handlerCalls = AtomicInteger()
+      val view = new LiveView[Unit, Int]:
+        override val browserEvents = BrowserEvents.on(opened)(_ => ())
+        def mount(ctx: MountContext) = ZIO.succeed(0)
+        def handleMessage(model: Int, ctx: MessageContext): Unit => Task[Int] =
+          _ => ZIO.succeed(handlerCalls.incrementAndGet()).as(model + 1)
+        def view(model: Signal[Int]) = div(model.map(_.toString))
+
+      withServer(scalive.Live.router(scalive.live -> view)) { port =>
+        for
+          page   <- bootstrap(port)
+          socket <- connect(port, page)
+          topic = s"lv:${page.rootId}"
+          joined <- joinRoot(socket, page)
+          _      <- socket.send(
+                 PhoenixEnvelope(
+                   PhoenixRef.Value("root-join"),
+                   PhoenixRef.Value("2"),
+                   topic,
+                   "event",
+                   Json.Obj(
+                     "type"  -> Json.Null,
+                     "event" -> Json.Str(opened.value),
+                     "value" -> Json.Obj.empty
+                   )
+                 )
+               )
+          pushed <- socket.receiveReply("2", topic)
+          after  <- sendEvent(socket, page, "3", opened.value)
+          logs   <- ZTestLogger.logOutput
+          _      <- socket.close
+        yield assertTrue(
+          status(joined) == "ok",
+          status(pushed) == "ok",
+          status(after) == "ok",
+          handlerCalls.get() == 2,
+          !logs.exists(_.logLevel == LogLevel.Error)
+        )
+      }
+    },
     test("an event for a destroyed component gets an empty reply, like Phoenix") {
       val hide = BrowserToServerEvent[Json]("hide")
       val panel = new LiveComponent.Eventless[Unit, Unit]:

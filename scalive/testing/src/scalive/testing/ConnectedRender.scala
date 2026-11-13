@@ -594,7 +594,7 @@ final class ConnectedView[-Msg] private[testing] (
   ): Task[ConnectedAction] =
     session.dispatch(
       state,
-      RootEvent(eventType = "hook", event = event, value = payload, cid = cid, meta = None)
+      RootEvent(eventType = Some("hook"), event = event, value = payload, cid = cid, meta = None)
     )
 
   /** Waits for the next uncorrelated async, subscription, or component output. */
@@ -657,7 +657,7 @@ final class ConnectedView[-Msg] private[testing] (
                     ZIO
                       .attempt(
                         RootEvent(
-                          eventType = "click",
+                          eventType = Some("click"),
                           event = ConnectedDom.requiredBinding(element, "phx-click"),
                           value = ConnectedDom.clickValue(element),
                           cid = ConnectedDom.eventTarget(element)
@@ -680,7 +680,7 @@ final class ConnectedView[-Msg] private[testing] (
                  val cid  = ConnectedDom.eventTarget(element)
                  val meta = target.map(value => Json.Obj("_target" -> Json.Str(value)))
                  RootEvent(
-                   eventType = "form",
+                   eventType = Some("form"),
                    event = binding,
                    value = Json.Str(ConnectedDom.urlEncoded(fields)),
                    cid = cid,
@@ -720,7 +720,7 @@ final class ConnectedView[-Msg] private[testing] (
                         Some(field.field.path.name)
                       case _ => None
                     val event = RootEvent(
-                      eventType = "form",
+                      eventType = Some("form"),
                       event = binding,
                       value = Json.Str(ConnectedDom.urlEncoded(fields)),
                       cid = ConnectedDom.eventTarget(form),
@@ -995,7 +995,7 @@ final private class ConnectedSession(
       state.topic,
       "event",
       Json.Obj(
-        "type"    -> Json.Str(event.eventType),
+        "type"    -> event.eventType.fold[Json](Json.Null)(Json.Str(_)),
         "event"   -> Json.Str(event.event),
         "value"   -> event.value,
         "cid"     -> event.cid.fold[Json](Json.Null)(value => Json.Num(BigDecimal(value))),

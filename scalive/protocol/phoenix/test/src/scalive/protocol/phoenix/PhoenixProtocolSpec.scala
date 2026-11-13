@@ -78,7 +78,7 @@ object PhoenixProtocolSpec extends ZIOSpecDefault:
         },
         PhoenixProtocol.decode(event).exists {
           case PhoenixInbound.Event(_, _, _, payload) =>
-            payload.eventType == "click" && payload.event == "save" && payload.cid.contains(7L) &&
+            payload.eventType.contains("click") && payload.event == "save" && payload.cid.contains(7L) &&
               payload.rootClickParams == Right(BindingPayload.Params(Map("id" -> "42")))
           case _ => false
         }
@@ -154,7 +154,7 @@ object PhoenixProtocolSpec extends ZIOSpecDefault:
     },
     test("decodes ordered form data and semantic metadata") {
       val event = RootEvent(
-        "form",
+        Some("form"),
         "save",
         Json.Str("tag=first&tag=second&save=Publish"),
         None,
@@ -184,7 +184,7 @@ object PhoenixProtocolSpec extends ZIOSpecDefault:
     },
     test("decodes target undefined and submitter field-name metadata") {
       val event = RootEvent(
-        "form",
+        Some("form"),
         "save",
         Json.Str("save=Draft"),
         None,
@@ -208,7 +208,7 @@ object PhoenixProtocolSpec extends ZIOSpecDefault:
     },
     test("retains browser submit actions in form data without synthesizing metadata") {
       val event = RootEvent(
-        "form",
+        Some("form"),
         "submit",
         Json.Str("profile%5Bname%5D=Ada&profile%5B_scalive_submitter%5D=preview"),
         None
@@ -226,13 +226,13 @@ object PhoenixProtocolSpec extends ZIOSpecDefault:
       )
     },
     test("rejects malformed form encoding and non-string form values") {
-      val malformed = RootEvent("form", "save", Json.Str("name=%ZZ"), None)
-      val nonString = RootEvent("form", "save", Json.Obj("name" -> Json.Str("value")), None)
+      val malformed = RootEvent(Some("form"), "save", Json.Str("name=%ZZ"), None)
+      val nonString = RootEvent(Some("form"), "save", Json.Obj("name" -> Json.Str("value")), None)
       assertTrue(malformed.toBindingPayload.isLeft, nonString.toBindingPayload.isLeft)
     },
     test("stringifies primitive and nested non-form parameters") {
       val event = RootEvent(
-        "click",
+        Some("click"),
         "save",
         Json.Obj(
           "string" -> Json.Str("value"),
@@ -258,7 +258,7 @@ object PhoenixProtocolSpec extends ZIOSpecDefault:
             )
           )
         ),
-        RootEvent("click", "save", Json.Str("value"), None).toBindingPayload.isLeft
+        RootEvent(Some("click"), "save", Json.Str("value"), None).toBindingPayload.isLeft
       )
     },
     test("a hook event's value may be any JSON; it then has no binding parameters") {
@@ -266,7 +266,7 @@ object PhoenixProtocolSpec extends ZIOSpecDefault:
 
       assertTrue(
         values.forall(value =>
-          RootEvent("hook", "copied", value, None).toBindingPayload ==
+          RootEvent(Some("hook"), "copied", value, None).toBindingPayload ==
             Right(BindingPayload.Params(Map.empty))
         )
       )
@@ -291,6 +291,26 @@ object PhoenixProtocolSpec extends ZIOSpecDefault:
         PhoenixProtocol.decode(eventFrame(valid.add("meta", Json.Arr()))).isLeft,
         PhoenixProtocol.decode(eventFrame(valid.add("uploads", Json.Str("bad")))).isLeft,
         PhoenixProtocol.decode(eventFrame(valid.add("cid", Json.Str("3")))).isLeft
+      )
+    },
+    test("a JS command run outside a DOM event sends a null type, which has no kind") {
+      // phx-mounted and phx-connected run liveSocket.execJS, whose event type defaults to null.
+      val pushed = Json.Obj(
+        "type"  -> Json.Null,
+        "event" -> Json.Str("opened"),
+        "value" -> Json.Obj("id" -> Json.Str("1"))
+      )
+      val untyped = Json.Obj("event" -> Json.Str("opened"), "value" -> Json.Obj.empty)
+
+      assertTrue(
+        PhoenixProtocol.decode(eventFrame(pushed)).exists {
+          case PhoenixInbound.Event(_, _, _, payload) =>
+            payload.eventType.isEmpty && payload.toLiveEvent.kind.isEmpty &&
+              payload.toBindingPayload == Right(BindingPayload.Params(Map("id" -> "1")))
+          case _ => false
+        },
+        PhoenixProtocol.decode(eventFrame(untyped)) == Left("missing field 'type'"),
+        PhoenixProtocol.decode(eventFrame(pushed.add("type", Json.Num(1)))).isLeft
       )
     },
     test("strictly decodes live_patch and phx_leave") {

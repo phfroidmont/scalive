@@ -339,8 +339,8 @@ object FormLiveView:
             )
           case "patch-recovery" =>
             ctx.nav.pushPatchUnsafe("/form?patched=true").as(LiveEventHookResult.halt(model))
-          case "button-test"             => ZIO.succeed(LiveEventHookResult.halt(model))
-          case _ if event.kind == "form" =>
+          case "button-test"                    => ZIO.succeed(LiveEventHookResult.halt(model))
+          case _ if event.kind.contains("form") =>
             maybeAwait(model.query, "validate").map { _ =>
               LiveEventHookResult.halt(
                 model.copy(values = model.values ++ rawFormData(event).asMap)

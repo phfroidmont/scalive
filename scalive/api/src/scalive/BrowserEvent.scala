@@ -7,7 +7,8 @@ import zio.json.ast.Json
   *
   * @param kind
   *   The client's event type, such as `click`, `keyup`, `form`, or `hook` for an event pushed from
-  *   JavaScript.
+  *   JavaScript. `None` for a `JS` command run outside a DOM event, such as a `JS.push` in
+  *   `dom.onMount` or `dom.onConnect`, or one run with `liveSocket.execJS`.
   * @param bindingId
   *   The event name: the rendered binding's ID for a Scalive binding, or the name itself for an
   *   event pushed from JavaScript or set with a raw `phx` attribute.
@@ -22,7 +23,7 @@ import zio.json.ast.Json
   *   The optional JSON metadata sent with a form event, such as `_target`, the changed field.
   */
 final case class LiveEvent(
-  kind: String,
+  kind: Option[String],
   bindingId: String,
   value: Json,
   params: Map[String, String],

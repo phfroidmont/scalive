@@ -164,7 +164,7 @@ snake case.
 | `queue` | `connection_ingress`, `connection_pending_commands`, `kernel_mailbox`, or `writer`. |
 | `status` | `sampled` for an ordinary depth observation or `saturated` for a rejected offer. |
 | `reason` | `closed`, `redirected`, `disconnected`, or `failed`. Disconnect strings are deliberately collapsed to `disconnected`. |
-| `failure` | `none`, `stage`, `join_rejected`, `mailbox_saturated`, `ingress_saturated`, `subscription_defect`, or `interrupted`. |
+| `failure` | `none`, `stage`, `join_rejected`, `mailbox_saturated`, `ingress_saturated`, `subscription_defect`, `malformed_message`, or `interrupted`. |
 | `stage` | `none`, `mount`, `connected_turn_guard`, `handler`, `resource_preparation`, `topology_preparation`, `render`, `output_reservation`, `after_render`, `validation`, `identity`, `retirement`, `component_mount`, `component_update`, `component_message`, `component_async`, `component_after_render`, `commit`, `navigation`, `writer`, `upload`, or `runtime`. |
 
 Successful observations use `failure="none"` and `stage="none"`. A stage failure

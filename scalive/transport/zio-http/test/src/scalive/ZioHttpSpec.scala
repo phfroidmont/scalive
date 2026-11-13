@@ -3229,6 +3229,155 @@ object ZioHttpSpec extends ZIOSpecDefault:
         connected.headOption.map(_.lifecycleId) == disconnected.headOption
       ))
     },
+    test("a malformed message crashes only the LiveView it addresses") {
+      val ping = BrowserToServerEvent[Json]("ping")
+      object Child extends LiveView[Unit, Unit]:
+        override val browserEvents = BrowserEvents.on(ping)(_ => ())
+        def mount(ctx: MountContext) = ZIO.unit
+        def handleMessage(model: Unit, ctx: MessageContext): Unit => Task[Unit] = _ => ZIO.unit
+        def view(model: Signal[Unit]) = span("child")
+      object Parent extends LiveView[Unit, Unit]:
+        override val browserEvents = BrowserEvents.on(ping)(_ => ())
+        def mount(ctx: MountContext) = ZIO.unit
+        def handleMessage(model: Unit, ctx: MessageContext): Unit => Task[Unit] = _ => ZIO.unit
+        def view(model: Signal[Unit]) = mainTag(liveView("child", Child))
+      val application = scalive.Live.router(scalive.live -> Parent)
+      val childTopic  = "lv:child"
+      val malformed = Vector(
+        "event" -> Json.Str("not an object"),
+        "event" -> Json.Obj("type" -> Json.Str("click"), "value" -> Json.Obj.empty),
+        "bogus" -> Json.Obj.empty,
+        // Decodes as an event, but a click value must be an object.
+        "event" -> Json.Obj(
+          "type"  -> Json.Str("click"),
+          "event" -> Json.Str(ping.value),
+          "value" -> Json.Str("not an object"),
+          "cid"   -> Json.Null
+        ),
+        // Decodes as an event, but its uploads cannot be decoded.
+        "event" -> Json.Obj(
+          "type"    -> Json.Str("click"),
+          "event"   -> Json.Str(ping.value),
+          "value"   -> Json.Obj.empty,
+          "cid"     -> Json.Null,
+          "uploads" -> Json.Obj("phx-upload" -> Json.Str("not an array"))
+        ),
+        "event" -> Json.Obj(
+          "type"    -> Json.Str("click"),
+          "event"   -> Json.Str(ping.value),
+          "value"   -> Json.Str("not an object"),
+          "cid"     -> Json.Null,
+          "uploads" -> Json.Obj("phx-upload" -> Json.Str("not an array"))
+        )
+      )
+
+      def joinChild(socket: SocketClient, session: String, attempt: Int) =
+        socket.send(
+          PhoenixEnvelope(
+            PhoenixRef.Value(s"child-join-$attempt"),
+            PhoenixRef.Value(s"child-$attempt"),
+            childTopic,
+            "phx_join",
+            Json.Obj(
+              "url"     -> Json.Null,
+              "session" -> Json.Str(session),
+              "static"  -> Json.Null,
+              "params"  -> Json.Obj.empty
+            )
+          )
+        ) *> socket.receiveReply(s"child-$attempt", childTopic)
+
+      def pingRoot(socket: SocketClient, page: Bootstrap, attempt: Int) =
+        sendEvent(socket, page, s"root-ping-$attempt", ping.value)
+
+      zio.test.Live.live(for
+        events <- Ref.make(Vector.empty[LifecycleEvent])
+        observer = LifecycleObserver.fromFunction(event => events.update(_ :+ event))
+        result <- withServer(application, observer) { port =>
+                    for
+                      page    <- bootstrap(port)
+                      socket  <- connect(port, page)
+                      root    <- joinRoot(socket, page)
+                      session <- ZIO
+                                   .fromOption(nestedSession(root.payload))
+                                   .orElseFail(AssertionError("missing child session"))
+                      rounds <- ZIO.foreach(malformed.zipWithIndex) { case ((event, payload), index) =>
+                                  for
+                                    joined <- joinChild(socket, session, index)
+                                    _ <- socket.send(
+                                           PhoenixEnvelope(
+                                             PhoenixRef.Value(s"child-join-$index"),
+                                             PhoenixRef.Value(s"bad-$index"),
+                                             childTopic,
+                                             event,
+                                             payload
+                                           )
+                                         )
+                                    crashed <- socket.receive.repeatUntil(envelope =>
+                                                 envelope.event == "phx_error"
+                                               )
+                                    rootReply <- pingRoot(socket, page, index)
+                                  yield (joined, crashed, rootReply)
+                                }
+                      rejoined <- joinChild(socket, session, malformed.size)
+                      open     <- socket.closed.isDone.map(!_)
+                      _        <- socket.close
+                      observed <- events.get
+                    yield (rounds, rejoined, open, observed)
+                  }
+        (rounds, rejoined, open, observed) = result
+        malformedEnds = observed.collect {
+                          case LifecycleEvent.LifecycleTerminated(
+                                _,
+                                LifecycleTerminationReason.Failed(LifecycleFailure.MalformedMessage)
+                              ) =>
+                            ()
+                        }
+      yield assertTrue(
+        rounds.forall((joined, _, _) => status(joined) == "ok"),
+        rounds.forall((_, crashed, _) =>
+          crashed.topic == childTopic &&
+            crashed.payload == Json.Obj("reason" -> Json.Str("channel_crash"))
+        ),
+        rounds.forall((_, _, rootReply) => status(rootReply) == "ok"),
+        status(rejoined) == "ok",
+        open,
+        malformedEnds.size == malformed.size
+      ))
+    },
+    test("a malformed message that no joined channel owns closes the socket") {
+      object View extends LiveView.Eventless[Unit]:
+        def mount(ctx: MountContext) = ZIO.unit
+        def view(model: Signal[Unit]) = div()
+      val application = scalive.Live.router(scalive.live -> View)
+      def text(joinRef: PhoenixRef, topic: String, event: String, payload: Json) =
+        WebSocketFrame.text(
+          PhoenixEnvelope.encode(
+            PhoenixEnvelope(joinRef, PhoenixRef.Value("2"), topic, event, payload)
+          )
+        )
+      val rootJoin   = PhoenixRef.Value("root-join")
+      val notAnEvent = Json.Str("not an object")
+      val frames = Vector[Bootstrap => WebSocketFrame](
+        _ => text(rootJoin, "lv:unknown", "event", notAnEvent),
+        page => text(PhoenixRef.Value("stale-join"), s"lv:${page.rootId}", "event", notAnEvent),
+        page => text(rootJoin, s"lv:${page.rootId}", "phx_join", notAnEvent),
+        _ => text(PhoenixRef.Null, "phoenix", "heartbeat", Json.Obj("x" -> Json.Bool(true))),
+        _ => WebSocketFrame.binary(Chunk[Byte](1, 2, 3))
+      )
+
+      withServer(application) { port =>
+        ZIO.foreach(frames) { frame =>
+          for
+            page   <- bootstrap(port)
+            socket <- connect(port, page)
+            joined <- joinRoot(socket, page)
+            _      <- socket.channel.send(ChannelEvent.read(frame(page)))
+            closed <- socket.closed.await.timeout(5.seconds)
+          yield status(joined) == "ok" && closed.nonEmpty
+        }.map(results => assertTrue(results == Vector.fill(frames.size)(true)))
+      }
+    },
     test("connected joins compare tracked assets with the running server's root layout") {
       val bundle  = AtomicReference("/assets/app-1.js")
       val changed = AtomicReference(Vector.empty[Boolean])
@@ -3833,6 +3982,13 @@ object ZioHttpSpec extends ZIOSpecDefault:
   private def attribute(html: String, name: String): Option[String] =
     val pattern = (java.util.regex.Pattern.quote(name) + "=\"([^\"]+)\"").r
     pattern.findFirstMatchIn(html).map(_.group(1))
+
+  // The join token of the first nested LiveView in a rendered join reply.
+  private def nestedSession(json: Json): Option[String] = json match
+    case Json.Str(value)  => attribute(value, "data-phx-session")
+    case Json.Arr(values) => values.iterator.flatMap(nestedSession).nextOption()
+    case Json.Obj(fields) => fields.iterator.flatMap((_, value) => nestedSession(value)).nextOption()
+    case _                => None
 
   private def nestedAttribute(html: String, id: String, name: String): Option[String] =
     val container = ("<div id=\"" + java.util.regex.Pattern.quote(id) + "\"([^>]*)>").r

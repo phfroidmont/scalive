@@ -1098,6 +1098,7 @@ final private[scalive] class RootConnection[Msg, Model] private (
     case ConnectionError.IngressFailed       => RuntimeFailure.RuntimeDefect
     case _: ConnectionError.SinkFailed       => RuntimeFailure.Writer
     case _: ConnectionError.UploadFailed     => RuntimeFailure.UploadEntry
+    case _: ConnectionError.MalformedMessage => RuntimeFailure.MalformedMessage
     case _: ConnectionError.SessionFailed    => RuntimeFailure.RuntimeDefect
     case ConnectionError.KernelRejected(_: SessionRejection.MailboxSaturated) =>
       RuntimeFailure.MailboxSaturated
@@ -1116,9 +1117,11 @@ end RootConnection
 private[scalive] object RootConnection:
   /** Logs a failure that stops a lifecycle at the level its origin calls for. */
   def logFailure(error: ConnectionError): UIO[Unit] = error match
-    // The kernel logs its own failures, and a linked child logs its own.
+    // The kernel logs its own failures, a linked child logs its own, and the transport logs a
+    // malformed message with the topic it addressed.
     case _: ConnectionError.SessionFailed | _: ConnectionError.LinkedChildFailed |
-        _: ConnectionError.LinkedChildJoinFailed | ConnectionError.Closed =>
+        _: ConnectionError.LinkedChildJoinFailed | _: ConnectionError.MalformedMessage |
+        ConnectionError.Closed =>
       ZIO.unit
     case _: ConnectionError.SinkFailed =>
       ZIO.logDebugCause("LiveView stopped because its output could not be sent", Cause.fail(error))

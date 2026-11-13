@@ -42,6 +42,10 @@ supports connected mount, typed server messages, semantic click and form
 bindings, nested joins, hosted uploads, routed reconnects, live navigation, and
 explicit local ordinary-form requests. Typed form actions read a form's rendered
 values the way the browser does, but the harness does not execute JavaScript.
+It sends only the `push` operations of `JS` commands: in event bindings, in
+`dom.onMount` when an element appears, and in `connection.onConnect` on each
+join. See
+[JS commands in connected tests](connected-test-reference.md#connected-harness-boundaries).
 
 @:@
 

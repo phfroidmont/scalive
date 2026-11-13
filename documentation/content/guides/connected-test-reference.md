@@ -33,6 +33,31 @@ client, patch a real document, run hooks, manage focus, schedule browser
 reconnect attempts, or prove browser history behavior. Keep those claims at the
 browser boundary.
 
+The harness does run the `push` operations of `JS` commands, as the client
+sends them. They are the only operations it runs: `show`, `hide`, class and
+attribute changes, focus, transitions, `navigate`, and `patch` are ignored.
+
+- An event binding that holds a `JS` command, such as `on.click(JS.push(msg))`,
+  sends each of its pushes in order when `click`, `changeForm`, or `submitForm`
+  dispatches it, with the event type of the action.
+- `dom.onMount` (`phx-mounted`) pushes when its element first appears: on join
+  for every element, and after each action, `awaitDiff`, or `awaitHtml` for
+  each element the latest HTML adds. As in the browser's DOM patch, an element
+  with an `id` is the same element while the id exists, and any other element is
+  identified by its position and tag names under its closest ancestor with an
+  `id`. An element whose attributes or content change does not push again.
+- `connection.onConnect` (`phx-connected`) pushes on every join, including the
+  rejoin of `ConnectedClient.reconnect`, after the `phx-mounted` pushes.
+
+These lifecycle pushes have no event type, `"type": null` on the wire, as in the
+browser. A push goes to its explicit target, or else to the element's
+`phx-target`, and to the LiveView or nested LiveView that renders the element.
+`join` and each action return once the pushes they caused have been replied to,
+repeating while new `phx-mounted` elements appear. After 20 rounds the action
+fails and names the elements that keep appearing. A pushed event that fails
+fails the action, and a navigation it causes is the action's result, or for a
+join, the next `awaitAction`.
+
 ## Connected actions {#connected-actions}
 
 `click`, `clickButton`, `changeForm`, and `submitForm` resolve bindings from the

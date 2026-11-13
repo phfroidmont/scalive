@@ -20,7 +20,12 @@ import scalive.protocol.phoenix.*
 /** Joins LiveViews through production route admission and connection supervision without starting a
   * network server.
   *
-  * See [testing LiveViews](https://scalive.dev/guides/testing).
+  * Like the browser, a join sends the `JS.push` operations of the joined HTML's `dom.onMount`
+  * (`phx-mounted`) commands, then those of its `connection.onConnect` (`phx-connected`) commands,
+  * and returns once they are handled. Other `JS` operations are not run. See [JS commands in
+  * connected
+  * tests](https://scalive.dev/guides/connected-test-reference#connected-harness-boundaries) and
+  * [testing LiveViews](https://scalive.dev/guides/testing).
   */
 object ConnectedRender:
   private val DefaultConfig = ZioHttpConfig(
@@ -274,7 +279,11 @@ final class ConnectedClient[-R] private[testing] (
   /** Opens the initial physical transport and joins the routed root. */
   def join: ZIO[R & Scope, ConnectedJoinFailure, ConnectedView[Nothing]] = connect
 
-  /** Closes any previous transport and rejoins with the retained page credentials. */
+  /** Closes any previous transport and rejoins with the retained page credentials.
+    *
+    * Like any join, the rejoin runs the `JS.push` operations of the view's `connection.onConnect`
+    * (`phx-connected`) commands again.
+    */
   def reconnect: ZIO[R & Scope, ConnectedJoinFailure, ConnectedView[Nothing]] = connect
 
   /** Closes the currently active physical transport, if any. */
@@ -317,6 +326,13 @@ end ConnectedClient
   * The join and every rendered action fail when the view renders a `phx-change` the browser never
   * sends: on an element other than a form or a control, or on a control without a form. See [form
   * changes](https://scalive.dev/guides/html-dsl-and-event-bindings#bind-form-changes).
+  *
+  * Of a `JS` command, the view runs only its `push` operations, as the browser sends them. A
+  * binding such as `on.click(JS.push(msg))` sends each push in order. After the join, every action,
+  * [[awaitDiff]] and [[awaitHtml]], the elements the latest HTML adds send the pushes of their
+  * `dom.onMount` (`phx-mounted`) command, until no new one appears, and the action returns once
+  * they are handled. See [JS commands in connected
+  * tests](https://scalive.dev/guides/connected-test-reference#connected-harness-boundaries).
   */
 final class ConnectedView[-Msg] private[testing] (
   session: ConnectedSession,
@@ -339,7 +355,7 @@ final class ConnectedView[-Msg] private[testing] (
     */
   def awaitHtml(description: String, timeout: Duration)(predicate: String => Boolean)
     : Task[String] =
-    state.awaitHtml(description, timeout)(predicate)
+    state.awaitHtml(description, timeout, session.observed(state))(predicate)
 
   /** Returns the text of exactly one element matching `selector`. */
   def text(selector: String): Task[String] =
@@ -594,14 +610,16 @@ final class ConnectedView[-Msg] private[testing] (
   ): Task[ConnectedAction] =
     session.dispatch(
       state,
-      RootEvent(eventType = Some("hook"), event = event, value = payload, cid = cid, meta = None)
+      Vector(
+        RootEvent(eventType = Some("hook"), event = event, value = payload, cid = cid, meta = None)
+      )
     )
 
   /** Waits for the next uncorrelated async, subscription, or component output. */
-  def awaitDiff: Task[Unit] = state.awaitDiff *> session.requireLiveChangeBindings(state)
+  def awaitDiff: Task[Unit] = state.awaitDiff *> session.observed(state)
 
   /** Waits for the next uncorrelated navigation or physical disconnect. */
-  def awaitAction: Task[ConnectedAction] = state.awaitAction.tap(session.rendered(state))
+  def awaitAction: Task[ConnectedAction] = state.awaitAction.flatMap(session.settle(state))
 
   /** Joins a nested LiveView registered in this view's latest committed HTML. */
   def joinNested(instanceId: String): RIO[Scope, ConnectedView[Nothing]] =
@@ -655,14 +673,18 @@ final class ConnectedView[-Msg] private[testing] (
                       session.liveNavigation(href, element.attr("data-phx-link-state") == "replace")
                   case _ =>
                     ZIO
-                      .attempt(
-                        RootEvent(
-                          eventType = Some("click"),
-                          event = ConnectedDom.requiredBinding(element, "phx-click"),
-                          value = ConnectedDom.clickValue(element),
-                          cid = ConnectedDom.eventTarget(element)
-                        )
-                      ).flatMap(session.dispatch(state, _))
+                      .attempt {
+                        val binding = ConnectedDom.requiredBinding(element, "phx-click")
+                        ConnectedDom
+                          .bindingPushes(element, binding).map(push =>
+                            RootEvent(
+                              eventType = Some("click"),
+                              event = push.event,
+                              value = ConnectedDom.clickValue(element),
+                              cid = push.cid
+                            )
+                          )
+                      }.flatMap(session.dispatch(state, _))
     yield result
 
   private def dispatchForm(
@@ -673,21 +695,23 @@ final class ConnectedView[-Msg] private[testing] (
   ): Task[ConnectedAction] =
     for
       current <- html
-      event   <- ZIO.attempt {
-                 val element = ConnectedDom.selectOne(current, selector)
-                 val binding = ConnectedDom.requiredBinding(element, attribute)
-                 if attribute == "phx-change" then ConnectedDom.requireChangeSource(element)
-                 val cid  = ConnectedDom.eventTarget(element)
-                 val meta = target.map(value => Json.Obj("_target" -> Json.Str(value)))
-                 RootEvent(
-                   eventType = Some("form"),
-                   event = binding,
-                   value = Json.Str(ConnectedDom.urlEncoded(fields)),
-                   cid = cid,
-                   meta = meta
-                 )
-               }
-      result <- session.dispatch(state, event)
+      events  <- ZIO.attempt {
+                  val element = ConnectedDom.selectOne(current, selector)
+                  val binding = ConnectedDom.requiredBinding(element, attribute)
+                  if attribute == "phx-change" then ConnectedDom.requireChangeSource(element)
+                  val meta = target.map(value => Json.Obj("_target" -> Json.Str(value)))
+                  ConnectedDom
+                    .bindingPushes(element, binding).map(push =>
+                      RootEvent(
+                        eventType = Some("form"),
+                        event = push.event,
+                        value = Json.Str(ConnectedDom.urlEncoded(fields)),
+                        cid = push.cid,
+                        meta = meta
+                      )
+                    )
+                }
+      result <- session.dispatch(state, events)
     yield result
 
   private def dispatchTypedForm[Owner](
@@ -719,18 +743,21 @@ final class ConnectedView[-Msg] private[testing] (
                       case Vector(field: FormFieldAssignment[Owner]) if !submitting =>
                         Some(field.field.path.name)
                       case _ => None
-                    val event = RootEvent(
-                      eventType = Some("form"),
-                      event = binding,
-                      value = Json.Str(ConnectedDom.urlEncoded(fields)),
-                      cid = ConnectedDom.eventTarget(form),
-                      meta = target.map(name => Json.Obj("_target" -> Json.Str(name)))
-                    )
-                    event -> nowUsed
+                    val events = ConnectedDom
+                      .bindingPushes(form, binding).map(push =>
+                        RootEvent(
+                          eventType = Some("form"),
+                          event = push.event,
+                          value = Json.Str(ConnectedDom.urlEncoded(fields)),
+                          cid = push.cid,
+                          meta = target.map(name => Json.Obj("_target" -> Json.Str(name)))
+                        )
+                      )
+                    events -> nowUsed
                   }
-      (event, nowUsed) = prepared
+      (events, nowUsed) = prepared
       _      <- state.usedFields.set(nowUsed)
-      result <- session.dispatch(state, event)
+      result <- session.dispatch(state, events)
     yield result
     end for
   end dispatchTypedForm
@@ -782,7 +809,7 @@ private object ConnectedDom:
   private def isControl(element: Element): Boolean =
     Set("input", "select", "textarea")(element.tagName) || element.tagName.contains('-')
 
-  private def describe(element: Element): String =
+  def describe(element: Element): String =
     val attributes = Vector("id", "name", "class").collect {
       case name if element.hasAttr(name) => s" $name=\"${element.attr(name)}\""
     }
@@ -807,22 +834,99 @@ private object ConnectedDom:
     } ++ Option.when(element.hasAttr("value"))("value" -> Json.Str(element.attr("value")))
     Json.Obj(values*)
 
-  /** Returns the component that the Phoenix client sends `element`'s events to, or `None` for the
-    * LiveView. Like the client, it reads `phx-target` from `element` only: a component ID, or a
-    * selector whose match belongs to its closest component.
-    */
   /** The component that renders `element`, or `None` for the LiveView. */
   def closestComponent(element: Element): Option[Long] =
     Option(element.closest("[data-phx-component]")).map(_.attr("data-phx-component").toLong)
 
+  /** Returns the component that the Phoenix client sends `element`'s events to, or `None` for the
+    * LiveView. Like the client, it reads `phx-target` from `element` only: a component ID, or a
+    * selector whose match belongs to its closest component.
+    */
   def eventTarget(element: Element): Option[Long] =
-    Option.when(element.hasAttr("phx-target"))(element.attr("phx-target")).flatMap { target =>
-      if target.matches("0|[1-9][0-9]*") then Some(target.toLong)
-      else
-        val matches = element.ownerDocument().select(target).asScala.toVector
-        val matched = exactlyOne(matches, s"element matching the phx-target selector '$target'")
-        Option(matched.closest("[data-phx-component]")).map(_.attr("data-phx-component").toLong)
-    }
+    Option
+      .when(element.hasAttr("phx-target"))(element.attr("phx-target")).flatMap(target(element, _))
+
+  private def target(element: Element, target: String): Option[Long] =
+    if target.matches("0|[1-9][0-9]*") then Some(target.toLong)
+    else
+      val matches = element.ownerDocument().select(target).asScala.toVector
+      val matched = exactlyOne(matches, s"element matching the phx-target selector '$target'")
+      closestComponent(matched)
+
+  /** One `push` operation of an encoded `JS` command. */
+  final private case class JsPush(event: String, target: Option[String])
+
+  /** An event the Phoenix client sends for a binding: its name and the component it goes to. */
+  final case class BindingPush(event: String, cid: Option[Long])
+
+  /** The events the Phoenix client sends for an event binding of `element`, in order.
+    *
+    * A plain binding ID is one event to `element`'s `phx-target`. A `JS` command sends one event
+    * per push, to the push's target or else to `element`'s `phx-target`. Its other operations run
+    * in the browser only, so they send nothing.
+    */
+  def bindingPushes(element: Element, binding: String): Vector[BindingPush] =
+    val pushes =
+      if isJsCommand(binding) then commandPushes(binding) else Vector(JsPush(binding, None))
+    pushes.map(push =>
+      BindingPush(push.event, push.target.fold(eventTarget(element))(target(element, _)))
+    )
+
+  /** The events of the `JS` command in `element`'s lifecycle `attribute`, such as `phx-mounted`.
+    *
+    * The client runs these commands outside a DOM event, so the events have no type.
+    */
+  def lifecycleEvents(element: Element, attribute: String): Vector[RootEvent] =
+    val command = element.attr(attribute)
+    if !isJsCommand(command) then Vector.empty
+    else
+      bindingPushes(element, command).map(push =>
+        RootEvent(eventType = None, event = push.event, value = clickValue(element), cid = push.cid)
+      )
+
+  private def isJsCommand(value: String): Boolean = value.startsWith("[")
+
+  private def commandPushes(command: String): Vector[JsPush] =
+    command.fromJson[Json] match
+      case Right(Json.Arr(operations)) =>
+        operations.toVector.flatMap {
+          case Json.Arr(Chunk(Json.Str("push"), args: Json.Obj)) =>
+            val fields = args.fields.toMap
+            fields
+              .get("event").flatMap(_.asString).map(event =>
+                JsPush(event, fields.get("target").flatMap(_.asString))
+              )
+          case _ => None
+        }
+      case _ => throw IllegalArgumentException(s"Invalid JS command: $command")
+
+  /** How the browser's DOM patch matches an element between two renders, as morphdom does. */
+  final case class ElementKey(id: Option[String], path: List[(Int, String)])
+
+  /** The elements a view owns in `html`, in document order and with their keys, without the content
+    * of nested LiveViews.
+    *
+    * An element with an `id` is identified by it. Any other element is identified by the chain of
+    * child indexes and tag names from its closest ancestor with an `id`, or from the root. Like
+    * morphdom, which matches siblings with an `id` by it, the indexes skip such siblings, so adding
+    * one does not shift the others.
+    */
+  def ownedElements(html: String): Vector[(ElementKey, Element)] =
+    def owned(parent: Element, parentKey: ElementKey): Vector[(ElementKey, Element)] =
+      val (_, elements) =
+        parent.children().asScala.foldLeft(0 -> Vector.empty[(ElementKey, Element)]) {
+          case ((index, elements), child) =>
+            val hasId = child.id.nonEmpty
+            val key   =
+              if hasId then ElementKey(Some(child.id), Nil)
+              else parentKey.copy(path = parentKey.path :+ (index -> child.tagName))
+            val nested      = child.hasAttr("data-phx-session")
+            val descendants = if nested then Vector.empty else owned(child, key)
+            val nextIndex   = if hasId then index else index + 1
+            nextIndex -> ((elements :+ (key -> child)) ++ descendants)
+        }
+      elements
+    owned(Jsoup.parseBodyFragment(html).body(), ElementKey(None, Nil))
 
   /** The one rendered form owning a field that `definition` declares. */
   def formFor(html: String, definition: FormDefinition[?, ?]): Element =
@@ -989,7 +1093,29 @@ final private class ConnectedSession(
                 ).mapError(_.toThrowable)
     yield joined
 
-  def dispatch(state: ConnectedViewState, event: RootEvent): Task[ConnectedAction] =
+  /** Sends the events of one browser action in order, then settles the view. */
+  def dispatch(state: ConnectedViewState, events: Vector[RootEvent]): Task[ConnectedAction] =
+    pushAll(state, events, round = 0)
+      .flatMap(settle(state))
+      .catchSome { case _: ZioHttp.InProcessTransportClosed =>
+        ZIO.succeed(ConnectedAction.Disconnected)
+      }
+
+  // Sends the events in order, settling the view after each one so that an element one event
+  // renders mounts even if a later one removes it. Stops at an event that navigates away, which
+  // leaves the page.
+  private def pushAll(
+    state: ConnectedViewState,
+    events: Vector[RootEvent],
+    round: Int
+  ): Task[ConnectedAction] =
+    ZIO.foldLeft(events)(ConnectedAction.Rendered: ConnectedAction) {
+      case (ConnectedAction.Rendered, event) =>
+        pushEvent(state, event).flatMap(settleRound(state, round))
+      case (stopped, _) => ZIO.succeed(stopped)
+    }
+
+  private def pushEvent(state: ConnectedViewState, event: RootEvent): Task[ConnectedAction] =
     request(
       state.joinRef,
       state.topic,
@@ -1003,16 +1129,12 @@ final private class ConnectedSession(
         "meta"    -> event.meta.fold[Json](Json.Obj.empty)(identity)
       )
     ).flatMap(action)
-      .tap(rendered(state))
-      .catchSome { case _: ZioHttp.InProcessTransportClosed =>
-        ZIO.succeed(ConnectedAction.Disconnected)
-      }
 
   /** Sends the patch a browser sends for a patch link, and applies the reply. */
   def livePatch(state: ConnectedViewState, href: String): Task[ConnectedAction] =
     request(state.joinRef, state.topic, "live_patch", Json.Obj("url" -> Json.Str(href)))
       .flatMap(action)
-      .tap(rendered(state))
+      .flatMap(settle(state))
       .catchSome { case _: ZioHttp.InProcessTransportClosed =>
         ZIO.succeed(ConnectedAction.Disconnected)
       }
@@ -1029,8 +1151,8 @@ final private class ConnectedSession(
     (for
       ref      <- freshReference
       response <- awaitReply(ref)(transport.sendMessage(state.topic, state.joinRef, ref, message))
-      result   <- action(response)
-      _        <- rendered(state)(result)
+      sent     <- action(response)
+      result   <- settle(state)(sent)
     yield result).catchSome { case _: ZioHttp.InProcessTransportClosed =>
       ZIO.succeed(ConnectedAction.Disconnected)
     }
@@ -1121,6 +1243,7 @@ final private class ConnectedSession(
                ZIO.unless(completed)(sendUploadLeave(uploadJoinRef, uploadTopic).forkDaemon.unit)
              )
            )
+      _ <- observed(state)
     yield ()
 
   // Like the browser, reports progress after each chunk reply, and the entry completes only once
@@ -1182,24 +1305,78 @@ final private class ConnectedSession(
                ).onError(_ => states.update(_ - state.key) *> state.close)
       _ <- joinResponse(reply).onError(_ => states.update(_ - state.key) *> state.close)
       _ <- state.markJoined
-      _ <- requireLiveChangeBindings(state)
+      _ <- runJoinCommands(state)
     yield new ConnectedView(this, state)).mapError {
       case failure: ConnectedJoinFailureException => failure.failure
       case _: ZioHttp.InProcessTransportClosed    => ConnectedJoinFailure.Disconnected
       case error                                  => ConnectedJoinFailure.Transport(error)
     }
 
-  // A guard may close the view while its reply is on the way; a closed view has nothing to check.
-  private[testing] def requireLiveChangeBindings(state: ConnectedViewState): Task[Unit] =
-    state.joinedHtml.flatMap(
-      ZIO.foreachDiscard(_)(html => ZIO.attempt(ConnectedDom.requireLiveChangeBindings(html)))
-    )
+  // Like the browser, a join runs the phx-mounted commands of the joined HTML, then its
+  // phx-connected commands. A navigation they cause is reported by `awaitAction`.
+  private def runJoinCommands(state: ConnectedViewState): Task[Unit] =
+    for
+      html      <- state.html
+      connected <-
+        ZIO.attempt(
+          ConnectedDom
+            .ownedElements(html)
+            .flatMap((_, element) => ConnectedDom.lifecycleEvents(element, "phx-connected"))
+        )
+      mounted <- settle(state)(ConnectedAction.Rendered)
+      result  <- mounted match
+                  case ConnectedAction.Rendered => pushAll(state, connected, round = 0)
+                  case stopped                  => ZIO.succeed(stopped)
+      _ <- ZIO.unless(result == ConnectedAction.Rendered)(state.signalAction(result))
+    yield ()
 
-  // Only a rendered action can leave new HTML to check.
-  private[testing] def rendered(state: ConnectedViewState)(action: ConnectedAction): Task[Unit] =
-    action match
-      case ConnectedAction.Rendered => requireLiveChangeBindings(state)
-      case _                        => ZIO.unit
+  /** Settles HTML the server sent on its own, reporting a navigation it causes to `awaitAction`. */
+  private[testing] def observed(state: ConnectedViewState): Task[Unit] =
+    settle(state)(ConnectedAction.Rendered)
+      .flatMap(result =>
+        ZIO.unless(result == ConnectedAction.Rendered)(state.signalAction(result)).unit
+      )
+      .catchSome { case _: ZioHttp.InProcessTransportClosed => ZIO.unit }
+
+  /** Checks the HTML a rendered action left and, like the browser, runs the phx-mounted commands of
+    * the elements it added, until a round adds none. Returns the action, or the navigation a pushed
+    * command caused.
+    */
+  private[testing] def settle(state: ConnectedViewState)(action: ConnectedAction)
+    : Task[ConnectedAction] =
+    settleRound(state, round = 0)(action)
+
+  // `round` counts the phx-mounted commands that led to this render.
+  private def settleRound(state: ConnectedViewState, round: Int)(action: ConnectedAction)
+    : Task[ConnectedAction] = action match
+    // A guard may close the view while its reply is on the way; a closed view has nothing to check.
+    case ConnectedAction.Rendered =>
+      state.joinedHtml.flatMap {
+        case None       => ZIO.succeed(action)
+        case Some(html) =>
+          for
+            _       <- ZIO.attempt(ConnectedDom.requireLiveChangeBindings(html))
+            added   <- state.addedElements(html)
+            mounted <- ZIO.attempt(
+                         added
+                           .map(element =>
+                             element -> ConnectedDom.lifecycleEvents(element, "phx-mounted")
+                           ).filter(_._2.nonEmpty)
+                       )
+            result <-
+              if mounted.isEmpty then ZIO.succeed(action)
+              else if round == ConnectedSession.MountRounds then
+                ZIO.fail(
+                  IllegalStateException(
+                    s"phx-mounted commands kept adding elements after " +
+                      s"${ConnectedSession.MountRounds} rounds: " +
+                      mounted.map((element, _) => ConnectedDom.describe(element)).mkString(", ")
+                  )
+                )
+              else pushAll(state, mounted.flatMap(_._2), round + 1)
+          yield result
+      }
+    case stopped => ZIO.succeed(stopped)
 
   private def followRoot(
     destination: String,
@@ -1424,6 +1601,8 @@ final private class ConnectedSession(
 end ConnectedSession
 
 private object ConnectedSession:
+  val MountRounds = 20
+
   def make(
     transport: ZioHttp.InProcessTransport,
     bootstrap: ConnectedRender.Bootstrap,
@@ -1457,9 +1636,23 @@ final private class ConnectedViewState(
   actions: Queue[ConnectedAction],
   joined: Ref[Boolean],
   closed: Promise[Nothing, Unit],
-  val usedFields: Ref[Set[String]]):
+  val usedFields: Ref[Set[String]],
+  committedElements: Ref[Set[ConnectedDom.ElementKey]]):
 
   val key: (String, String) = topic -> joinRef.value
+
+  /** The elements of `html` that were not in the HTML passed to the previous call, as the browser's
+    * DOM patch adds them. `html` becomes the previous HTML.
+    */
+  def addedElements(html: String): Task[Vector[Element]] =
+    ZIO
+      .attempt(ConnectedDom.ownedElements(html))
+      .flatMap(keyed =>
+        committedElements.modify(previous =>
+          keyed.collect { case (key, element) if !previous(key) => element } ->
+            keyed.map(_._1).toSet
+        )
+      )
 
   def html: UIO[String] = transport.html(topic, joinRef).orDie
 
@@ -1473,8 +1666,13 @@ final private class ConnectedViewState(
   def isMissing: UIO[Boolean] =
     joined.get.flatMap(installed => ZIO.ifZIO(isJoined)(ZIO.succeed(false), ZIO.succeed(installed)))
 
-  def awaitHtml(description: String, timeout: Duration)(predicate: String => Boolean)
-    : Task[String] =
+  def awaitHtml(
+    description: String,
+    timeout: Duration,
+    observe: Task[Unit]
+  )(
+    predicate: String => Boolean
+  ): Task[String] =
     Ref.make(Option.empty[String]).flatMap { lastObserved =>
       val closedFailure = ZIO.fail(
         Exception(s"Connected LiveView '$topic' closed while waiting for '$description'.")
@@ -1484,6 +1682,7 @@ final private class ConnectedViewState(
         for
           alreadyClosed <- closed.isDone.zipWith(transport.isClosed)(_ || _)
           _             <- ZIO.when(alreadyClosed)(closedFailure)
+          _             <- observe
           current       <- transport.html(topic, joinRef)
           _             <- lastObserved.set(Some(current))
           matches       <- ZIO.attempt(predicate(current))
@@ -1527,9 +1726,20 @@ private object ConnectedViewState:
     joinRef: PhoenixRef.Value
   ): UIO[ConnectedViewState] =
     for
-      diffs   <- Queue.sliding[Unit](64)
-      actions <- Queue.sliding[ConnectedAction](16)
-      joined  <- Ref.make(false)
-      closed  <- Promise.make[Nothing, Unit]
-      used    <- Ref.make(Set.empty[String])
-    yield new ConnectedViewState(transport, topic, joinRef, diffs, actions, joined, closed, used)
+      diffs             <- Queue.sliding[Unit](64)
+      actions           <- Queue.sliding[ConnectedAction](16)
+      joined            <- Ref.make(false)
+      closed            <- Promise.make[Nothing, Unit]
+      used              <- Ref.make(Set.empty[String])
+      committedElements <- Ref.make(Set.empty[ConnectedDom.ElementKey])
+    yield new ConnectedViewState(
+      transport,
+      topic,
+      joinRef,
+      diffs,
+      actions,
+      joined,
+      closed,
+      used,
+      committedElements
+    )

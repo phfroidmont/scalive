@@ -74,6 +74,29 @@ object ConnectedJsCommandSpec extends ZIOSpecDefault:
         )
       }
     },
+    test("an element one push adds and the next removes still sends its phx-mounted push") {
+      val openThenClose = JS.push("open").push("close")
+      val view          = Recording(log =>
+        div(
+          div(dom.onMount(openThenClose)),
+          button(idAttr := "go", on.click(openThenClose)),
+          log
+            .map(messages => messages.count(_ == "open") > messages.count(_ == "close"))
+            .when(div(idAttr := "panel", dom.onMount(JS.push("panel"))))
+        )
+      )
+      ZIO.scoped {
+        for
+          connected <- ConnectedRender.join(view)
+          joined    <- connected.text("#received")
+          _         <- connected.click("#go")
+          clicked   <- connected.text("#received")
+        yield assertTrue(
+          joined.split(',').toVector.sorted == Vector("close", "open", "panel"),
+          clicked.split(',').count(_ == "panel") == 2
+        )
+      }
+    },
     test("keyed rows that move do not mount again, and a new keyed row mounts once") {
       def rows(log: Vector[String]) =
         log.reverse.collectFirst { case s"rows:$keys" => keys.split(',').toVector }

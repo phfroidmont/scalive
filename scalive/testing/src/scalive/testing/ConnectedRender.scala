@@ -675,16 +675,15 @@ final class ConnectedView[-Msg] private[testing] (
                     ZIO
                       .attempt {
                         val binding = ConnectedDom.requiredBinding(element, "phx-click")
-                        ConnectedDom.bindingEvents(
-                          element,
-                          binding,
-                          RootEvent(
-                            eventType = Some("click"),
-                            event = binding,
-                            value = ConnectedDom.clickValue(element),
-                            cid = None
+                        ConnectedDom
+                          .bindingPushes(element, binding).map(push =>
+                            RootEvent(
+                              eventType = Some("click"),
+                              event = push.event,
+                              value = ConnectedDom.clickValue(element),
+                              cid = push.cid
+                            )
                           )
-                        )
                       }.flatMap(session.dispatch(state, _))
     yield result
 
@@ -701,17 +700,16 @@ final class ConnectedView[-Msg] private[testing] (
                   val binding = ConnectedDom.requiredBinding(element, attribute)
                   if attribute == "phx-change" then ConnectedDom.requireChangeSource(element)
                   val meta = target.map(value => Json.Obj("_target" -> Json.Str(value)))
-                  ConnectedDom.bindingEvents(
-                    element,
-                    binding,
-                    RootEvent(
-                      eventType = Some("form"),
-                      event = binding,
-                      value = Json.Str(ConnectedDom.urlEncoded(fields)),
-                      cid = None,
-                      meta = meta
+                  ConnectedDom
+                    .bindingPushes(element, binding).map(push =>
+                      RootEvent(
+                        eventType = Some("form"),
+                        event = push.event,
+                        value = Json.Str(ConnectedDom.urlEncoded(fields)),
+                        cid = push.cid,
+                        meta = meta
+                      )
                     )
-                  )
                 }
       result <- session.dispatch(state, events)
     yield result
@@ -745,17 +743,16 @@ final class ConnectedView[-Msg] private[testing] (
                       case Vector(field: FormFieldAssignment[Owner]) if !submitting =>
                         Some(field.field.path.name)
                       case _ => None
-                    val events = ConnectedDom.bindingEvents(
-                      form,
-                      binding,
-                      RootEvent(
-                        eventType = Some("form"),
-                        event = binding,
-                        value = Json.Str(ConnectedDom.urlEncoded(fields)),
-                        cid = None,
-                        meta = target.map(name => Json.Obj("_target" -> Json.Str(name)))
+                    val events = ConnectedDom
+                      .bindingPushes(form, binding).map(push =>
+                        RootEvent(
+                          eventType = Some("form"),
+                          event = push.event,
+                          value = Json.Str(ConnectedDom.urlEncoded(fields)),
+                          cid = push.cid,
+                          meta = target.map(name => Json.Obj("_target" -> Json.Str(name)))
+                        )
                       )
-                    )
                     events -> nowUsed
                   }
       (events, nowUsed) = prepared
@@ -859,20 +856,20 @@ private object ConnectedDom:
   /** One `push` operation of an encoded `JS` command. */
   final private case class JsPush(event: String, target: Option[String])
 
-  /** The events the Phoenix client sends for an event binding of `element`, one per push.
+  /** An event the Phoenix client sends for a binding: its name and the component it goes to. */
+  final case class BindingPush(event: String, cid: Option[Long])
+
+  /** The events the Phoenix client sends for an event binding of `element`, in order.
     *
-    * A plain binding ID is one push of `template`. A `JS` command sends each of its pushes in
-    * order, with the push's event, to the push's target or else to `element`'s `phx-target`. Its
-    * other operations run in the browser only, so they send nothing.
+    * A plain binding ID is one event to `element`'s `phx-target`. A `JS` command sends one event
+    * per push, to the push's target or else to `element`'s `phx-target`. Its other operations run
+    * in the browser only, so they send nothing.
     */
-  def bindingEvents(element: Element, binding: String, template: RootEvent): Vector[RootEvent] =
+  def bindingPushes(element: Element, binding: String): Vector[BindingPush] =
     val pushes =
       if isJsCommand(binding) then commandPushes(binding) else Vector(JsPush(binding, None))
     pushes.map(push =>
-      template.copy(
-        event = push.event,
-        cid = push.target.fold(eventTarget(element))(target(element, _))
-      )
+      BindingPush(push.event, push.target.fold(eventTarget(element))(target(element, _)))
     )
 
   /** The events of the `JS` command in `element`'s lifecycle `attribute`, such as `phx-mounted`.
@@ -883,10 +880,8 @@ private object ConnectedDom:
     val command = element.attr(attribute)
     if !isJsCommand(command) then Vector.empty
     else
-      bindingEvents(
-        element,
-        command,
-        RootEvent(eventType = None, event = command, value = clickValue(element), cid = None)
+      bindingPushes(element, command).map(push =>
+        RootEvent(eventType = None, event = push.event, value = clickValue(element), cid = push.cid)
       )
 
   private def isJsCommand(value: String): Boolean = value.startsWith("[")
@@ -1100,17 +1095,24 @@ final private class ConnectedSession(
 
   /** Sends the events of one browser action in order, then settles the view. */
   def dispatch(state: ConnectedViewState, events: Vector[RootEvent]): Task[ConnectedAction] =
-    pushAll(state, events)
+    pushAll(state, events, round = 0)
       .flatMap(settle(state))
       .catchSome { case _: ZioHttp.InProcessTransportClosed =>
         ZIO.succeed(ConnectedAction.Disconnected)
       }
 
-  // Sends the events in order, stopping at one that navigates away, which leaves the page.
-  private def pushAll(state: ConnectedViewState, events: Vector[RootEvent]): Task[ConnectedAction] =
+  // Sends the events in order, settling the view after each one so that an element one event
+  // renders mounts even if a later one removes it. Stops at an event that navigates away, which
+  // leaves the page.
+  private def pushAll(
+    state: ConnectedViewState,
+    events: Vector[RootEvent],
+    round: Int
+  ): Task[ConnectedAction] =
     ZIO.foldLeft(events)(ConnectedAction.Rendered: ConnectedAction) {
-      case (ConnectedAction.Rendered, event) => pushEvent(state, event)
-      case (stopped, _)                      => ZIO.succeed(stopped)
+      case (ConnectedAction.Rendered, event) =>
+        pushEvent(state, event).flatMap(settleRound(state, round))
+      case (stopped, _) => ZIO.succeed(stopped)
     }
 
   private def pushEvent(state: ConnectedViewState, event: RootEvent): Task[ConnectedAction] =
@@ -1323,7 +1325,7 @@ final private class ConnectedSession(
         )
       mounted <- settle(state)(ConnectedAction.Rendered)
       result  <- mounted match
-                  case ConnectedAction.Rendered => pushAll(state, connected).flatMap(settle(state))
+                  case ConnectedAction.Rendered => pushAll(state, connected, round = 0)
                   case stopped                  => ZIO.succeed(stopped)
       _ <- ZIO.unless(result == ConnectedAction.Rendered)(state.signalAction(result))
     yield ()
@@ -1342,37 +1344,39 @@ final private class ConnectedSession(
     */
   private[testing] def settle(state: ConnectedViewState)(action: ConnectedAction)
     : Task[ConnectedAction] =
-    def round(number: Int, action: ConnectedAction): Task[ConnectedAction] = action match
-      // A guard may close the view while its reply is on the way; a closed view has nothing to check.
-      case ConnectedAction.Rendered =>
-        state.joinedHtml.flatMap {
-          case None       => ZIO.succeed(action)
-          case Some(html) =>
-            for
-              _       <- ZIO.attempt(ConnectedDom.requireLiveChangeBindings(html))
-              added   <- state.addedElements(html)
-              mounted <- ZIO.attempt(
-                           added
-                             .map(element =>
-                               element -> ConnectedDom.lifecycleEvents(element, "phx-mounted")
-                             ).filter(_._2.nonEmpty)
-                         )
-              result <-
-                if mounted.isEmpty then ZIO.succeed(action)
-                else if number == ConnectedSession.MountRounds then
-                  ZIO.fail(
-                    IllegalStateException(
-                      s"phx-mounted commands kept adding elements after " +
-                        s"${ConnectedSession.MountRounds} rounds: " +
-                        mounted.map((element, _) => ConnectedDom.describe(element)).mkString(", ")
-                    )
+    settleRound(state, round = 0)(action)
+
+  // `round` counts the phx-mounted commands that led to this render.
+  private def settleRound(state: ConnectedViewState, round: Int)(action: ConnectedAction)
+    : Task[ConnectedAction] = action match
+    // A guard may close the view while its reply is on the way; a closed view has nothing to check.
+    case ConnectedAction.Rendered =>
+      state.joinedHtml.flatMap {
+        case None       => ZIO.succeed(action)
+        case Some(html) =>
+          for
+            _       <- ZIO.attempt(ConnectedDom.requireLiveChangeBindings(html))
+            added   <- state.addedElements(html)
+            mounted <- ZIO.attempt(
+                         added
+                           .map(element =>
+                             element -> ConnectedDom.lifecycleEvents(element, "phx-mounted")
+                           ).filter(_._2.nonEmpty)
+                       )
+            result <-
+              if mounted.isEmpty then ZIO.succeed(action)
+              else if round == ConnectedSession.MountRounds then
+                ZIO.fail(
+                  IllegalStateException(
+                    s"phx-mounted commands kept adding elements after " +
+                      s"${ConnectedSession.MountRounds} rounds: " +
+                      mounted.map((element, _) => ConnectedDom.describe(element)).mkString(", ")
                   )
-                else pushAll(state, mounted.flatMap(_._2)).flatMap(round(number + 1, _))
-            yield result
-        }
-      case stopped => ZIO.succeed(stopped)
-    round(0, action)
-  end settle
+                )
+              else pushAll(state, mounted.flatMap(_._2), round + 1)
+          yield result
+      }
+    case stopped => ZIO.succeed(stopped)
 
   private def followRoot(
     destination: String,
@@ -1722,12 +1726,12 @@ private object ConnectedViewState:
     joinRef: PhoenixRef.Value
   ): UIO[ConnectedViewState] =
     for
-      diffs   <- Queue.sliding[Unit](64)
-      actions <- Queue.sliding[ConnectedAction](16)
-      joined  <- Ref.make(false)
-      closed  <- Promise.make[Nothing, Unit]
-      used    <- Ref.make(Set.empty[String])
-      added   <- Ref.make(Set.empty[ConnectedDom.ElementKey])
+      diffs             <- Queue.sliding[Unit](64)
+      actions           <- Queue.sliding[ConnectedAction](16)
+      joined            <- Ref.make(false)
+      closed            <- Promise.make[Nothing, Unit]
+      used              <- Ref.make(Set.empty[String])
+      committedElements <- Ref.make(Set.empty[ConnectedDom.ElementKey])
     yield new ConnectedViewState(
       transport,
       topic,
@@ -1737,5 +1741,5 @@ private object ConnectedViewState:
       joined,
       closed,
       used,
-      added
+      committedElements
     )

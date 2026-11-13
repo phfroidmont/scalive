@@ -108,7 +108,7 @@ final private[scalive] case class RootJoin(
   sticky: Boolean)
 
 final private[scalive] case class RootEvent(
-  eventType: String,
+  eventType: Option[String],
   event: String,
   value: Json,
   cid: Option[Long],
@@ -127,7 +127,7 @@ final private[scalive] case class RootEvent(
 
   /** Converts a non-form root event value to Scalive binding parameters. */
   def rootClickParams: Either[String, BindingPayload.Params] =
-    if eventType == "form" then Left("form events do not contain parameter objects")
+    if eventType.contains("form") then Left("form events do not contain parameter objects")
     else
       value match
         case Json.Obj(fields) =>
@@ -139,7 +139,7 @@ final private[scalive] case class RootEvent(
         case _ => Left("non-form root event value must be a JSON object")
 
   def toBindingPayload: Either[String, BindingPayload] =
-    if eventType == "form" then
+    if eventType.contains("form") then
       value match
         case Json.Str(encoded) =>
           FormData
@@ -148,7 +148,7 @@ final private[scalive] case class RootEvent(
             .map(data => BindingPayload.Form(data, formMeta(data)))
         case _ => Left("form event value must be a URL-encoded string")
     // A hook pushes any JSON, as in Phoenix. Browser events and raw hooks read the raw value.
-    else if eventType == "hook" && !value.isInstanceOf[Json.Obj] then
+    else if eventType.contains("hook") && !value.isInstanceOf[Json.Obj] then
       Right(BindingPayload.Params(Map.empty))
     else rootClickParams
 
@@ -308,7 +308,7 @@ private[scalive] object PhoenixProtocol:
       val fields = rawFields.toMap
       rejectUnknown(fields, Set("type", "event", "value", "uploads", "cid", "meta")).flatMap { _ =>
         for
-          eventType <- requiredString(fields, "type")
+          eventType <- nullableString(fields, "type")
           event     <- requiredString(fields, "event")
           value     <- fields.get("value").toRight("missing field 'value'")
           uploads   <- optionalObject(fields, "uploads")
@@ -344,6 +344,15 @@ private[scalive] object PhoenixProtocol:
     fields.get(name) match
       case Some(Json.Str(value)) => Right(value)
       case Some(_)               => Left(s"field '$name' must be a string")
+      case None                  => Left(s"missing field '$name'")
+
+  // The client sends a null type for a JS command run outside a DOM event, such as phx-mounted.
+  private def nullableString(fields: Map[String, Json], name: String)
+    : Either[String, Option[String]] =
+    fields.get(name) match
+      case Some(Json.Null)       => Right(None)
+      case Some(Json.Str(value)) => Right(Some(value))
+      case Some(_)               => Left(s"field '$name' must be a string or null")
       case None                  => Left(s"missing field '$name'")
 
   private def optionalString(fields: Map[String, Json], name: String)

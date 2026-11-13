@@ -598,7 +598,7 @@ object ComponentKernelSpec extends ZIOSpecDefault:
                    BindingPayload.Params(Map.empty),
                    Some(
                      LiveEvent(
-                       "click",
+                       Some("click"),
                        "click",
                        Json.Obj("value" -> Json.Num(1)),
                        Map.empty,

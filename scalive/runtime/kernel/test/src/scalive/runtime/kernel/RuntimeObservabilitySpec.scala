@@ -201,7 +201,7 @@ object RuntimeObservabilitySpec extends ZIOSpecDefault:
                              BindingPayload.Params(Map.empty),
                              Some(
                                LiveEvent(
-                                 kind = "click",
+                                 kind = Some("click"),
                                  bindingId = "missing",
                                  value = Json.Obj(),
                                  params = Map.empty,

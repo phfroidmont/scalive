@@ -565,7 +565,7 @@ final private[scalive] class RootConnection[Msg, Model] private (
 
   private def bindingEvent(binding: BindingId, payload: BindingPayload): LiveEvent =
     LiveEvent(
-      kind = "event",
+      kind = Some("event"),
       bindingId = binding.encoded,
       value = Json.Obj(payload.params.toSeq.map((name, value) => name -> Json.Str(value))*),
       params = payload.params,
@@ -580,7 +580,7 @@ final private[scalive] class RootConnection[Msg, Model] private (
     cid: Option[Long]
   ): LiveEvent =
     LiveEvent(
-      kind = "hook",
+      kind = Some("hook"),
       bindingId = eventName,
       value = rawJson.fromJson[Json].getOrElse(Json.Str(rawJson)),
       params = payload.params,

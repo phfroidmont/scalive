@@ -106,7 +106,7 @@ object ComponentRuntimeSpec extends ZIOSpecDefault:
              id,
              removed,
              BindingPayload.Params(Map.empty),
-             LiveEvent("click", removed.encoded, Json.Obj(), Map.empty, None, None)
+             LiveEvent(Some("click"), removed.encoded, Json.Obj(), Map.empty, None, None)
            )
       _       <- connection.submitComponentMessage(CommandId.fresh().toOption.get, id, RowMsg.Clicked(2))
       model   <- connection.inspectComponentModel[(Vector[Int], Vector[Int])](id)
@@ -602,7 +602,7 @@ object ComponentRuntimeSpec extends ZIOSpecDefault:
         val kind      = FlashKind("info")
         val component = ComponentInstanceId(Long.MaxValue)
         val event = LiveEvent(
-          kind = "click",
+          kind = Some("click"),
           bindingId = "lv:clear-flash",
           value = Json.Obj.empty,
           params = Map.empty,

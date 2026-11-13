@@ -800,8 +800,8 @@
       "kind" : "class",
       "signatures" : [
         {
-          "id" : "class:scalive.LiveEvent:316a026a629503bd",
-          "signature" : "class LiveEvent(kind: String, bindingId: String, value: zio.json.ast.Json, params: Map[String, String], cid: Option[Long], meta: Option[zio.json.ast.Json])"
+          "id" : "class:scalive.LiveEvent:c1c7c8af3e3b8f86",
+          "signature" : "class LiveEvent(kind: Option[String], bindingId: String, value: zio.json.ast.Json, params: Map[String, String], cid: Option[Long], meta: Option[zio.json.ast.Json])"
         }
       ]
     },
@@ -27163,8 +27163,8 @@
       "kind" : "val",
       "signatures" : [
         {
-          "id" : "val:scalive.LiveEvent.kind:71a747d2600f7ae5",
-          "signature" : "val kind: String"
+          "id" : "val:scalive.LiveEvent.kind:5cd0f552336ae10d",
+          "signature" : "val kind: Option[String]"
         }
       ]
     },

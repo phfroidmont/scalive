@@ -1,6 +1,8 @@
 import { expect, test } from "./playwright.js"
 
-test("runs client commands and exposes public typed browser events", async ({ page }) => {
+const copyChunk = /\/static\/chunks\/browser-copy-[^/]+\.js$/
+
+async function recordClipboardWrites(page) {
   await page.addInitScript(() => {
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
@@ -11,6 +13,52 @@ test("runs client commands and exposes public typed browser events", async ({ pa
       },
     })
   })
+}
+
+test("downloads the hook's module only on a page that renders the hook", async ({ page }) => {
+  const chunkRequests = []
+  page.on("request", (request) => {
+    if (copyChunk.test(new URL(request.url()).pathname)) chunkRequests.push(request.url())
+  })
+  await recordClipboardWrites(page)
+
+  await page.goto("/examples/counter")
+  await expect(page.locator("html")).toHaveAttribute("data-connection-state", "connected")
+  expect(chunkRequests).toEqual([])
+
+  await page.goto("/examples/browser-integration")
+  await expect(page.locator("html")).toHaveAttribute("data-connection-state", "connected")
+  const example = page.locator('[data-example="browser-integration"]')
+  await example.getByRole("button", { name: "Copy sample text" }).click()
+  await expect(example.locator("[data-browser-copy-status]")).toHaveText(
+    "Browser operation completed.",
+  )
+  expect(await page.evaluate(() => window.__copiedText)).toBe(
+    "Scalive keeps server-to-browser event payloads typed.",
+  )
+  await expect(example.locator("[data-browser-hook-failed]")).toBeHidden()
+  expect(chunkRequests).toHaveLength(1)
+})
+
+test("tells the user when the hook's module cannot load", async ({ page }) => {
+  await page.route(copyChunk, (route) => route.abort())
+  await page.goto("/examples/browser-integration")
+  await expect(page.locator("html")).toHaveAttribute("data-connection-state", "connected")
+
+  const example = page.locator('[data-example="browser-integration"]')
+  const failed = example.locator("[data-browser-hook-failed]")
+  await expect(failed).toBeVisible()
+  await expect(failed).toHaveText("Copying could not load. Reload the page to try again.")
+
+  await example.getByRole("button", { name: "Copy sample text" }).click()
+  await expect(example.locator("[data-browser-copy-status]")).toHaveText(
+    "Waiting for the browser result. Retry if needed.",
+  )
+  await expect(failed).toBeVisible()
+})
+
+test("runs client commands and exposes public typed browser events", async ({ page }) => {
+  await recordClipboardWrites(page)
   await page.goto("/examples/browser-integration")
   await expect(page.locator("html")).toHaveAttribute("data-connection-state", "connected")
 

@@ -93,7 +93,15 @@ final class BrowserInteropExample(instanceId: String)
           dataAttr("browser-copy-status") := "",
           role                            := "status",
           model.map(_.operation.label)
+        ),
+        // docs:start browser-integration-hook-failed
+        p(
+          dataAttr("browser-hook-failed") := "",
+          role                            := "alert",
+          styleAttr                       := "display: none;",
+          "Copying could not load. Reload the page to try again."
         )
+        // docs:end browser-integration-hook-failed
       )
     )
 end BrowserInteropExample

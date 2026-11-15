@@ -647,10 +647,11 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
                           ZIO.scoped(routes.runZIO(Request.get(url(path))))
                         )
         entry <- ZIO.scoped(routes.runZIO(Request.get(url(script))).flatMap(_.body.asString))
-        chunk = """\./(chunks/[A-Za-z0-9_.-]+\.js)""".r
-                  .findFirstMatchIn(entry)
-                  .map(found => "/static/" + found.group(1))
-        servedChunk <- ZIO.foreach(chunk)(path => ZIO.scoped(routes.runZIO(Request.get(url(path)))))
+        chunks = """\./(chunks/[A-Za-z0-9_.-]+\.js)""".r
+                   .findAllMatchIn(entry)
+                   .map(found => "/static/" + found.group(1))
+                   .toVector
+        servedChunks <- ZIO.foreach(chunks)(path => ZIO.scoped(routes.runZIO(Request.get(url(path)))))
       yield assertTrue(
         home.response.status == Status.Ok,
         stylesheets == Vector(assets.path("fonts.css"), assets.path("app.css")),
@@ -666,9 +667,11 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         searchAsset == assets.path("search-index.json"),
         searchAsset == "/static/search-index.json",
         servedAssets.forall(_.status == Status.Ok),
-        servedChunk.map(_.status).contains(Status.Ok),
-        servedChunk.flatMap(_.header(Header.CacheControl)).contains(
-          StaticAssetCache.default.immutable
+        chunks.exists(_.matches("""/static/chunks/search-[0-9A-Z]{8}\.js""")),
+        chunks.exists(_.matches("""/static/chunks/browser-copy-[0-9A-Z]{8}\.js""")),
+        servedChunks.forall(_.status == Status.Ok),
+        servedChunks.forall(
+          _.header(Header.CacheControl).contains(StaticAssetCache.default.immutable)
         ),
         reportsLab.response.status == Status.Ok,
         reportsDocument.select("[data-report-selected]").text() == "Daily sales",

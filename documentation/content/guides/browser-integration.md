@@ -108,67 +108,24 @@ determines how its payload is decoded.
 ## Implement the browser hook {#implement-the-browser-hook}
 
 For an application with a custom module bundle, put the hook in a focused module
-such as `assets/js/browser-interop.js`. This is the implementation used by the
-documentation application, with bounded input, clipboard failure handling, and
-protection against late asynchronous results:
+such as `assets/js/browser-interop.js`. This is the hook the documentation
+application registers:
 
-```js
-const maxRequestIdLength = 64
-const maxTextLength = 4096
-
-export function readCopyRequest(payload) {
-  const requestId = typeof payload?.requestId === "string" ? payload.requestId : ""
-  const text = typeof payload?.text === "string" ? payload.text : undefined
-  if (
-    requestId.length === 0 ||
-    requestId.length > maxRequestIdLength ||
-    text === undefined ||
-    text.length > maxTextLength
-  ) return undefined
-  return { requestId, text }
-}
-
-export function createBrowserInteropHook(clipboard = globalThis.navigator?.clipboard) {
-  return {
-    mounted() {
-      this.isDestroyed = false
-      this.handleEvent("browser-copy-request", async (payload) => {
-        if (this.isDestroyed) return
-
-        const request = readCopyRequest(payload)
-        let ok = false
-        if (request && clipboard?.writeText) {
-          try {
-            await clipboard.writeText(request.text)
-            ok = true
-          } catch {
-            ok = false
-          }
-        }
-
-        if (this.isDestroyed) return
-        try {
-          await this.pushEvent("browser-copy-result", {
-            requestId: request?.requestId ?? "",
-            ok,
-          })
-        } catch {
-          // The LiveSocket may disconnect while browser work is completing.
-        }
-      })
-    },
-
-    destroyed() {
-      this.isDestroyed = true
-    },
-  }
-}
-```
+@:sourceRegion(documentation/site/assets/js/browser-interop.js, browser-integration-hook)
 
 `handleEvent` receives events pushed by `ctx.client.push`. `pushEvent` sends the
 result back to the LiveView, which decodes it into `Msg.CopyFinished` and checks
-it in `handleMessage`. The explicit failure result lets Scala clear or report the pending
-operation instead of waiting forever.
+it in `handleMessage`.
+
+The copying itself is in a second module, `assets/js/browser-copy.js`, with
+bounded input and clipboard failure handling. Its explicit failure result lets
+Scala clear or report the pending operation instead of waiting forever:
+
+@:sourceRegion(documentation/site/assets/js/browser-copy.js, browser-integration-copy-module)
+
+The hook imports that module when it mounts instead of at the top of its file;
+[Load a heavy hook on demand](#load-a-heavy-hook-on-demand) explains why and
+what the import requires of the hook.
 
 ## Register the hook with LiveSocket {#register-the-hook-with-live-socket}
 
@@ -222,6 +179,65 @@ model and every browser-owned effect through one explicit interaction.
 Set a destroyed flag or abort owned asynchronous work in the hook's `destroyed`
 callback. Check it again after every awaited browser operation and tolerate
 `pushEvent` failure because the LiveSocket may disconnect before completion.
+
+## Load a heavy hook on demand {#load-a-heavy-hook-on-demand}
+
+`LiveSocket` looks a hook up when its element mounts, so every hook must be
+registered in the script the page loads first. A static `import` of a large
+library in a hook's file therefore puts that library on every page, including
+the pages that never render the hook. Keep the registered hook small instead and
+let it import its heavy module when it mounts. A bundler that splits code emits
+the module as its own chunk, and the browser downloads the chunk only on a page
+that renders the hook, once per document.
+
+This needs a build that emits ES modules with code splitting, and a root layout
+that loads the entry script as a module; see
+[Load a deployment manifest](static-assets-and-client-setup.md#load-a-deployment-manifest)
+for a worked build. A single-file bundle cannot split.
+
+The copy module above is small; it stands in for an editor, a chart, or an image
+cropper. The hook starts the import in `mounted` and keeps the promise:
+
+@:sourceRegion(documentation/site/assets/js/browser-interop.js, browser-integration-hook-load)
+
+Two rules make this safe:
+
+- **Register `handleEvent` listeners before the import settles.** The server can
+  push an event as soon as the view has mounted. A listener registered after an
+  `await` misses it; a listener registered at once waits for the module inside
+  its own body, as this one does.
+- **Check for destruction after the import.** A visitor can navigate away while
+  the chunk downloads. When the import resolves for a destroyed hook, do
+  nothing: its element is gone and its `pushEvent` no longer has a view. A hook
+  that sets up a library on `this.el` after the import needs the same check
+  first.
+
+The import can also fail: the network dropped, or the page was opened before a
+deployment and asks for a chunk the new server no longer has. Log the failure
+and show the visitor a state they can see, not a control that silently does
+nothing:
+
+@:sourceRegion(documentation/site/assets/js/browser-interop.js, browser-integration-hook-load-failed)
+
+The LiveView renders the notice hidden, inside the hook's element:
+
+@:sourceRegion(documentation/site/src/scalive/docs/examples/BrowserInteropExample.scala, browser-integration-hook-failed)
+
+`this.js().show` reveals it in a way later patches keep, where a style set
+directly on the element would be reverted by the next patch.
+
+The notice asks for a reload and does not retry. A later mount of the hook in
+the same document may fail the same way without asking the server again, because
+a browser may remember a failed import for the life of the document. A full
+page load is the dependable recovery.
+
+For the deployment case, visitors usually hear earlier: a page that reconnects
+to a server whose tracked assets changed reports `staticChanged`, and a layout
+can [offer a reload after a deployment](layouts.md#offer-a-reload-after-a-deployment)
+before anyone mounts the hook. Keeping old chunks available across deployments
+is a [deployment](deployment.md#know-what-a-deployment-invalidates) concern.
+
+Scalive has no helper for this pattern; it is ordinary JavaScript in the hook.
 
 ## Related tasks {#related-tasks}
 

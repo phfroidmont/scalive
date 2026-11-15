@@ -191,7 +191,7 @@ object RootSliceApp extends ZIOAppDefault:
 
   override val run =
     for
-      assets     <- StaticAssets.load(StaticAssetConfig.classpath("public", Seq("app.js")))
+      assets     <- StaticAssets.tree(StaticAssetRoot.classpath("public"))
       liveRoutes <- ZioHttp.routes(application(assets), config)
       routes = liveRoutes ++ supportRoutes ++ assets.routes
       _ <- Server.serve(routes).provide(Server.defaultWithPort(serverPort))

@@ -30,18 +30,6 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
       .fold(error => throw new IllegalArgumentException(error), identity),
     "documentation-application-spec-secret"
   )
-  private val assetNames = Seq(
-    "app.css",
-    "app.js",
-    "favicon.svg",
-    "fonts.css",
-    "instrument-sans-OFL.txt",
-    "jetbrains-mono-OFL.txt",
-    "runtime-connected-lifetime.svg",
-    "runtime-connected-turn.svg",
-    "runtime-disconnected-lifetime.svg",
-    "search-index.json"
-  )
   // Lazy: Mill initializes spec objects inside its daemon to list tests. Running effects
   // there makes ZIO Test's shutdown hook spin at exit, so the daemon never exits.
   private lazy val authService     = AuthService.inMemory()
@@ -83,9 +71,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
     test("renders every generated page as disconnected HTML") {
       for
         application <- loadApplication
-        assets      <- StaticAssets.load(
-                    StaticAssetConfig.classpath("public", assetNames)
-                  )
+        assets      <- StaticAssets.manifest(StaticAssetRoot.classpath("public"))
         routes <- application
                     .routes(assets, security, config)
                     .map(_.provideEnvironment(documentationEnvironment))
@@ -174,7 +160,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
     test("renders the Signal lockup and gives only the homepage a wide shell") {
       for
         application <- loadApplication
-        assets      <- StaticAssets.load(StaticAssetConfig.classpath("public", assetNames))
+        assets      <- StaticAssets.manifest(StaticAssetRoot.classpath("public"))
         routes <- application
                     .routes(assets, security, config)
                     .map(_.provideEnvironment(documentationEnvironment))
@@ -208,9 +194,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
     test("keeps the Learn overview concise and lifecycle details ordered") {
       for
         application <- loadApplication
-        assets      <- StaticAssets.load(
-                    StaticAssetConfig.classpath("public", assetNames)
-                  )
+        assets      <- StaticAssets.manifest(StaticAssetRoot.classpath("public"))
         routes <- application
                     .routes(assets, security, config)
                     .map(_.provideEnvironment(documentationEnvironment))
@@ -259,7 +243,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
     test("renders runtime diagrams in narrative order with accessible fallbacks") {
       for
         application <- loadApplication
-        assets      <- StaticAssets.load(StaticAssetConfig.classpath("public", assetNames))
+        assets      <- StaticAssets.manifest(StaticAssetRoot.classpath("public"))
         routes <- application
                     .routes(assets, security, config)
                     .map(_.provideEnvironment(documentationEnvironment))
@@ -314,7 +298,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
     test("renders editorial sections as flat indexes and preserves the API tree") {
       for
         application <- loadApplication
-        assets      <- StaticAssets.load(StaticAssetConfig.classpath("public", assetNames))
+        assets      <- StaticAssets.manifest(StaticAssetRoot.classpath("public"))
         routes <- application
                     .routes(assets, security, config)
                     .map(_.provideEnvironment(documentationEnvironment))
@@ -352,7 +336,8 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         guideGroups == Vector(
           "Orientation" -> Vector("/guides/phoenix-live-view-orientation"),
           "Setup and foundations" -> Vector(
-            "/guides/static-assets-and-client-setup",
+            "/guides/client-setup",
+            "/guides/static-assets",
             "/guides/configuration"
           ),
           "Interfaces and input" -> Vector(
@@ -421,9 +406,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
     test("renders generated API summaries, signatures, and pinned sources") {
       for
         application <- loadApplication
-        assets      <- StaticAssets.load(
-                    StaticAssetConfig.classpath("public", assetNames)
-                  )
+        assets      <- StaticAssets.manifest(StaticAssetRoot.classpath("public"))
         routes <- application
                     .routes(assets, security, config)
                     .map(_.provideEnvironment(documentationEnvironment))
@@ -494,7 +477,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
     test("renders authored API directives as inline references with concise previews") {
       for
         application <- loadApplication
-        assets      <- StaticAssets.load(StaticAssetConfig.classpath("public", assetNames))
+        assets      <- StaticAssets.manifest(StaticAssetRoot.classpath("public"))
         routes <- application
                     .routes(assets, security, config)
                     .map(_.provideEnvironment(documentationEnvironment))
@@ -522,7 +505,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
     test("renders a bounded URL-filtered example catalog") {
       for
         application <- loadApplication
-        assets      <- StaticAssets.load(StaticAssetConfig.classpath("public", assetNames))
+        assets      <- StaticAssets.manifest(StaticAssetRoot.classpath("public"))
         routes <- application
                     .routes(assets, security, config)
                     .map(_.provideEnvironment(documentationEnvironment))
@@ -617,7 +600,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
     test("renders a representative source-backed example on its canonical detail route") {
       for
         application <- loadApplication
-        assets      <- StaticAssets.load(StaticAssetConfig.classpath("public", assetNames))
+        assets      <- StaticAssets.manifest(StaticAssetRoot.classpath("public"))
         routes <- application
                     .routes(assets, security, config)
                     .map(_.provideEnvironment(documentationEnvironment))
@@ -636,12 +619,10 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         counterDocument.select(".docs-section-nav").isEmpty
       )
     },
-    test("serves tracked assets and leaves unknown paths as real 404 responses") {
+    test("serves the hashed entries through their aliases and leaves unknown paths as real 404 responses") {
       for
         application <- loadApplication
-        assets      <- StaticAssets.load(
-                    StaticAssetConfig.classpath("public", assetNames)
-                  )
+        assets      <- StaticAssets.manifest(StaticAssetRoot.classpath("public"))
         routes <- application
                     .routes(assets, security, config)
                     .map(_.provideEnvironment(documentationEnvironment) ++ assets.routes)
@@ -652,38 +633,47 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
                         routes,
                         Request.get(url("/examples/service-injection/lab"))
                       )
-        searchAsset = Jsoup
-                        .parse(home.html)
-                        .select("#docs-global-search")
-                        .attr("data-search-index")
         document        = Jsoup.parse(home.html)
         reportsDocument = Jsoup.parse(reportsLab.html)
-        assetPaths      =
-          document
-            .select("script[src], link[rel=stylesheet]")
-            .asScala.toVector.map(element =>
-              Option(element.attr("src")).filter(_.nonEmpty).getOrElse(element.attr("href"))
-            )
-            .filterNot(_.startsWith("/_scalive/"))
-        versionedPaths = assetPaths :+ searchAsset
-        versions = versionedPaths.map(
-                     _.stripPrefix("/static/").takeWhile(_ != '/')
-                   ).distinct
-        servedAssets <- ZIO.foreach(versionedPaths)(path =>
+        searchAsset     = document.select("#docs-global-search").attr("data-search-index")
+        stylesheets     = document
+                        .select("link[rel=stylesheet][phx-track-static]")
+                        .asScala.toVector.map(_.attr("href"))
+        scripts = document
+                    .select("script[src][phx-track-static]")
+                    .asScala.toVector
+                    .filterNot(_.attr("src").startsWith("/_scalive/"))
+        script = scripts.head.attr("src")
+        servedAssets <- ZIO.foreach(stylesheets :+ script :+ searchAsset)(path =>
                           ZIO.scoped(routes.runZIO(Request.get(url(path))))
                         )
+        entry <- ZIO.scoped(routes.runZIO(Request.get(url(script))).flatMap(_.body.asString))
+        chunks = """\./(chunks/[A-Za-z0-9_.-]+\.js)""".r
+                   .findAllMatchIn(entry)
+                   .map(found => "/static/" + found.group(1))
+                   .toVector
+        servedChunks <- ZIO.foreach(chunks)(path => ZIO.scoped(routes.runZIO(Request.get(url(path)))))
       yield assertTrue(
         home.response.status == Status.Ok,
-        assetPaths.size == 3,
-        assetPaths.forall(_.startsWith("/static/")),
-        versions.size == 1,
-        versions.head.matches("[0-9a-f]{64}"),
-        assetPaths.exists(_.endsWith("/fonts.css")),
-        assetPaths.exists(_.endsWith("/app.css")),
-        assetPaths.exists(_.endsWith("/app.js")),
+        stylesheets == Vector(assets.path("fonts.css"), assets.path("app.css")),
+        stylesheets(0).matches("""/static/fonts-[0-9A-Z]{8}\.css"""),
+        stylesheets(1).matches("""/static/app-[0-9A-Z]{8}\.css"""),
+        servedAssets.take(3).forall(
+          _.header(Header.CacheControl).contains(StaticAssetCache.default.immutable)
+        ),
+        scripts.size == 1,
+        scripts.head.attr("type") == "module",
+        script == assets.path("app.js"),
+        script.matches("""/static/app-[0-9A-Z]{8}\.js"""),
         searchAsset == assets.path("search-index.json"),
-        searchAsset.endsWith("/search-index.json"),
+        searchAsset == "/static/search-index.json",
         servedAssets.forall(_.status == Status.Ok),
+        chunks.exists(_.matches("""/static/chunks/search-[0-9A-Z]{8}\.js""")),
+        chunks.exists(_.matches("""/static/chunks/browser-copy-[0-9A-Z]{8}\.js""")),
+        servedChunks.forall(_.status == Status.Ok),
+        servedChunks.forall(
+          _.header(Header.CacheControl).contains(StaticAssetCache.default.immutable)
+        ),
         reportsLab.response.status == Status.Ok,
         reportsDocument.select("[data-report-selected]").text() == "Daily sales",
         missing.status == Status.NotFound,
@@ -693,7 +683,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
     test("renders URL-addressable search with an ordinary GET fallback") {
       for
         application <- loadApplication
-        assets      <- StaticAssets.load(StaticAssetConfig.classpath("public", assetNames))
+        assets      <- StaticAssets.manifest(StaticAssetRoot.classpath("public"))
         routes <- application
                     .routes(assets, security, config)
                     .map(_.provideEnvironment(documentationEnvironment))
@@ -725,7 +715,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
     test("serves a manifest-derived sitemap and self-contained robots policy") {
       for
         application <- loadApplication
-        assets      <- StaticAssets.load(StaticAssetConfig.classpath("public", assetNames))
+        assets      <- StaticAssets.manifest(StaticAssetRoot.classpath("public"))
         routes <- application
                     .routes(assets, security, config)
                     .map(_.provideEnvironment(documentationEnvironment))
@@ -749,7 +739,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
     test("serves a concise Markdown documentation index over ordinary GET and HEAD") {
       for
         application <- loadApplication
-        assets      <- StaticAssets.load(StaticAssetConfig.classpath("public", assetNames))
+        assets      <- StaticAssets.manifest(StaticAssetRoot.classpath("public"))
         routes <- application
                     .routes(assets, security, config)
                     .map(_.provideEnvironment(documentationEnvironment))
@@ -793,7 +783,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
     test("serves Markdown companions for every documentation page and not unknown paths") {
       for
         application <- loadApplication
-        assets      <- StaticAssets.load(StaticAssetConfig.classpath("public", assetNames))
+        assets      <- StaticAssets.manifest(StaticAssetRoot.classpath("public"))
         routes <- application
                     .routes(assets, security, config)
                     .map(_.provideEnvironment(documentationEnvironment))

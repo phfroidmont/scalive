@@ -605,7 +605,7 @@ The root must be an `HtmlElement[Nothing]`, which excludes event bindings that p
 message. Ordinary reusable markup functions remain supported. `StaticHtml` can serialize
 client-only `JS` commands into `phx-*` attributes, but those attributes are inert unless the
 Phoenix LiveView client is loaded and a `LiveSocket` is initialized as described in
-[Client setup and static assets](static-assets-and-client-setup.md#connect-live-socket). A standalone
+[Client setup](client-setup.md#connect-live-socket). A standalone
 static page should not rely on those commands unless it deliberately includes that browser runtime.
 
 Server event bindings, flash content, managed streams, stateful LiveComponents, and nested

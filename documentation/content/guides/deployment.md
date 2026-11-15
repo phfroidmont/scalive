@@ -12,7 +12,7 @@ You need a runnable Scalive application with validated production
 [configuration](configuration.md#current-configuration-contract) and its
 browser resources. The quick start uses only the browser clients packaged
 with Scalive; applications with a custom browser build must build its
-[bundle](static-assets-and-client-setup.md#build-the-client-bundle).
+[bundle](client-setup.md#build-the-client-bundle).
 The commands use the `app` module from the [quick start](../learn/quick-start.md)
 as an example; substitute your application's module name.
 
@@ -44,7 +44,7 @@ source control, an image, logs, or shell history.
 
 A quick-start build job needs only a JDK and Mill. A richer custom browser build
 may additionally require Node.js, npm, or other tools described by the
-[custom bundle guide](static-assets-and-client-setup.md#build-the-client-bundle). Build an
+[custom bundle guide](client-setup.md#build-the-client-bundle). Build an
 executable JAR from the project root:
 
 ```bash
@@ -71,12 +71,13 @@ also build-time only when used. If the application uses a different Mill module
 name, substitute that name in the task and output path.
 
 That single-JAR layout applies to ordinary classpath trees and classpath
-deployment manifests. An application using `deploymentDirectory` must ship the
-complete external output tree alongside the JAR, including its deployment
-manifest, and configure `root` to that release path. Publish the JAR, manifest,
-and final files as one release; do not make the instance ready until
-`StaticAssets.load` validates them. Retain prior content-addressed outputs for as
-long as active clients may request them.
+deployment manifests. An application loading a manifest from a
+`StaticAssetRoot.directory` must ship the complete external output tree
+alongside the JAR, including its deployment manifest, and point the root at
+that release path. Publish the JAR, manifest, and final files as one release;
+do not make the instance ready until `StaticAssets.manifest` validates them.
+Retain prior content-addressed outputs for as long as active clients may
+request them.
 
 Scalive does not prescribe a container image, service manager, database
 migration command, or publication workflow. Package and launch the JAR and any
@@ -161,8 +162,8 @@ the address nginx forwards to.
 ## Cache static assets {#cache-static-assets}
 
 Render asset URLs and serve asset routes from the same loaded `StaticAssets`
-value. Ordinary classpath and directory sources place the unchanged output tree
-beneath one asset-set SHA-256 namespace. Those versioned responses default to
+value. An asset tree places the unchanged output tree beneath one asset-set
+SHA-256 namespace. Those versioned responses default to
 public immutable caching for one year; originals are disabled by default and
 use `no-cache` when explicitly enabled. Deployment manifests instead serve each
 declared final path with its declared `immutable` or `revalidate` policy.
@@ -176,9 +177,9 @@ must have content-addressed or otherwise stable URLs. A file replaced in place
 keeps being served as it was loaded until the application loads its assets
 again, and browsers keep an immutable one for a year; publish a new final path
 instead. See
-[Client setup and static assets](static-assets-and-client-setup.md#serve-versioned-paths)
+[Static assets](static-assets.md#serve-versioned-paths)
 for versioned trees and
-[deployment manifests](static-assets-and-client-setup.md#load-a-deployment-manifest)
+[deployment manifests](static-assets.md#load-a-deployment-manifest)
 for final-path behavior.
 
 ### Know what a deployment invalidates {#know-what-a-deployment-invalidates}
@@ -192,22 +193,43 @@ Which URLs survive depends on the asset model:
 
 | Model | After a deployment |
 | --- | --- |
-| Classpath or directory tree | Changing any file changes the asset-set digest, so every URL moves, including those of unchanged fonts and images. Browsers download the unchanged files again. In exchange, relative references between files resolve without rewriting. |
+| Asset tree | Changing any file changes the asset-set digest, so every URL moves, including those of unchanged fonts and images. Browsers download the unchanged files again. In exchange, relative references between files resolve without rewriting. |
 | Deployment manifest with content-hashed names | Unchanged files keep their URLs. Only files whose bytes changed move. |
 
 Prefer a bundler that emits content-hashed names, loaded through a
-[deployment manifest](static-assets-and-client-setup.md#load-a-deployment-manifest),
-when open pages request assets after their first load or when assets are large.
-To keep a moved URL working, the deployment must still provide its old file: list
-it in the manifest, or serve an archive of previous outputs at the edge.
+[deployment manifest](static-assets.md#load-a-deployment-manifest),
+when open pages request assets after their first load or when assets are large;
+[Build a split bundle](static-assets.md#build-a-split-bundle) is a worked
+example.
+
+### Keep old files available {#keep-old-files-available}
+
+A manifest keeps a URL alive only while the deployment still has the file
+behind it. Where the files are stored decides how far that goes:
+
+| Where the files are | What an open page can still load after a deployment |
+| --- | --- |
+| Classpath, packaged in the application JAR | The files of the current build only. A file the build did not change has the same hashed name in the new JAR, so its URL keeps working. A file that changed has a new name, and its old one is gone with the old JAR. |
+| Directory | Whatever the directory and the manifest still hold. A deployment that adds its outputs to the directory, and lists the previous builds' files in the manifest next to its own, keeps serving them. |
+| Edge or CDN | Whatever it retains. An edge that stores every immutable URL it has served, or an archive of previous outputs published next to the new ones, answers for a file the server no longer has. |
+
+A JAR-packaged manifest is therefore enough for the common case, where a
+deployment changes the application's own code and leaves a large library's
+chunk untouched: browsers keep that chunk, and open pages can still import it.
+It never serves the old version of a chunk that did change. When open pages
+must keep loading those, retain the old outputs in a directory or at the edge;
+Scalive does not keep previous deployments' files itself.
+
+For everything that is not retained, tell the visitor: a page that reconnects
+to a server whose tracked assets changed can
+[offer a reload](layouts.md#offer-a-reload-after-a-deployment) from a layout,
+and a hook whose lazy import fails can
+[show it](browser-integration.md#load-a-heavy-hook-on-demand).
 
 During a rolling deployment, a page rendered by a new replica can request a new
 asset from a replica that does not have it yet. Serve assets from storage every
 version shares, or route a browser to one replica for the duration of the
 rollout.
-
-Pages that keep running on assets from before the deployment can
-[offer a reload](layouts.md#offer-a-reload-after-a-deployment) from a layout.
 
 ## Scale and roll out {#scale-horizontally}
 
@@ -303,7 +325,7 @@ Before promoting an instance, also verify:
 
 - Use [Configuration](configuration.md#current-configuration-contract) for the
   exact framework and application-owned settings.
-- Use [Client setup and static assets](static-assets-and-client-setup.md) for
+- Use [Static assets](static-assets.md#choose-an-asset-model) for
   bundle, versioning, deployment-manifest, and cache behavior.
 - Configure and verify operation metrics with
   [Lifecycle observability](lifecycle-observability.md#publish-built-in-metrics).

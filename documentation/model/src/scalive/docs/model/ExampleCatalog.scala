@@ -123,6 +123,12 @@ object ExampleCatalog:
         path = "documentation/site/assets/js/browser-interop.js",
         region = "browser-integration-hook",
         language = Some("javascript")
+      ),
+      ExampleSource(
+        label = "Module loaded on demand",
+        path = "documentation/site/assets/js/browser-copy.js",
+        region = "browser-integration-copy-module",
+        language = Some("javascript")
       )
     )
   )

@@ -68,7 +68,11 @@ private[scalive] object BrowserFiles:
 
   private def load(prefix: String, files: Seq[String], mountPath: Path): UIO[StaticAssets] =
     StaticAssets
-      .load(StaticAssetConfig.classpath(prefix, files, mountPath, classLoader = classLoader))
+      .tree(
+        StaticAssetRoot.classpath(prefix, classLoader),
+        only = Some(files),
+        mountPath = mountPath
+      )
       .orDie
 
   private def paths(assets: StaticAssets, files: Seq[String]): Vector[Path] =

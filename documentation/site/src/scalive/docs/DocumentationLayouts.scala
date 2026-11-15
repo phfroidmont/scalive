@@ -42,9 +42,11 @@ final private[docs] class DocumentationRootLayout(
           "try{var t=localStorage.getItem(`scalive.docs.theme`);if(t===`light`||t===`dark`){document.documentElement.dataset.theme=t}else{document.documentElement.removeAttribute(`data-theme`)}}catch(e){document.documentElement.removeAttribute(`data-theme`)}"
         ),
         linkTag(rel := "icon", typ := "image/svg+xml", href := assets.path("favicon.svg")),
+        // docs:start site-tracked-entries
         assets.trackedStylesheet("fonts.css"),
         assets.trackedStylesheet("app.css"),
-        assets.trackedScript("app.js", defer := true, typ := "text/javascript"),
+        assets.trackedScript("app.js", typ := "module"),
+        // docs:end site-tracked-entries
         liveTitle(pageTitle, default = "Scalive")
       ),
       bodyTag(content)

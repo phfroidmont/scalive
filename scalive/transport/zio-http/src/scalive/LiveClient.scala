@@ -3,7 +3,7 @@ package scalive
 /** How pages served by [[ZioHttp.routes]] get the Phoenix LiveView browser client.
   *
   * Scalive always serves its navigation-guard runtime and adds it to every page. See [client
-  * setup](https://scalive.dev/guides/static-assets-and-client-setup).
+  * setup](https://scalive.dev/guides/client-setup).
   */
 enum LiveClient derives CanEqual:
   /** Scalive serves the Phoenix 1.8.15 and Phoenix LiveView 1.2.12 clients it packages, adds them

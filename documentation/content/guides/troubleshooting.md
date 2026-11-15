@@ -38,7 +38,8 @@ Check the startup path in order:
 
 - Build any custom browser bundle before starting the JVM, and pass
   `LiveClient.Custom` to `ZioHttp.routes` when it includes both clients.
-- Load every declared asset with @:apiSymbol(def:scalive.StaticAssets.load)`StaticAssets.load`@:@.
+- Load every declared asset with @:apiSymbol(def:scalive.StaticAssets.tree)`StaticAssets.tree`@:@
+  or @:apiSymbol(def:scalive.StaticAssets.manifest)`StaticAssets.manifest`@:@.
 - Validate one @:apiSymbol(class:scalive.ZioHttpConfig)`ZioHttpConfig`@:@ and pass
   it to @:apiSymbol(def:scalive.ZioHttp.routes)`ZioHttp.routes`@:@.
 - Make a custom root layout render `<html>`, `<head>`, and `<body>`.
@@ -47,8 +48,8 @@ Check the startup path in order:
   serves its own assets.
 - Provide all ZIO environment requirements before calling `Server.serve`.
 
-@:apiSymbol(def:scalive.StaticAssets.load)`StaticAssets.load`@:@ fails startup when a configured classpath or directory asset
-is absent. Route construction also validates invalid or duplicate Live route
+Both loaders fail startup when a listed classpath or directory asset is absent,
+and a tree fails when its classpath prefix cannot be listed. Route construction also validates invalid or duplicate Live route
 configurations. Preserve those failures rather than replacing them with a
 server that starts partially.
 
@@ -66,8 +67,8 @@ development only.
 If the HTML renders but remains disconnected, first verify that the scripts
 Scalive adds below its client path, `/_scalive` by default, or the custom client bundle, loaded successfully. Compare the response
 with the canonical
-[asset serving](static-assets-and-client-setup.md#serve-versioned-paths) and
-[tracked tag](static-assets-and-client-setup.md#render-tracked-tags) setup, then
+[asset serving](static-assets.md#serve-versioned-paths) and
+[tracked tag](static-assets.md#render-tracked-tags) setup, then
 request the rendered versioned or final URL directly. The same
 loaded asset value must render the script tag and serve its routes.
 
@@ -77,11 +78,11 @@ loaded asset value must render the script tag and serve its routes.
 namespace; original paths are disabled by default and use `no-cache` only when
 explicitly enabled. Deployment entries use their declared cache policy. Do not
 hard-code a generated path; render it through the loaded assets. If a reverse proxy adds a URL prefix,
-make its routing agree with @:apiSymbol(val:scalive.StaticAssetConfig.mountPath)`StaticAssetConfig.mountPath`@:@ rather than rewriting
+make its routing agree with the loader's `mountPath` argument rather than rewriting
 only the HTML.
 
 Common asset failures are a missing Mill `resources` dependency on the bundle,
-an incomplete output tree or ordinary classpath asset list, a classpath prefix
+an incomplete output tree or restriction list, a classpath prefix
 that does not match the packaged resource, or forgetting
 @:apiSymbol(val:scalive.StaticAssets.routes)`assets.routes`@:@.
 For deployment manifests, first verify the configured manifest filename and
@@ -126,7 +127,7 @@ cannot rely on transport fallback.
 When `ZioHttp.routes` receives its validated config, the disconnected render injects a
 `<meta name="csrf-token">` element into the root layout's `<head>` and issues the
 matching `_scalive_csrf` cookie. First compare the page with the canonical
-[CSRF and LiveSocket bootstrap](static-assets-and-client-setup.md#connect-live-socket),
+[CSRF and LiveSocket bootstrap](client-setup.md#connect-live-socket),
 then inspect the failing token/cookie pair rather than creating another token.
 
 Check all parts of the pair:
@@ -238,7 +239,7 @@ application's requirements.
 
 ## Related tasks {#related-tasks}
 
-- Recheck browser and asset wiring in [Client setup and static assets](static-assets-and-client-setup.md#prerequisites).
+- Recheck browser and asset wiring in [Client setup](client-setup.md#prerequisites) and [Static assets](static-assets.md#prerequisites).
 - Add evidence at the failing boundary with [Testing LiveViews](testing.md#choose-the-test-boundary).
 - Configure and interpret operation metrics with
   [Lifecycle observability](lifecycle-observability.md#publish-built-in-metrics).

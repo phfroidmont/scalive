@@ -13,145 +13,41 @@ import zio.http.codec.PathCodec
 import zio.json.*
 import zio.json.ast.Json
 
-/** Configuration used to load and serve an ordinary asset tree or deployment manifest.
+/** Where the bytes of an asset tree or of a deployment manifest's files are: below a classpath
+  * prefix or in a filesystem directory.
   *
-  * @param source
-  *   classpath, filesystem, or deployment-manifest source
-  * @param mountPath
-  *   HTTP path below which the assets are served
-  * @param cache
-  *   response cache-control headers for immutable and revalidating paths
+  * A root says nothing about versioning. Pass it to [[StaticAssets.tree]] or
+  * [[StaticAssets.manifest]] to choose the asset model.
   */
-final case class StaticAssetConfig(
-  source: StaticAssetSource,
-  mountPath: Path = Path.empty / "static",
-  cache: StaticAssetCache = StaticAssetCache.default)
+sealed trait StaticAssetRoot
 
-/** Constructors for [[StaticAssetConfig]], one for each kind of asset source. */
-object StaticAssetConfig:
-  /** Configures an ordinary classpath tree from its complete relative file list.
+/** Constructors for [[StaticAssetRoot]], one for each place assets can be stored. */
+object StaticAssetRoot:
+  /** Files packaged with the application below a classpath prefix, such as `public`.
     *
-    * Scalive serves the unchanged tree below one immutable asset-set version. Set `serveOriginals`
-    * only when revalidating unversioned paths are also required.
+    * An asset tree publishes every file the class loader finds below the prefix, in every JAR and
+    * directory, so choose a prefix that only the application uses.
+    *
+    * @param prefix
+    *   The classpath prefix below which the files are stored.
+    * @param classLoader
+    *   The class loader that reads the resources. Defaults to the calling thread's context class
+    *   loader.
     */
   def classpath(
-    resourcePrefix: String,
-    assets: Iterable[String],
-    mountPath: Path = Path.empty / "static",
-    serveOriginals: Boolean = false,
+    prefix: String,
     classLoader: ClassLoader = Thread.currentThread().getContextClassLoader
-  ): StaticAssetConfig =
-    StaticAssetConfig(
-      StaticAssetSource.Classpath(resourcePrefix, assets.toSet, serveOriginals, classLoader),
-      mountPath
-    )
+  ): StaticAssetRoot =
+    Classpath(prefix, classLoader)
 
-  /** Configures an ordinary filesystem tree.
-    *
-    * `assets = None` discovers every regular file below `root`; an explicit value limits the tree.
-    * Scalive serves the unchanged tree below one immutable asset-set version.
-    */
-  def directory(
-    root: NioPath,
-    mountPath: Path = Path.empty / "static",
-    serveOriginals: Boolean = false,
-    assets: Option[Iterable[String]] = None
-  ): StaticAssetConfig =
-    StaticAssetConfig(
-      StaticAssetSource.Directory(root, assets.map(_.toSet), serveOriginals),
-      mountPath
-    )
+  /** Files below a filesystem directory. Symlinks cannot escape it. */
+  def directory(path: NioPath): StaticAssetRoot =
+    Directory(path)
 
-  /** Configures manifest-defined final paths from a classpath resource prefix.
-    *
-    * Version 1 maps logical aliases to an exact relative `file` and an `immutable` or `revalidate`
-    * cache policy. The manifest defaults to `assets-manifest.json`.
-    */
-  def deploymentClasspath(
-    resourcePrefix: String,
-    manifest: String = "assets-manifest.json",
-    mountPath: Path = Path.empty / "static",
-    classLoader: ClassLoader = Thread.currentThread().getContextClassLoader
-  ): StaticAssetConfig =
-    StaticAssetConfig(
-      StaticAssetSource.DeploymentClasspath(resourcePrefix, manifest, classLoader),
-      mountPath
-    )
+  final private[scalive] case class Classpath(prefix: String, classLoader: ClassLoader)
+      extends StaticAssetRoot
 
-  /** Configures manifest-defined final paths from a filesystem directory.
-    *
-    * Version 1 maps logical aliases to an exact relative `file` and an `immutable` or `revalidate`
-    * cache policy. The manifest defaults to `assets-manifest.json`.
-    */
-  def deploymentDirectory(
-    root: NioPath,
-    manifest: String = "assets-manifest.json",
-    mountPath: Path = Path.empty / "static"
-  ): StaticAssetConfig =
-    StaticAssetConfig(StaticAssetSource.DeploymentDirectory(root, manifest), mountPath)
-end StaticAssetConfig
-
-/** Describes where [[StaticAssets]] obtains asset names and bytes. Prefer the [[StaticAssetConfig]]
-  * factory methods when constructing a source.
-  */
-sealed trait StaticAssetSource
-
-/** The asset sources that a [[StaticAssetConfig]] can describe. */
-object StaticAssetSource:
-  /** Complete ordinary classpath tree and optional unversioned serving policy.
-    *
-    * @param resourcePrefix
-    *   The classpath prefix below which the tree is stored, such as `public`.
-    * @param assets
-    *   The relative path of every file in the tree.
-    * @param serveOriginals
-    *   Whether the unversioned original paths are also served, with revalidating cache headers.
-    * @param classLoader
-    *   The class loader that reads the resources.
-    */
-  final case class Classpath(
-    resourcePrefix: String,
-    assets: Set[String],
-    serveOriginals: Boolean,
-    classLoader: ClassLoader)
-      extends StaticAssetSource
-
-  /** Complete or recursively discovered ordinary filesystem tree.
-    *
-    * @param root
-    *   The directory that contains the tree.
-    * @param assets
-    *   The relative paths to serve, or `None` to serve every regular file below `root`.
-    * @param serveOriginals
-    *   Whether the unversioned original paths are also served, with revalidating cache headers.
-    */
-  final case class Directory(root: NioPath, assets: Option[Set[String]], serveOriginals: Boolean)
-      extends StaticAssetSource
-
-  /** Classpath source whose final files and aliases come from a deployment manifest.
-    *
-    * @param resourcePrefix
-    *   The classpath prefix below which the manifest and its files are stored.
-    * @param manifest
-    *   The manifest's path relative to `resourcePrefix`.
-    * @param classLoader
-    *   The class loader that reads the resources.
-    */
-  final case class DeploymentClasspath(
-    resourcePrefix: String,
-    manifest: String,
-    classLoader: ClassLoader)
-      extends StaticAssetSource
-
-  /** Filesystem source whose final files and aliases come from a deployment manifest.
-    *
-    * @param root
-    *   The directory that contains the manifest and its files.
-    * @param manifest
-    *   The manifest's path relative to `root`.
-    */
-  final case class DeploymentDirectory(root: NioPath, manifest: String) extends StaticAssetSource
-end StaticAssetSource
+  final private[scalive] case class Directory(path: NioPath) extends StaticAssetRoot
 
 /** Cache-control headers for immutable canonical paths and mutable revalidating paths.
   *
@@ -248,12 +144,14 @@ final private[scalive] case class StaticAssetManifest(
         .orElse(originalEntries.get(normalized).filter(_ => includeOriginals))
     }
 
-/** A loaded asset description with URL helpers, HTML tag helpers, and HTTP routes. */
+/** Loaded assets with URL helpers, HTML tag helpers, and HTTP routes. */
 final class StaticAssets private (
-  private[scalive] val config: StaticAssetConfig,
-  private[scalive] val manifest: StaticAssetManifest):
+  mountPath: Path,
+  cache: StaticAssetCache,
+  serveOriginals: Boolean,
+  manifest: StaticAssetManifest):
 
-  private val mountPrefix = StaticAssets.mountPrefix(config.mountPath)
+  private val mountPrefix = StaticAssets.mountPrefix(mountPath)
 
   /** Returns the mounted, root-relative URL for an asset's versioned or final path. */
   def path(asset: String): String =
@@ -288,10 +186,10 @@ final class StaticAssets private (
     Routes
       .fromIterable(
         List(
-          Method.GET / Path.toPathCodec(config.mountPath) / PathCodec.trailing -> handler {
+          Method.GET / Path.toPathCodec(mountPath) / PathCodec.trailing -> handler {
             (assetPath: Path, request: Request) => serve(assetPath, request, includeBody = true)
           },
-          Method.HEAD / Path.toPathCodec(config.mountPath) / PathCodec.trailing -> handler {
+          Method.HEAD / Path.toPathCodec(mountPath) / PathCodec.trailing -> handler {
             (assetPath: Path, request: Request) => serve(assetPath, request, includeBody = false)
           }
         )
@@ -304,7 +202,7 @@ final class StaticAssets private (
   private def serve(assetPath: Path, request: Request, includeBody: Boolean): UIO[Response] =
     val served = StaticAssets
       .requestRelativePath(assetPath)
-      .flatMap(manifest.served(_, StaticAssets.serveOriginals(config.source)))
+      .flatMap(manifest.served(_, serveOriginals))
     served match
       case None         => ZIO.succeed(Response.notFound)
       case Some(served) =>
@@ -312,8 +210,8 @@ final class StaticAssets private (
         val coding  = content.encoded.find((coding, _) => StaticAssets.accepts(request, coding))
         val bytes   = coding.fold(content.loaded)(_._2)
         val cacheControl = served.cachePolicy match
-          case StaticAssetCachePolicy.Immutable  => config.cache.immutable
-          case StaticAssetCachePolicy.Revalidate => config.cache.revalidating
+          case StaticAssetCachePolicy.Immutable  => cache.immutable
+          case StaticAssetCachePolicy.Revalidate => cache.revalidating
         val headers = StaticAssets.headers(served.entry, cacheControl, bytes.etag) ++
           coding.fold(Headers.empty)((name, _) => Headers("Content-Encoding", name)) ++
           (if content.encoded.isEmpty then Headers.empty else Headers("Vary", "Accept-Encoding"))
@@ -324,7 +222,11 @@ final class StaticAssets private (
           ZIO.succeed(Response(status = Status.Ok, headers = headers, body = body))
 end StaticAssets
 
-/** The startup loader for [[StaticAssets]]. */
+/** The startup loaders for [[StaticAssets]], one for each asset model.
+  *
+  * Every asset is read once, at load time, and served from memory, along with the precompressed
+  * copies found next to it (`app.js.br`, `app.js.gz`), which are sent to browsers that accept them.
+  */
 object StaticAssets:
   final private case class LoadedAsset(path: String, digest: String, content: StaticAssetContent)
 
@@ -344,21 +246,39 @@ object StaticAssets:
     sourcePath: String,
     cachePolicy: StaticAssetCachePolicy)
 
-  /** Loads and validates the configured asset description.
+  /** Loads an asset tree: files that Scalive versions.
     *
-    * Every asset is read once, here, and served from memory, along with the precompressed copies
-    * found next to it (`app.js.br`, `app.js.gz`), which are sent to browsers that accept them.
+    * Scalive serves the unchanged tree below one immutable asset-set version, so relative
+    * references between its files keep working and any change moves every URL. Choose it when the
+    * build does not put content hashes in file names.
+    *
+    * @param root
+    *   Where the tree is stored.
+    * @param only
+    *   The relative paths to serve. `None` serves every regular file below the root, wherever the
+    *   class loader finds a classpath prefix, a dependency's files included; loading fails when a
+    *   classpath location is neither a directory nor a JAR. A JAR written without directory entries
+    *   gives the class loader no location for the prefix, so its files are not discovered: name
+    *   them here. With a list, nothing is discovered.
+    * @param mountPath
+    *   The HTTP path below which the assets are served.
+    * @param serveOriginals
+    *   Whether the unversioned original paths are also served, with revalidating cache headers.
+    * @param cache
+    *   The response cache-control headers for versioned and original paths.
     */
-  def load(config: StaticAssetConfig): Task[StaticAssets] =
-    config.source match
-      case _: StaticAssetSource.DeploymentClasspath | _: StaticAssetSource.DeploymentDirectory =>
-        loadDeployment(config)
-      case _ => loadVersioned(config)
-
-  private def loadVersioned(config: StaticAssetConfig): Task[StaticAssets] =
+  def tree(
+    root: StaticAssetRoot,
+    only: Option[Iterable[String]] = None,
+    mountPath: Path = Path.empty / "static",
+    serveOriginals: Boolean = false,
+    cache: StaticAssetCache = StaticAssetCache.default
+  ): Task[StaticAssets] =
     for
-      assets <- list(config.source)
-      loaded <- ZIO.foreach(assets)(loadAsset(config.source, _))
+      assets <- only match
+                  case Some(paths) => normalizeConfiguredAssets(paths)
+                  case None        => discover(root)
+      loaded <- ZIO.foreach(assets)(loadAsset(root, _))
       version  = assetSetDigest(loaded)
       contents = loaded.map(asset => asset.path -> asset.content).toMap
       entries  = loaded.map { asset =>
@@ -389,14 +309,39 @@ object StaticAssets:
             )
           ).toMap
     yield new StaticAssets(
-      config,
+      mountPath,
+      cache,
+      serveOriginals,
       StaticAssetManifest(byLogical, served, originals)
     )
 
-  private def loadDeployment(config: StaticAssetConfig): Task[StaticAssets] =
+  /** Loads the files a deployment manifest lists: files that the build versions.
+    *
+    * The build puts a content hash in each file name and writes the manifest, so every file is
+    * served at its final path without renaming and unchanged files keep their URLs across
+    * deployments. Choose it when the build puts content hashes in file names.
+    *
+    * Version 1 of the manifest maps logical aliases to an exact relative `file` and an `immutable`
+    * or `revalidate` cache policy.
+    *
+    * @param root
+    *   Where the manifest and its files are stored.
+    * @param name
+    *   The manifest's path relative to `root`.
+    * @param mountPath
+    *   The HTTP path below which the assets are served.
+    * @param cache
+    *   The response cache-control headers for immutable and revalidating entries.
+    */
+  def manifest(
+    root: StaticAssetRoot,
+    name: String = "assets-manifest.json",
+    mountPath: Path = Path.empty / "static",
+    cache: StaticAssetCache = StaticAssetCache.default
+  ): Task[StaticAssets] =
     for
-      manifestPath  <- deploymentManifestPath(config.source)
-      manifestBytes <- read(config.source, manifestPath).flatMap {
+      manifestPath  <- normalizePath(name)
+      manifestBytes <- read(root, manifestPath).flatMap {
                          case Some(bytes) => ZIO.succeed(bytes)
                          case None        =>
                            ZIO.fail(
@@ -405,24 +350,24 @@ object StaticAssets:
                              )
                            )
                        }
-      manifest <- ZIO.fromEither(
-                    new String(manifestBytes, StandardCharsets.UTF_8)
-                      .fromJson[DeploymentManifest]
-                      .left.map(error =>
-                        new IllegalArgumentException(
-                          s"Invalid static asset deployment manifest $manifestPath: $error"
-                        )
+      parsed <- ZIO.fromEither(
+                  new String(manifestBytes, StandardCharsets.UTF_8)
+                    .fromJson[DeploymentManifest]
+                    .left.map(error =>
+                      new IllegalArgumentException(
+                        s"Invalid static asset deployment manifest $manifestPath: $error"
                       )
-                  )
+                    )
+                )
       _ <-
         ZIO
           .fail(
             new IllegalArgumentException(
-              s"Unsupported static asset deployment manifest version ${manifest.version}; expected 1"
+              s"Unsupported static asset deployment manifest version ${parsed.version}; expected 1"
             )
-          ).unless(manifest.version == 1)
+          ).unless(parsed.version == 1)
       definitions <-
-        ZIO.foreach(manifest.assets.fields.toList.sortBy(_._1)) { case (logicalPath, assetJson) =>
+        ZIO.foreach(parsed.assets.fields.toList.sortBy(_._1)) { case (logicalPath, assetJson) =>
           for
             asset <-
               ZIO.fromEither(
@@ -445,7 +390,7 @@ object StaticAssets:
       _      <- rejectDuplicateLogicalPaths(definitions)
       _      <- rejectConflictingCachePolicies(definitions)
       loaded <- ZIO.foreach(definitions.map(_.sourcePath).distinct)(
-                  loadAsset(config.source, _)
+                  loadAsset(root, _)
                 )
       loadedByPath = loaded.map(asset => asset.path -> asset).toMap
       entries      = definitions.map { definition =>
@@ -467,13 +412,12 @@ object StaticAssets:
                      loadedByPath(entry.sourcePath).content
                    )
                  }
-    yield new StaticAssets(config, StaticAssetManifest(byLogical, served, Map.empty))
-
-  private def deploymentManifestPath(source: StaticAssetSource): Task[String] =
-    source match
-      case StaticAssetSource.DeploymentClasspath(_, manifest, _) => normalizePath(manifest)
-      case StaticAssetSource.DeploymentDirectory(_, manifest)    => normalizePath(manifest)
-      case _ => ZIO.fail(new IllegalArgumentException("Not a deployment-manifest asset source"))
+    yield new StaticAssets(
+      mountPath,
+      cache,
+      serveOriginals = false,
+      StaticAssetManifest(byLogical, served, Map.empty)
+    )
 
   private def normalizePath(path: String): Task[String] =
     val normalized =
@@ -526,13 +470,13 @@ object StaticAssets:
         )
       case None => ZIO.unit
 
-  private def loadAsset(source: StaticAssetSource, relativePath: String): Task[LoadedAsset] =
-    read(source, relativePath).flatMap {
+  private def loadAsset(root: StaticAssetRoot, relativePath: String): Task[LoadedAsset] =
+    read(root, relativePath).flatMap {
       case Some(bytes) =>
         val digest = sha256(bytes)
         ZIO
           .foreach(precompressed) { (coding, extension) =>
-            read(source, relativePath + extension).map(
+            read(root, relativePath + extension).map(
               _.map(copy => coding -> StaticAssetBytes(Chunk.fromArray(copy), sha256(copy)))
             )
           }.map { copies =>
@@ -559,49 +503,84 @@ object StaticAssets:
       Left(s"Static asset request path contains a query or fragment delimiter: $path")
     else normalizeRelativePath(path)
 
-  private def list(source: StaticAssetSource): Task[List[String]] =
-    source match
-      case StaticAssetSource.Classpath(_, assets, _, _) =>
-        normalizeConfiguredAssets(assets)
-      case StaticAssetSource.Directory(_, Some(assets), _) =>
-        normalizeConfiguredAssets(assets)
-      case StaticAssetSource.Directory(root, None, _) =>
-        ZIO
-          .attemptBlocking {
-            val normalizedRoot = root.toRealPath()
-            val stream         = Files.walk(normalizedRoot)
-            try
-              stream
-                .iterator().asScala.filter(Files.isRegularFile(_, LinkOption.NOFOLLOW_LINKS))
-                .map(path => toRelativePath(normalizedRoot.relativize(path))).toList
-            finally stream.close()
-          }.flatMap(normalizeConfiguredAssets)
-      case _: StaticAssetSource.DeploymentClasspath | _: StaticAssetSource.DeploymentDirectory =>
+  private def discover(root: StaticAssetRoot): Task[List[String]] =
+    val files = root match
+      case StaticAssetRoot.Classpath(prefix, loader) =>
+        val resource = prefix.stripSuffix("/")
+        for
+          locations <- ZIO.attemptBlocking(loader.getResources(resource).asScala.toList)
+          // A JAR without directory entries holds the files but gives no location for the prefix.
+          _ <-
+            ZIO
+              .fail(
+                new IllegalArgumentException(
+                  s"The class loader finds no classpath location '$resource' to list the asset tree from; check the prefix, or pass the files' relative paths as `only`"
+                )
+              ).when(locations.isEmpty)
+          listed <- ZIO.foreach(locations)(listClasspathLocation(resource, _))
+        yield listed.flatten.distinct
+      case StaticAssetRoot.Directory(directory) =>
+        ZIO.attemptBlocking(regularFilesBelow(directory))
+    files.map(withoutPrecompressedCopies).flatMap(normalizeConfiguredAssets)
+
+  // A precompressed copy is served as an encoding of the asset it is stored next to.
+  private def withoutPrecompressedCopies(files: List[String]): List[String] =
+    val present = files.toSet
+    files.filterNot(file =>
+      precompressed.exists((_, extension) =>
+        file.endsWith(extension) && present.contains(file.stripSuffix(extension))
+      )
+    )
+
+  // The files below one place the class loader found the prefix, relative to the prefix.
+  private def listClasspathLocation(prefix: String, location: java.net.URL): Task[List[String]] =
+    location.getProtocol match
+      case "file" =>
+        ZIO.attemptBlocking(regularFilesBelow(NioPath.of(location.toURI)))
+      case "jar" =>
+        ZIO.attemptBlocking {
+          val connection = location.openConnection().asInstanceOf[java.net.JarURLConnection]
+          // An uncached connection opens its own JAR file, so closing it leaves the class loader's alone.
+          connection.setUseCaches(false)
+          val jar = connection.getJarFile
+          try
+            val directory = connection.getEntryName.stripSuffix("/") + "/"
+            jar
+              .entries().asScala
+              .filter(entry => !entry.isDirectory && entry.getName.startsWith(directory))
+              .map(_.getName.stripPrefix(directory)).toList
+          finally jar.close()
+        }
+      case _ =>
         ZIO.fail(
-          new IllegalArgumentException("Deployment asset sources are listed by their manifest")
+          new IllegalArgumentException(
+            s"The files of the classpath asset tree below '$prefix' cannot be listed at $location; pass their relative paths as `only`"
+          )
         )
+
+  // Symlinks are not followed, so a link cannot publish a file from outside the root.
+  private def regularFilesBelow(root: NioPath): List[String] =
+    val realRoot = root.toRealPath()
+    val stream   = Files.walk(realRoot)
+    try
+      stream
+        .iterator().asScala.filter(Files.isRegularFile(_, LinkOption.NOFOLLOW_LINKS))
+        .map(path => toRelativePath(realRoot.relativize(path))).toList
+    finally stream.close()
 
   private def normalizeConfiguredAssets(assets: Iterable[String]): Task[List[String]] =
     ZIO.foreach(assets.toList.sorted)(normalizePath)
 
-  private[scalive] def read(
-    source: StaticAssetSource,
-    relativePath: String
-  ): Task[Option[Array[Byte]]] =
+  private def read(root: StaticAssetRoot, relativePath: String): Task[Option[Array[Byte]]] =
     normalizeRelativePath(relativePath) match
       case Left(error) => ZIO.fail(new IllegalArgumentException(error))
       case Right(path) =>
-        source match
-          case StaticAssetSource.Classpath(prefix, _, _, loader) =>
+        root match
+          case StaticAssetRoot.Classpath(prefix, loader) =>
             val resource = s"${prefix.stripSuffix("/")}/$path"
             ZIO.attemptBlocking(Option(loader.getResourceAsStream(resource)).map(readAllBytes))
-          case StaticAssetSource.Directory(root, _, _) =>
-            readDirectory(root, path)
-          case StaticAssetSource.DeploymentClasspath(prefix, _, loader) =>
-            val resource = s"${prefix.stripSuffix("/")}/$path"
-            ZIO.attemptBlocking(Option(loader.getResourceAsStream(resource)).map(readAllBytes))
-          case StaticAssetSource.DeploymentDirectory(root, _) =>
-            readDirectory(root, path)
+          case StaticAssetRoot.Directory(directory) =>
+            readDirectory(directory, path)
 
   private def readDirectory(root: NioPath, path: String): Task[Option[Array[Byte]]] =
     ZIO.attemptBlocking {
@@ -637,11 +616,6 @@ object StaticAssets:
       mediaType = mediaType(sourcePath),
       cachePolicy = cachePolicy
     )
-
-  private def serveOriginals(source: StaticAssetSource): Boolean = source match
-    case StaticAssetSource.Classpath(_, _, enabled, _) => enabled
-    case StaticAssetSource.Directory(_, _, enabled)    => enabled
-    case _                                             => false
 
   private def encodeRelativePath(path: String): String =
     val segments = path.split('/').foldLeft(Path.empty)((encoded, segment) => encoded / segment)

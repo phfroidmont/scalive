@@ -33,6 +33,9 @@ typed result back.
   `BrowserToServerEvent` with the same request ID. The LiveView receives it as
   `Msg.CopyFinished` and accepts only the result for the pending request.
 - A denied clipboard is an ordinary failed result, not a crash.
+- The hook imports its copying module when it mounts, so the browser downloads
+  that module only on a page that renders this example. If the import fails,
+  the example shows "Copying could not load. Reload the page to try again."
 
 ## Related guides {#related-guides}
 

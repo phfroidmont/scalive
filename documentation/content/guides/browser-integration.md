@@ -11,7 +11,7 @@ group = "Browser integration"
 Start with a `LiveView` that renders an interactive element. You can understand
 and compose `JS` command values independently; running browser hooks or exchanging
 browser events additionally requires working browser assets, CSRF, and a `LiveSocket`
-connection from [Client setup and static assets](static-assets-and-client-setup.md#connect-live-socket).
+connection from [Client setup](client-setup.md#connect-live-socket).
 
 ## Choose the boundary {#choose-the-boundary}
 
@@ -108,67 +108,24 @@ determines how its payload is decoded.
 ## Implement the browser hook {#implement-the-browser-hook}
 
 For an application with a custom module bundle, put the hook in a focused module
-such as `assets/js/browser-interop.js`. This is the implementation used by the
-documentation application, with bounded input, clipboard failure handling, and
-protection against late asynchronous results:
+such as `assets/js/browser-interop.js`. This is the hook the documentation
+application registers:
 
-```js
-const maxRequestIdLength = 64
-const maxTextLength = 4096
-
-export function readCopyRequest(payload) {
-  const requestId = typeof payload?.requestId === "string" ? payload.requestId : ""
-  const text = typeof payload?.text === "string" ? payload.text : undefined
-  if (
-    requestId.length === 0 ||
-    requestId.length > maxRequestIdLength ||
-    text === undefined ||
-    text.length > maxTextLength
-  ) return undefined
-  return { requestId, text }
-}
-
-export function createBrowserInteropHook(clipboard = globalThis.navigator?.clipboard) {
-  return {
-    mounted() {
-      this.isDestroyed = false
-      this.handleEvent("browser-copy-request", async (payload) => {
-        if (this.isDestroyed) return
-
-        const request = readCopyRequest(payload)
-        let ok = false
-        if (request && clipboard?.writeText) {
-          try {
-            await clipboard.writeText(request.text)
-            ok = true
-          } catch {
-            ok = false
-          }
-        }
-
-        if (this.isDestroyed) return
-        try {
-          await this.pushEvent("browser-copy-result", {
-            requestId: request?.requestId ?? "",
-            ok,
-          })
-        } catch {
-          // The LiveSocket may disconnect while browser work is completing.
-        }
-      })
-    },
-
-    destroyed() {
-      this.isDestroyed = true
-    },
-  }
-}
-```
+@:sourceRegion(documentation/site/assets/js/browser-interop.js, browser-integration-hook)
 
 `handleEvent` receives events pushed by `ctx.client.push`. `pushEvent` sends the
 result back to the LiveView, which decodes it into `Msg.CopyFinished` and checks
-it in `handleMessage`. The explicit failure result lets Scala clear or report the pending
-operation instead of waiting forever.
+it in `handleMessage`.
+
+The copying itself is in a second module, `assets/js/browser-copy.js`, with
+bounded input and clipboard failure handling. Its explicit failure result lets
+Scala clear or report the pending operation instead of waiting forever:
+
+@:sourceRegion(documentation/site/assets/js/browser-copy.js, browser-integration-copy-module)
+
+The hook imports that module when it mounts instead of at the top of its file;
+[Load a heavy hook on demand](#load-a-heavy-hook-on-demand) explains why and
+what the import requires of the hook.
 
 ## Register the hook with LiveSocket {#register-the-hook-with-live-socket}
 
@@ -187,8 +144,8 @@ window.liveSocketOptions = {
 Render it with `assets.trackedScript("app.js", typ := "module")`. Module scripts
 run in document order with the other deferred scripts, so the options are set
 before Scalive connects the `LiveSocket`; see
-[Client setup and static assets](static-assets-and-client-setup.md#connect-live-socket).
-With a [custom bundle](static-assets-and-client-setup.md#build-the-client-bundle),
+[Client setup](client-setup.md#connect-live-socket).
+With a [custom bundle](client-setup.md#build-the-client-bundle),
 pass the same `hooks` object in the options of the bundle's own `LiveSocket`.
 Do not create a second `LiveSocket` just for hooks.
 
@@ -223,6 +180,68 @@ Set a destroyed flag or abort owned asynchronous work in the hook's `destroyed`
 callback. Check it again after every awaited browser operation and tolerate
 `pushEvent` failure because the LiveSocket may disconnect before completion.
 
+## Load a heavy hook on demand {#load-a-heavy-hook-on-demand}
+
+`LiveSocket` looks a hook up when its element mounts, so every hook must be
+registered in the script the page loads first. A static `import` of a large
+library in a hook's file therefore puts that library on every page, including
+the pages that never render the hook. Keep the registered hook small instead and
+let it import its heavy module when it mounts. A bundler that splits code emits
+the module as its own chunk, and the browser downloads the chunk only on a page
+that renders the hook, once per document.
+
+This needs a build that emits ES modules with code splitting, and a root layout
+that loads the entry script as a module; see
+[Build a split bundle](static-assets.md#build-a-split-bundle) for a worked
+build. A single-file bundle cannot split.
+
+The copy module above is small; it stands in for an editor, a chart, or an image
+cropper. In `mounted`, the hook first registers its listener, then starts the
+import and keeps the promise:
+
+@:sourceRegion(documentation/site/assets/js/browser-interop.js, browser-integration-hook-load)
+
+Two rules make this safe:
+
+- **Register `handleEvent` listeners first, before the import.** The server can
+  push an event as soon as the view has mounted. A listener registered after an
+  `await` misses it; a listener registered at once, synchronously in `mounted`,
+  waits for the module inside its own body, as this one does. The listener can
+  name `copyModule` although it is declared below it, because the listener only
+  runs later, once an event arrives.
+- **Check for destruction after the import.** A visitor can navigate away while
+  the chunk downloads. When the import resolves for a destroyed hook, do
+  nothing: its element is gone and its `pushEvent` no longer has a view. A hook
+  that sets up a library on `this.el` after the import needs the same check
+  first.
+
+The import can also fail: the network dropped, or the page was opened before a
+deployment and asks for a chunk the new server no longer has. Log the failure
+and show the visitor a state they can see, not a control that silently does
+nothing:
+
+@:sourceRegion(documentation/site/assets/js/browser-interop.js, browser-integration-hook-load-failed)
+
+The LiveView renders the notice hidden, inside the hook's element:
+
+@:sourceRegion(documentation/site/src/scalive/docs/examples/BrowserInteropExample.scala, browser-integration-hook-failed)
+
+`this.js().show` reveals it in a way later patches keep, where a style set
+directly on the element would be reverted by the next patch.
+
+The notice asks for a reload and does not retry. A later mount of the hook in
+the same document may fail the same way without asking the server again, because
+a browser may remember a failed import for the life of the document. A full
+page load is the dependable recovery.
+
+For the deployment case, visitors usually hear earlier: a page that reconnects
+to a server whose tracked assets changed reports `staticChanged`, and a layout
+can [offer a reload after a deployment](layouts.md#offer-a-reload-after-a-deployment)
+before anyone mounts the hook. Keeping old chunks available across deployments
+is a [deployment](deployment.md#keep-old-files-available) concern.
+
+Scalive has no helper for this pattern; it is ordinary JavaScript in the hook.
+
 ## Related tasks {#related-tasks}
 
 The [browser integration example](../examples/browser-integration.md) combines a
@@ -230,8 +249,8 @@ client-only command with correlated clipboard events. Its executable source
 derives every DOM ID from the nested instance, resets deterministically, handles
 permission failure, and projects operation metadata without exposing copied text.
 
-Use [Client setup and static assets](static-assets-and-client-setup.md) to build
-and serve the bundle. Use [Guard unsaved changes](navigation-guards.md#prerequisites)
+Use [Client setup](client-setup.md#build-the-client-bundle) to build the bundle and [Static assets](static-assets.md) to
+serve it. Use [Guard unsaved changes](navigation-guards.md#prerequisites)
 for the framework-owned confirmation runtime. Use
 [Lifecycle hooks](lifecycle-hooks.md) for server-side interception and
 lifecycle-wide policy rather than browser API integration.

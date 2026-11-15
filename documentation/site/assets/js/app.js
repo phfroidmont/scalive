@@ -1,6 +1,5 @@
 import { LiveSocket } from "phoenix_live_view"
 
-import { nextActiveIndex, search } from "./search.js"
 import { createBrowserInteropHook } from "./browser-interop.js"
 import { createInlineApiReferenceEnhancer } from "./inline-api-reference.js"
 import { createDiagramThemeSynchronizer } from "./diagram-theme.js"
@@ -286,9 +285,11 @@ const Hooks = {
 
       this.updateResults = async (query, sequence) => {
         try {
-          const entries = await this.loadEntries()
+          // Ranking is only needed once a query is typed, so the bundler emits it as its own chunk.
+          const [entries, ranking] = await Promise.all([this.loadEntries(), import("./search.js")])
           if (sequence !== this.requestSequence) return
-          this.results = search(query, entries, instantSearchLimit)
+          this.ranking = ranking
+          this.results = ranking.search(query, entries, instantSearchLimit)
           this.renderResults()
         } catch (_error) {
           if (sequence !== this.requestSequence) return
@@ -314,7 +315,7 @@ const Hooks = {
           if (this.options.length === 0) return
           event.preventDefault()
           this.setActiveIndex(
-            nextActiveIndex(this.activeIndex, event.key, this.options.length),
+            this.ranking.nextActiveIndex(this.activeIndex, event.key, this.options.length),
           )
         } else if (event.key === "Enter" && this.activeIndex >= 0) {
           event.preventDefault()

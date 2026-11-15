@@ -1215,7 +1215,7 @@ object ContentPipeline:
     path.split('.').lastOption.map(_.toLowerCase).flatMap {
       case "scala" | "sc" => Some("scala")
       case "java"         => Some("java")
-      case "js"           => Some("javascript")
+      case "js" | "mjs"   => Some("javascript")
       case "jsx"          => Some("jsx")
       case "ts"           => Some("typescript")
       case "tsx"          => Some("tsx")

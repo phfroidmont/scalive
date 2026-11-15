@@ -83,9 +83,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
     test("renders every generated page as disconnected HTML") {
       for
         application <- loadApplication
-        assets      <- StaticAssets.load(
-                    StaticAssetConfig.classpath("public", assetNames)
-                  )
+        assets      <- StaticAssets.tree(StaticAssetRoot.classpath("public"), only = Some(assetNames))
         routes <- application
                     .routes(assets, security, config)
                     .map(_.provideEnvironment(documentationEnvironment))
@@ -174,7 +172,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
     test("renders the Signal lockup and gives only the homepage a wide shell") {
       for
         application <- loadApplication
-        assets      <- StaticAssets.load(StaticAssetConfig.classpath("public", assetNames))
+        assets      <- StaticAssets.tree(StaticAssetRoot.classpath("public"), only = Some(assetNames))
         routes <- application
                     .routes(assets, security, config)
                     .map(_.provideEnvironment(documentationEnvironment))
@@ -208,9 +206,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
     test("keeps the Learn overview concise and lifecycle details ordered") {
       for
         application <- loadApplication
-        assets      <- StaticAssets.load(
-                    StaticAssetConfig.classpath("public", assetNames)
-                  )
+        assets      <- StaticAssets.tree(StaticAssetRoot.classpath("public"), only = Some(assetNames))
         routes <- application
                     .routes(assets, security, config)
                     .map(_.provideEnvironment(documentationEnvironment))
@@ -259,7 +255,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
     test("renders runtime diagrams in narrative order with accessible fallbacks") {
       for
         application <- loadApplication
-        assets      <- StaticAssets.load(StaticAssetConfig.classpath("public", assetNames))
+        assets      <- StaticAssets.tree(StaticAssetRoot.classpath("public"), only = Some(assetNames))
         routes <- application
                     .routes(assets, security, config)
                     .map(_.provideEnvironment(documentationEnvironment))
@@ -314,7 +310,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
     test("renders editorial sections as flat indexes and preserves the API tree") {
       for
         application <- loadApplication
-        assets      <- StaticAssets.load(StaticAssetConfig.classpath("public", assetNames))
+        assets      <- StaticAssets.tree(StaticAssetRoot.classpath("public"), only = Some(assetNames))
         routes <- application
                     .routes(assets, security, config)
                     .map(_.provideEnvironment(documentationEnvironment))
@@ -421,9 +417,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
     test("renders generated API summaries, signatures, and pinned sources") {
       for
         application <- loadApplication
-        assets      <- StaticAssets.load(
-                    StaticAssetConfig.classpath("public", assetNames)
-                  )
+        assets      <- StaticAssets.tree(StaticAssetRoot.classpath("public"), only = Some(assetNames))
         routes <- application
                     .routes(assets, security, config)
                     .map(_.provideEnvironment(documentationEnvironment))
@@ -494,7 +488,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
     test("renders authored API directives as inline references with concise previews") {
       for
         application <- loadApplication
-        assets      <- StaticAssets.load(StaticAssetConfig.classpath("public", assetNames))
+        assets      <- StaticAssets.tree(StaticAssetRoot.classpath("public"), only = Some(assetNames))
         routes <- application
                     .routes(assets, security, config)
                     .map(_.provideEnvironment(documentationEnvironment))
@@ -522,7 +516,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
     test("renders a bounded URL-filtered example catalog") {
       for
         application <- loadApplication
-        assets      <- StaticAssets.load(StaticAssetConfig.classpath("public", assetNames))
+        assets      <- StaticAssets.tree(StaticAssetRoot.classpath("public"), only = Some(assetNames))
         routes <- application
                     .routes(assets, security, config)
                     .map(_.provideEnvironment(documentationEnvironment))
@@ -617,7 +611,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
     test("renders a representative source-backed example on its canonical detail route") {
       for
         application <- loadApplication
-        assets      <- StaticAssets.load(StaticAssetConfig.classpath("public", assetNames))
+        assets      <- StaticAssets.tree(StaticAssetRoot.classpath("public"), only = Some(assetNames))
         routes <- application
                     .routes(assets, security, config)
                     .map(_.provideEnvironment(documentationEnvironment))
@@ -639,9 +633,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
     test("serves tracked assets and leaves unknown paths as real 404 responses") {
       for
         application <- loadApplication
-        assets      <- StaticAssets.load(
-                    StaticAssetConfig.classpath("public", assetNames)
-                  )
+        assets      <- StaticAssets.tree(StaticAssetRoot.classpath("public"), only = Some(assetNames))
         routes <- application
                     .routes(assets, security, config)
                     .map(_.provideEnvironment(documentationEnvironment) ++ assets.routes)
@@ -693,7 +685,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
     test("renders URL-addressable search with an ordinary GET fallback") {
       for
         application <- loadApplication
-        assets      <- StaticAssets.load(StaticAssetConfig.classpath("public", assetNames))
+        assets      <- StaticAssets.tree(StaticAssetRoot.classpath("public"), only = Some(assetNames))
         routes <- application
                     .routes(assets, security, config)
                     .map(_.provideEnvironment(documentationEnvironment))
@@ -725,7 +717,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
     test("serves a manifest-derived sitemap and self-contained robots policy") {
       for
         application <- loadApplication
-        assets      <- StaticAssets.load(StaticAssetConfig.classpath("public", assetNames))
+        assets      <- StaticAssets.tree(StaticAssetRoot.classpath("public"), only = Some(assetNames))
         routes <- application
                     .routes(assets, security, config)
                     .map(_.provideEnvironment(documentationEnvironment))
@@ -749,7 +741,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
     test("serves a concise Markdown documentation index over ordinary GET and HEAD") {
       for
         application <- loadApplication
-        assets      <- StaticAssets.load(StaticAssetConfig.classpath("public", assetNames))
+        assets      <- StaticAssets.tree(StaticAssetRoot.classpath("public"), only = Some(assetNames))
         routes <- application
                     .routes(assets, security, config)
                     .map(_.provideEnvironment(documentationEnvironment))
@@ -793,7 +785,7 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
     test("serves Markdown companions for every documentation page and not unknown paths") {
       for
         application <- loadApplication
-        assets      <- StaticAssets.load(StaticAssetConfig.classpath("public", assetNames))
+        assets      <- StaticAssets.tree(StaticAssetRoot.classpath("public"), only = Some(assetNames))
         routes <- application
                     .routes(assets, security, config)
                     .map(_.provideEnvironment(documentationEnvironment))

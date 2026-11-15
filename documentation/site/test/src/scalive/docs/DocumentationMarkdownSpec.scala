@@ -3,7 +3,7 @@ package scalive.docs
 import zio.*
 import zio.test.*
 
-import scalive.{StaticAssetConfig, StaticAssets}
+import scalive.{StaticAssetRoot, StaticAssets}
 import scalive.docs.model.*
 
 object DocumentationMarkdownSpec extends ZIOSpecDefault:
@@ -21,7 +21,7 @@ object DocumentationMarkdownSpec extends ZIOSpecDefault:
       application <- ZIO
                        .fromEither(DocumentationApplication.from(bundle))
                        .mapError(new IllegalArgumentException(_))
-      static <- StaticAssets.load(StaticAssetConfig.classpath("public", assets))
+      static <- StaticAssets.tree(StaticAssetRoot.classpath("public"), only = Some(assets))
       origin <- ZIO
                   .fromEither(PublicOrigin.from("https://docs.example.test"))
                   .mapError(new IllegalArgumentException(_))
@@ -262,7 +262,7 @@ object DocumentationMarkdownSpec extends ZIOSpecDefault:
     test("expands compiler diagnostics from the generated bundle") {
       for
         (application, _) <- fixture
-        static           <- StaticAssets.load(StaticAssetConfig.classpath("public", assets))
+        static           <- StaticAssets.tree(StaticAssetRoot.classpath("public"), only = Some(assets))
         origin           <- ZIO
                     .fromEither(PublicOrigin.from("https://docs.example.test"))
                     .mapError(new IllegalArgumentException(_))

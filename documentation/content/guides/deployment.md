@@ -71,12 +71,13 @@ also build-time only when used. If the application uses a different Mill module
 name, substitute that name in the task and output path.
 
 That single-JAR layout applies to ordinary classpath trees and classpath
-deployment manifests. An application using `deploymentDirectory` must ship the
-complete external output tree alongside the JAR, including its deployment
-manifest, and configure `root` to that release path. Publish the JAR, manifest,
-and final files as one release; do not make the instance ready until
-`StaticAssets.load` validates them. Retain prior content-addressed outputs for as
-long as active clients may request them.
+deployment manifests. An application loading a manifest from a
+`StaticAssetRoot.directory` must ship the complete external output tree
+alongside the JAR, including its deployment manifest, and point the root at
+that release path. Publish the JAR, manifest, and final files as one release;
+do not make the instance ready until `StaticAssets.manifest` validates them.
+Retain prior content-addressed outputs for as long as active clients may
+request them.
 
 Scalive does not prescribe a container image, service manager, database
 migration command, or publication workflow. Package and launch the JAR and any

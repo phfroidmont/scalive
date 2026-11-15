@@ -1346,18 +1346,6 @@
       ]
     },
     {
-      "id" : "class:scalive.StaticAssetConfig",
-      "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.StaticAssetConfig",
-      "kind" : "class",
-      "signatures" : [
-        {
-          "id" : "class:scalive.StaticAssetConfig:cb9e2f8c8c493abd",
-          "signature" : "class StaticAssetConfig(source: StaticAssetSource, mountPath: zio.http.Path = ..., cache: StaticAssetCache = ...)"
-        }
-      ]
-    },
-    {
       "id" : "class:scalive.StaticAssetEntry",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.StaticAssetEntry",
@@ -1366,54 +1354,6 @@
         {
           "id" : "class:scalive.StaticAssetEntry:144f193a6a07c90b",
           "signature" : "class StaticAssetEntry(logicalPath: String, sourcePath: String, servedPath: String, digest: String, size: Long, mediaType: zio.http.MediaType, cachePolicy: StaticAssetCachePolicy)"
-        }
-      ]
-    },
-    {
-      "id" : "class:scalive.StaticAssetSource.Classpath",
-      "ownerId" : "object:scalive.StaticAssetSource",
-      "qualifiedName" : "scalive.StaticAssetSource.Classpath",
-      "kind" : "class",
-      "signatures" : [
-        {
-          "id" : "class:scalive.StaticAssetSource.Classpath:d2058133edfb88be",
-          "signature" : "class Classpath(resourcePrefix: String, assets: Set[String], serveOriginals: Boolean, classLoader: ClassLoader) extends StaticAssetSource"
-        }
-      ]
-    },
-    {
-      "id" : "class:scalive.StaticAssetSource.DeploymentClasspath",
-      "ownerId" : "object:scalive.StaticAssetSource",
-      "qualifiedName" : "scalive.StaticAssetSource.DeploymentClasspath",
-      "kind" : "class",
-      "signatures" : [
-        {
-          "id" : "class:scalive.StaticAssetSource.DeploymentClasspath:6a6cca4e04176726",
-          "signature" : "class DeploymentClasspath(resourcePrefix: String, manifest: String, classLoader: ClassLoader) extends StaticAssetSource"
-        }
-      ]
-    },
-    {
-      "id" : "class:scalive.StaticAssetSource.DeploymentDirectory",
-      "ownerId" : "object:scalive.StaticAssetSource",
-      "qualifiedName" : "scalive.StaticAssetSource.DeploymentDirectory",
-      "kind" : "class",
-      "signatures" : [
-        {
-          "id" : "class:scalive.StaticAssetSource.DeploymentDirectory:de9d7b7ee2a18a6b",
-          "signature" : "class DeploymentDirectory(root: java.nio.file.Path, manifest: String) extends StaticAssetSource"
-        }
-      ]
-    },
-    {
-      "id" : "class:scalive.StaticAssetSource.Directory",
-      "ownerId" : "object:scalive.StaticAssetSource",
-      "qualifiedName" : "scalive.StaticAssetSource.Directory",
-      "kind" : "class",
-      "signatures" : [
-        {
-          "id" : "class:scalive.StaticAssetSource.Directory:c09338d9d5f716b3",
-          "signature" : "class Directory(root: java.nio.file.Path, assets: Option[Set[String]], serveOriginals: Boolean) extends StaticAssetSource"
         }
       ]
     },
@@ -9214,50 +9154,26 @@
       ]
     },
     {
-      "id" : "def:scalive.StaticAssetConfig.classpath",
-      "ownerId" : "object:scalive.StaticAssetConfig",
-      "qualifiedName" : "scalive.StaticAssetConfig.classpath",
+      "id" : "def:scalive.StaticAssetRoot.classpath",
+      "ownerId" : "object:scalive.StaticAssetRoot",
+      "qualifiedName" : "scalive.StaticAssetRoot.classpath",
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.StaticAssetConfig.classpath:be8968420924ad9e",
-          "signature" : "def classpath(resourcePrefix: String, assets: Iterable[String], mountPath: zio.http.Path = ..., serveOriginals: Boolean = ..., classLoader: ClassLoader = ...): StaticAssetConfig"
+          "id" : "def:scalive.StaticAssetRoot.classpath:cd1e86483a9039f4",
+          "signature" : "def classpath(prefix: String, classLoader: ClassLoader = ...): StaticAssetRoot"
         }
       ]
     },
     {
-      "id" : "def:scalive.StaticAssetConfig.deploymentClasspath",
-      "ownerId" : "object:scalive.StaticAssetConfig",
-      "qualifiedName" : "scalive.StaticAssetConfig.deploymentClasspath",
+      "id" : "def:scalive.StaticAssetRoot.directory",
+      "ownerId" : "object:scalive.StaticAssetRoot",
+      "qualifiedName" : "scalive.StaticAssetRoot.directory",
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.StaticAssetConfig.deploymentClasspath:49d732648e065770",
-          "signature" : "def deploymentClasspath(resourcePrefix: String, manifest: String = ..., mountPath: zio.http.Path = ..., classLoader: ClassLoader = ...): StaticAssetConfig"
-        }
-      ]
-    },
-    {
-      "id" : "def:scalive.StaticAssetConfig.deploymentDirectory",
-      "ownerId" : "object:scalive.StaticAssetConfig",
-      "qualifiedName" : "scalive.StaticAssetConfig.deploymentDirectory",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.StaticAssetConfig.deploymentDirectory:80b9d251884a3671",
-          "signature" : "def deploymentDirectory(root: java.nio.file.Path, manifest: String = ..., mountPath: zio.http.Path = ...): StaticAssetConfig"
-        }
-      ]
-    },
-    {
-      "id" : "def:scalive.StaticAssetConfig.directory",
-      "ownerId" : "object:scalive.StaticAssetConfig",
-      "qualifiedName" : "scalive.StaticAssetConfig.directory",
-      "kind" : "def",
-      "signatures" : [
-        {
-          "id" : "def:scalive.StaticAssetConfig.directory:d20ea19d3fb4f6d5",
-          "signature" : "def directory(root: java.nio.file.Path, mountPath: zio.http.Path = ..., serveOriginals: Boolean = ..., assets: Option[Iterable[String]] = ...): StaticAssetConfig"
+          "id" : "def:scalive.StaticAssetRoot.directory:ccb6d88942b22214",
+          "signature" : "def directory(path: java.nio.file.Path): StaticAssetRoot"
         }
       ]
     },
@@ -9274,14 +9190,14 @@
       ]
     },
     {
-      "id" : "def:scalive.StaticAssets.load",
+      "id" : "def:scalive.StaticAssets.manifest",
       "ownerId" : "object:scalive.StaticAssets",
-      "qualifiedName" : "scalive.StaticAssets.load",
+      "qualifiedName" : "scalive.StaticAssets.manifest",
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.StaticAssets.load:2079cf1629403881",
-          "signature" : "def load(config: StaticAssetConfig): zio.package.Task[StaticAssets]"
+          "id" : "def:scalive.StaticAssets.manifest:06daa45eda207ab5",
+          "signature" : "def manifest(root: StaticAssetRoot, name: String = ..., mountPath: zio.http.Path = ..., cache: StaticAssetCache = ...): zio.package.Task[StaticAssets]"
         }
       ]
     },
@@ -9354,6 +9270,18 @@
         {
           "id" : "def:scalive.StaticAssets.trackedStylesheet:80e6b6bdfe9e5b7f",
           "signature" : "def trackedStylesheet[Msg](asset: String, mods: Mod.Input[Msg]*): HtmlElement[Msg]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.StaticAssets.tree",
+      "ownerId" : "object:scalive.StaticAssets",
+      "qualifiedName" : "scalive.StaticAssets.tree",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.StaticAssets.tree:f467799596bf5f65",
+          "signature" : "def tree(root: StaticAssetRoot, only: Option[Iterable[String]] = ..., mountPath: zio.http.Path = ..., serveOriginals: Boolean = ..., cache: StaticAssetCache = ...): zio.package.Task[StaticAssets]"
         }
       ]
     },
@@ -21398,26 +21326,14 @@
       ]
     },
     {
-      "id" : "object:scalive.StaticAssetConfig",
+      "id" : "object:scalive.StaticAssetRoot",
       "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.StaticAssetConfig",
+      "qualifiedName" : "scalive.StaticAssetRoot",
       "kind" : "object",
       "signatures" : [
         {
-          "id" : "object:scalive.StaticAssetConfig:9e6745212fdb70d2",
-          "signature" : "object StaticAssetConfig"
-        }
-      ]
-    },
-    {
-      "id" : "object:scalive.StaticAssetSource",
-      "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.StaticAssetSource",
-      "kind" : "object",
-      "signatures" : [
-        {
-          "id" : "object:scalive.StaticAssetSource:bd046458bda7b37b",
-          "signature" : "object StaticAssetSource"
+          "id" : "object:scalive.StaticAssetRoot:077ab3bfd1d3fc0b",
+          "signature" : "object StaticAssetRoot"
         }
       ]
     },
@@ -22729,14 +22645,14 @@
       ]
     },
     {
-      "id" : "trait:scalive.StaticAssetSource",
+      "id" : "trait:scalive.StaticAssetRoot",
       "ownerId" : "package:scalive",
-      "qualifiedName" : "scalive.StaticAssetSource",
+      "qualifiedName" : "scalive.StaticAssetRoot",
       "kind" : "trait",
       "signatures" : [
         {
-          "id" : "trait:scalive.StaticAssetSource:aeb7980eebc197c2",
-          "signature" : "trait StaticAssetSource"
+          "id" : "trait:scalive.StaticAssetRoot:b9091174b572f117",
+          "signature" : "trait StaticAssetRoot"
         }
       ]
     },
@@ -28849,42 +28765,6 @@
       ]
     },
     {
-      "id" : "val:scalive.StaticAssetConfig.cache",
-      "ownerId" : "class:scalive.StaticAssetConfig",
-      "qualifiedName" : "scalive.StaticAssetConfig.cache",
-      "kind" : "val",
-      "signatures" : [
-        {
-          "id" : "val:scalive.StaticAssetConfig.cache:2016f53c96d172fc",
-          "signature" : "val cache: StaticAssetCache"
-        }
-      ]
-    },
-    {
-      "id" : "val:scalive.StaticAssetConfig.mountPath",
-      "ownerId" : "class:scalive.StaticAssetConfig",
-      "qualifiedName" : "scalive.StaticAssetConfig.mountPath",
-      "kind" : "val",
-      "signatures" : [
-        {
-          "id" : "val:scalive.StaticAssetConfig.mountPath:e9432565d53ee669",
-          "signature" : "val mountPath: zio.http.Path"
-        }
-      ]
-    },
-    {
-      "id" : "val:scalive.StaticAssetConfig.source",
-      "ownerId" : "class:scalive.StaticAssetConfig",
-      "qualifiedName" : "scalive.StaticAssetConfig.source",
-      "kind" : "val",
-      "signatures" : [
-        {
-          "id" : "val:scalive.StaticAssetConfig.source:aa9e89e6b93b4c42",
-          "signature" : "val source: StaticAssetSource"
-        }
-      ]
-    },
-    {
       "id" : "val:scalive.StaticAssetEntry.cachePolicy",
       "ownerId" : "class:scalive.StaticAssetEntry",
       "qualifiedName" : "scalive.StaticAssetEntry.cachePolicy",
@@ -28965,150 +28845,6 @@
         {
           "id" : "val:scalive.StaticAssetEntry.sourcePath:7e4a482b9f710ba5",
           "signature" : "val sourcePath: String"
-        }
-      ]
-    },
-    {
-      "id" : "val:scalive.StaticAssetSource.Classpath.assets",
-      "ownerId" : "class:scalive.StaticAssetSource.Classpath",
-      "qualifiedName" : "scalive.StaticAssetSource.Classpath.assets",
-      "kind" : "val",
-      "signatures" : [
-        {
-          "id" : "val:scalive.StaticAssetSource.Classpath.assets:7c3c1b76cfa53866",
-          "signature" : "val assets: Set[String]"
-        }
-      ]
-    },
-    {
-      "id" : "val:scalive.StaticAssetSource.Classpath.classLoader",
-      "ownerId" : "class:scalive.StaticAssetSource.Classpath",
-      "qualifiedName" : "scalive.StaticAssetSource.Classpath.classLoader",
-      "kind" : "val",
-      "signatures" : [
-        {
-          "id" : "val:scalive.StaticAssetSource.Classpath.classLoader:1dd5a44c888d0825",
-          "signature" : "val classLoader: ClassLoader"
-        }
-      ]
-    },
-    {
-      "id" : "val:scalive.StaticAssetSource.Classpath.resourcePrefix",
-      "ownerId" : "class:scalive.StaticAssetSource.Classpath",
-      "qualifiedName" : "scalive.StaticAssetSource.Classpath.resourcePrefix",
-      "kind" : "val",
-      "signatures" : [
-        {
-          "id" : "val:scalive.StaticAssetSource.Classpath.resourcePrefix:fbf45beebff9840a",
-          "signature" : "val resourcePrefix: String"
-        }
-      ]
-    },
-    {
-      "id" : "val:scalive.StaticAssetSource.Classpath.serveOriginals",
-      "ownerId" : "class:scalive.StaticAssetSource.Classpath",
-      "qualifiedName" : "scalive.StaticAssetSource.Classpath.serveOriginals",
-      "kind" : "val",
-      "signatures" : [
-        {
-          "id" : "val:scalive.StaticAssetSource.Classpath.serveOriginals:64b6beac152dfc17",
-          "signature" : "val serveOriginals: Boolean"
-        }
-      ]
-    },
-    {
-      "id" : "val:scalive.StaticAssetSource.DeploymentClasspath.classLoader",
-      "ownerId" : "class:scalive.StaticAssetSource.DeploymentClasspath",
-      "qualifiedName" : "scalive.StaticAssetSource.DeploymentClasspath.classLoader",
-      "kind" : "val",
-      "signatures" : [
-        {
-          "id" : "val:scalive.StaticAssetSource.DeploymentClasspath.classLoader:1dd5a44c888d0825",
-          "signature" : "val classLoader: ClassLoader"
-        }
-      ]
-    },
-    {
-      "id" : "val:scalive.StaticAssetSource.DeploymentClasspath.manifest",
-      "ownerId" : "class:scalive.StaticAssetSource.DeploymentClasspath",
-      "qualifiedName" : "scalive.StaticAssetSource.DeploymentClasspath.manifest",
-      "kind" : "val",
-      "signatures" : [
-        {
-          "id" : "val:scalive.StaticAssetSource.DeploymentClasspath.manifest:f87b80325e1eee3f",
-          "signature" : "val manifest: String"
-        }
-      ]
-    },
-    {
-      "id" : "val:scalive.StaticAssetSource.DeploymentClasspath.resourcePrefix",
-      "ownerId" : "class:scalive.StaticAssetSource.DeploymentClasspath",
-      "qualifiedName" : "scalive.StaticAssetSource.DeploymentClasspath.resourcePrefix",
-      "kind" : "val",
-      "signatures" : [
-        {
-          "id" : "val:scalive.StaticAssetSource.DeploymentClasspath.resourcePrefix:fbf45beebff9840a",
-          "signature" : "val resourcePrefix: String"
-        }
-      ]
-    },
-    {
-      "id" : "val:scalive.StaticAssetSource.DeploymentDirectory.manifest",
-      "ownerId" : "class:scalive.StaticAssetSource.DeploymentDirectory",
-      "qualifiedName" : "scalive.StaticAssetSource.DeploymentDirectory.manifest",
-      "kind" : "val",
-      "signatures" : [
-        {
-          "id" : "val:scalive.StaticAssetSource.DeploymentDirectory.manifest:f87b80325e1eee3f",
-          "signature" : "val manifest: String"
-        }
-      ]
-    },
-    {
-      "id" : "val:scalive.StaticAssetSource.DeploymentDirectory.root",
-      "ownerId" : "class:scalive.StaticAssetSource.DeploymentDirectory",
-      "qualifiedName" : "scalive.StaticAssetSource.DeploymentDirectory.root",
-      "kind" : "val",
-      "signatures" : [
-        {
-          "id" : "val:scalive.StaticAssetSource.DeploymentDirectory.root:20264f8b90a10e3d",
-          "signature" : "val root: java.nio.file.Path"
-        }
-      ]
-    },
-    {
-      "id" : "val:scalive.StaticAssetSource.Directory.assets",
-      "ownerId" : "class:scalive.StaticAssetSource.Directory",
-      "qualifiedName" : "scalive.StaticAssetSource.Directory.assets",
-      "kind" : "val",
-      "signatures" : [
-        {
-          "id" : "val:scalive.StaticAssetSource.Directory.assets:eee7466d59015b23",
-          "signature" : "val assets: Option[Set[String]]"
-        }
-      ]
-    },
-    {
-      "id" : "val:scalive.StaticAssetSource.Directory.root",
-      "ownerId" : "class:scalive.StaticAssetSource.Directory",
-      "qualifiedName" : "scalive.StaticAssetSource.Directory.root",
-      "kind" : "val",
-      "signatures" : [
-        {
-          "id" : "val:scalive.StaticAssetSource.Directory.root:20264f8b90a10e3d",
-          "signature" : "val root: java.nio.file.Path"
-        }
-      ]
-    },
-    {
-      "id" : "val:scalive.StaticAssetSource.Directory.serveOriginals",
-      "ownerId" : "class:scalive.StaticAssetSource.Directory",
-      "qualifiedName" : "scalive.StaticAssetSource.Directory.serveOriginals",
-      "kind" : "val",
-      "signatures" : [
-        {
-          "id" : "val:scalive.StaticAssetSource.Directory.serveOriginals:64b6beac152dfc17",
-          "signature" : "val serveOriginals: Boolean"
         }
       ]
     },

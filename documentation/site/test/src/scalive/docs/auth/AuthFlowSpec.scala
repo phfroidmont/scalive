@@ -119,10 +119,7 @@ object AuthFlowSpec extends ZIOSpecDefault:
         application <- ZIO
                          .fromEither(DocumentationApplication.from(bundle))
                          .orDieWith(error => new AssertionError(error))
-        assets <- StaticAssets.load(
-                    StaticAssetConfig.classpath(
-                      "public",
-                      Seq(
+        assets <- StaticAssets.tree(StaticAssetRoot.classpath("public"), only = Some(Seq(
                         "app.css",
                         "app.js",
                         "favicon.svg",
@@ -130,9 +127,7 @@ object AuthFlowSpec extends ZIOSpecDefault:
                         "instrument-sans-OFL.txt",
                         "jetbrains-mono-OFL.txt",
                         "search-index.json"
-                      )
-                    )
-                  )
+                      )))
         origin <- ZIO
                     .fromEither(PublicOrigin.from("https://docs.example.test"))
                     .orDieWith(error => new IllegalArgumentException(error))

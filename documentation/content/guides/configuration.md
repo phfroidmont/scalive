@@ -138,11 +138,11 @@ The remaining framework choices are made while assembling the application:
 | Scalive browser files | `Live.router.withClientPath`; default `/_scalive` | Scalive serves its navigation-guard runtime below it with either client, and the packaged Phoenix clients too. No LiveView or HTTP route may match one of these files; assembly fails if one does. Keep application static mounts outside it: `ZioHttp.routes` cannot see them, so it cannot report a collision. |
 | Root and Live layouts | `Live.router.withRootLayout` and `.withLayout`; `LiveRootLayout.default` and no ordinary layouts by default | A custom root renders a complete `<html>`, `<head>`, and `<body>` with the application assets. Scalive inserts its CSRF metadata and browser scripts into the `<head>`. |
 | Phoenix clients | The `client` argument of `ZioHttp.routes`; default `LiveClient.Packaged`, served below the client path | Pass `LiveClient.Custom` when the application bundle imports both npm clients and connects its own `LiveSocket`. |
-| Static assets | `StaticAssetConfig.classpath`, `.directory`, `.deploymentClasspath`, or `.deploymentDirectory`; default mount `/static` | Load assets before startup, add `assets.routes`, and render versioned or final URLs from the same loaded value. |
+| Static assets | `StaticAssets.tree` or `StaticAssets.manifest`, from a `StaticAssetRoot.classpath` or `.directory`; default mount `/static` | Load assets before startup, add `assets.routes`, and render versioned or final URLs from the same loaded value. |
 
-Use `classpath` or `directory` when Scalive should version one complete relative
-output tree. Use `deploymentClasspath` or `deploymentDirectory` when an external
-build owns exact final filenames and cache policy through a deployment manifest.
+Use `StaticAssets.tree` when Scalive should version one complete relative
+output tree. Use `StaticAssets.manifest` when an external build owns exact
+final filenames and cache policy through a deployment manifest.
 
 This router serves its WebSocket below `/socket`:
 
@@ -190,7 +190,7 @@ Public URL generation and trusted-proxy policy remain application concerns.
 Validate a public URL when the application needs to generate absolute URLs.
 
 Load and validate all application settings once at startup, before
-`StaticAssets.load`, route assembly, and `Server.serve`. Missing secrets, invalid
+loading static assets, route assembly, and `Server.serve`. Missing secrets, invalid
 ports, and absent configured assets should stop the process rather than leave a
 partially configured instance serving traffic.
 

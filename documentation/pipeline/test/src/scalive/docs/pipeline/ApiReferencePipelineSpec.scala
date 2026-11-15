@@ -131,7 +131,7 @@ object ApiReferencePipelineSpec extends ZIOSpecDefault:
         !symbols.exists(_.name == "<init>"),
         !symbols.exists(_.qualifiedName == "scalive.JSCommands.Binding"),
         !symbols.exists(_.qualifiedName.startsWith("scalive.ComponentRef")),
-        !symbols.exists(_.qualifiedName == "scalive.StaticAssets.manifest"),
+        !symbols.exists(_.qualifiedName.startsWith("scalive.StaticAssetRoot.Classpath")),
         !symbols.exists(_.qualifiedName == "scalive.PhxUpdate.value")
       )
     },

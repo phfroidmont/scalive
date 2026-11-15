@@ -30,9 +30,9 @@ object DocumentationSite extends ZIOAppDefault:
                        .fromEither(DocumentationApplication.from(bundle))
                        .mapError(new IllegalStateException(_))
       traceStore <- DocumentationTraceStore.make()
-      assets     <- StaticAssets.load(
-                  StaticAssetConfig.classpath(
-                    "public",
+      assets     <- StaticAssets.tree(
+                  StaticAssetRoot.classpath("public"),
+                  only = Some(
                     Seq(
                       "app.css",
                       "app.js",

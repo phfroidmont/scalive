@@ -9,37 +9,33 @@ import zio.test.*
 
 object StaticAssetsSpec extends ZIOSpecDefault:
   private def loadAssets(serveOriginals: Boolean = false): Task[StaticAssets] =
-    StaticAssets.load(
-      StaticAssetConfig.classpath(
-        "public",
-        Seq("test-asset.js"),
-        mountPath = Path.empty / "assets",
-        serveOriginals = serveOriginals
-      )
+    StaticAssets.tree(
+      StaticAssetRoot.classpath("public"),
+      only = Some(Seq("test-asset.js")),
+      mountPath = Path.empty / "assets",
+      serveOriginals = serveOriginals
     )
 
   private def loadGraphAssets: Task[StaticAssets] =
-    StaticAssets.load(
-      StaticAssetConfig.classpath(
-        "public",
+    StaticAssets.tree(
+      StaticAssetRoot.classpath("public"),
+      only = Some(
         Seq(
           "graph/app.js",
           "graph/chunk.js",
           "graph/styles/app.css",
           "graph/fonts/test.woff2",
           "graph/worker.js"
-        ),
-        mountPath = Path.empty / "assets"
-      )
+        )
+      ),
+      mountPath = Path.empty / "assets"
     )
 
   private def loadDeploymentAssets(manifest: String = "deployment-assets.json") =
-    StaticAssets.load(
-      StaticAssetConfig.deploymentClasspath(
-        "public",
-        manifest,
-        mountPath = Path.empty / "assets"
-      )
+    StaticAssets.manifest(
+      StaticAssetRoot.classpath("public"),
+      manifest,
+      mountPath = Path.empty / "assets"
     )
 
   private def request(
@@ -141,12 +137,10 @@ object StaticAssetsSpec extends ZIOSpecDefault:
     },
     test("encodes final path segments without changing asset lookup names") {
       for
-        assets <- StaticAssets.load(
-                    StaticAssetConfig.classpath(
-                      "public",
-                      Seq("percent%2Fasset.js"),
-                      mountPath = Path.empty / "assets"
-                    )
+        assets <- StaticAssets.tree(
+                    StaticAssetRoot.classpath("public"),
+                    only = Some(Seq("percent%2Fasset.js")),
+                    mountPath = Path.empty / "assets"
                   )
         path = assets.path("percent%2Fasset.js")
         response <- request(assets.routes, path)
@@ -157,12 +151,10 @@ object StaticAssetsSpec extends ZIOSpecDefault:
     },
     test("encodes custom mount path segments") {
       for
-        assets <- StaticAssets.load(
-                    StaticAssetConfig.classpath(
-                      "public",
-                      Seq("test-asset.js"),
-                      mountPath = Path.empty / "assets%2Fv1"
-                    )
+        assets <- StaticAssets.tree(
+                    StaticAssetRoot.classpath("public"),
+                    only = Some(Seq("test-asset.js")),
+                    mountPath = Path.empty / "assets%2Fv1"
                   )
         path = assets.path("test-asset.js")
         response <- request(assets.routes, path)
@@ -226,11 +218,9 @@ object StaticAssetsSpec extends ZIOSpecDefault:
                    """{"version":1,"assets":{"app.js":{"file":"built/app-final.js","cache":"immutable"}}}"""
                  )
                )
-          assets <- StaticAssets.load(
-                      StaticAssetConfig.deploymentDirectory(
-                        root,
-                        mountPath = Path.empty / "assets"
-                      )
+          assets <- StaticAssets.manifest(
+                      StaticAssetRoot.directory(root),
+                      mountPath = Path.empty / "assets"
                     )
           response <- request(assets.routes, assets.path("app.js"))
           body     <- response.body.asString
@@ -264,13 +254,11 @@ object StaticAssetsSpec extends ZIOSpecDefault:
           root <- temporaryDirectory
           file = root.resolve("mutable.txt")
           _ <- ZIO.attemptBlocking(Files.writeString(file, "first"))
-          assets <- StaticAssets.load(
-                      StaticAssetConfig.directory(
-                        root,
-                        mountPath = Path.empty / "assets",
-                        serveOriginals = true,
-                        assets = Some(Seq("mutable.txt"))
-                      )
+          assets <- StaticAssets.tree(
+                      StaticAssetRoot.directory(root),
+                      only = Some(Seq("mutable.txt")),
+                      mountPath = Path.empty / "assets",
+                      serveOriginals = true
                     )
           _             <- ZIO.attemptBlocking(Files.writeString(file, "second"))
           immutable     <- request(assets.routes, assets.path("mutable.txt"))
@@ -298,12 +286,10 @@ object StaticAssetsSpec extends ZIOSpecDefault:
           _    <- ZIO.attemptBlocking(Files.writeString(root.resolve("app.js.br"), "brotli"))
           _    <- ZIO.attemptBlocking(Files.writeString(root.resolve("app.js.gz"), "gzip"))
           _    <- ZIO.attemptBlocking(Files.writeString(root.resolve("alone.js"), "alone"))
-          assets <- StaticAssets.load(
-                      StaticAssetConfig.directory(
-                        root,
-                        mountPath = Path.empty / "assets",
-                        assets = Some(Seq("app.js", "alone.js"))
-                      )
+          assets <- StaticAssets.tree(
+                      StaticAssetRoot.directory(root),
+                      only = Some(Seq("app.js", "alone.js")),
+                      mountPath = Path.empty / "assets"
                     )
           path = assets.path("app.js")
           brotli    <- request(assets.routes, path, headers = accepting("gzip, deflate, br"))
@@ -351,6 +337,71 @@ object StaticAssetsSpec extends ZIOSpecDefault:
         )
       }
     },
+    test("applies the configured cache headers to a tree and to a manifest") {
+      val cache = StaticAssetCache(
+        immutable = Header.CacheControl.MaxAge(60),
+        revalidating = Header.CacheControl.NoStore
+      )
+      for
+        tree <- StaticAssets.tree(
+                  StaticAssetRoot.classpath("public"),
+                  only = Some(Seq("test-asset.js")),
+                  serveOriginals = true,
+                  cache = cache
+                )
+        manifest <- StaticAssets.manifest(
+                      StaticAssetRoot.classpath("public"),
+                      "deployment-assets.json",
+                      cache = cache
+                    )
+        versioned <- request(tree.routes, tree.path("test-asset.js"))
+        original  <- request(tree.routes, "/static/test-asset.js")
+        hashed    <- request(manifest.routes, manifest.path("app.js"))
+        stable    <- request(manifest.routes, manifest.path("robots.txt"))
+      yield assertTrue(
+        versioned.header(Header.CacheControl).contains(cache.immutable),
+        original.header(Header.CacheControl).contains(cache.revalidating),
+        hashed.header(Header.CacheControl).contains(cache.immutable),
+        stable.header(Header.CacheControl).contains(cache.revalidating)
+      )
+    },
+    test("reads a classpath root through the class loader it names") {
+      ZIO.scoped {
+        for
+          directory <- temporaryDirectory
+          _         <- ZIO.attemptBlocking(Files.createDirectory(directory.resolve("site")))
+          _         <- ZIO.attemptBlocking(Files.writeString(directory.resolve("site/app.js"), "loaded"))
+          loader    <- ZIO.fromAutoCloseable(
+                         ZIO.attemptBlocking(
+                           new java.net.URLClassLoader(Array(directory.toUri.toURL), null)
+                         )
+                       )
+          assets   <- StaticAssets.tree(
+                        StaticAssetRoot.classpath("site", loader),
+                        only = Some(Seq("app.js"))
+                      )
+          response <- request(assets.routes, assets.path("app.js"))
+          body     <- response.body.asString
+        yield assertTrue(response.status == Status.Ok, body == "loaded")
+      }
+    },
+    test("discovers every regular file of a directory tree without a restriction list") {
+      ZIO.scoped {
+        for
+          root     <- temporaryDirectory
+          _        <- ZIO.attemptBlocking(Files.createDirectory(root.resolve("fonts")))
+          _        <- ZIO.attemptBlocking(Files.writeString(root.resolve("app.js"), "app"))
+          _        <- ZIO.attemptBlocking(Files.writeString(root.resolve("fonts/a.woff2"), "font"))
+          assets   <- StaticAssets.tree(StaticAssetRoot.directory(root))
+          app      <- request(assets.routes, assets.path("app.js"))
+          font     <- request(assets.routes, assets.path("fonts/a.woff2"))
+        yield assertTrue(app.status == Status.Ok, font.status == Status.Ok)
+      }
+    },
+    test("a classpath tree without a restriction list fails and says to pass one") {
+      for attempted <- StaticAssets.tree(StaticAssetRoot.classpath("public")).either
+      yield assertTrue(attempted.left.exists(_.getMessage.contains("`only`")))
+    },
     test("rejects directory symlinks that escape the configured root") {
       ZIO.scoped {
         for
@@ -361,12 +412,8 @@ object StaticAssetsSpec extends ZIOSpecDefault:
           _        <- ZIO.attemptBlocking(Files.writeString(secret, "secret"))
           _        <- ZIO.attemptBlocking(Files.createSymbolicLink(root.resolve("leak.txt"), secret))
           attempted <- StaticAssets
-                         .load(
-                           StaticAssetConfig.directory(
-                             root,
-                             assets = Some(Seq("leak.txt"))
-                           )
-                         ).exit
+                         .tree(StaticAssetRoot.directory(root), only = Some(Seq("leak.txt")))
+                         .exit
         yield assertTrue(attempted.isFailure)
       }
     }

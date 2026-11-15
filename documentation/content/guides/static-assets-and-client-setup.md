@@ -77,39 +77,35 @@ root layout loads a single stylesheet this way. For a larger output, list every
 file below the classpath prefix:
 
 ```scala fragment
-assets <- StaticAssets.load(
-  StaticAssetConfig.classpath(
-    resourcePrefix = "public",
-    assets = Seq("app.css", "app.js")
-  )
+assets <- StaticAssets.tree(
+  StaticAssetRoot.classpath("public"),
+  only = Some(Seq("app.css", "app.js"))
 )
 ```
 
-The @:apiSymbol(def:scalive.StaticAssetConfig.classpath)`StaticAssetConfig.classpath`@:@
-source requires an explicit asset list. Include every file in the output tree,
+A @:apiSymbol(def:scalive.StaticAssetRoot.classpath)`StaticAssetRoot.classpath`@:@
+root requires the explicit list in `only`. Include every file in the output tree,
 not only the top-level script and stylesheet, so relative imports and URLs
 remain available.
-@:apiSymbol(def:scalive.StaticAssets.load)`StaticAssets.load`@:@ reads every
-configured asset and fails when one is missing. The default mount path is
+@:apiSymbol(def:scalive.StaticAssets.tree)`StaticAssets.tree`@:@ reads every
+listed asset and fails when one is missing. The default mount path is
 `/static`, and original unversioned URLs are disabled by default.
 
 ## Load a directory tree {#load-a-directory}
 
-Use @:apiSymbol(def:scalive.StaticAssetConfig.directory)`StaticAssetConfig.directory`@:@
-when assets are deployed outside the application classpath:
+Use a @:apiSymbol(def:scalive.StaticAssetRoot.directory)`StaticAssetRoot.directory`@:@
+root when assets are deployed outside the application classpath:
 
 ```scala fragment
 import java.nio.file.Paths
 
-assets <- StaticAssets.load(
-  StaticAssetConfig.directory(
-    root = Paths.get("/srv/my-app/public"),
-    assets = Some(Seq("app.css", "app.js"))
-  )
+assets <- StaticAssets.tree(
+  StaticAssetRoot.directory(Paths.get("/srv/my-app/public")),
+  only = Some(Seq("app.css", "app.js"))
 )
 ```
 
-Set `assets = None` to discover all regular files recursively below the root.
+Leave `only` out to discover all regular files recursively below the root.
 Supplying a list limits the loaded tree to those relative paths. Configured
 paths must be normalized relative paths; empty segments, `.`, `..`, and
 backslashes are rejected, and symlinks cannot escape the configured root. The
@@ -368,30 +364,22 @@ graph independently of this choice.
 ## Load a deployment manifest {#load-a-deployment-manifest}
 
 Load the manifest with
-@:apiSymbol(def:scalive.StaticAssetConfig.deploymentClasspath)`StaticAssetConfig.deploymentClasspath`@:@
-from a classpath prefix, or with
-@:apiSymbol(def:scalive.StaticAssetConfig.deploymentDirectory)`StaticAssetConfig.deploymentDirectory`@:@
-from a directory root:
+@:apiSymbol(def:scalive.StaticAssets.manifest)`StaticAssets.manifest`@:@
+from a classpath prefix or from a directory:
 
 ```scala fragment
 import java.nio.file.Paths
 
-assets <- StaticAssets.load(
-  StaticAssetConfig.deploymentClasspath(
-    resourcePrefix = "public"
-  )
-)
+assets <- StaticAssets.manifest(StaticAssetRoot.classpath("public"))
 
 // Or for files outside the classpath:
-assets <- StaticAssets.load(
-  StaticAssetConfig.deploymentDirectory(
-    root = Paths.get("/srv/my-app/public")
-  )
+assets <- StaticAssets.manifest(
+  StaticAssetRoot.directory(Paths.get("/srv/my-app/public"))
 )
 ```
 
-Both constructors default to `assets-manifest.json` and `/static`; override the
-`manifest` or `mountPath` argument when needed. Routes, path lookup, and tag
+The manifest name defaults to `assets-manifest.json` and the mount path to
+`/static`; override the `name` or `mountPath` argument when needed. Routes, path lookup, and tag
 helpers work as [for trees](#add-static-routes-and-resolve-paths). Version 1 of
 the neutral schema is:
 

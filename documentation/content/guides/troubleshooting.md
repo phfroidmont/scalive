@@ -38,7 +38,8 @@ Check the startup path in order:
 
 - Build any custom browser bundle before starting the JVM, and pass
   `LiveClient.Custom` to `ZioHttp.routes` when it includes both clients.
-- Load every declared asset with @:apiSymbol(def:scalive.StaticAssets.load)`StaticAssets.load`@:@.
+- Load every declared asset with @:apiSymbol(def:scalive.StaticAssets.tree)`StaticAssets.tree`@:@
+  or @:apiSymbol(def:scalive.StaticAssets.manifest)`StaticAssets.manifest`@:@.
 - Validate one @:apiSymbol(class:scalive.ZioHttpConfig)`ZioHttpConfig`@:@ and pass
   it to @:apiSymbol(def:scalive.ZioHttp.routes)`ZioHttp.routes`@:@.
 - Make a custom root layout render `<html>`, `<head>`, and `<body>`.
@@ -47,8 +48,7 @@ Check the startup path in order:
   serves its own assets.
 - Provide all ZIO environment requirements before calling `Server.serve`.
 
-@:apiSymbol(def:scalive.StaticAssets.load)`StaticAssets.load`@:@ fails startup when a configured classpath or directory asset
-is absent. Route construction also validates invalid or duplicate Live route
+Both loaders fail startup when a listed classpath or directory asset is absent. Route construction also validates invalid or duplicate Live route
 configurations. Preserve those failures rather than replacing them with a
 server that starts partially.
 
@@ -77,7 +77,7 @@ loaded asset value must render the script tag and serve its routes.
 namespace; original paths are disabled by default and use `no-cache` only when
 explicitly enabled. Deployment entries use their declared cache policy. Do not
 hard-code a generated path; render it through the loaded assets. If a reverse proxy adds a URL prefix,
-make its routing agree with @:apiSymbol(val:scalive.StaticAssetConfig.mountPath)`StaticAssetConfig.mountPath`@:@ rather than rewriting
+make its routing agree with the loader's `mountPath` argument rather than rewriting
 only the HTML.
 
 Common asset failures are a missing Mill `resources` dependency on the bundle,

@@ -240,10 +240,7 @@ object E2EApp extends ZIOAppDefault:
 
   override val run =
     for
-      assets <- StaticAssets.tree(
-                  StaticAssetRoot.classpath("public"),
-                  only = Some(Seq("app.css", "app.js", "daisy.css"))
-                )
+      assets <- StaticAssets.tree(StaticAssetRoot.classpath("public"))
       config <-
         ZIO
           .fromEither(

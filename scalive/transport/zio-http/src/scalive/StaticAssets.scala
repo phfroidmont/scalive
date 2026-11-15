@@ -25,6 +25,9 @@ sealed trait StaticAssetRoot
 object StaticAssetRoot:
   /** Files packaged with the application below a classpath prefix, such as `public`.
     *
+    * An asset tree publishes every file the class loader finds below the prefix, in every JAR and
+    * directory, so choose a prefix that only the application uses.
+    *
     * @param prefix
     *   The classpath prefix below which the files are stored.
     * @param classLoader
@@ -252,8 +255,9 @@ object StaticAssets:
     * @param root
     *   Where the tree is stored.
     * @param only
-    *   The relative paths to serve. `None` serves every regular file below a directory root; a
-    *   classpath root requires the list.
+    *   The relative paths to serve. `None` serves every regular file below the root, wherever the
+    *   class loader finds a classpath prefix, a dependency's files included; loading fails when a
+    *   classpath location is neither a directory nor a JAR. With a list, nothing is discovered.
     * @param mountPath
     *   The HTTP path below which the assets are served.
     * @param serveOriginals
@@ -498,24 +502,74 @@ object StaticAssets:
     else normalizeRelativePath(path)
 
   private def discover(root: StaticAssetRoot): Task[List[String]] =
-    root match
-      case StaticAssetRoot.Classpath(prefix, _) =>
-        ZIO.fail(
-          new IllegalArgumentException(
-            s"The files of the classpath asset tree below '$prefix' cannot be listed; pass their relative paths as `only`"
+    val files = root match
+      case StaticAssetRoot.Classpath(prefix, loader) =>
+        val resource = prefix.stripSuffix("/")
+        for
+          locations <- ZIO.attemptBlocking(loader.getResources(resource).asScala.toList)
+          // A JAR without directory entries holds the files but gives no location for the prefix.
+          _ <-
+            ZIO
+              .fail(
+                new IllegalArgumentException(
+                  s"The class loader finds no classpath location '$resource' to list the asset tree from; check the prefix, or pass the files' relative paths as `only`"
+                )
+              ).when(locations.isEmpty)
+          listed <- ZIO.foreach(locations)(listClasspathLocation(resource, _))
+        yield listed.flatten.distinct
+      case StaticAssetRoot.Directory(directory) =>
+        ZIO.attemptBlocking(
+          regularFilesBelow(
+            directory.toRealPath(),
+            Files.isRegularFile(_, LinkOption.NOFOLLOW_LINKS)
           )
         )
-      case StaticAssetRoot.Directory(directory) =>
-        ZIO
-          .attemptBlocking {
-            val normalizedRoot = directory.toRealPath()
-            val stream         = Files.walk(normalizedRoot)
-            try
-              stream
-                .iterator().asScala.filter(Files.isRegularFile(_, LinkOption.NOFOLLOW_LINKS))
-                .map(path => toRelativePath(normalizedRoot.relativize(path))).toList
-            finally stream.close()
-          }.flatMap(normalizeConfiguredAssets)
+    files.map(withoutPrecompressedCopies).flatMap(normalizeConfiguredAssets)
+
+  // A precompressed copy is served as an encoding of the asset it is stored next to.
+  private def withoutPrecompressedCopies(files: List[String]): List[String] =
+    val present = files.toSet
+    files.filterNot(file =>
+      precompressed.exists((_, extension) =>
+        file.endsWith(extension) && present.contains(file.stripSuffix(extension))
+      )
+    )
+
+  // The files below one place the class loader found the prefix, relative to the prefix.
+  private def listClasspathLocation(prefix: String, location: java.net.URL): Task[List[String]] =
+    location.getProtocol match
+      case "file" =>
+        ZIO.attemptBlocking(
+          regularFilesBelow(NioPath.of(location.toURI), Files.isRegularFile(_))
+        )
+      case "jar" =>
+        ZIO.attemptBlocking {
+          val connection = location.openConnection().asInstanceOf[java.net.JarURLConnection]
+          // An uncached connection opens its own JAR file, so closing it leaves the class loader's alone.
+          connection.setUseCaches(false)
+          val jar = connection.getJarFile
+          try
+            val directory = connection.getEntryName.stripSuffix("/") + "/"
+            jar
+              .entries().asScala
+              .filter(entry => !entry.isDirectory && entry.getName.startsWith(directory))
+              .map(_.getName.stripPrefix(directory)).toList
+          finally jar.close()
+        }
+      case _ =>
+        ZIO.fail(
+          new IllegalArgumentException(
+            s"The files of the classpath asset tree below '$prefix' cannot be listed at $location; pass their relative paths as `only`"
+          )
+        )
+
+  private def regularFilesBelow(root: NioPath, isRegularFile: NioPath => Boolean): List[String] =
+    val stream = Files.walk(root)
+    try
+      stream
+        .iterator().asScala.filter(isRegularFile)
+        .map(path => toRelativePath(root.relativize(path))).toList
+    finally stream.close()
 
   private def normalizeConfiguredAssets(assets: Iterable[String]): Task[List[String]] =
     ZIO.foreach(assets.toList.sorted)(normalizePath)

@@ -60,6 +60,11 @@ object StaticAssetsSpec extends ZIOSpecDefault:
           }.orDie
     )
 
+  private def classLoader(classpath: java.nio.file.Path): ZIO[Scope, Throwable, ClassLoader] =
+    ZIO.fromAutoCloseable(
+      ZIO.attemptBlocking(new java.net.URLClassLoader(Array(classpath.toUri.toURL), null))
+    )
+
   override def spec = suite("StaticAssetsSpec")(
     test("serves an immutable asset-set version and optional revalidating originals") {
       for
@@ -398,9 +403,152 @@ object StaticAssetsSpec extends ZIOSpecDefault:
         yield assertTrue(app.status == Status.Ok, font.status == Status.Ok)
       }
     },
-    test("a classpath tree without a restriction list fails and says to pass one") {
-      for attempted <- StaticAssets.tree(StaticAssetRoot.classpath("public")).either
-      yield assertTrue(attempted.left.exists(_.getMessage.contains("`only`")))
+    test("discovers every file of a classpath tree in a directory on the class loader") {
+      ZIO.scoped {
+        for
+          directory <- temporaryDirectory
+          _         <- ZIO.attemptBlocking(Files.createDirectories(directory.resolve("site/fonts")))
+          _         <- ZIO.attemptBlocking(Files.writeString(directory.resolve("site/app.js"), "app"))
+          _         <- ZIO.attemptBlocking(Files.writeString(directory.resolve("site/fonts/a.woff2"), "font"))
+          _         <- ZIO.attemptBlocking(Files.writeString(directory.resolve("outside.txt"), "outside"))
+          loader    <- classLoader(directory)
+          assets    <- StaticAssets.tree(StaticAssetRoot.classpath("site", loader))
+          app       <- request(assets.routes, assets.path("app.js"))
+          font      <- request(assets.routes, assets.path("fonts/a.woff2"))
+          appBody   <- app.body.asString
+          fontBody  <- font.body.asString
+        yield assertTrue(
+          app.status == Status.Ok,
+          appBody == "app",
+          font.status == Status.Ok,
+          fontBody == "font",
+          assets.pathOption("outside.txt").isEmpty,
+          assets.pathOption("../outside.txt").isEmpty
+        )
+      }
+    },
+    test("discovers every file of a classpath tree inside a JAR") {
+      ZIO.scoped {
+        for
+          directory <- temporaryDirectory
+          jar        = directory.resolve("site.jar")
+          _         <- ZIO.attemptBlocking {
+                         val output = new java.util.jar.JarOutputStream(Files.newOutputStream(jar))
+                         try
+                           def add(name: String, content: Option[String]): Unit =
+                             output.putNextEntry(new java.util.jar.JarEntry(name))
+                             content.foreach(text => output.write(text.getBytes("UTF-8")))
+                             output.closeEntry()
+                           add("site/", None)
+                           add("site/app.js", Some("app"))
+                           add("site/fonts/", None)
+                           add("site/fonts/a.woff2", Some("font"))
+                           add("sitemap.txt", Some("outside"))
+                         finally output.close()
+                       }
+          loader    <- classLoader(jar)
+          assets    <- StaticAssets.tree(StaticAssetRoot.classpath("site", loader))
+          app       <- request(assets.routes, assets.path("app.js"))
+          font      <- request(assets.routes, assets.path("fonts/a.woff2"))
+          appBody   <- app.body.asString
+          fontBody  <- font.body.asString
+        yield assertTrue(
+          app.status == Status.Ok,
+          appBody == "app",
+          font.status == Status.Ok,
+          fontBody == "font",
+          assets.pathOption("fonts").isEmpty,
+          assets.pathOption("sitemap.txt").isEmpty
+        )
+      }
+    },
+    test("fails loading a classpath tree that cannot be listed and says to pass a restriction list") {
+      val remote = java.net.URI.create("http://assets.invalid/site").toURL
+      val unlistable = new ClassLoader(null):
+        override def getResources(name: String): java.util.Enumeration[java.net.URL] =
+          java.util.Collections.enumeration(java.util.List.of(remote))
+      for attempted <- StaticAssets.tree(StaticAssetRoot.classpath("site", unlistable)).either
+      yield assertTrue(
+        attempted.left.exists(_.getMessage.contains("`only`")),
+        attempted.left.exists(_.getMessage.contains("http://assets.invalid/site"))
+      )
+    },
+    test("fails loading a classpath tree whose prefix the class loader cannot find") {
+      ZIO.scoped {
+        for
+          directory <- temporaryDirectory
+          loader    <- classLoader(directory)
+          attempted <- StaticAssets.tree(StaticAssetRoot.classpath("site", loader)).either
+        yield assertTrue(
+          attempted.left.exists(_.getMessage.contains("'site'")),
+          attempted.left.exists(_.getMessage.contains("`only`"))
+        )
+      }
+    },
+    test("a restriction list limits a tree to the listed files") {
+      ZIO.scoped {
+        for
+          directory <- temporaryDirectory
+          _         <- ZIO.attemptBlocking(Files.createDirectory(directory.resolve("site")))
+          _         <- ZIO.attemptBlocking(Files.writeString(directory.resolve("site/app.js"), "app"))
+          _         <- ZIO.attemptBlocking(Files.writeString(directory.resolve("site/private.txt"), "private"))
+          loader    <- classLoader(directory)
+          roots      = List(
+                         StaticAssetRoot.classpath("site", loader),
+                         StaticAssetRoot.directory(directory.resolve("site"))
+                       )
+          results   <- ZIO.foreach(roots) { root =>
+                         for
+                           assets  <- StaticAssets.tree(root, only = Some(Seq("app.js")), serveOriginals = true)
+                           listed  <- request(assets.routes, "/static/app.js")
+                           omitted <- request(assets.routes, "/static/private.txt")
+                         yield assertTrue(
+                           listed.status == Status.Ok,
+                           omitted.status == Status.NotFound,
+                           assets.pathOption("private.txt").isEmpty
+                         )
+                       }
+        yield results.reduce(_ && _)
+      }
+    },
+    test("a discovered tree serves a precompressed copy as an encoding, not as an asset of its own") {
+      ZIO.scoped {
+        for
+          directory <- temporaryDirectory
+          _         <- ZIO.attemptBlocking(Files.createDirectory(directory.resolve("site")))
+          _         <- ZIO.attemptBlocking(Files.writeString(directory.resolve("site/app.js"), "plain"))
+          _         <- ZIO.attemptBlocking(Files.writeString(directory.resolve("site/app.js.br"), "brotli"))
+          _         <- ZIO.attemptBlocking(Files.writeString(directory.resolve("site/app.js.gz"), "gzip"))
+          _         <- ZIO.attemptBlocking(Files.writeString(directory.resolve("site/archive.tar.gz"), "archive"))
+          loader    <- classLoader(directory)
+          roots      = List(
+                         StaticAssetRoot.classpath("site", loader),
+                         StaticAssetRoot.directory(directory.resolve("site"))
+                       )
+          results   <- ZIO.foreach(roots) { root =>
+                         for
+                           assets  <- StaticAssets.tree(root, serveOriginals = true)
+                           encoded <- request(
+                                        assets.routes,
+                                        assets.path("app.js"),
+                                        headers = Headers(Header.Custom("Accept-Encoding", "br"))
+                                      )
+                           body    <- encoded.body.asString
+                           brotli  <- request(assets.routes, "/static/app.js.br")
+                           gzip    <- request(assets.routes, "/static/app.js.gz")
+                           archive <- request(assets.routes, assets.path("archive.tar.gz"))
+                         yield assertTrue(
+                           body == "brotli",
+                           encoded.rawHeader("Content-Encoding").contains("br"),
+                           assets.pathOption("app.js.br").isEmpty,
+                           assets.pathOption("app.js.gz").isEmpty,
+                           brotli.status == Status.NotFound,
+                           gzip.status == Status.NotFound,
+                           archive.status == Status.Ok
+                         )
+                       }
+        yield results.reduce(_ && _)
+      }
     },
     test("rejects directory symlinks that escape the configured root") {
       ZIO.scoped {

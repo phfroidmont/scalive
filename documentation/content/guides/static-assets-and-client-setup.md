@@ -73,8 +73,26 @@ The browser sets the WebSocket `Origin` header itself, so do not add it to
 
 Load application assets from the classpath when the build packages them with
 the application. The [layouts guide's](layouts.md#install-root-and-ordinary-layouts)
-root layout loads a single stylesheet this way. For a larger output, list every
-file below the classpath prefix:
+root layout loads a single stylesheet this way:
+
+```scala fragment
+assets <- StaticAssets.tree(StaticAssetRoot.classpath("public"))
+```
+
+@:apiSymbol(def:scalive.StaticAssets.tree)`StaticAssets.tree`@:@ serves every
+regular file below the prefix, so a font or an image added to the tree needs no
+Scala change, and relative imports and URLs between the files remain available.
+The default mount path is `/static`, and original unversioned URLs are disabled
+by default.
+
+Everything below the prefix is published. The class loader looks for a
+@:apiSymbol(def:scalive.StaticAssetRoot.classpath)`StaticAssetRoot.classpath`@:@
+prefix in every directory and JAR it reads, so a dependency's files under the
+same prefix are served too. Choose a prefix specific to the application, such as
+`my-app/public`, and keep nothing below it that browsers must not read.
+
+Pass `only` to serve exactly the files it lists. Nothing is discovered then, and
+loading fails when a listed file is missing:
 
 ```scala fragment
 assets <- StaticAssets.tree(
@@ -83,13 +101,14 @@ assets <- StaticAssets.tree(
 )
 ```
 
-A @:apiSymbol(def:scalive.StaticAssetRoot.classpath)`StaticAssetRoot.classpath`@:@
-root requires the explicit list in `only`. Include every file in the output tree,
-not only the top-level script and stylesheet, so relative imports and URLs
-remain available.
-@:apiSymbol(def:scalive.StaticAssets.tree)`StaticAssets.tree`@:@ reads every
-listed asset and fails when one is missing. The default mount path is
-`/static`, and original unversioned URLs are disabled by default.
+Discovery lists the prefix in directories and in JARs. Loading fails at startup
+when the class loader finds the prefix somewhere else, or does not find it at
+all, as in a JAR written without directory entries. The error says to pass
+`only`, which reads the listed files without listing anything.
+
+A precompressed copy stored next to an asset, such as `app.js.br` or
+`app.js.gz`, is served as an encoding of that asset to browsers that accept it.
+It is not published as an asset of its own.
 
 ## Load a directory tree {#load-a-directory}
 
@@ -100,16 +119,15 @@ root when assets are deployed outside the application classpath:
 import java.nio.file.Paths
 
 assets <- StaticAssets.tree(
-  StaticAssetRoot.directory(Paths.get("/srv/my-app/public")),
-  only = Some(Seq("app.css", "app.js"))
+  StaticAssetRoot.directory(Paths.get("/srv/my-app/public"))
 )
 ```
 
-Leave `only` out to discover all regular files recursively below the root.
-Supplying a list limits the loaded tree to those relative paths. Configured
-paths must be normalized relative paths; empty segments, `.`, `..`, and
-backslashes are rejected, and symlinks cannot escape the configured root. The
-mount path and originals defaults match the classpath tree.
+A directory tree also serves every regular file below its root, and `only`
+limits it to the listed relative paths in the same way. Configured paths must be
+normalized relative paths; empty segments, `.`, `..`, and backslashes are
+rejected, and symlinks cannot escape the configured root. The mount path and
+originals defaults match the classpath tree.
 
 ## Understand versioned paths {#serve-versioned-paths}
 
@@ -269,8 +287,8 @@ def resources = Task {
 }
 ```
 
-Load the result as a [classpath tree](#load-classpath-assets) that lists every
-output file. When the build also writes a deployment manifest, load that
+Load the result as a [classpath tree](#load-classpath-assets), which serves
+every output file. When the build also writes a deployment manifest, load that
 instead; see [Choose an asset model](#choose-an-asset-model).
 
 Tell Scalive that the bundle includes the clients, so that pages do not also

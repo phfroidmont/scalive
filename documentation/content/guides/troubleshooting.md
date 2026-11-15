@@ -48,7 +48,8 @@ Check the startup path in order:
   serves its own assets.
 - Provide all ZIO environment requirements before calling `Server.serve`.
 
-Both loaders fail startup when a listed classpath or directory asset is absent. Route construction also validates invalid or duplicate Live route
+Both loaders fail startup when a listed classpath or directory asset is absent,
+and a tree fails when its classpath prefix cannot be listed. Route construction also validates invalid or duplicate Live route
 configurations. Preserve those failures rather than replacing them with a
 server that starts partially.
 
@@ -81,7 +82,7 @@ make its routing agree with the loader's `mountPath` argument rather than rewrit
 only the HTML.
 
 Common asset failures are a missing Mill `resources` dependency on the bundle,
-an incomplete output tree or ordinary classpath asset list, a classpath prefix
+an incomplete output tree or restriction list, a classpath prefix
 that does not match the packaged resource, or forgetting
 @:apiSymbol(val:scalive.StaticAssets.routes)`assets.routes`@:@.
 For deployment manifests, first verify the configured manifest filename and

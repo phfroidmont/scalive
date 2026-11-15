@@ -19,7 +19,7 @@ object LayoutsSpec extends ZIOSpecDefault:
 
   private def render(path: String) =
     for
-      assets <- StaticAssets.tree(StaticAssetRoot.classpath("public"), only = Some(Seq("app.css")))
+      assets <- StaticAssets.tree(StaticAssetRoot.classpath("public"))
       routes <- ZioHttp.routes(Application(assets), config)
       page   <- DisconnectedRender.run(routes, Request.get(URL.decode(path).toOption.get))
     yield RenderedHtml.parse(page.html)

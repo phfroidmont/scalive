@@ -47,6 +47,8 @@ const bundled = new Set(Object.values(assets).map((asset) => asset.file))
 const emitted = (await readdir(outputRoot, { recursive: true, withFileTypes: true }))
   .filter((entry) => entry.isFile())
   .map((entry) => path.relative(outputRoot, path.join(entry.parentPath, entry.name)))
+  // A manifest left by an earlier run does not list itself.
+  .filter((file) => file !== "assets-manifest.json")
 for (const file of [...emitted, ...generatedElsewhere]) {
   if (!bundled.has(file)) assets[file] = { file, cache: "revalidate" }
 }

@@ -564,6 +564,24 @@ object StaticAssetsSpec extends ZIOSpecDefault:
                          .exit
         yield assertTrue(attempted.isFailure)
       }
+    },
+    test("a discovered classpath tree does not publish a symlink to a file outside it") {
+      ZIO.scoped {
+        for
+          workspace <- temporaryDirectory
+          classes    = workspace.resolve("classes")
+          secret     = workspace.resolve("secret.txt")
+          _         <- ZIO.attemptBlocking(Files.createDirectories(classes.resolve("site")))
+          _         <- ZIO.attemptBlocking(Files.writeString(classes.resolve("site/app.js"), "app"))
+          _         <- ZIO.attemptBlocking(Files.writeString(secret, "secret"))
+          _         <- ZIO.attemptBlocking(
+                         Files.createSymbolicLink(classes.resolve("site/leak.txt"), secret)
+                       )
+          loader    <- classLoader(classes)
+          assets    <- StaticAssets.tree(StaticAssetRoot.classpath("site", loader))
+          app       <- request(assets.routes, assets.path("app.js"))
+        yield assertTrue(app.status == Status.Ok, assets.pathOption("leak.txt").isEmpty)
+      }
     }
   )
 end StaticAssetsSpec

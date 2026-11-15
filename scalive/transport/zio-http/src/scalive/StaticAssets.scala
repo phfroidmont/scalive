@@ -520,12 +520,7 @@ object StaticAssets:
           listed <- ZIO.foreach(locations)(listClasspathLocation(resource, _))
         yield listed.flatten.distinct
       case StaticAssetRoot.Directory(directory) =>
-        ZIO.attemptBlocking(
-          regularFilesBelow(
-            directory.toRealPath(),
-            Files.isRegularFile(_, LinkOption.NOFOLLOW_LINKS)
-          )
-        )
+        ZIO.attemptBlocking(regularFilesBelow(directory))
     files.map(withoutPrecompressedCopies).flatMap(normalizeConfiguredAssets)
 
   // A precompressed copy is served as an encoding of the asset it is stored next to.
@@ -541,9 +536,7 @@ object StaticAssets:
   private def listClasspathLocation(prefix: String, location: java.net.URL): Task[List[String]] =
     location.getProtocol match
       case "file" =>
-        ZIO.attemptBlocking(
-          regularFilesBelow(NioPath.of(location.toURI), Files.isRegularFile(_))
-        )
+        ZIO.attemptBlocking(regularFilesBelow(NioPath.of(location.toURI)))
       case "jar" =>
         ZIO.attemptBlocking {
           val connection = location.openConnection().asInstanceOf[java.net.JarURLConnection]
@@ -565,12 +558,14 @@ object StaticAssets:
           )
         )
 
-  private def regularFilesBelow(root: NioPath, isRegularFile: NioPath => Boolean): List[String] =
-    val stream = Files.walk(root)
+  // Symlinks are not followed, so a link cannot publish a file from outside the root.
+  private def regularFilesBelow(root: NioPath): List[String] =
+    val realRoot = root.toRealPath()
+    val stream   = Files.walk(realRoot)
     try
       stream
-        .iterator().asScala.filter(isRegularFile)
-        .map(path => toRelativePath(root.relativize(path))).toList
+        .iterator().asScala.filter(Files.isRegularFile(_, LinkOption.NOFOLLOW_LINKS))
+        .map(path => toRelativePath(realRoot.relativize(path))).toList
     finally stream.close()
 
   private def normalizeConfiguredAssets(assets: Iterable[String]): Task[List[String]] =

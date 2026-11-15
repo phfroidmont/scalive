@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url"
 const assetsRoot = path.dirname(fileURLToPath(import.meta.url))
 const siteRoot = path.dirname(assetsRoot)
 const modulesRoot = path.join(siteRoot, "node_modules", "@fontsource-variable")
-const outputRoot = path.join(siteRoot, "dist")
+const outputRoot = path.join(siteRoot, "build")
 
 const fonts = [
   {

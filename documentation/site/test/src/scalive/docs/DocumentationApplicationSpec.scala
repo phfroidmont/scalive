@@ -653,7 +653,12 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         servedChunk <- ZIO.foreach(chunk)(path => ZIO.scoped(routes.runZIO(Request.get(url(path)))))
       yield assertTrue(
         home.response.status == Status.Ok,
-        stylesheets == Vector("/static/fonts.css", "/static/app.css"),
+        stylesheets == Vector(assets.path("fonts.css"), assets.path("app.css")),
+        stylesheets(0).matches("""/static/fonts-[0-9A-Z]{8}\.css"""),
+        stylesheets(1).matches("""/static/app-[0-9A-Z]{8}\.css"""),
+        servedAssets.take(3).forall(
+          _.header(Header.CacheControl).contains(StaticAssetCache.default.immutable)
+        ),
         scripts.size == 1,
         scripts.head.attr("type") == "module",
         script == assets.path("app.js"),

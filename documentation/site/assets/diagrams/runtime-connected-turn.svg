@@ -9,7 +9,7 @@
     <marker id="turn-arrow-red" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10Z" class="marker-red"/></marker>
     <marker id="turn-arrow-error" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10Z" class="marker-error"/></marker>
     <style>
-      @import url("fonts.css");
+      @import url("diagram-fonts.css");
       svg { color-scheme:light; --bg:#f4f1eb; --surface:#fff; --subtle:#ece8e0; --text:#171719; --muted:#67645f; --border:#d8d2c7; --border-strong:#aca69c; --red:#ee2946; --error:#a33c32; --blue:#2a63d4; --green:#17755c; --amber:#9b630d; }
       svg[data-theme="dark"] { color-scheme:dark; --bg:#111114; --surface:#19191d; --subtle:#202025; --text:#f1efe9; --muted:#aaa7a1; --border:#34343a; --border-strong:#55555d; --red:#ff3a55; --error:#ef8c82; --blue:#79a8ff; --green:#65c7a6; --amber:#e0b05c; }
       svg[data-theme="light"] { color-scheme:light; --bg:#f4f1eb; --surface:#fff; --subtle:#ece8e0; --text:#171719; --muted:#67645f; --border:#d8d2c7; --border-strong:#aca69c; --red:#ee2946; --error:#a33c32; --blue:#2a63d4; --green:#17755c; --amber:#9b630d; }

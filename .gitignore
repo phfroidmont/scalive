@@ -9,6 +9,7 @@ target
 node_modules
 e2eApp/dist
 documentation/site/dist
+documentation/site/build
 documentation/site/esbuild-meta.json
 opencode.json
 .e2e-upstream

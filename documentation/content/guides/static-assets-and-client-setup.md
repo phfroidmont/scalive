@@ -433,24 +433,28 @@ consumes and validates that description; it does not generate the deployment
 manifest or discover the output inventory or asset graph. No bundler-specific
 adapter is part of the contract.
 
-This documentation site is built that way. esbuild emits ES modules with code
-splitting and a content hash in each entry and chunk name, and writes a metafile
-of its outputs:
+This documentation site is built that way. Earlier build steps prepare the
+stylesheets, images and licenses in `build`. esbuild takes them as entry points
+next to the script, emits ES modules with code splitting and a content hash in
+every output name, and writes a metafile of its outputs:
 
 ```sh
-esbuild assets/js/app.js --bundle --platform=browser --format=esm --splitting --target=es2020 --entry-names=[name]-[hash] --chunk-names=chunks/[name]-[hash] --outdir=dist --metafile=esbuild-meta.json
+esbuild assets/js/app.js build/* --bundle --platform=browser --format=esm --splitting --target=es2020 --minify --loader:.svg=copy --loader:.txt=copy --entry-names=[name]-[hash] --chunk-names=chunks/[name]-[hash] --outdir=dist --metafile=esbuild-meta.json
 ```
 
 A script run after the build, `documentation/site/assets/write-assets-manifest.mjs`
-in the Scalive repository, turns the metafile into the manifest. The entry point
-gets the alias `app.js` and every other output is listed under its final path,
-all as `immutable`. The files esbuild did not emit (styles, fonts, images, the
-search index) keep their plain names and are listed as `revalidate`.
+in the Scalive repository, turns the metafile into the manifest. Each entry
+point gets a stable alias such as `app.js` or `app.css`, and every other output
+is listed under its final path, all as `immutable`. Two files keep a plain name
+and are listed as `revalidate`, because something esbuild cannot rewrite refers
+to them by name: the search index, which another build task writes, and a
+one-line stylesheet through which the diagram SVGs import the hashed fonts.
 
-The root layout loads the entry point through its alias, as a module so that it
-can import its chunks:
+The root layout loads the entry points through their aliases, the script as a
+module so that it can import its chunks:
 
 ```scala fragment
+assets.trackedStylesheet("app.css"),
 assets.trackedScript("app.js", typ := "module")
 ```
 

@@ -171,7 +171,9 @@ object DocumentationMarkdownSpec extends ZIOSpecDefault:
           trace.contains("**Scalive runtime → Your LiveView: Disconnected mount**"),
           trace.contains("Model A"),
           trace.contains("Connected LiveSocket mount"),
-          diagram.contains("https://docs.example.test/static/runtime-connected-lifetime.svg"),
+          diagram.matches(
+            "(?s).*https://docs\\.example\\.test/static/runtime-connected-lifetime-[0-9A-Z]{8}\\.svg.*"
+          ),
           diagram.contains("HTTP request scope"),
           catalog.contains("https://docs.example.test/examples/counter.md"),
           catalog.contains("https://docs.example.test/examples/authentication/lab"),

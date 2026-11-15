@@ -1,5 +1,5 @@
 // Writes the deployment manifest that Scalive loads at startup. It lists every file the site
-// serves: the bundler's outputs from its metafile, then the files the other build steps emit.
+// serves: the bundler's outputs from its metafile, then the few files it did not emit.
 import { readdir, readFile, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
@@ -7,9 +7,12 @@ import { fileURLToPath } from "node:url"
 const siteRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
 const outputRoot = path.join(siteRoot, "dist")
 
-// The bundler's entry points, and the stable alias the root layout asks for each one by.
-const entryAliases = {
-  "assets/js/app.js": "app.js",
+// The stable alias the site asks for an entry point by: the script's own name, and the name of
+// each stylesheet, image and license the earlier build steps prepared in `build`.
+function entryAlias(entryPoint) {
+  if (entryPoint === "assets/js/app.js") return "app.js"
+  if (entryPoint?.startsWith("build/")) return entryPoint.slice("build/".length)
+  return undefined
 }
 
 // Served from the same classpath prefix, but written there by the documentation pipeline.
@@ -18,22 +21,23 @@ const generatedElsewhere = ["search-index.json"]
 const assets = {}
 
 // esbuild put a content hash in the name of each file it emitted, so each is immutable under
-// that name. Chunks have an `entryPoint` in the metafile too, so only the entry points listed
+// that name. Chunks have an `entryPoint` in the metafile too, so only the entry points named
 // above get an alias; every other output is listed under its final path.
 const metafile = JSON.parse(await readFile(path.join(siteRoot, "esbuild-meta.json"), "utf8"))
 for (const [output, { entryPoint }] of Object.entries(metafile.outputs)) {
   const file = path.relative(outputRoot, path.join(siteRoot, output))
-  assets[entryAliases[entryPoint] ?? file] = { file, cache: "immutable" }
+  assets[entryAlias(entryPoint) ?? file] = { file, cache: "immutable" }
 }
 
-const missingEntries = Object.values(entryAliases).filter((alias) => !(alias in assets))
-if (missingEntries.length > 0) {
-  throw new Error(`esbuild's metafile has no output for: ${missingEntries.join(", ")}`)
-}
+// The diagram SVGs import their fonts by name, and esbuild cannot rewrite a reference inside an
+// SVG. That name is a one-line stylesheet importing the hashed one.
+await writeFile(
+  path.join(outputRoot, "diagram-fonts.css"),
+  `@import url("${assets["fonts.css"].file}");\n`,
+)
 
-// The remaining files (styles, fonts, images, the search index) keep their plain names, which
-// the diagrams rely on to import `fonts.css`. A plain name can serve new bytes after a
-// deployment, so browsers must revalidate it.
+// The files esbuild did not emit keep their plain names. A plain name can serve new bytes after
+// a deployment, so browsers must revalidate it.
 const bundled = new Set(Object.values(assets).map((asset) => asset.file))
 const emitted = (await readdir(outputRoot, { recursive: true, withFileTypes: true }))
   .filter((entry) => entry.isFile())

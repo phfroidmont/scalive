@@ -44,7 +44,7 @@ final private[docs] class DocumentationRootLayout(
         linkTag(rel := "icon", typ := "image/svg+xml", href := assets.path("favicon.svg")),
         assets.trackedStylesheet("fonts.css"),
         assets.trackedStylesheet("app.css"),
-        assets.trackedScript("app.js", defer := true, typ := "text/javascript"),
+        assets.trackedScript("app.js", typ := "module"),
         liveTitle(pageTitle, default = "Scalive")
       ),
       bodyTag(content)

@@ -29,24 +29,8 @@ object DocumentationSite extends ZIOAppDefault:
       application <- ZIO
                        .fromEither(DocumentationApplication.from(bundle))
                        .mapError(new IllegalStateException(_))
-      traceStore <- DocumentationTraceStore.make()
-      assets     <- StaticAssets.tree(
-                  StaticAssetRoot.classpath("public"),
-                  only = Some(
-                    Seq(
-                      "app.css",
-                      "app.js",
-                      "favicon.svg",
-                      "fonts.css",
-                      "instrument-sans-OFL.txt",
-                      "jetbrains-mono-OFL.txt",
-                      "runtime-connected-lifetime.svg",
-                      "runtime-connected-turn.svg",
-                      "runtime-disconnected-lifetime.svg",
-                      "search-index.json"
-                    )
-                  )
-                )
+      traceStore      <- DocumentationTraceStore.make()
+      assets          <- StaticAssets.manifest(StaticAssetRoot.classpath("public"))
       transportConfig <- ZIO
                            .fromEither(
                              ZioHttpConfig(

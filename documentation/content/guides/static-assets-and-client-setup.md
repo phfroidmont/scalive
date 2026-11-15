@@ -223,8 +223,8 @@ A connected view reads the tracking result through
 ## Build a custom client bundle {#build-the-client-bundle}
 
 Use a custom browser build when the application needs package imports,
-TypeScript, source maps, generated chunks, or other build-owned output. Install
-the same supported Phoenix packages and bundle an application entry point:
+TypeScript, source maps, or other build-owned output. Install the same supported
+Phoenix packages and bundle an application entry point into a single file:
 
 ```json
 {
@@ -305,9 +305,14 @@ no connect script. The bundle reads the CSRF token from the `csrf-token` meta
 element and connects to the router's socket path, `/live` by default.
 
 This portable task requires Node.js and npm at build time but not at runtime.
-Keeping the whole output tree preserves chunks, workers, CSS, fonts, source
-maps, and relative references. Adjust the build tool integration when the
-application does not use Mill, while preserving the same complete resource tree.
+Keeping the whole output tree preserves workers, CSS, fonts, source maps, and
+relative references. Adjust the build tool integration when the application does
+not use Mill, while preserving the same complete resource tree.
+
+The `iife` format emits one file and cannot split code. A build that emits
+chunks uses the `esm` format with content-hashed names and a
+[deployment manifest](#load-a-deployment-manifest), as this documentation site
+does.
 
 ## Read connect metadata {#read-connect-metadata}
 
@@ -427,6 +432,27 @@ manifest must contain logical aliases and every deployable file. Scalive only
 consumes and validates that description; it does not generate the deployment
 manifest or discover the output inventory or asset graph. No bundler-specific
 adapter is part of the contract.
+
+This documentation site is built that way. esbuild emits ES modules with code
+splitting and a content hash in each entry and chunk name, and writes a metafile
+of its outputs:
+
+```sh
+esbuild assets/js/app.js --bundle --platform=browser --format=esm --splitting --target=es2020 --entry-names=[name]-[hash] --chunk-names=chunks/[name]-[hash] --outdir=dist --metafile=esbuild-meta.json
+```
+
+A script run after the build, `documentation/site/assets/write-assets-manifest.mjs`
+in the Scalive repository, turns the metafile into the manifest. The entry point
+gets the alias `app.js` and every other output is listed under its final path,
+all as `immutable`. The files esbuild did not emit (styles, fonts, images, the
+search index) keep their plain names and are listed as `revalidate`.
+
+The root layout loads the entry point through its alias, as a module so that it
+can import its chunks:
+
+```scala fragment
+assets.trackedScript("app.js", typ := "module")
+```
 
 Scalive validates and hashes every declared file at startup. It rejects missing
 files, path traversal or other non-normalized paths, unsupported cache values,

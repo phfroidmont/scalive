@@ -7,12 +7,6 @@ import scalive.{StaticAssetRoot, StaticAssets}
 import scalive.docs.model.*
 
 object DocumentationMarkdownSpec extends ZIOSpecDefault:
-  private val assets = Seq(
-    "runtime-connected-lifetime.svg",
-    "runtime-connected-turn.svg",
-    "runtime-disconnected-lifetime.svg"
-  )
-
   private def fixture: Task[(DocumentationApplication, DocumentationMarkdown)] =
     for
       bundle <- ZIO
@@ -21,7 +15,7 @@ object DocumentationMarkdownSpec extends ZIOSpecDefault:
       application <- ZIO
                        .fromEither(DocumentationApplication.from(bundle))
                        .mapError(new IllegalArgumentException(_))
-      static <- StaticAssets.tree(StaticAssetRoot.classpath("public"), only = Some(assets))
+      static <- StaticAssets.manifest(StaticAssetRoot.classpath("public"))
       origin <- ZIO
                   .fromEither(PublicOrigin.from("https://docs.example.test"))
                   .mapError(new IllegalArgumentException(_))
@@ -177,10 +171,7 @@ object DocumentationMarkdownSpec extends ZIOSpecDefault:
           trace.contains("**Scalive runtime → Your LiveView: Disconnected mount**"),
           trace.contains("Model A"),
           trace.contains("Connected LiveSocket mount"),
-          diagram.contains("runtime-connected-lifetime.svg"),
-          diagram.matches(
-            "(?s).*https://docs\\.example\\.test/static/[a-f0-9]{64}/runtime-connected-lifetime\\.svg.*"
-          ),
+          diagram.contains("https://docs.example.test/static/runtime-connected-lifetime.svg"),
           diagram.contains("HTTP request scope"),
           catalog.contains("https://docs.example.test/examples/counter.md"),
           catalog.contains("https://docs.example.test/examples/authentication/lab"),
@@ -262,7 +253,7 @@ object DocumentationMarkdownSpec extends ZIOSpecDefault:
     test("expands compiler diagnostics from the generated bundle") {
       for
         (application, _) <- fixture
-        static           <- StaticAssets.tree(StaticAssetRoot.classpath("public"), only = Some(assets))
+        static           <- StaticAssets.manifest(StaticAssetRoot.classpath("public"))
         origin           <- ZIO
                     .fromEither(PublicOrigin.from("https://docs.example.test"))
                     .mapError(new IllegalArgumentException(_))

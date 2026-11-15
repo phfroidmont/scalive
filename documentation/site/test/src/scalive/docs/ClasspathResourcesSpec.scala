@@ -5,6 +5,7 @@ import scala.jdk.CollectionConverters.*
 import zio.*
 import zio.test.*
 
+import scalive.{StaticAssetRoot, StaticAssets}
 import scalive.docs.model.DiagramCatalog
 
 object ClasspathResourcesSpec extends ZIOSpecDefault:
@@ -16,15 +17,17 @@ object ClasspathResourcesSpec extends ZIOSpecDefault:
       for
         content     <- resources(GeneratedDocumentation.ResourcePath)
         searchIndex <- resources(GeneratedDocumentation.SearchResourcePath)
-        js          <- resources("public/app.js")
-        css         <- resources("public/app.css")
-        fonts       <- resources("public/fonts.css")
-        favicon     <- resources("public/favicon.svg")
-        instrumentLicense <- resources("public/instrument-sans-OFL.txt")
-        jetbrainsLicense  <- resources("public/jetbrains-mono-OFL.txt")
-        diagramAssets <- ZIO.foreach(DiagramCatalog.entries.flatMap(_.assets)) { asset =>
-                           resources(s"public/${asset.filename}")
-                         }
+        assets      <- StaticAssets.manifest(StaticAssetRoot.classpath("public"))
+        required = Vector(
+                     "app.js",
+                     "app.css",
+                     "fonts.css",
+                     "favicon.svg",
+                     "instrument-sans-OFL.txt",
+                     "jetbrains-mono-OFL.txt",
+                     "search-index.json"
+                   ) ++ DiagramCatalog.entries.flatMap(_.assets).map(_.filename)
+        missing = required.filter(assets.pathOption(_).isEmpty)
         bundle = GeneratedDocumentation.load(getClass.getClassLoader)
         search = GeneratedDocumentation.loadSearchEntries(getClass.getClassLoader)
         hasContent = bundle.exists(value => value.pages.nonEmpty && value.examples.nonEmpty)
@@ -36,13 +39,7 @@ object ClasspathResourcesSpec extends ZIOSpecDefault:
         hasContent,
         hasCounter,
         searchMatchesBundle,
-        js.size == 1,
-        css.size == 1,
-        fonts.size == 1,
-        favicon.size == 1,
-        instrumentLicense.size == 1,
-        jetbrainsLicense.size == 1,
-        diagramAssets.forall(_.size == 1)
+        missing.isEmpty
       )
     },
     test("keeps pipeline dependencies off the site runtime classpath") {

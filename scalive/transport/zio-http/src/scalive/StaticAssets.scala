@@ -257,7 +257,9 @@ object StaticAssets:
     * @param only
     *   The relative paths to serve. `None` serves every regular file below the root, wherever the
     *   class loader finds a classpath prefix, a dependency's files included; loading fails when a
-    *   classpath location is neither a directory nor a JAR. With a list, nothing is discovered.
+    *   classpath location is neither a directory nor a JAR. A JAR written without directory entries
+    *   gives the class loader no location for the prefix, so its files are not discovered: name
+    *   them here. With a list, nothing is discovered.
     * @param mountPath
     *   The HTTP path below which the assets are served.
     * @param serveOriginals

@@ -90,6 +90,11 @@ all. A JAR written without directory entries is the usual cause of the second:
 its files are there, but the class loader has no location to give for the
 prefix. The listed files are read by name, without listing anything.
 
+Discovery cannot notice such a JAR when the class loader also finds the prefix
+somewhere else, in a directory or in another JAR. Loading succeeds then, and the
+tree is missing the files of the JAR without directory entries. Build such a JAR
+with directory entries, or name its files in `only`.
+
 A precompressed copy stored next to an asset, such as `app.js.br` or
 `app.js.gz`, is served as an encoding of that asset to browsers that accept it.
 It is not published as an asset of its own.

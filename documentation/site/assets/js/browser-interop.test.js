@@ -105,6 +105,21 @@ test("does not return a result after destruction", async () => {
   assert.deepEqual(pushed, [])
 })
 
+test("listens for requests before it starts loading the module", () => {
+  const steps = []
+  const hook = {
+    ...createBrowserInteropHook(() => {
+      steps.push("import")
+      return new Promise(() => {})
+    }),
+    handleEvent(name) {
+      steps.push(`listen ${name}`)
+    },
+  }
+  hook.mounted()
+  assert.deepEqual(steps, ["listen browser-copy-request", "import"])
+})
+
 test("handles a request that arrives while the module is loading", async () => {
   const writes = []
   let finishLoading

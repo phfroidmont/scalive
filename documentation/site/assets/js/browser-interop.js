@@ -4,9 +4,9 @@ export function createBrowserInteropHook(loadCopyModule = () => import("./browse
     mounted() {
       // docs:start browser-integration-hook-load
       this.isDestroyed = false
-      const copyModule = loadCopyModule()
 
-      // Registered before the import settles, so a request pushed during mount waits for the module.
+      // Registered before the import starts, so a request pushed during mount is not lost: it
+      // waits here for the module.
       this.handleEvent("browser-copy-request", async (payload) => {
         const module = await copyModule.catch(() => undefined)
         if (!module || this.isDestroyed) return
@@ -19,6 +19,8 @@ export function createBrowserInteropHook(loadCopyModule = () => import("./browse
           // The LiveSocket may disconnect while browser work is completing.
         }
       })
+
+      const copyModule = loadCopyModule()
       // docs:end browser-integration-hook-load
 
       // docs:start browser-integration-hook-load-failed

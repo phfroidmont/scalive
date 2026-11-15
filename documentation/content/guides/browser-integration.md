@@ -196,16 +196,19 @@ that loads the entry script as a module; see
 build. A single-file bundle cannot split.
 
 The copy module above is small; it stands in for an editor, a chart, or an image
-cropper. The hook starts the import in `mounted` and keeps the promise:
+cropper. In `mounted`, the hook first registers its listener, then starts the
+import and keeps the promise:
 
 @:sourceRegion(documentation/site/assets/js/browser-interop.js, browser-integration-hook-load)
 
 Two rules make this safe:
 
-- **Register `handleEvent` listeners before the import settles.** The server can
+- **Register `handleEvent` listeners first, before the import.** The server can
   push an event as soon as the view has mounted. A listener registered after an
-  `await` misses it; a listener registered at once waits for the module inside
-  its own body, as this one does.
+  `await` misses it; a listener registered at once, synchronously in `mounted`,
+  waits for the module inside its own body, as this one does. The listener can
+  name `copyModule` although it is declared below it, because the listener only
+  runs later, once an event arrives.
 - **Check for destruction after the import.** A visitor can navigate away while
   the chunk downloads. When the import resolves for a destroyed hook, do
   nothing: its element is gone and its `pushEvent` no longer has a view. A hook

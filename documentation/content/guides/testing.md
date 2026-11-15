@@ -263,5 +263,5 @@ locate a failure before expanding the test suite.
 
 - Look up helper contracts, reconnect admission, and origin tests in the [Connected test reference](connected-test-reference.md#prerequisites).
 - Supply deterministic dependencies with [Services and dependency injection](services-and-zlayer-injection.md#supply-a-test-implementation).
-- Prepare the production-shaped browser assets with [Client setup and static assets](static-assets-and-client-setup.md#prerequisites).
+- Prepare the production-shaped browser assets with [Client setup](client-setup.md#prerequisites) and [Static assets](static-assets.md#prerequisites).
 - Locate the failing lifecycle stage with [Troubleshooting](troubleshooting.md#prerequisites).

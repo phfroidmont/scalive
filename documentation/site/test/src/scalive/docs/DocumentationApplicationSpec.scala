@@ -336,7 +336,8 @@ object DocumentationApplicationSpec extends ZIOSpecDefault:
         guideGroups == Vector(
           "Orientation" -> Vector("/guides/phoenix-live-view-orientation"),
           "Setup and foundations" -> Vector(
-            "/guides/static-assets-and-client-setup",
+            "/guides/client-setup",
+            "/guides/static-assets",
             "/guides/configuration"
           ),
           "Interfaces and input" -> Vector(

@@ -10,7 +10,7 @@ section = learn
 The Learn path built a small application and established the programming
 model. Continue by the task your application needs:
 
-- **Set up the browser:** [client setup and static assets](../guides/static-assets-and-client-setup.md).
+- **Set up the browser:** [client setup](../guides/client-setup.md) and [static assets](../guides/static-assets.md).
 - **Build interfaces and input:** [HTML and event bindings](../guides/html-dsl-and-event-bindings.md),
   [typed forms and validation](../guides/typed-forms-and-validation.md),
   [ordinary HTTP forms and redirects](../guides/http-forms-and-redirects.md), and

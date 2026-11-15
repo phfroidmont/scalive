@@ -20,9 +20,11 @@ expects so you can also enter directly from search or the API reference.
 
 ### Setup and foundations {#setup-and-foundations}
 
-- [Client setup and static assets](static-assets-and-client-setup.md): load
-  the Phoenix LiveView client, add your own JavaScript and CSS, and serve them
-  from URLs that browsers can cache safely.
+- [Client setup](client-setup.md): load and connect the Phoenix LiveView
+  client, pass it options such as hooks, and build your own client bundle.
+- [Static assets](static-assets.md): choose between an asset tree and a
+  deployment manifest, and serve your JavaScript and CSS from URLs that
+  browsers can cache safely.
 - [Configuration](configuration.md): set the signing secret, cookies, allowed
   WebSocket origins, and paths, and make startup fail when a setting is
   missing.

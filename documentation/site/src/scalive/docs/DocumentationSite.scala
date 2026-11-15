@@ -29,8 +29,10 @@ object DocumentationSite extends ZIOAppDefault:
       application <- ZIO
                        .fromEither(DocumentationApplication.from(bundle))
                        .mapError(new IllegalStateException(_))
-      traceStore      <- DocumentationTraceStore.make()
-      assets          <- StaticAssets.manifest(StaticAssetRoot.classpath("public"))
+      traceStore <- DocumentationTraceStore.make()
+      // docs:start site-load-manifest
+      assets <- StaticAssets.manifest(StaticAssetRoot.classpath("public"))
+      // docs:end site-load-manifest
       transportConfig <- ZIO
                            .fromEither(
                              ZioHttpConfig(

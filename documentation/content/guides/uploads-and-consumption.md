@@ -10,7 +10,7 @@ group = "Interfaces and input"
 
 Start with a LiveView that handles form change and submit messages. Every upload mode needs the
 working browser connection from
-[Client setup and static assets](static-assets-and-client-setup.md). An external
+[Client setup](client-setup.md). An external
 upload additionally needs the custom uploader registration shown below.
 
 ## Complete a bounded in-memory upload {#complete-a-bounded-in-memory-upload}
@@ -220,7 +220,7 @@ If preparation fails or rejects after reserving a resource but before returning
 
 The `uploader` string must match a Phoenix external uploader installed when the
 browser creates `LiveSocket`, through
-[`window.liveSocketOptions`](static-assets-and-client-setup.md#connect-live-socket)
+[`window.liveSocketOptions`](client-setup.md#connect-live-socket)
 or a custom bundle's own options. For a signed PUT workflow:
 
 ```javascript

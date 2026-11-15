@@ -11,7 +11,7 @@ group = "Browser integration"
 Start with a `LiveView` that renders an interactive element. You can understand
 and compose `JS` command values independently; running browser hooks or exchanging
 browser events additionally requires working browser assets, CSRF, and a `LiveSocket`
-connection from [Client setup and static assets](static-assets-and-client-setup.md#connect-live-socket).
+connection from [Client setup](client-setup.md#connect-live-socket).
 
 ## Choose the boundary {#choose-the-boundary}
 
@@ -144,8 +144,8 @@ window.liveSocketOptions = {
 Render it with `assets.trackedScript("app.js", typ := "module")`. Module scripts
 run in document order with the other deferred scripts, so the options are set
 before Scalive connects the `LiveSocket`; see
-[Client setup and static assets](static-assets-and-client-setup.md#connect-live-socket).
-With a [custom bundle](static-assets-and-client-setup.md#build-the-client-bundle),
+[Client setup](client-setup.md#connect-live-socket).
+With a [custom bundle](client-setup.md#build-the-client-bundle),
 pass the same `hooks` object in the options of the bundle's own `LiveSocket`.
 Do not create a second `LiveSocket` just for hooks.
 
@@ -192,8 +192,8 @@ that renders the hook, once per document.
 
 This needs a build that emits ES modules with code splitting, and a root layout
 that loads the entry script as a module; see
-[Load a deployment manifest](static-assets-and-client-setup.md#load-a-deployment-manifest)
-for a worked build. A single-file bundle cannot split.
+[Build a split bundle](static-assets.md#build-a-split-bundle) for a worked
+build. A single-file bundle cannot split.
 
 The copy module above is small; it stands in for an editor, a chart, or an image
 cropper. The hook starts the import in `mounted` and keeps the promise:
@@ -235,7 +235,7 @@ For the deployment case, visitors usually hear earlier: a page that reconnects
 to a server whose tracked assets changed reports `staticChanged`, and a layout
 can [offer a reload after a deployment](layouts.md#offer-a-reload-after-a-deployment)
 before anyone mounts the hook. Keeping old chunks available across deployments
-is a [deployment](deployment.md#know-what-a-deployment-invalidates) concern.
+is a [deployment](deployment.md#keep-old-files-available) concern.
 
 Scalive has no helper for this pattern; it is ordinary JavaScript in the hook.
 
@@ -246,8 +246,8 @@ client-only command with correlated clipboard events. Its executable source
 derives every DOM ID from the nested instance, resets deterministically, handles
 permission failure, and projects operation metadata without exposing copied text.
 
-Use [Client setup and static assets](static-assets-and-client-setup.md) to build
-and serve the bundle. Use [Guard unsaved changes](navigation-guards.md#prerequisites)
+Use [Client setup](client-setup.md#build-the-client-bundle) to build the bundle and [Static assets](static-assets.md) to
+serve it. Use [Guard unsaved changes](navigation-guards.md#prerequisites)
 for the framework-owned confirmation runtime. Use
 [Lifecycle hooks](lifecycle-hooks.md) for server-side interception and
 lifecycle-wide policy rather than browser API integration.

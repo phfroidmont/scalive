@@ -34,7 +34,7 @@ every page. This one adds a language, a title suffix, and a stylesheet:
 @:sourceRegion(documentation/fixtures/guides/src/layouts/RootLayout.scala, layouts-root-layout)
 
 The class takes the loaded
-[static assets](static-assets-and-client-setup.md#render-tracked-tags) in its
+[static assets](static-assets.md#render-tracked-tags) in its
 constructor, so it can render their versioned URLs. Its two type parameters are
 the route parameter type and the mount context type the layout reads. A layout
 shared by every route reads neither, so both are `Any`.
@@ -53,7 +53,7 @@ the mount context.
 
 Scalive adds its own elements to the root layout's `<head>`: the CSRF token and
 the browser scripts described in
-[Client setup](static-assets-and-client-setup.md#load-the-packaged-clients).
+[Client setup](client-setup.md#load-the-packaged-clients).
 Install the root layout on the router with `withRootLayout`, as the next
 section's application does.
 
@@ -241,7 +241,7 @@ browser has joined, with the
 @:apiSymbol(trait:scalive.ConnectedMetadata)`ConnectedMetadata`@:@ the LiveView
 sees too. Its `staticChanged` is `true` when the running server's root layout
 tracks an asset the page has not loaded; see
-[tracked tags](static-assets-and-client-setup.md#read-connect-metadata). The
+[tracked tags](client-setup.md#read-connect-metadata). The
 value stays the same for the lifecycle, so the notice appears as the page
 reconnects and disappears with the reload.
 
@@ -254,4 +254,4 @@ because they render only the first HTTP response.
 
 - Group routes and derive typed context with [Live sessions and mount aspects](live-sessions-and-mount-aspects.md#prerequisites).
 - Derive the page title from the model with [Flash messages, page titles, and connection status](flash-titles-and-connection-status.md#derive-the-page-title).
-- Add stylesheets and scripts to the document with [Client setup and static assets](static-assets-and-client-setup.md#render-tracked-tags).
+- Add stylesheets and scripts to the document with [Static assets](static-assets.md#render-tracked-tags).

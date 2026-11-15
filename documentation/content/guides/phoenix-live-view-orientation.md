@@ -154,6 +154,6 @@ described in [Project status](../project/index.md#report-an-issue).
 ## Related tasks {#related-tasks}
 
 - Build typed markup and messages in [HTML and event bindings](html-dsl-and-event-bindings.md#prerequisites).
-- Connect the browser client in [Client setup and static assets](static-assets-and-client-setup.md#prerequisites).
+- Connect the browser client in [Client setup](client-setup.md#prerequisites).
 - Define application URLs in [Routes, parameters, and navigation](routes-and-navigation.md#prerequisites).
 - Map Phoenix `live_session` and `on_mount` to [Scalive mount boundaries](live-sessions-and-mount-aspects.md#choose-the-right-boundary).

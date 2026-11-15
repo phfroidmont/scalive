@@ -1,7 +1,7 @@
 {%
 title = "Configuration"
 description = "Configure Scalive signing, token lifetime, cookies, WebSocket origins, routes, assets, lifecycle observation, and application-owned server settings."
-order = 3
+order = 4
 section = guides
 group = "Setup and foundations"
 %}
@@ -72,7 +72,7 @@ Pages rendered by the current process join normally.
 Keep it `false` in deployments. Every deployment would reload every open page,
 discarding form input that LiveView otherwise restores after a reconnect, and
 with several replicas a page rendered by one would not join another. Use
-[`staticChanged`](static-assets-and-client-setup.md#read-connect-metadata) to
+[`staticChanged`](client-setup.md#read-connect-metadata) to
 react to changed assets in production instead.
 
 ## Admit WebSocket origins {#admit-websocket-origins}
@@ -160,9 +160,8 @@ WebSocket and Scalive's browser files there too, so the edge forwards one path:
 Every page then loads Scalive's scripts below `/app/_scalive` and connects to
 `/app/live/websocket`.
 
-Use [Client setup and static assets](static-assets-and-client-setup.md) for asset
-sources, versioned paths, deployment manifests, cache policy, and complete
-browser wiring.
+Use [Client setup](client-setup.md) for complete browser wiring and [Static assets](static-assets.md) for asset
+roots, versioned paths, deployment manifests, and cache policy.
 
 ## Observe lifecycle operations {#observe-lifecycle-operations}
 
@@ -205,7 +204,7 @@ scaling consequences are covered in
 
 - Continue with [Deployment](deployment.md#build-and-run-the-current-application)
   to package and operate the application.
-- Use [Client setup and static assets](static-assets-and-client-setup.md) to
+- Use [Client setup](client-setup.md) and [Static assets](static-assets.md) to
   configure browser, WebSocket, and asset paths.
 - Publish and interpret LiveView metrics with
   [Lifecycle observability](lifecycle-observability.md#publish-built-in-metrics).

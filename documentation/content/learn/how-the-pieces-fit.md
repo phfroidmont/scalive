@@ -62,8 +62,8 @@ Application state and ordinary event handling stay in Scala.
 
 @:apiSymbol(class:scalive.StaticAssets)`StaticAssets`@:@ serves an application's
 own files, such as a stylesheet, at versioned URLs. The
-[client setup guide](../guides/static-assets-and-client-setup.md) covers hooks,
-assets, and custom browser builds.
+[client setup guide](../guides/client-setup.md) covers hooks and custom browser
+builds, and the [static assets guide](../guides/static-assets.md) covers assets.
 
 ## Keep dependencies pointing inward {#keep-dependencies-pointing-inward}
 

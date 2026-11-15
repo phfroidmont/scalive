@@ -67,8 +67,8 @@ development only.
 If the HTML renders but remains disconnected, first verify that the scripts
 Scalive adds below its client path, `/_scalive` by default, or the custom client bundle, loaded successfully. Compare the response
 with the canonical
-[asset serving](static-assets-and-client-setup.md#serve-versioned-paths) and
-[tracked tag](static-assets-and-client-setup.md#render-tracked-tags) setup, then
+[asset serving](static-assets.md#serve-versioned-paths) and
+[tracked tag](static-assets.md#render-tracked-tags) setup, then
 request the rendered versioned or final URL directly. The same
 loaded asset value must render the script tag and serve its routes.
 
@@ -127,7 +127,7 @@ cannot rely on transport fallback.
 When `ZioHttp.routes` receives its validated config, the disconnected render injects a
 `<meta name="csrf-token">` element into the root layout's `<head>` and issues the
 matching `_scalive_csrf` cookie. First compare the page with the canonical
-[CSRF and LiveSocket bootstrap](static-assets-and-client-setup.md#connect-live-socket),
+[CSRF and LiveSocket bootstrap](client-setup.md#connect-live-socket),
 then inspect the failing token/cookie pair rather than creating another token.
 
 Check all parts of the pair:
@@ -239,7 +239,7 @@ application's requirements.
 
 ## Related tasks {#related-tasks}
 
-- Recheck browser and asset wiring in [Client setup and static assets](static-assets-and-client-setup.md#prerequisites).
+- Recheck browser and asset wiring in [Client setup](client-setup.md#prerequisites) and [Static assets](static-assets.md#prerequisites).
 - Add evidence at the failing boundary with [Testing LiveViews](testing.md#choose-the-test-boundary).
 - Configure and interpret operation metrics with
   [Lifecycle observability](lifecycle-observability.md#publish-built-in-metrics).

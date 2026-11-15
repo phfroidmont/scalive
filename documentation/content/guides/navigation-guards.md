@@ -19,7 +19,7 @@ The guard needs a small browser runtime. `ZioHttp.routes` serves it below
 it to every page's `<head>`, before the Phoenix
 clients and the root layout's own scripts, so it is installed before
 `LiveSocket` connects. Applications with a
-[custom client bundle](static-assets-and-client-setup.md#build-the-client-bundle)
+[custom client bundle](client-setup.md#build-the-client-bundle)
 get it too. Do not add its JavaScript to the application's asset tree or
 deployment manifest.
 

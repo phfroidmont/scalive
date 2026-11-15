@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url"
 const siteRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
 const outputRoot = path.join(siteRoot, "dist")
 
+// docs:start site-manifest-aliases
 // The stable alias the site asks for an entry point by: the script's own name, and the name of
 // each stylesheet, image and license the earlier build steps prepared in `build`.
 function entryAlias(entryPoint) {
@@ -14,10 +15,12 @@ function entryAlias(entryPoint) {
   if (entryPoint?.startsWith("build/")) return entryPoint.slice("build/".length)
   return undefined
 }
+// docs:end site-manifest-aliases
 
 // Served from the same classpath prefix, but written there by the documentation pipeline.
 const generatedElsewhere = ["search-index.json"]
 
+// docs:start site-manifest-outputs
 const assets = {}
 
 // esbuild put a content hash in the name of each file it emitted, so each is immutable under
@@ -28,7 +31,9 @@ for (const [output, { entryPoint }] of Object.entries(metafile.outputs)) {
   const file = path.relative(outputRoot, path.join(siteRoot, output))
   assets[entryAlias(entryPoint) ?? file] = { file, cache: "immutable" }
 }
+// docs:end site-manifest-outputs
 
+// docs:start site-manifest-plain-names
 // The diagram SVGs import their fonts by name, and esbuild cannot rewrite a reference inside an
 // SVG. That name is a one-line stylesheet importing the hashed one.
 await writeFile(
@@ -45,9 +50,12 @@ const emitted = (await readdir(outputRoot, { recursive: true, withFileTypes: tru
 for (const file of [...emitted, ...generatedElsewhere]) {
   if (!bundled.has(file)) assets[file] = { file, cache: "revalidate" }
 }
+// docs:end site-manifest-plain-names
 
+// docs:start site-manifest-write
 const sorted = Object.fromEntries(Object.entries(assets).sort(([a], [b]) => a.localeCompare(b)))
 await writeFile(
   path.join(outputRoot, "assets-manifest.json"),
   `${JSON.stringify({ version: 1, assets: sorted }, null, 2)}\n`,
 )
+// docs:end site-manifest-write

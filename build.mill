@@ -154,11 +154,19 @@ object scalive extends PublishedScaliveBundle:
 
   private val liveViewClientResourceDigests = Seq(
     "META-INF/scalive/live-view-client/PROVENANCE.md" ->
-      "3b9fc4bae95791ea7781ce7ad9dad7c9daed7a88ab5381e75db00790874ad336",
+      "7b16296c95ec1daf620ca7fe0e1b0dc0989869c623ae69b669a7524a5284e0f8",
     "META-INF/scalive/live-view-client/phoenix-1.8.15-live-view-1.2.12/phoenix.min.js" ->
       "02470e33af505595906535b87432092c19e1053a0029c7257986837781891e41",
+    "META-INF/scalive/live-view-client/phoenix-1.8.15-live-view-1.2.12/phoenix.min.js.br" ->
+      "b0eaddf777280cbf5cfbf21aef22ed4d4d8c2d261cc82013b0b35c06486fa818",
+    "META-INF/scalive/live-view-client/phoenix-1.8.15-live-view-1.2.12/phoenix.min.js.gz" ->
+      "3cd4b147bdb3a72c3e9e4171c4415782852a1ec19585a5ca95dab973c8cef6c0",
     "META-INF/scalive/live-view-client/phoenix-1.8.15-live-view-1.2.12/phoenix_live_view.min.js" ->
       "b3644c575949ce39f4cebf2d53f01eee659ae2ac4111075f4a7ece1002fecadc",
+    "META-INF/scalive/live-view-client/phoenix-1.8.15-live-view-1.2.12/phoenix_live_view.min.js.br" ->
+      "cf0c022f16d311621c857d436791748fc2de97e2af88b6c355dfa678fdbddc12",
+    "META-INF/scalive/live-view-client/phoenix-1.8.15-live-view-1.2.12/phoenix_live_view.min.js.gz" ->
+      "f760fd4dd0d18ef40b424d6047bbae7e7e1db4aad9fedd35f6bad7c3358bf9a6",
     "META-INF/licenses/scalive/live-view-client/phoenix-1.8.15-LICENSE.md" ->
       "41a686069f0199ff369d7e5277d5267385cc54d9199f1efc960bacbe2e799255",
     "META-INF/licenses/scalive/live-view-client/phoenix-live-view-1.2.12-LICENSE.md" ->
@@ -250,6 +258,9 @@ object scalive extends PublishedScaliveBundle:
       def moduleDeps = Seq(api, runtime.connection, protocol.phoenix)
 
       def mvnDeps = Seq(mvn"dev.zio::zio-http:${Versions.zioHttp}")
+
+      // The JDK has no Brotli decoder to check the packaged clients' copies with.
+      override def testMvnDeps = Seq(mvn"org.brotli:dec:0.1.2")
 
       private val liveViewClientResourcesVariable = "SCALIVE_LIVE_VIEW_CLIENT_RESOURCES"
 

@@ -55,8 +55,10 @@
           pkgs.runCommand "scalive-live-view-client-resources-1.8.15-1.2.12"
             {
               nativeBuildInputs = [
+                pkgs.brotli
                 pkgs.coreutils
                 pkgs.gnutar
+                pkgs.gzip
               ];
               inherit phoenixTarball liveViewTarball;
             }
@@ -81,6 +83,9 @@
               02470e33af505595906535b87432092c19e1053a0029c7257986837781891e41  phoenix.min.js
               b3644c575949ce39f4cebf2d53f01eee659ae2ac4111075f4a7ece1002fecadc  phoenix_live_view.min.js
               EOF
+                # Served to browsers that accept them. --no-name keeps the gzip copies reproducible.
+                brotli --best --keep phoenix.min.js phoenix_live_view.min.js
+                gzip --best --no-name --keep phoenix.min.js phoenix_live_view.min.js
               )
               (
                 cd "$license_root"
@@ -101,6 +106,7 @@
               | `phoenix_live_view.min.js` | `phoenix_live_view` | `1.2.12` | `priv/static/phoenix_live_view.min.js` | `b3644c575949ce39f4cebf2d53f01eee659ae2ac4111075f4a7ece1002fecadc` |
 
               The files were obtained from the corresponding packages published on the npm registry.
+              The `.br` and `.gz` files next to them are Brotli and gzip encodings of those files.
               Their license notices are included under `META-INF/licenses/scalive/live-view-client`.
 
               | npm package | Tarball | npm integrity |

@@ -1,11 +1,14 @@
 package scalive
 
+import java.io.ByteArrayInputStream
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.time.Duration
+import java.util.zip.GZIPInputStream
 
+import org.brotli.dec.BrotliInputStream
 import zio.*
-import zio.http.{Header, Method, Request, Response, Routes, Status, URL}
+import zio.http.{Header, Headers, Method, Request, Response, Routes, Status, URL}
 import zio.http.codec.PathCodec
 import zio.test.{Live as _, live as _, *}
 
@@ -32,9 +35,14 @@ object BrowserFilesSpec extends ZIOSpecDefault:
   private val scriptTags = "<script[^>]*>".r
   private val sourceOf   = "src=\"([^\"]+)\"".r
 
-  private def get(routes: Routes[Any, Nothing], path: String, method: Method = Method.GET) =
+  private def get(
+    routes: Routes[Any, Nothing],
+    path: String,
+    method: Method = Method.GET,
+    headers: Headers = Headers.empty
+  ) =
     ZIO.fromEither(URL.decode(path)).orDie.flatMap(url =>
-      ZIO.scoped(routes.runZIO(Request(method = method, url = url)))
+      ZIO.scoped(routes.runZIO(Request(method = method, url = url, headers = headers)))
     )
 
   private def page(routes: Routes[Any, Nothing]): UIO[String] =
@@ -51,6 +59,10 @@ object BrowserFilesSpec extends ZIOSpecDefault:
       .mkString
 
   private def body(response: Response): UIO[String] = response.body.asString.orDie
+
+  private def bytes(response: Response): UIO[Array[Byte]] = response.body.asArray.orDie
+
+  private def accepting(value: String) = Headers(Header.Custom("Accept-Encoding", value))
 
   override def spec = suite("BrowserFilesSpec")(
     test("the packaged client loads before the layout's scripts and connects after them") {
@@ -83,6 +95,38 @@ object BrowserFilesSpec extends ZIOSpecDefault:
         bodies(3).contains("window.liveSocketOptions"),
         head.status == Status.Ok
       )
+    },
+    test("the packaged clients are sent precompressed to a browser that accepts it") {
+      def encoding(response: Response) = response.rawHeader("Content-Encoding")
+      def vary(response: Response)     = response.rawHeader("Vary")
+      for
+        routes <- ZioHttp.routes(Live.router(live -> Page), config)
+        html   <- page(routes)
+        clients = sources(html).filter(_.contains("/live-view/"))
+        checks <- ZIO.foreach(clients) { path =>
+                    for
+                      identity <- get(routes, path)
+                      brotli   <- get(routes, path, headers = accepting("gzip, deflate, br"))
+                      gzip     <- get(routes, path, headers = accepting("gzip"))
+                      original <- bytes(identity)
+                      brotlied <- bytes(brotli)
+                      gzipped  <- bytes(gzip)
+                    yield assertTrue(
+                      encoding(identity).isEmpty,
+                      encoding(brotli).contains("br"),
+                      encoding(gzip).contains("gzip"),
+                      List(identity, brotli, gzip).forall(vary(_).contains("Accept-Encoding")),
+                      brotlied.length < gzipped.length,
+                      gzipped.length < original.length,
+                      BrotliInputStream(ByteArrayInputStream(brotlied))
+                        .readAllBytes()
+                        .sameElements(original),
+                      GZIPInputStream(ByteArrayInputStream(gzipped))
+                        .readAllBytes()
+                        .sameElements(original)
+                    )
+                  }
+      yield assertTrue(clients.size == 2) && checks.reduce(_ && _)
     },
     test("the connect script uses the router's socket path") {
       val application = Live.router.withSocketPath(PathCodec.empty / "socket")(live -> Page)

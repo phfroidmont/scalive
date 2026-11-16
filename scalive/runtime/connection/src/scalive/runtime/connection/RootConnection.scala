@@ -1204,7 +1204,8 @@ private[scalive] object RootConnection:
     providedConnection: Option[ConnectionId] = None,
     observer: RuntimeObserver = RuntimeObserver.noop,
     closeAfterNavigate: Boolean = true,
-    topic: Option[NestedTopic] = None
+    topic: Option[NestedTopic] = None,
+    target: LifecycleJoinTarget = LifecycleJoinTarget.Root
   ): ZIO[Scope, ConnectionError, RootConnection[Msg, Model]] =
     ZIO.uninterruptibleMask { restore =>
       for
@@ -1540,6 +1541,19 @@ private[scalive] object RootConnection:
                   closeLifecycle = connectedResources.close,
                   terminateOnNavigate = closeAfterNavigate
                 )
+        turnScope = Option.unless(observer.turnScope eq LifecycleTurnScope.none) {
+                      (turn: TurnId, command: Option[CommandId], kind: LifecycleTurnKind) =>
+                        observer.turnScope.safely(
+                          LifecycleTurn(
+                            ConnectedLifecycleContext(connectionId.value, lifecycleId.value),
+                            turn.value,
+                            command.map(_.value),
+                            kind,
+                            target,
+                            metadata.route
+                          )(metadata.connectParams)
+                        )
+                    }
         // Fibers forked below inherit these and the mount aspects' annotations, so application logs
         // carry them too.
         annotations = Set(
@@ -1559,7 +1573,8 @@ private[scalive] object RootConnection:
                           Some(lifecycleId),
                           topologyPreparer,
                           Some(connectionId),
-                          observer
+                          observer,
+                          turnScope
                         )
                         .mapError(ConnectionError.SessionFailed.apply)
                     )

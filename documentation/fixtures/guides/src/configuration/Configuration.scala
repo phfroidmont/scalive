@@ -93,3 +93,33 @@ object Observers:
     val observer = LifecycleMetrics.observer.andThen(applicationObserver)
     ZioHttp.routes(application, config, observer)
     // docs:end configuration-composed-observer
+
+object TurnScopes:
+  // docs:start configuration-turn-scope
+  val turnLogs = LifecycleTurnScope.fromFunction { turn =>
+    ZIO.logAnnotateScoped("turn_kind", turn.kind.toString) *>
+      ZIO.logSpanScoped(s"${turn.kind} ${turn.route}")
+  }
+  // docs:end configuration-turn-scope
+
+  // docs:start configuration-turn-scope-outcome
+  val browserSession = ConnectParam[String]("browserSession")
+
+  val failedTurns = LifecycleTurnScope.fromFunction { turn =>
+    ZIO.addFinalizerExit { exit =>
+      val failure = exit.causeOption.flatMap(_.failureOption).collect {
+        case error: LifecycleError => error.failure
+      }
+      ZIO.foreachDiscard(failure) { failure =>
+        ZIO.logAnnotate("browser_session", turn.connectParam(browserSession).getOrElse("")) {
+          ZIO.logWarning(s"Turn ${turn.turnId} on ${turn.route} failed: $failure")
+        }
+      }
+    }.unit
+  }
+  // docs:end configuration-turn-scope-outcome
+
+  def routes(application: LiveApplication[Any], config: ZioHttpConfig) =
+    // docs:start configuration-turn-scope-routes
+    ZioHttp.routes(application, config, turnScope = turnLogs.andThen(failedTurns))
+    // docs:end configuration-turn-scope-routes

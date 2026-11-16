@@ -11,6 +11,7 @@ import zio.test.*
 import scalive.*
 import scalive.render.*
 import scalive.runtime.contracts.*
+import scalive.runtime.kernel.RuntimeObserver
 
 object ConnectionSupervisorSpec extends ZIOSpecDefault:
   private val config   = ConnectionConfig.make(4, 4, 4, 4, 4).toOption.get
@@ -20,7 +21,9 @@ object ConnectionSupervisorSpec extends ZIOSpecDefault:
     supervisor: ConnectionSupervisor,
     claims: Queue[NestedCredentialClaims])
 
-  private def fixture: ZIO[Scope, Nothing, Fixture] =
+  private def fixture: ZIO[Scope, Nothing, Fixture] = fixture(RuntimeObserver.noop)
+
+  private def fixture(observer: RuntimeObserver): ZIO[Scope, Nothing, Fixture] =
     for
       claims <- Queue.bounded[NestedCredentialClaims](8)
       issuer = new NestedCredentialIssuer:
@@ -34,7 +37,8 @@ object ConnectionSupervisorSpec extends ZIOSpecDefault:
       supervisor <- ConnectionSupervisor.make(
                       config,
                       issuer,
-                      applicationId => NestedTopic(s"nested:$applicationId")
+                      applicationId => NestedTopic(s"nested:$applicationId"),
+                      observer
                     )
     yield Fixture(supervisor, claims)
 
@@ -132,6 +136,52 @@ object ConnectionSupervisorSpec extends ZIOSpecDefault:
           mountCount == 1,
           joined.isInstanceOf[ConnectionOutput.Joined],
           routed.contains(nested)
+        )
+      }
+    },
+    test("a nested LiveView's turns open the turn scope of its connection as nested") {
+      ZIO.scoped {
+        object Child extends LiveView.Eventless[Unit]:
+          def mount(ctx: MountContext): Task[Unit]            = ZIO.unit
+          def view(model: Signal[Unit]): HtmlElement[Nothing] = div("child")
+        object Parent extends LiveView.Eventless[Unit]:
+          def mount(ctx: MountContext): Task[Unit]            = ZIO.unit
+          def view(model: Signal[Unit]): HtmlElement[Nothing] = div(liveView("child", Child))
+
+        for
+          turns <- Ref.make(Vector.empty[LifecycleTurn])
+          value <- fixture(
+                     RuntimeObserver.noop.withTurnScope(
+                       LifecycleTurnScope.fromFunction(turn => turns.update(_ :+ turn))
+                     )
+                   )
+          rootOutputs  <- Queue.bounded[ConnectionOutput](4)
+          childOutputs <- Queue.bounded[ConnectionOutput](4)
+          root         <- startRoot(value, Parent, rootOutputs)
+          _            <- rootOutputs.take
+          claims       <- claimsFor(value)
+          reservation  <- value.supervisor.reserveNested(claims)
+          nested       <- value.supervisor.startNested(
+                            reservation,
+                            URL.root,
+                            metadata.copy(route = "/pages/{id}"),
+                            "child-dom",
+                            loading = true,
+                            childOutputs.offer(_).unit
+                          )
+          _      <- childOutputs.take
+          opened <- turns.get
+        yield assertTrue(
+          opened.map(turn => (turn.lifecycle.lifecycleId, turn.kind, turn.target, turn.route)) ==
+            Vector(
+              (root.lifecycle.value, LifecycleTurnKind.Bootstrap, LifecycleJoinTarget.Root, ""),
+              (
+                nested.lifecycle.value,
+                LifecycleTurnKind.Bootstrap,
+                LifecycleJoinTarget.Nested,
+                "/pages/{id}"
+              )
+            )
         )
       }
     },

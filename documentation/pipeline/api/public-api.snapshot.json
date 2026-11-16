@@ -710,6 +710,18 @@
       ]
     },
     {
+      "id" : "class:scalive.LifecycleTurn",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.LifecycleTurn",
+      "kind" : "class",
+      "signatures" : [
+        {
+          "id" : "class:scalive.LifecycleTurn:07fc019e31710e31",
+          "signature" : "class LifecycleTurn(lifecycle: ConnectedLifecycleContext, turnId: Long, commandId: Option[Long], kind: LifecycleTurnKind, target: LifecycleJoinTarget, route: String)(connectParams: Map[String, zio.json.ast.Json])"
+        }
+      ]
+    },
+    {
       "id" : "class:scalive.LiveApplication",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.LiveApplication",
@@ -5850,6 +5862,54 @@
       ]
     },
     {
+      "id" : "def:scalive.LifecycleTurn.connectParam",
+      "ownerId" : "class:scalive.LifecycleTurn",
+      "qualifiedName" : "scalive.LifecycleTurn.connectParam",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LifecycleTurn.connectParam:1ac69084c5065a1b",
+          "signature" : "def connectParam[A](param: ConnectParam[A]): Option[A]"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LifecycleTurnScope.andThen",
+      "ownerId" : "trait:scalive.LifecycleTurnScope",
+      "qualifiedName" : "scalive.LifecycleTurnScope.andThen",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LifecycleTurnScope.andThen:c05f23bc5ce31da7",
+          "signature" : "def andThen(that: LifecycleTurnScope): LifecycleTurnScope"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LifecycleTurnScope.fromFunction",
+      "ownerId" : "object:scalive.LifecycleTurnScope",
+      "qualifiedName" : "scalive.LifecycleTurnScope.fromFunction",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LifecycleTurnScope.fromFunction:2526517b8017a4f9",
+          "signature" : "def fromFunction(open: LifecycleTurn => zio.package.URIO[zio.Scope, Unit]): LifecycleTurnScope"
+        }
+      ]
+    },
+    {
+      "id" : "def:scalive.LifecycleTurnScope.open",
+      "ownerId" : "trait:scalive.LifecycleTurnScope",
+      "qualifiedName" : "scalive.LifecycleTurnScope.open",
+      "kind" : "def",
+      "signatures" : [
+        {
+          "id" : "def:scalive.LifecycleTurnScope.open:327b5efbf6ce8373",
+          "signature" : "def open(turn: LifecycleTurn): zio.package.URIO[zio.Scope, Unit]"
+        }
+      ]
+    },
+    {
       "id" : "def:scalive.Live.route",
       "ownerId" : "object:scalive.Live",
       "qualifiedName" : "scalive.Live.route",
@@ -9580,8 +9640,8 @@
       "kind" : "def",
       "signatures" : [
         {
-          "id" : "def:scalive.ZioHttp.routes:a89324d0ea91f696",
-          "signature" : "def routes[R](application: LiveApplication[R], config: ZioHttpConfig, observer: LifecycleObserver = ..., client: LiveClient = ...): zio.package.IO[ZioHttp.AssemblyException, zio.http.Routes[R, Nothing]]"
+          "id" : "def:scalive.ZioHttp.routes:0a0f9a9912ebec02",
+          "signature" : "def routes[R](application: LiveApplication[R], config: ZioHttpConfig, observer: LifecycleObserver = ..., client: LiveClient = ..., turnScope: LifecycleTurnScope = ...): zio.package.IO[ZioHttp.AssemblyException, zio.http.Routes[R, Nothing]]"
         }
       ]
     },
@@ -20846,6 +20906,18 @@
       ]
     },
     {
+      "id" : "object:scalive.LifecycleTurnScope",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.LifecycleTurnScope",
+      "kind" : "object",
+      "signatures" : [
+        {
+          "id" : "object:scalive.LifecycleTurnScope:85e78bb44bda1650",
+          "signature" : "object LifecycleTurnScope"
+        }
+      ]
+    },
+    {
       "id" : "object:scalive.Live",
       "ownerId" : "package:scalive",
       "qualifiedName" : "scalive.Live",
@@ -22209,6 +22281,18 @@
         {
           "id" : "trait:scalive.LifecycleObserver:bcb6eb9d7d126ee6",
           "signature" : "trait LifecycleObserver"
+        }
+      ]
+    },
+    {
+      "id" : "trait:scalive.LifecycleTurnScope",
+      "ownerId" : "package:scalive",
+      "qualifiedName" : "scalive.LifecycleTurnScope",
+      "kind" : "trait",
+      "signatures" : [
+        {
+          "id" : "trait:scalive.LifecycleTurnScope:3cac1f16cb0000c6",
+          "signature" : "trait LifecycleTurnScope"
         }
       ]
     },
@@ -26605,6 +26689,78 @@
       ]
     },
     {
+      "id" : "val:scalive.LifecycleTurn.commandId",
+      "ownerId" : "class:scalive.LifecycleTurn",
+      "qualifiedName" : "scalive.LifecycleTurn.commandId",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleTurn.commandId:48d5979f4366e156",
+          "signature" : "val commandId: Option[Long]"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleTurn.kind",
+      "ownerId" : "class:scalive.LifecycleTurn",
+      "qualifiedName" : "scalive.LifecycleTurn.kind",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleTurn.kind:8fbbd1cb2d3253f8",
+          "signature" : "val kind: LifecycleTurnKind"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleTurn.lifecycle",
+      "ownerId" : "class:scalive.LifecycleTurn",
+      "qualifiedName" : "scalive.LifecycleTurn.lifecycle",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleTurn.lifecycle:05fdf8e7bffdfa4b",
+          "signature" : "val lifecycle: ConnectedLifecycleContext"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleTurn.route",
+      "ownerId" : "class:scalive.LifecycleTurn",
+      "qualifiedName" : "scalive.LifecycleTurn.route",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleTurn.route:c593ae227290e7b8",
+          "signature" : "val route: String"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleTurn.target",
+      "ownerId" : "class:scalive.LifecycleTurn",
+      "qualifiedName" : "scalive.LifecycleTurn.target",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleTurn.target:7c011140ea75a268",
+          "signature" : "val target: LifecycleJoinTarget"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleTurn.turnId",
+      "ownerId" : "class:scalive.LifecycleTurn",
+      "qualifiedName" : "scalive.LifecycleTurn.turnId",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleTurn.turnId:29e8a6572f06aea2",
+          "signature" : "val turnId: Long"
+        }
+      ]
+    },
+    {
       "id" : "val:scalive.LifecycleTurnKind.AsyncCompletion",
       "ownerId" : "enum:scalive.LifecycleTurnKind",
       "qualifiedName" : "scalive.LifecycleTurnKind.AsyncCompletion",
@@ -26709,6 +26865,18 @@
         {
           "id" : "val:scalive.LifecycleTurnKind.Upload:9efdf26375209292",
           "signature" : "val Upload: LifecycleTurnKind"
+        }
+      ]
+    },
+    {
+      "id" : "val:scalive.LifecycleTurnScope.none",
+      "ownerId" : "object:scalive.LifecycleTurnScope",
+      "qualifiedName" : "scalive.LifecycleTurnScope.none",
+      "kind" : "val",
+      "signatures" : [
+        {
+          "id" : "val:scalive.LifecycleTurnScope.none:7d94dc0628920985",
+          "signature" : "val none: LifecycleTurnScope"
         }
       ]
     },

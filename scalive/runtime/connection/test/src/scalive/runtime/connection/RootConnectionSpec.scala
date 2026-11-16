@@ -74,6 +74,65 @@ object RootConnectionSpec extends ZIOSpecDefault:
     override def view(model: Signal[Int]): HtmlElement[Int] =
       button(on.click(1), model.map(_.toString))
 
+  // What a turn scope recorded: each turn it opened for and each outcome it closed with, in order.
+  private enum ScopeStep:
+    case Opened(turn: LifecycleTurn)
+    case Closed(turn: LifecycleTurn, exit: Exit[Any, Any])
+
+  // A turn scope that sets `active` to the kind of the turn and records what it opens and closes.
+  private def recordingScope(
+    active: FiberRef[Option[LifecycleTurnKind]],
+    steps: Ref[Vector[ScopeStep]]
+  ): LifecycleTurnScope =
+    LifecycleTurnScope.fromFunction { turn =>
+      steps.update(_ :+ ScopeStep.Opened(turn)) *>
+        ZIO.addFinalizerExit(exit => steps.update(_ :+ ScopeStep.Closed(turn, exit))) *>
+        active.locallyScoped(Some(turn.kind))
+    }
+
+  // Adds to its model the amount it is sent, after recording the value of `active` that its
+  // handler and a fiber the handler starts see. It fails when sent a negative amount.
+  private final class ScopeProbe(
+    active: FiberRef[Option[LifecycleTurnKind]],
+    seen: Ref[Vector[Option[LifecycleTurnKind]]])
+      extends LiveView[Int, Int]:
+    override def mount(ctx: MountContext): Task[Int] = ZIO.succeed(0)
+    override def handleMessage(model: Int, ctx: MessageContext): Int => Task[Int] =
+      amount =>
+        for
+          here   <- active.get
+          forked <- active.get.fork.flatMap(_.join)
+          _      <- seen.update(_ :+ here :+ forked)
+          _      <- ZIO.fail(Exception("handler failed")).when(amount < 0)
+        yield model + amount
+    override def view(model: Signal[Int]): HtmlElement[Int] =
+      button(on.click(1), model.map(_.toString))
+
+  // A turn scope that records as `recordingScope` does, and turn events in `events`.
+  private def recordingObserver(
+    active: FiberRef[Option[LifecycleTurnKind]],
+    steps: Ref[Vector[ScopeStep]],
+    events: Ref[Vector[LifecycleEvent]]
+  ): RuntimeObserver =
+    RuntimeObserver
+      .withLifecycleObserver(LifecycleObserver.fromFunction(event => events.update(_ :+ event)))
+      .withTurnScope(recordingScope(active, steps))
+
+  // The turn ID, command ID and kind of each turn the scope opened for.
+  private def opened(steps: Vector[ScopeStep]): Vector[(Long, Option[Long], LifecycleTurnKind)] =
+    steps.collect { case ScopeStep.Opened(turn) => (turn.turnId, turn.commandId, turn.kind) }
+
+  // The turn ID, command ID and kind of each turn event.
+  private def turnEvents(events: Vector[LifecycleEvent]): Vector[(Long, Option[Long], LifecycleTurnKind)] =
+    events.collect {
+      case event: LifecycleEvent.TurnSucceeded => (event.turnId, event.commandId, event.kind)
+      case event: LifecycleEvent.TurnFailed    => (event.turnId, event.commandId, event.kind)
+    }
+
+  private def click(connection: RootConnection[?, ?], binding: BindingId): IO[ConnectionError, CommandId] =
+    val command = CommandId.fresh().toOption.get
+    connection.submitEvent(command, binding, BindingPayload.Params(Map.empty)).as(command)
+
   override def spec = suite("RootConnectionSpec")(
     test("mounts once, joins, and preserves the caller's command correlation") {
       ZIO.scoped {
@@ -1557,7 +1616,391 @@ object RootConnectionSpec extends ZIOSpecDefault:
           )
         }
       }.map(results => assertTrue(results.forall(_.isSuccess)))
-    }
+    },
+    suite("turn scope")(
+      test("a handler and a fiber it starts see what the turn scope set") {
+        ZIO.scoped {
+          for
+            active     <- FiberRef.make(Option.empty[LifecycleTurnKind])
+            seen       <- Ref.make(Vector.empty[Option[LifecycleTurnKind]])
+            steps      <- Ref.make(Vector.empty[ScopeStep])
+            outputs    <- Queue.unbounded[ConnectionOutput]
+            connection <- RootConnection.start(
+                            config,
+                            metadata,
+                            ScopeProbe(active, seen),
+                            outputs.offer(_).unit,
+                            observer = RuntimeObserver.noop.withTurnScope(recordingScope(active, steps))
+                          )
+            joined <- outputs.take
+            _      <- click(connection, bindingFrom(joined))
+            _      <- outputs.take
+            values <- seen.get
+          yield assertTrue(
+            values == Vector(
+              Some(LifecycleTurnKind.BrowserEvent),
+              Some(LifecycleTurnKind.BrowserEvent)
+            )
+          )
+        }
+      }
+      ,
+      test("each turn's scope closes with success before the next turn's scope opens") {
+        ZIO.scoped {
+          for
+            active     <- FiberRef.make(Option.empty[LifecycleTurnKind])
+            seen       <- Ref.make(Vector.empty[Option[LifecycleTurnKind]])
+            steps      <- Ref.make(Vector.empty[ScopeStep])
+            events     <- Ref.make(Vector.empty[LifecycleEvent])
+            outputs    <- Queue.unbounded[ConnectionOutput]
+            connection <- RootConnection.start(
+                            config,
+                            metadata,
+                            ScopeProbe(active, seen),
+                            outputs.offer(_).unit,
+                            observer = recordingObserver(active, steps, events)
+                          )
+            joined <- outputs.take
+            first  <- click(connection, bindingFrom(joined))
+            second <- click(connection, bindingFrom(joined))
+            // The lifecycle answers this only after the turn before it has closed its scope.
+            model    <- connection.inspectModel
+            recorded <- steps.get
+            observed <- events.get
+            shape = recorded.map {
+                      case ScopeStep.Opened(turn)       => s"open ${turn.kind}"
+                      case ScopeStep.Closed(turn, exit) => s"close ${turn.kind} ${exit.isSuccess}"
+                    }
+          yield assertTrue(
+            model == 2,
+            shape == Vector(
+              "open Bootstrap",
+              "close Bootstrap true",
+              "open BrowserEvent",
+              "close BrowserEvent true",
+              "open BrowserEvent",
+              "close BrowserEvent true"
+            ),
+            opened(recorded).map(turn => turn._2 -> turn._3) == Vector(
+              None               -> LifecycleTurnKind.Bootstrap,
+              Some(first.value)  -> LifecycleTurnKind.BrowserEvent,
+              Some(second.value) -> LifecycleTurnKind.BrowserEvent
+            ),
+            opened(recorded) == turnEvents(observed)
+          )
+        }
+      },
+      test("a failing handler closes the scope with the error its turn event reports") {
+        ZIO.scoped {
+          for
+            active     <- FiberRef.make(Option.empty[LifecycleTurnKind])
+            seen       <- Ref.make(Vector.empty[Option[LifecycleTurnKind]])
+            steps      <- Ref.make(Vector.empty[ScopeStep])
+            events     <- Ref.make(Vector.empty[LifecycleEvent])
+            outputs    <- Queue.unbounded[ConnectionOutput]
+            connection <- RootConnection.start(
+                            config,
+                            metadata,
+                            ScopeProbe(active, seen),
+                            outputs.offer(_).unit,
+                            observer = recordingObserver(active, steps, events)
+                          )
+            _        <- outputs.take
+            result   <- connection.submitInfo(-1).either
+            _        <- connection.awaitClosed
+            recorded <- steps.get
+            observed <- events.get
+            failed = observed.collect { case event: LifecycleEvent.TurnFailed => event }
+            closed = recorded.collect {
+                       case ScopeStep.Closed(turn, Exit.Failure(cause)) =>
+                         (turn.turnId, turn.kind, cause.failureOption)
+                     }
+          yield assertTrue(
+            result.isLeft,
+            failed.size == 1,
+            failed.head.error.failure == LifecycleFailure.Stage(LifecycleFailureStage.Handler),
+            closed == Vector(
+              (failed.head.turnId, LifecycleTurnKind.Message, Some(failed.head.error))
+            ),
+            opened(recorded) == turnEvents(observed)
+          )
+        }
+      },
+      test("a turn that a connected-turn guard halts closes the scope with success") {
+        ZIO.scoped {
+          for
+            active  <- FiberRef.make(Option.empty[LifecycleTurnKind])
+            steps   <- Ref.make(Vector.empty[ScopeStep])
+            events  <- Ref.make(Vector.empty[LifecycleEvent])
+            guarded <- Ref.make(Vector.empty[Option[LifecycleTurnKind]])
+            outputs <- Queue.unbounded[ConnectionOutput]
+            lifecycle = RootLifecycle.ordinary(
+                          new LiveView[Int, Int]:
+                            def mount(ctx: MountContext): Task[Int] = ZIO.succeed(7)
+                            def handleMessage(model: Int, ctx: MessageContext): Int => Task[Int] =
+                              amount => ZIO.succeed(model + amount)
+                            def view(model: Signal[Int]) = button(on.click(1), model.map(_.toString)),
+                          connectedTurnGuard = LiveConnectedTurnGuard(_ =>
+                            active.get.flatMap(value => guarded.update(_ :+ value)) *>
+                              ZIO.fail(LiveConnectedTurnFailure.Halt)
+                          )
+                        )
+            connection <- RootConnection.startLifecycle(
+                            config,
+                            metadata,
+                            lifecycle,
+                            outputs.offer(_).unit,
+                            observer = recordingObserver(active, steps, events)
+                          )
+            joined   <- outputs.take
+            command  <- click(connection, bindingFrom(joined))
+            model    <- connection.inspectModel
+            recorded <- steps.get
+            observed <- events.get
+            inGuard  <- guarded.get
+            halted = recorded.collect {
+                       case ScopeStep.Closed(turn, exit) if turn.kind == LifecycleTurnKind.BrowserEvent =>
+                         turn.commandId -> exit.isSuccess
+                     }
+          yield assertTrue(
+            model == 7,
+            inGuard == Vector(Some(LifecycleTurnKind.BrowserEvent)),
+            halted == Vector(Some(command.value) -> true),
+            opened(recorded) == turnEvents(observed)
+          )
+        }
+      },
+      test("a turn that Scalive starts itself opens the scope without a command ID") {
+        ZIO.scoped {
+          val work = AsyncKey[Int]("work")
+          for
+            active  <- FiberRef.make(Option.empty[LifecycleTurnKind])
+            steps   <- Ref.make(Vector.empty[ScopeStep])
+            events  <- Ref.make(Vector.empty[LifecycleEvent])
+            handled <- Ref.make(Vector.empty[(Int, Option[LifecycleTurnKind])])
+            outputs <- Queue.unbounded[ConnectionOutput]
+            // Its click cancels the task that mount started, which Scalive answers with a turn for
+            // the cancellation message.
+            view = new LiveView[Int, Int]:
+                     def mount(ctx: MountContext): Task[Int] =
+                       ctx.connection.whenConnected(_.async.start(work)(ZIO.never)(_ => -1)).as(0)
+                     def handleMessage(model: Int, ctx: MessageContext): Int => Task[Int] =
+                       message =>
+                         active.get.flatMap(kind => handled.update(_ :+ (message -> kind))) *>
+                           ctx.async.cancel(work).when(message == 1).as(model + message)
+                     def view(model: Signal[Int]) = button(on.click(1), model.map(_.toString))
+            connection <- RootConnection.start(
+                            config,
+                            metadata,
+                            view,
+                            outputs.offer(_).unit,
+                            observer = recordingObserver(active, steps, events)
+                          )
+            joined   <- outputs.take
+            command  <- click(connection, bindingFrom(joined))
+            _        <- connection.inspectModel.repeatUntil(_ == 0)
+            messages <- handled.get
+            recorded <- steps.get
+            observed <- events.get
+          yield assertTrue(
+            messages == Vector(
+              1  -> Some(LifecycleTurnKind.BrowserEvent),
+              -1 -> Some(LifecycleTurnKind.Internal)
+            ),
+            opened(recorded).map(turn => turn._2 -> turn._3) == Vector(
+              None                -> LifecycleTurnKind.Bootstrap,
+              Some(command.value) -> LifecycleTurnKind.BrowserEvent,
+              None                -> LifecycleTurnKind.Internal
+            ),
+            opened(recorded) == turnEvents(observed)
+          )
+        }
+      },
+      test("a live patch opens the scope for the turn that handles its acknowledgement") {
+        ZIO.scoped {
+          val destination = URL.decode("/next").toOption.get
+          for
+            active  <- FiberRef.make(Option.empty[LifecycleTurnKind])
+            steps   <- Ref.make(Vector.empty[ScopeStep])
+            events  <- Ref.make(Vector.empty[LifecycleEvent])
+            outputs <- Queue.unbounded[ConnectionOutput]
+            view = new LiveView[Int, Int]:
+                     def mount(ctx: MountContext): Task[Int] = ZIO.succeed(0)
+                     def handleMessage(model: Int, ctx: MessageContext): Int => Task[Int] =
+                       message => ctx.nav.pushPatchUnsafe("/next").as(model + message)
+                     def view(model: Signal[Int]) = button(on.click(1), model.map(_.toString))
+            connection <- RootConnection.start(
+                            config,
+                            metadata,
+                            view,
+                            outputs.offer(_).unit,
+                            observer = recordingObserver(active, steps, events)
+                          )
+            joined  <- outputs.take
+            pushing <- click(connection, bindingFrom(joined))
+            patch = CommandId.fresh().toOption.get
+            _        <- connection.submitPatch(patch, destination)
+            model    <- connection.inspectModel
+            recorded <- steps.get
+            observed <- events.get
+            closed = recorded.collect { case ScopeStep.Closed(turn, exit) => turn.kind -> exit.isSuccess }
+          yield assertTrue(
+            model == 1,
+            opened(recorded).map(turn => turn._2 -> turn._3) == Vector(
+              None                -> LifecycleTurnKind.Bootstrap,
+              Some(pushing.value) -> LifecycleTurnKind.BrowserEvent,
+              Some(patch.value)   -> LifecycleTurnKind.ParamsPatch
+            ),
+            closed == Vector(
+              LifecycleTurnKind.Bootstrap    -> true,
+              LifecycleTurnKind.BrowserEvent -> true,
+              LifecycleTurnKind.ParamsPatch  -> true
+            ),
+            opened(recorded) == turnEvents(observed)
+          )
+        }
+      },
+      test("a turn interrupted by the lifecycle closing closes the scope with an interruption") {
+        for
+          active  <- FiberRef.make(Option.empty[LifecycleTurnKind])
+          steps   <- Ref.make(Vector.empty[ScopeStep])
+          events  <- Ref.make(Vector.empty[LifecycleEvent])
+          started <- Promise.make[Nothing, Unit]
+          outputs <- Queue.unbounded[ConnectionOutput]
+          view = new LiveView[Int, Int]:
+                   def mount(ctx: MountContext): Task[Int] = ZIO.succeed(0)
+                   def handleMessage(model: Int, ctx: MessageContext): Int => Task[Int] =
+                     _ => started.succeed(()) *> ZIO.never
+                   def view(model: Signal[Int]) = button(on.click(1), model.map(_.toString))
+          _ <- ZIO.scoped {
+                 for
+                   connection <- RootConnection.start(
+                                   config,
+                                   metadata,
+                                   view,
+                                   outputs.offer(_).unit,
+                                   observer = recordingObserver(active, steps, events)
+                                 )
+                   joined <- outputs.take
+                   _      <- click(connection, bindingFrom(joined)).fork
+                   _      <- started.await
+                 yield ()
+               }
+          recorded <- steps.get
+          closed = recorded.collect {
+                     case ScopeStep.Closed(turn, exit) if turn.kind == LifecycleTurnKind.BrowserEvent =>
+                       exit.isInterrupted
+                   }
+        yield assertTrue(closed == Vector(true))
+      },
+      test("the turn describes its LiveView, route and connect parameters") {
+        ZIO.scoped {
+          for
+            active     <- FiberRef.make(Option.empty[LifecycleTurnKind])
+            steps      <- Ref.make(Vector.empty[ScopeStep])
+            events     <- Ref.make(Vector.empty[LifecycleEvent])
+            outputs    <- Queue.unbounded[ConnectionOutput]
+            mounts     <- Ref.make(0)
+            connection <- RootConnection.start(
+                            config,
+                            metadata.copy(route = "/users/{id}"),
+                            Counter(mounts),
+                            outputs.offer(_).unit,
+                            observer = recordingObserver(active, steps, events)
+                          )
+            _        <- outputs.take
+            recorded <- steps.get
+            turn = recorded.collectFirst { case ScopeStep.Opened(turn) => turn }.get
+          yield assertTrue(
+            turn.lifecycle == ConnectedLifecycleContext(
+              connection.connectionId.value,
+              connection.lifecycle.value
+            ),
+            turn.target == LifecycleJoinTarget.Root,
+            turn.route == "/users/{id}",
+            turn.connectParam(ConnectParam[String]("token")).contains("exact"),
+            turn.connectParam(ConnectParam[Int]("token")).isEmpty,
+            turn.connectParam(ConnectParam[String]("absent")).isEmpty,
+            !turn.toString.contains("exact")
+          )
+        }
+      },
+      test("a turn scope that dies while opening or closing leaves the connection working") {
+        val diesOpening = LifecycleTurnScope.fromFunction(_ => ZIO.dieMessage("died while opening"))
+        val diesClosing = LifecycleTurnScope.fromFunction(_ =>
+          ZIO.addFinalizer(ZIO.dieMessage("died while closing")).unit
+        )
+        ZIO
+          .foreach(List(diesOpening, diesClosing)) { turnScope =>
+            ZIO.scoped {
+              for
+                mounts     <- Ref.make(0)
+                outputs    <- Queue.unbounded[ConnectionOutput]
+                connection <- RootConnection.start(
+                                config,
+                                metadata,
+                                Counter(mounts),
+                                outputs.offer(_).unit,
+                                observer = RuntimeObserver.noop.withTurnScope(turnScope)
+                              )
+                joined  <- outputs.take
+                replies <- ZIO.foreach(List(1, 2)) { _ =>
+                             click(connection, bindingFrom(joined)).zipWith(outputs.take) {
+                               case (command, ConnectionOutput.Reply(replied, _, _)) => command == replied
+                               case _                                                => false
+                             }
+                           }
+                model <- connection.inspectModel
+                count <- mounts.get
+              yield assertTrue(replies == List(true, true), model == 2, count == 1)
+            }
+          }.map(results => assertTrue(results.forall(_.isSuccess)))
+      },
+      test("a defect in one of two combined turn scopes leaves the other one working") {
+        ZIO.scoped {
+          for
+            active <- FiberRef.make(Option.empty[LifecycleTurnKind])
+            first  <- Ref.make(Vector.empty[ScopeStep])
+            second <- Ref.make(Vector.empty[ScopeStep])
+            leaked <- Ref.make(0)
+            dies = LifecycleTurnScope.fromFunction(_ =>
+                     ZIO.addFinalizer(leaked.update(_ + 1)) *> leaked.update(_ - 1) *>
+                       ZIO.dieMessage("died while opening")
+                   )
+            outputs    <- Queue.unbounded[ConnectionOutput]
+            mounts     <- Ref.make(0)
+            connection <- RootConnection.start(
+                            config,
+                            metadata,
+                            Counter(mounts),
+                            outputs.offer(_).unit,
+                            observer = RuntimeObserver.noop.withTurnScope(
+                              recordingScope(active, first)
+                                .andThen(dies)
+                                .andThen(recordingScope(active, second))
+                            )
+                          )
+            joined <- outputs.take
+            _      <- click(connection, bindingFrom(joined))
+            model  <- connection.inspectModel
+            before <- first.get
+            after  <- second.get
+            open   <- leaked.get
+            kinds = (steps: Vector[ScopeStep]) =>
+                      steps.collect { case ScopeStep.Closed(turn, exit) => turn.kind -> exit.isSuccess }
+          yield assertTrue(
+            model == 1,
+            kinds(before) == Vector(
+              LifecycleTurnKind.Bootstrap    -> true,
+              LifecycleTurnKind.BrowserEvent -> true
+            ),
+            kinds(after) == kinds(before),
+            // What the dying turn scope acquired was released each time.
+            open == 0
+          )
+        }
+      }
+    ) @@ TestAspect.timeout(10.seconds)
   )
 
   private def bindingFrom(output: ConnectionOutput): BindingId = output match

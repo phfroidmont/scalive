@@ -25,10 +25,17 @@ import scalive.runtime.resources.UploadControlReply
 private[connection] def isNamedBrowserEvent(event: LiveEvent): Boolean =
   !BindingId.isGenerated(event.bindingId)
 
+/** What a connected LiveView knows about its join.
+  *
+  * @param route
+  *   The path pattern of the page's route, without parameter values. A nested LiveView has the
+  *   route of the page it joined in.
+  */
 final private[scalive] case class RootConnectionMetadata(
   staticChanged: Boolean,
   connectParams: Map[String, Json],
-  initialFlash: Map[FlashKey, FlashValue] = Map.empty)
+  initialFlash: Map[FlashKey, FlashValue] = Map.empty,
+  route: String = "")
 
 final private[scalive] case class ConnectionConfig private (
   ingressCapacity: Int,

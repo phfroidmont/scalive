@@ -2721,6 +2721,39 @@ object ZioHttpSpec extends ZIOSpecDefault:
         )
       }
     },
+    test("a turn scope passed to the routes opens for the bootstrap turn of a joined LiveView") {
+      object Item extends LiveView.Routed.Eventless[String, String]:
+        def mount(id: String, ctx: MountContext) = ZIO.succeed(id)
+        def view(model: Signal[String])          = div(model)
+      val application =
+        scalive.Live.router((scalive.live / "items" / PathCodec.string("id")) -> Item)
+      val browserSession = ConnectParam[String]("browserSession")
+
+      for
+        turns <- Ref.make(Vector.empty[LifecycleTurn])
+        turnScope = LifecycleTurnScope.fromFunction(turn => turns.update(_ :+ turn))
+        result <- withServer(application, turnScope = turnScope) { port =>
+                    for
+                      page   <- bootstrap(port, "/items/7")
+                      socket <- connect(port, page)
+                      joined <- joinRoot(
+                                  socket,
+                                  page,
+                                  Json.Obj("browserSession" -> Json.Str("tab-1"))
+                                )
+                      _      <- socket.close
+                      opened <- turns.get
+                    yield assertTrue(
+                      status(joined) == "ok",
+                      opened.map(turn => (turn.kind, turn.target, turn.route, turn.commandId)) ==
+                        Vector(
+                          (LifecycleTurnKind.Bootstrap, LifecycleJoinTarget.Root, "/items/{id}", None)
+                        ),
+                      opened.map(_.connectParam(browserSession)) == Vector(Some("tab-1"))
+                    )
+                  }
+      yield result
+    },
     test("routes without resource initializers do not evaluate unused context projections") {
       final case class Combined(name: String, length: Int)
       val projections = AtomicInteger()
@@ -3807,12 +3840,13 @@ object ZioHttpSpec extends ZIOSpecDefault:
 
   private def withServer[A](
     application: LiveApplication[Any],
-    observer: LifecycleObserver = LifecycleObserver.none
+    observer: LifecycleObserver = LifecycleObserver.none,
+    turnScope: LifecycleTurnScope = LifecycleTurnScope.none
   )(
     runTest: Int => ZIO[Client & Scope, Throwable, A]
   ): Task[A] =
     for
-      routes  <- ZioHttp.routes(application, config, observer)
+      routes  <- ZioHttp.routes(application, config, observer, turnScope = turnScope)
       started <- Promise.make[Nothing, Int]
       _       <- Server
              .install(routes)

@@ -21,6 +21,22 @@ object LifecycleObserverSpec extends ZIOSpecDefault:
         retry.isRetry
       )
     },
+    test("a turn scope cannot fail with a typed error") {
+      val typedError = scala.compiletime.testing.typeCheckErrors("""
+        LifecycleTurnScope.fromFunction(_ => ZIO.fail("not ready"))
+      """)
+      val untypedFailure = scala.compiletime.testing.typeCheckErrors("""
+        new LifecycleTurnScope:
+          def open(turn: LifecycleTurn): ZIO[Scope, Throwable, Unit] = ZIO.attempt(())
+      """)
+      val scoped = scala.compiletime.testing.typeCheckErrors("""
+        LifecycleTurnScope.fromFunction(turn =>
+          ZIO.logAnnotateScoped("turn_kind", turn.kind.toString) *> ZIO.logSpanScoped(turn.route)
+        )
+      """)
+
+      assertTrue(typedError.nonEmpty, untypedFailure.nonEmpty, scoped.isEmpty)
+    },
     test("composed observers isolate defects and preserve order") {
       for
         events <- Ref.make(Vector.empty[String])

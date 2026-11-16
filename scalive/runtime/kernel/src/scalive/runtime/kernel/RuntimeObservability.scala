@@ -320,7 +320,8 @@ final private[scalive] case class RuntimeFrameTrace(
 final private[scalive] class RuntimeObserver private (
   sink: RuntimeEvent => UIO[Unit],
   diagnostic: RuntimeDiagnostic,
-  lifecycleObserver: LifecycleObserver):
+  lifecycleObserver: LifecycleObserver,
+  val turnScope: LifecycleTurnScope):
 
   final private case class LifecycleTrace(
     topic: String,
@@ -360,7 +361,10 @@ final private[scalive] class RuntimeObserver private (
     lifecycleObserver.safely(event)
 
   def withLifecycleObserver(observer: LifecycleObserver): RuntimeObserver =
-    new RuntimeObserver(sink, diagnostic, observer)
+    new RuntimeObserver(sink, diagnostic, observer, turnScope)
+
+  def withTurnScope(scope: LifecycleTurnScope): RuntimeObserver =
+    new RuntimeObserver(sink, diagnostic, lifecycleObserver, scope)
 
   def registerLifecycle(
     lifecycle: LifecycleId,
@@ -790,14 +794,14 @@ private[scalive] object RuntimeObserver:
     withDiagnostic(emitEvent, RuntimeDiagnostic.Disabled)
 
   def withLifecycleObserver(observer: LifecycleObserver): RuntimeObserver =
-    new RuntimeObserver(logEvent, RuntimeDiagnostic.Disabled, observer)
+    new RuntimeObserver(logEvent, RuntimeDiagnostic.Disabled, observer, LifecycleTurnScope.none)
 
   def withDiagnostic(
     emitEvent: RuntimeEvent => UIO[Unit],
     diagnostic: RuntimeDiagnostic,
     lifecycleObserver: LifecycleObserver = LifecycleObserver.none
   ): RuntimeObserver =
-    new RuntimeObserver(emitEvent, diagnostic, lifecycleObserver)
+    new RuntimeObserver(emitEvent, diagnostic, lifecycleObserver, LifecycleTurnScope.none)
 
   def connected(correlation: RuntimeCorrelation): ConnectedLifecycleContext =
     ConnectedLifecycleContext(

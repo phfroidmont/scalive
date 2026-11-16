@@ -31,3 +31,22 @@ _Avoid_: external signal, shared signal
 A row that a render leaves as it was, because its entry and every outside signal it reads are
 unchanged.
 _Avoid_: cached row, skipped row, reused row
+
+## Lifecycles
+
+**Lifecycle**:
+One run of a LiveView, from its mount to its close. A page view has a disconnected lifecycle for the
+HTTP render and a connected one for each join over the WebSocket.
+_Avoid_: session (a live session groups routes), process, instance
+
+**Connected turn**:
+One unit of work that a connected lifecycle processes from start to finish before it takes the
+next: the bootstrap turn, which mounts the LiveView, or the handling of one browser event, message,
+async result, subscription value, upload step or live patch, with its render and commit.
+_Avoid_: tick, cycle, step, request
+
+**Turn scope**:
+What an application sets up before each connected turn and releases after it, so that it is active
+while the turn runs, such as a tracing span or a log annotation. It never receives the turn, so it
+cannot change it.
+_Avoid_: turn wrapper, turn middleware, turn aspect

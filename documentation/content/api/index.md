@@ -79,3 +79,8 @@ compares it with asynchronous work and subscriptions.
 observe every route's lifecycle events. The
 [lifecycle observability guide](../guides/lifecycle-observability.md#choose-the-observation-boundary)
 defines their coverage and fixed metric contract.
+@:apiSymbol(trait:scalive.LifecycleTurnScope)`LifecycleTurnScope`@:@ sets up
+what should be active while each connected turn runs, such as a tracing span,
+from the @:apiSymbol(class:scalive.LifecycleTurn)`LifecycleTurn`@:@ that
+describes the turn; see
+[keep a span or log context active during each turn](../guides/lifecycle-observability.md#turn-scope).

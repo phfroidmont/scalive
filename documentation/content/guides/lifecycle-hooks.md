@@ -25,6 +25,7 @@ Pick the tool that matches what you want to do:
 | Apply one policy at a lifecycle stage across many messages: authorization, protocol interception, or logging that needs the model and message | A lifecycle hook | `hooks` on the view or component, or `ctx.hooks` |
 | Check one policy before every connected application turn of a route or session, ahead of all hooks and handlers | A connected-turn guard | A route or live-session builder |
 | Record route-wide operational events and metrics without changing the lifecycle | A `LifecycleObserver` | Route assembly with `ZioHttp.routes` |
+| Keep a tracing span, log annotation, or other `FiberRef` value active while every connected turn runs, without changing the turn | A `LifecycleTurnScope` | Route assembly with `ZioHttp.routes` |
 
 Keep normal domain transitions in `handleMessage`, route changes in
 `handleParams`, and events pushed from JavaScript in `browserEvents`, which turns
@@ -33,7 +34,11 @@ them into messages. A hook should not become a second, hidden message handler.
 An @:apiSymbol(trait:scalive.LifecycleObserver)`LifecycleObserver`@:@ receives
 structured classifications, cannot alter an operation, and is isolated from
 lifecycle failure. [Lifecycle observability](lifecycle-observability.md#choose-the-observation-boundary)
-defines that boundary. Connected-turn guards are a routing feature;
+defines that boundary. A
+@:apiSymbol(trait:scalive.LifecycleTurnScope)`LifecycleTurnScope`@:@ runs
+before and after each turn on the turn's own fiber, and cannot alter the turn
+either; see [keep a span or log context active during each turn](lifecycle-observability.md#turn-scope).
+Connected-turn guards are a routing feature;
 [Guard every connected application turn](#connected-turn-guards) covers them
 after the hook sections.
 

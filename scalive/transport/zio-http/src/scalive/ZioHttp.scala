@@ -139,16 +139,18 @@ object ZioHttp:
     * include the Phoenix clients and a script that connects them; see [[LiveClient]]. It fails with
     * [[AssemblyException]] when the application is invalid, for example when two named live
     * sessions share a name or a route matches one of those browser files. `observer` receives
-    * structured lifecycle events. Ordinary HTTP handlers that need the same CSRF, flash, or cookie
-    * policy build a [[LiveSecurity]] from the same `config`.
+    * structured lifecycle events. `turnScope` sets up what should be active while each connected
+    * turn runs, such as a tracing span; see [[LifecycleTurnScope]]. Ordinary HTTP handlers that
+    * need the same CSRF, flash, or cookie policy build a [[LiveSecurity]] from the same `config`.
     */
   def routes[R](
     application: LiveApplication[R],
     config: ZioHttpConfig,
     observer: LifecycleObserver = LifecycleObserver.none,
-    client: LiveClient = LiveClient.Packaged
+    client: LiveClient = LiveClient.Packaged,
+    turnScope: LifecycleTurnScope = LifecycleTurnScope.none
   ): IO[AssemblyException, Routes[R, Nothing]] =
-    routes(application, config, observer, RuntimeObserverFactory.logging, client)
+    routes(application, config, observer, turnScope, RuntimeObserverFactory.logging, client)
 
   private[scalive] def routes[R](
     application: LiveApplication[R],
@@ -156,12 +158,20 @@ object ZioHttp:
     observerFactory: RuntimeObserverFactory,
     client: LiveClient
   ): IO[AssemblyException, Routes[R, Nothing]] =
-    routes(application, config, LifecycleObserver.none, observerFactory, client)
+    routes(
+      application,
+      config,
+      LifecycleObserver.none,
+      LifecycleTurnScope.none,
+      observerFactory,
+      client
+    )
 
   private def routes[R](
     application: LiveApplication[R],
     config: ZioHttpConfig,
     lifecycleObserver: LifecycleObserver,
+    turnScope: LifecycleTurnScope,
     observerFactory: RuntimeObserverFactory,
     client: LiveClient
   ): IO[AssemblyException, Routes[R, Nothing]] =
@@ -190,6 +200,7 @@ object ZioHttp:
         config,
         browserStatics,
         lifecycleObserver,
+        turnScope,
         observerFactory
       )
       // ZIO HTTP prefers literal and parameter segments, so any other route still wins over this.
@@ -1549,6 +1560,7 @@ object ZioHttp:
     config: ZioHttpConfig,
     browserStatics: Vector[String],
     lifecycleObserver: LifecycleObserver,
+    turnScope: LifecycleTurnScope,
     observerFactory: RuntimeObserverFactory
   ): Route[R, Nothing] =
     val pattern = RoutePattern(Method.GET, socketPath / "websocket")
@@ -1562,7 +1574,10 @@ object ZioHttp:
       else
         val csrfCookieValue = request.cookie(CsrfCookieName).map(_.content)
         val csrfToken       = request.queryParam("_csrf_token")
-        val observer = observerFactory.connect(request).withLifecycleObserver(lifecycleObserver)
+        val observer        = observerFactory
+          .connect(request)
+          .withLifecycleObserver(lifecycleObserver)
+          .withTurnScope(turnScope)
         val socketHandler = Handler.webSocket { channel =>
           ConnectionSupervisor.freshConnectionId.flatMap { connectionId =>
             ZIO.logAnnotate(RuntimeLog.ConnectionId, connectionId.value.toString) {
@@ -1638,6 +1653,8 @@ object ZioHttp:
     eventGate: Semaphore,
     correlations: Ref[Map[CommandId, (PhoenixRef, PhoenixRef)]],
     currentUrl: Ref[URL],
+    // The path pattern of the route of the page this LiveView joined in.
+    route: String,
     parent: Option[(LifecycleId, Epoch)],
     isRoot: Boolean,
     sticky: Boolean,
@@ -2509,7 +2526,8 @@ object ZioHttp:
                         metadata = RootConnectionMetadata(
                                      staticChanged = prepared.joined.staticChanged,
                                      connectParams = join.params,
-                                     initialFlash = flash
+                                     initialFlash = flash,
+                                     route = admitted.route.routeLabel
                                    )
                         sink = lifecycleSink(
                                  config,
@@ -2583,6 +2601,7 @@ object ZioHttp:
                                   eventGate,
                                   correlations,
                                   currentUrl,
+                                  admitted.route.routeLabel,
                                   parent = None,
                                   isRoot = true,
                                   sticky = false,
@@ -2687,7 +2706,7 @@ object ZioHttp:
       inherited   <- parent.currentUrl.get
       url         <- ZIO.fromEither(nestedJoinUrl(join.url, inherited))
       reservation <- supervisor.reserveNested(claims).mapError(_.toString)
-    yield (claims, url, reservation)
+    yield (claims, url, reservation, parent.route)
 
     admitted.foldZIO(
       error =>
@@ -2703,7 +2722,7 @@ object ZioHttp:
         ) *>
           logJoinRejected(topic, error) *>
           writer.offer(PhoenixOutput.error(joinRef, ref, topic, staleReason)),
-      (claims, url, reservation) =>
+      (claims, url, reservation, route) =>
         (for
           renderedState   <- Ref.make(Option.empty[PhoenixRenderedState])
           projectionGate  <- Semaphore.make(1L)
@@ -2714,7 +2733,8 @@ object ZioHttp:
           metadata = RootConnectionMetadata(
                        staticChanged = false,
                        connectParams = join.params,
-                       initialFlash = Map.empty
+                       initialFlash = Map.empty,
+                       route = route
                      )
           failureNotifier = ConnectionSupervisor.NestedFailureNotifier(
                               onStart = error =>
@@ -2774,20 +2794,22 @@ object ZioHttp:
                             case error => LifecycleStartFailed(error)
                           }
           _ <- connectionReady.succeed(connection)
-          entry = JoinedLifecycle(
-                    NestedTopic(topic),
-                    effectiveRef,
-                    connection,
-                    renderedState,
-                    projectionGate,
-                    eventGate,
-                    correlations,
-                    currentUrl,
-                    parent = Some(claims.parentLifecycle -> claims.parentEpoch),
-                    isRoot = false,
-                    sticky = reservation.registration.sticky,
-                    linkedParentOnCrash = reservation.registration.linkParentOnCrash
-                  )
+          entry =
+            JoinedLifecycle(
+              NestedTopic(topic),
+              effectiveRef,
+              connection,
+              renderedState,
+              projectionGate,
+              eventGate,
+              correlations,
+              currentUrl,
+              route,
+              parent = Some(claims.parentLifecycle -> claims.parentEpoch),
+              isRoot = false,
+              sticky = reservation.registration.sticky,
+              linkedParentOnCrash = reservation.registration.linkParentOnCrash
+            )
           _ <- joined.update(_.updated(topic, entry))
           _ <- monitorLifecycle(joined, registration, supervisor, writer, entry).forkScoped
           _ <- activateInstalledLifecycle(

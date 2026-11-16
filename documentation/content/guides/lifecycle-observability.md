@@ -30,7 +30,8 @@ telemetry, and infrastructure metrics.
 Use [lifecycle hooks](lifecycle-hooks.md#choose-hooks) when application policy
 must intercept or alter a particular root or component stage. Use a
 `LifecycleObserver` for route-wide operational events that cannot alter the
-observed lifecycle.
+observed lifecycle. Use a [turn scope](#turn-scope) when something must be
+active while a turn runs, such as a tracing span.
 
 ## Register a safe observer {#register-an-observer}
 
@@ -60,6 +61,77 @@ Scalive may add event or classification cases as lifecycle coverage grows. When
 matching an event enum, include a fallback that safely ignores or generically
 records unknown cases so a library upgrade does not introduce a runtime
 `MatchError`.
+
+## Keep a span or log context active during each turn {#turn-scope}
+
+An observer hears about a turn after it ends, so it cannot make anything active
+while the turn runs. ZIO HTTP middleware cannot either: a connected turn runs on
+a fiber that Scalive owns, not on the fiber of the WebSocket request. When a
+tracing span, a log annotation, or another `FiberRef` value should cover a
+turn, write a
+@:apiSymbol(trait:scalive.LifecycleTurnScope)`LifecycleTurnScope`@:@. This one
+gives every log line of a turn an annotation and a log span named after the
+turn kind and the route:
+
+@:sourceRegion(documentation/fixtures/guides/src/configuration/Configuration.scala, configuration-turn-scope)
+
+Before each connected turn, Scalive runs `open` in a ZIO `Scope` that it owns,
+then runs the turn on the same fiber, then closes the scope. Whatever `open`
+sets up with scoped operators, such as `ZIO.logAnnotateScoped`,
+`ZIO.logSpanScoped`, `FiberRef.locallyScoped`, or the scoped span of a tracing
+library, is therefore visible to the turn's connected-turn guards, hooks,
+handlers, rendering, and commit, and to the fibers they start. It is gone
+before the next turn starts. A database call a handler makes inside a scoped
+span becomes a child of that span.
+
+A turn is the bootstrap turn, which mounts the LiveView, or a turn for a browser
+event, a component browser event, a message, an async result, a subscription
+value, an upload step, or a live patch. Turns that Scalive starts itself, such
+as the one for a message a component sends its owner, are included, and so are
+the turns of nested LiveViews. The disconnected HTTP render is not a connected
+turn: it runs on the request's fiber, so ZIO HTTP middleware covers it.
+
+The @:apiSymbol(class:scalive.LifecycleTurn)`LifecycleTurn`@:@ that `open`
+receives describes the turn without application data:
+
+| Field | Meaning |
+| --- | --- |
+| `lifecycle` | The connection and lifecycle that run the turn. |
+| `turnId` | The turn ID that `TurnSucceeded` and `TurnFailed` report for this turn. |
+| `commandId` | The command that started the turn, as in those events, or `None` for the bootstrap turn and turns that Scalive starts itself. |
+| `kind` | The source of the work, such as `BrowserEvent` or `ParamsPatch`. |
+| `target` | Whether the LiveView is the root LiveView of its page or a nested one. |
+| `route` | The path pattern of the page's route, such as `/users/{id}`, without parameter values. A nested LiveView reports the route of the page it joined in. |
+| `connectParam(param)` | A [connect parameter](client-setup.md#read-connect-metadata) the browser sent when the LiveView joined, read through a typed `ConnectParam`. |
+
+It carries no model, message, browser event payload, credential, or session
+claim. Connect parameters come from the browser and are untrusted: use one to
+correlate a span with something the browser knows, such as a browser telemetry
+session ID, never as a security signal.
+
+A finalizer registered with `ZIO.addFinalizerExit` receives the turn's outcome.
+The exit succeeds when the turn succeeds, including when a connected-turn guard
+halts it. It fails with the same `LifecycleError` that `TurnFailed` reports
+when the turn fails, and it is an interruption when the lifecycle closes during
+the turn:
+
+@:sourceRegion(documentation/fixtures/guides/src/configuration/Configuration.scala, configuration-turn-scope-outcome)
+
+Pass the turn scope as the `turnScope` argument of `ZioHttp.routes`. `andThen`
+combines two of them: they open in order and close in reverse order.
+
+@:sourceRegion(documentation/fixtures/guides/src/configuration/Configuration.scala, configuration-turn-scope-routes)
+
+A turn scope never receives the turn, so it cannot interrupt, skip, repeat, or
+detach it. If `open` dies, Scalive logs a warning, closes what that turn scope
+had acquired, and runs the turn without it. If a finalizer dies, Scalive logs a
+warning and the turn's outcome stands. The lifecycle waits for `open` and for
+the finalizers and does not interrupt them, so keep them as fast as an
+observer and hand slow export to a bounded queue.
+
+Mount aspects [annotate logs](live-sessions-and-mount-aspects.md#annotate-logs)
+for a whole lifecycle; a turn scope is the per-turn counterpart and does not
+replace them.
 
 ## Publish the built-in metrics {#publish-built-in-metrics}
 

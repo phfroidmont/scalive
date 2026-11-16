@@ -215,6 +215,40 @@ object ComponentRuntimeSpec extends ZIOSpecDefault:
         )
       }
     },
+    test("a turn scope opens without a command ID for the turn that delivers a component's output") {
+      ZIO.scoped {
+        for
+          order      <- Ref.make(Vector.empty[String])
+          rootOutput <- Ref.make(Vector.empty[Int])
+          turns      <- Ref.make(Vector.empty[LifecycleTurn])
+          sink       <- Queue.unbounded[ConnectionOutput]
+          connection <- RootConnection.start(
+                          config,
+                          metadata,
+                          root(Vector(component(RecordingComponent(order), "one")), rootOutput),
+                          sink.offer(_).unit,
+                          observer = RuntimeObserver.noop.withTurnScope(
+                            LifecycleTurnScope.fromFunction(turn => turns.update(_ :+ turn))
+                          )
+                        )
+          _   <- sink.take
+          ids <- connection.inspectComponentIds
+          command = CommandId.fresh().toOption.get
+          _       <- connection.submitComponentMessage(command, ids.head, 3)
+          _       <- sink.take
+          _       <- sink.take
+          emitted <- rootOutput.get
+          opened  <- turns.get
+        yield assertTrue(
+          emitted == Vector(5),
+          opened.map(turn => turn.commandId -> turn.kind) == Vector(
+            None                -> LifecycleTurnKind.Bootstrap,
+            Some(command.value) -> LifecycleTurnKind.ComponentBrowserEvent,
+            None                -> LifecycleTurnKind.Internal
+          )
+        )
+      }
+    },
     test("targets exact component identities, honors async halt, and observes removal cleanup") {
       ZIO.scoped {
         for

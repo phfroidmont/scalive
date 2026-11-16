@@ -8,6 +8,7 @@ import scala.collection.immutable.Queue as ImmutableQueue
 import zio.Cause
 import zio.Clock
 import zio.Exit
+import zio.FiberId
 import zio.IO
 import zio.LogAnnotation
 import zio.Promise
@@ -16,6 +17,7 @@ import zio.Ref
 import zio.Scope
 import zio.Task
 import zio.UIO
+import zio.URIO
 import zio.ZIO
 import zio.http.URL
 
@@ -30,6 +32,7 @@ import scalive.LifecycleFailureStage
 import scalive.LifecycleQueue
 import scalive.LifecycleQueueStatus
 import scalive.LifecycleTurnKind
+import scalive.LifecycleTurnScope
 import scalive.LiveAsyncEvent
 import scalive.LiveAsyncResult
 import scalive.LiveConnectedTurnFailure
@@ -59,7 +62,8 @@ final private[scalive] class SessionKernel[Msg, Model] private (
   sessionScope: Scope.Closeable,
   activeOwner: SessionKernel.ActiveRenderOwner,
   shutdown: Promise[Nothing, Unit],
-  observer: RuntimeObserver):
+  observer: RuntimeObserver,
+  turnScope: Option[SessionKernel.OpenTurnScope]):
   import SessionKernel.*
 
   // Set once a failed turn has logged the failure that crashes this lifecycle.
@@ -277,7 +281,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
 
   private[kernel] def run(ready: Promise[SessionFailure, Unit]): UIO[Unit] =
     Clock.nanoTime.flatMap { bootstrapStarted =>
-      Ref.make(false).flatMap { turnObserved =>
+      inTurn(LifecycleTurnKind.Bootstrap, None) { turn ?=>
         val bootstrap = observer.beginInternal(
           lifecycle,
           RuntimeTraceOperationKind.Join,
@@ -306,7 +310,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                       None,
                       LifecycleTurnKind.Bootstrap,
                       bootstrapStarted
-                    ) *> turnObserved.set(true)
+                    )
                   }
                   .tapError { failure =>
                     observeNewTurnFailedAs(
@@ -317,7 +321,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                         RuntimeObserver.lifecycleFailure(runtimeFailure(failure)),
                         Some(failure)
                       )
-                    ) *> turnObserved.set(true)
+                    )
                   }
                   .map(Right(_))
               case None =>
@@ -325,8 +329,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                   previous = None,
                   draft = ZIO.succeed(draft),
                   work = ImmutableQueue.empty,
-                  command = None,
-                  onTurnStarted = turnObserved.set(true)
+                  command = None
                 ).flatMap {
                   case StagedTurn.Committed(outcome)    => ZIO.succeed(Left(outcome))
                   case StagedTurn.Navigation(candidate) =>
@@ -353,7 +356,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
             case Exit.Success(Left(outcome)) =>
               outcome.uploadCompletion *>
                 ready.succeed(()).unit *>
-                loop(
+                continueLoop(
                   SessionState.Active(epoch, outcome.committed),
                   outcome.work
                 )
@@ -376,40 +379,32 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                   )
             case Exit.Failure(cause) if cause.isInterruptedOnly =>
               val failure = SessionFailure.Interrupted()
-              turnObserved.get.flatMap {
-                case true  => ZIO.unit
-                case false =>
-                  observeNewTurnFailedAs(
-                    None,
-                    LifecycleTurnKind.Bootstrap,
-                    bootstrapStarted,
-                    LifecycleError(LifecycleFailure.Interrupted)
-                  )
-              } *> ready.fail(failure).unit
+              observeNewTurnFailedAs(
+                None,
+                LifecycleTurnKind.Bootstrap,
+                bootstrapStarted,
+                LifecycleError(LifecycleFailure.Interrupted)
+              ).unless(turn.observed) *> ready.fail(failure).unit
             case Exit.Failure(cause) =>
               val failure = failureFrom(cause, SessionStage.BootstrapHandler)
-              turnObserved.get.flatMap {
-                case true  => ZIO.unit
-                case false =>
-                  observeNewTurnFailedAs(
-                    None,
-                    LifecycleTurnKind.Bootstrap,
-                    bootstrapStarted,
-                    LifecycleError(
-                      RuntimeObserver.lifecycleFailure(runtimeFailure(failure)),
-                      Some(failure)
-                    )
-                  )
-              } *> ready.fail(failure).unit *>
+              observeNewTurnFailedAs(
+                None,
+                LifecycleTurnKind.Bootstrap,
+                bootstrapStarted,
+                LifecycleError(
+                  RuntimeObserver.lifecycleFailure(runtimeFailure(failure)),
+                  Some(failure)
+                )
+              ).unless(turn.observed) *> ready.fail(failure).unit *>
                 crash(failure)
-          }.onInterrupt(releaseInterruptedLoop)
-          .onInterrupt(ready.fail(SessionFailure.Interrupted()).unit)
-          .ensuring(cleanupSession)
-      }
+          }
+      }.onInterrupt(releaseInterruptedLoop)
+        .onInterrupt(ready.fail(SessionFailure.Interrupted()).unit)
+        .ensuring(cleanupSession)
     }
   end run
 
-  /** Every turn re-enters the loop in tail position. Wrapping an iteration would keep its state
+  /** Each iteration runs the next one in tail position. Wrapping an iteration would keep its state
     * alive until the session ends, so interrupt cleanup is installed once by `run` and reads the
     * latest input from `loopInput`.
     */
@@ -421,6 +416,56 @@ final private[scalive] class SessionKernel[Msg, Model] private (
       case active: SessionState.Active[Msg, Model]         => activeLoop(active, work)
       case navigating: SessionState.Navigating[Msg, Model] => navigatingLoop(navigating, work)
       case _                                               => ZIO.unit)
+
+  /** Runs one connected turn inside the application's turn scope, then continues the loop.
+    *
+    * A turn ends with `continueLoop` instead of running the next iteration itself, which would put
+    * every later turn inside this turn's scope. The scope opens, the turn runs and the scope closes
+    * on this fiber, in that order, so what the scope sets on the fiber is visible to the turn and
+    * gone after it.
+    */
+  private def inTurn(
+    kind: LifecycleTurnKind,
+    command: Option[CommandId]
+  )(
+    body: RunningTurn ?=> UIO[Unit]
+  ): UIO[Unit] =
+    ZIO.suspendSucceed {
+      val turn   = RunningTurn(TurnId.fresh())
+      val run    = body(using turn)
+      val scoped = (turnScope, turn.id) match
+        case (Some(open), Right(id)) =>
+          ZIO.uninterruptibleMask { restore =>
+            Scope.make.flatMap { scope =>
+              scope.extend(open(id, command, kind)) *>
+                restore(run).onExit(exit => closeTurnScope(scope, turn, exit))
+            }
+          }
+        // A turn without an ID fails before it reports an outcome, so there is nothing to describe.
+        case _ => run
+      scoped *> ZIO.suspendSucceed(
+        if turn.continues then loopInput.get.flatMap((state, work) => loop(state, work))
+        else ZIO.unit
+      )
+    }
+
+  private def closeTurnScope(
+    scope: Scope.Closeable,
+    turn: RunningTurn,
+    exit: Exit[Nothing, Unit]
+  ): UIO[Unit] =
+    // A turn reports no outcome when it rejects its command, such as an event from an unknown
+    // binding, or when its fiber is interrupted.
+    val outcome = turn.outcome.getOrElse(exit)
+    scope.close(outcome).catchAllCause(LifecycleTurnScope.logFinalizerDefect)
+
+  /** Ends a turn by naming where the loop continues once the turn's scope has closed. */
+  private def continueLoop(
+    state: SessionState[Msg, Model],
+    work: ImmutableQueue[Work[Msg, Model]]
+  )(using turn: RunningTurn
+  ): UIO[Unit] =
+    loopInput.set(state -> work) *> ZIO.succeed { turn.continues = true }
 
   private def releaseInterruptedLoop: UIO[Unit] =
     loopInput.get.flatMap { case (state, work) =>
@@ -438,51 +483,57 @@ final private[scalive] class SessionKernel[Msg, Model] private (
   ): UIO[Unit] =
     work.dequeueOption match
       case Some((Work.Continuation(message, initiator), remaining)) =>
-        observer.beginInternal(
-          lifecycle,
-          RuntimeTraceOperationKind.ServerMessage,
-          initiator,
-          Some(message)
-        ) *>
-          guardActiveTurn(state, remaining, None)(
-            executeTurn(state, remaining, logic.handle(state.committed.model, message), None)
-          )
-      case Some((Work.ComponentContinuation(component, message, initiator), remaining)) =>
-        observer.beginInternal(
-          lifecycle,
-          RuntimeTraceOperationKind.ServerMessage,
-          initiator,
-          Some(message)
-        ) *>
-          guardActiveTurn(state, remaining, None)(
-            executeComponentTurn(
-              state,
-              remaining,
-              component,
-              ComponentAction.Message(message),
-              None
+        inTurn(LifecycleTurnKind.Internal, None) {
+          observer.beginInternal(
+            lifecycle,
+            RuntimeTraceOperationKind.ServerMessage,
+            initiator,
+            Some(message)
+          ) *>
+            guardActiveTurn(state, remaining, None)(
+              executeTurn(state, remaining, logic.handle(state.committed.model, message), None)
             )
-          )
+        }
+      case Some((Work.ComponentContinuation(component, message, initiator), remaining)) =>
+        inTurn(LifecycleTurnKind.Internal, None) {
+          observer.beginInternal(
+            lifecycle,
+            RuntimeTraceOperationKind.ServerMessage,
+            initiator,
+            Some(message)
+          ) *>
+            guardActiveTurn(state, remaining, None)(
+              executeComponentTurn(
+                state,
+                remaining,
+                component,
+                ComponentAction.Message(message),
+                None
+              )
+            )
+        }
       case Some((Work.ManagedAsyncContinuation(owner, completion), remaining)) =>
-        observer.beginInternal(
-          lifecycle,
-          RuntimeTraceOperationKind.AsyncCompletion,
-          RuntimeTraceInitiator.Runtime,
-          Some(completion.message)
-        ) *>
-          guardActiveTurn(state, remaining, None)(
-            owner match
-              case OwnerId.Root(_) =>
-                executeManagedRootAsync(state, remaining, completion, None, None)
-              case OwnerId.Component(_, component) =>
-                executeComponentTurn(
-                  state,
-                  remaining,
-                  component,
-                  ComponentAction.ManagedAsync(completion),
-                  None
-                )
-          )
+        inTurn(LifecycleTurnKind.Internal, None) {
+          observer.beginInternal(
+            lifecycle,
+            RuntimeTraceOperationKind.AsyncCompletion,
+            RuntimeTraceInitiator.Runtime,
+            Some(completion.message)
+          ) *>
+            guardActiveTurn(state, remaining, None)(
+              owner match
+                case OwnerId.Root(_) =>
+                  executeManagedRootAsync(state, remaining, completion, None, None)
+                case OwnerId.Component(_, component) =>
+                  executeComponentTurn(
+                    state,
+                    remaining,
+                    component,
+                    ComponentAction.ManagedAsync(completion),
+                    None
+                  )
+            )
+        }
       case Some((Work.Correlated(deferred), remaining)) =>
         executeEnvelope(state, remaining, deferred.command, deferred.input, deferred.response)
       case None =>
@@ -504,293 +555,316 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     command: SessionCommand[Msg],
     response: Promise[SessionRejection, TurnResult]
   ): UIO[Unit] =
+    if command.expectedEpoch != state.epoch then
+      response.fail(SessionRejection.InvalidEpoch(state.epoch, command.expectedEpoch)).unit *>
+        loop(state, work)
+    else
+      inTurn(RuntimeObserver.lifecycleTurnKind(commandDescriptor(command)._1), Some(commandId))(
+        executeCommand(state, work, commandId, command, response)
+      )
+
+  private def executeCommand(
+    state: SessionState.Active[Msg, Model],
+    work: ImmutableQueue[Work[Msg, Model]],
+    commandId: CommandId,
+    command: SessionCommand[Msg],
+    response: Promise[SessionRejection, TurnResult]
+  )(using RunningTurn
+  ): UIO[Unit] =
     val tracked = trackedCommand(commandId, command, response)
     command match
-      case SessionCommand.ParamsPatch(actualEpoch, destination) =>
-        if actualEpoch != state.epoch then
-          response.fail(SessionRejection.InvalidEpoch(state.epoch, actualEpoch)).unit *>
-            loop(state, work)
-        else
-          guardActiveTurn(
+      case SessionCommand.ParamsPatch(_, destination) =>
+        guardActiveTurn(
+          state,
+          work,
+          Some(tracked),
+          haltCommitted = Some(state.committed.copy(url = destination)),
+          reloadUrl = Some(destination)
+        )(
+          executeTurn(
             state,
             work,
-            Some(tracked),
-            haltCommitted = Some(state.committed.copy(url = destination)),
-            reloadUrl = Some(destination)
-          )(
-            executeTurn(
-              state,
-              work,
-              logic.handleParams(state.committed.model, destination),
-              Some(tracked)
-            )
+            logic.handleParams(state.committed.model, destination),
+            Some(tracked)
           )
+        )
       case _ =>
-        if command.expectedEpoch != state.epoch then
-          response.fail(SessionRejection.InvalidEpoch(state.epoch, command.expectedEpoch)).unit *>
-            loop(state, work)
-        else
-          def executeRootEvent(
-            draft: TurnDraft[Msg, Model],
-            message: Msg,
-            event: Option[LiveEvent]
-          ): UIO[Unit] =
-            val handled = (logic.handleEvent, event) match
-              case (Some(handler), Some(value)) => handler(draft, message, value)
-              case _                            => logic.handle(draft.model, message)
-            observer.message(commandCorrelation(state.epoch, commandId), message) *>
-              executeTurn(state, work, handled, Some(tracked))
+        def executeRootEvent(
+          draft: TurnDraft[Msg, Model],
+          message: Msg,
+          event: Option[LiveEvent]
+        ): UIO[Unit] =
+          val handled = (logic.handleEvent, event) match
+            case (Some(handler), Some(value)) => handler(draft, message, value)
+            case _                            => logic.handle(draft.model, message)
+          observer.message(commandCorrelation(state.epoch, commandId), message) *>
+            executeTurn(state, work, handled, Some(tracked))
 
-          def execute: UIO[Unit] = command match
-            case client: SessionCommand.ClientEvent =>
-              val intercepted = client.event match
-                case Some(event) => logic.interceptClientEvent(state.committed.model, event, None)
-                case None        =>
-                  ZIO.succeed(ClientEventInterception.Continue(TurnDraft(state.committed.model)))
-              Clock.nanoTime.flatMap { handlerStarted =>
-                controlled(phase(SessionStage.Handler)(intercepted)).exit.flatMap {
-                  case Exit.Success(ClientEventInterception.Halt(draft)) =>
-                    executeTurn(state, work, ZIO.succeed(draft), Some(tracked))
-                  case Exit.Success(ClientEventInterception.Dispatch(draft, message)) =>
-                    executeRootEvent(draft, message, client.event)
-                  case Exit.Success(ClientEventInterception.Continue(draft)) =>
-                    resolveClient(state, client).flatMap {
-                      case Left(SessionRejection.UnknownBinding(binding))
-                          if state.committed.render.generates(binding) =>
-                        ignoreRemovedBinding(binding) *> haltActiveTurn(state, work, Some(tracked))
-                      case Left(rejection) => response.fail(rejection).unit *> loop(state, work)
-                      case Right(ResolvedClient.Root(message)) =>
-                        executeRootEvent(draft, message, client.event)
-                      case Right(ResolvedClient.Component(component, message)) =>
-                        executeComponentTurn(
-                          state,
-                          work,
-                          component,
-                          ComponentAction.Message(message),
+        def execute: UIO[Unit] = command match
+          case client: SessionCommand.ClientEvent =>
+            val intercepted = client.event match
+              case Some(event) => logic.interceptClientEvent(state.committed.model, event, None)
+              case None        =>
+                ZIO.succeed(ClientEventInterception.Continue(TurnDraft(state.committed.model)))
+            Clock.nanoTime.flatMap { handlerStarted =>
+              controlled(phase(SessionStage.Handler)(intercepted)).exit.flatMap {
+                case Exit.Success(ClientEventInterception.Halt(draft)) =>
+                  executeTurn(state, work, ZIO.succeed(draft), Some(tracked))
+                case Exit.Success(ClientEventInterception.Dispatch(draft, message)) =>
+                  executeRootEvent(draft, message, client.event)
+                case Exit.Success(ClientEventInterception.Continue(draft)) =>
+                  resolveClient(state, client).flatMap {
+                    case Left(SessionRejection.UnknownBinding(binding))
+                        if state.committed.render.generates(binding) =>
+                      ignoreRemovedBinding(binding) *> haltActiveTurn(state, work, Some(tracked))
+                    case Left(rejection) =>
+                      response.fail(rejection).unit *> continueLoop(state, work)
+                    case Right(ResolvedClient.Root(message)) =>
+                      executeRootEvent(draft, message, client.event)
+                    case Right(ResolvedClient.Component(component, message)) =>
+                      executeComponentTurn(
+                        state,
+                        work,
+                        component,
+                        ComponentAction.Message(message),
+                        Some(tracked),
+                        initialDraft = Some(draft)
+                      )
+                  }
+                case Exit.Failure(cause) if cause.isInterruptedOnly =>
+                  observeNewTurnFailed(
+                    Some(tracked),
+                    handlerStarted,
+                    LifecycleError(LifecycleFailure.Interrupted)
+                  ) *> response.fail(SessionRejection.Terminal("closed")).unit
+                case Exit.Failure(cause) =>
+                  failHandlerTurn(
+                    state,
+                    Some(tracked),
+                    handlerStarted,
+                    failureFrom(cause, SessionStage.Handler)
+                  )
+              }
+            }
+          case SessionCommand.Message(_, message) =>
+            observer.message(commandCorrelation(state.epoch, commandId), message) *>
+              executeTurn(
+                state,
+                work,
+                logic.handleInfo.getOrElse(logic.handle)(state.committed.model, message),
+                Some(tracked)
+              )
+          case SessionCommand.ManagedAsync(_, token, result) =>
+            state.committed.managedResources.current(token) match
+              case Some(ManagedResource.Async(_, _, mapResult)) =>
+                Clock.nanoTime.flatMap { handlerStarted =>
+                  controlled(phase(SessionStage.Handler)(ZIO.attempt(mapResult(result)))).exit
+                    .flatMap {
+                      case Exit.Success(message) =>
+                        val name = token.key match
+                          case ResourceKey.Async(value) => value
+                          case _                        => ""
+                        val completion = ManagedAsyncCompletion(name, result, message)
+                        observer.message(commandCorrelation(state.epoch, commandId), message) *>
+                          (token.owner match
+                            case OwnerId.Root(_) =>
+                              executeManagedRootAsync(
+                                state,
+                                work,
+                                completion,
+                                Some(token),
+                                Some(tracked)
+                              )
+                            case OwnerId.Component(_, component) =>
+                              executeComponentTurn(
+                                state,
+                                work,
+                                component,
+                                ComponentAction.ManagedAsync(completion),
+                                Some(tracked),
+                                Vector(ResourceOperation.Complete(token))
+                              ))
+                      case Exit.Failure(cause) if cause.isInterruptedOnly =>
+                        observeNewTurnFailed(
                           Some(tracked),
-                          initialDraft = Some(draft)
+                          handlerStarted,
+                          LifecycleError(LifecycleFailure.Interrupted)
+                        ) *> response.fail(SessionRejection.Terminal("closed")).unit
+                      case Exit.Failure(cause) =>
+                        failHandlerTurn(
+                          state,
+                          Some(tracked),
+                          handlerStarted,
+                          failureFrom(cause, SessionStage.Handler)
                         )
                     }
-                  case Exit.Failure(cause) if cause.isInterruptedOnly =>
-                    observeNewTurnFailed(
-                      Some(tracked),
-                      handlerStarted,
-                      LifecycleError(LifecycleFailure.Interrupted)
-                    ) *> response.fail(SessionRejection.Terminal("closed")).unit
-                  case Exit.Failure(cause) =>
-                    failHandlerTurn(
-                      state,
-                      Some(tracked),
-                      handlerStarted,
-                      failureFrom(cause, SessionStage.Handler)
-                    )
                 }
-              }
-            case SessionCommand.Message(_, message) =>
-              observer.message(commandCorrelation(state.epoch, commandId), message) *>
-                executeTurn(
+              case _ =>
+                response.fail(SessionRejection.StaleResource(token)).unit *> continueLoop(
                   state,
-                  work,
-                  logic.handleInfo.getOrElse(logic.handle)(state.committed.model, message),
-                  Some(tracked)
+                  work
                 )
-            case SessionCommand.ManagedAsync(_, token, result) =>
-              state.committed.managedResources.current(token) match
-                case Some(ManagedResource.Async(_, _, mapResult)) =>
-                  Clock.nanoTime.flatMap { handlerStarted =>
-                    controlled(phase(SessionStage.Handler)(ZIO.attempt(mapResult(result)))).exit
-                      .flatMap {
-                        case Exit.Success(message) =>
-                          val name = token.key match
-                            case ResourceKey.Async(value) => value
-                            case _                        => ""
-                          val completion = ManagedAsyncCompletion(name, result, message)
-                          observer.message(commandCorrelation(state.epoch, commandId), message) *>
-                            (token.owner match
-                              case OwnerId.Root(_) =>
-                                executeManagedRootAsync(
-                                  state,
-                                  work,
-                                  completion,
-                                  Some(token),
-                                  Some(tracked)
-                                )
-                              case OwnerId.Component(_, component) =>
-                                executeComponentTurn(
-                                  state,
-                                  work,
-                                  component,
-                                  ComponentAction.ManagedAsync(completion),
-                                  Some(tracked),
-                                  Vector(ResourceOperation.Complete(token))
-                                ))
-                        case Exit.Failure(cause) if cause.isInterruptedOnly =>
-                          observeNewTurnFailed(
-                            Some(tracked),
-                            handlerStarted,
-                            LifecycleError(LifecycleFailure.Interrupted)
-                          ) *> response.fail(SessionRejection.Terminal("closed")).unit
-                        case Exit.Failure(cause) =>
-                          failHandlerTurn(
-                            state,
-                            Some(tracked),
-                            handlerStarted,
-                            failureFrom(cause, SessionStage.Handler)
-                          )
-                      }
-                  }
-                case _ =>
-                  response.fail(SessionRejection.StaleResource(token)).unit *> loop(state, work)
-            case SessionCommand.ManagedSubscription(_, token, message) =>
-              state.committed.managedResources.current(token) match
-                case Some(_: ManagedResource.RunningSubscription) =>
-                  token.owner match
-                    case OwnerId.Root(_) =>
-                      observer.message(commandCorrelation(state.epoch, commandId), message) *>
-                        executeTurn(
-                          state,
-                          work,
-                          logic.handleInfo.getOrElse(logic.handle)(
-                            state.committed.model,
-                            message.asInstanceOf[Msg]
-                          ),
-                          Some(tracked)
-                        )
-                    case OwnerId.Component(_, component) =>
-                      observer.message(commandCorrelation(state.epoch, commandId), message) *>
-                        executeComponentTurn(
-                          state,
-                          work,
-                          component,
-                          ComponentAction.Message(message),
-                          Some(tracked)
-                        )
-                case _ =>
-                  response.fail(SessionRejection.StaleResource(token)).unit *> loop(state, work)
-            case SessionCommand.ManagedSubscriptionEnded(_, token) =>
-              state.committed.managedResources.current(token) match
-                case Some(subscription: ManagedResource.Subscription) =>
-                  subscription.ended.get.flatMap { ended =>
-                    if ended then
+          case SessionCommand.ManagedSubscription(_, token, message) =>
+            state.committed.managedResources.current(token) match
+              case Some(_: ManagedResource.RunningSubscription) =>
+                token.owner match
+                  case OwnerId.Root(_) =>
+                    observer.message(commandCorrelation(state.epoch, commandId), message) *>
                       executeTurn(
                         state,
                         work,
-                        ZIO.succeed(
-                          TurnDraft(
-                            state.committed.model,
-                            resourceOperations = Vector(ResourceOperation.Complete(token))
-                          )
+                        logic.handleInfo.getOrElse(logic.handle)(
+                          state.committed.model,
+                          message.asInstanceOf[Msg]
                         ),
                         Some(tracked)
                       )
-                    else
-                      response.fail(SessionRejection.StaleResource(token)).unit *> loop(state, work)
-                  }
-                case _ =>
-                  response.fail(SessionRejection.StaleResource(token)).unit *> loop(state, work)
-            case SessionCommand.ComponentMessage(_, component, message) =>
-              executeComponentTurn(
-                state,
-                work,
-                component,
-                ComponentAction.Message(message),
-                Some(tracked)
-              )
-            case SessionCommand.Upload(_, uploadCommand, mutation, publish) =>
-              logic.handleUpload match
-                case Some(handler) =>
-                  executeTurn(
-                    state,
-                    work,
-                    handler(state.committed.model, uploadCommand, mutation),
-                    Some(tracked),
-                    publish = publish
-                  )
-                case None =>
-                  response.fail(SessionRejection.UploadUnavailable).unit *> loop(state, work)
-            case client: SessionCommand.ComponentClientEvent =>
-              val intercepted = client.event match
-                case Some(event) =>
-                  logic.interceptClientEvent(state.committed.model, event, Some(client.component))
-                case None =>
-                  ZIO.succeed(ClientEventInterception.Continue(TurnDraft(state.committed.model)))
-              Clock.nanoTime.flatMap { handlerStarted =>
-                controlled(phase(SessionStage.Handler)(intercepted)).exit.flatMap {
-                  case Exit.Success(ClientEventInterception.Halt(draft)) =>
-                    executeTurn(state, work, ZIO.succeed(draft), Some(tracked))
-                  case Exit.Success(ClientEventInterception.Dispatch(draft, message)) =>
-                    executeRootEvent(draft, message, client.event)
-                  case Exit.Success(ClientEventInterception.Continue(draft)) =>
-                    resolveComponentClient(state, client).flatMap {
-                      case Left(SessionRejection.UnknownBinding(binding))
-                          if state.committed.components
-                            .get(client.component).exists(_.render.generates(binding)) =>
-                        ignoreRemovedBinding(binding) *> haltActiveTurn(state, work, Some(tracked))
-                      case Left(SessionRejection.StaleComponent(component)) =>
-                        ignoreDestroyedComponent(component) *>
-                          haltActiveTurn(state, work, Some(tracked))
-                      case Left(rejection) => response.fail(rejection).unit *> loop(state, work)
-                      case Right((component, action)) =>
-                        executeComponentTurn(
-                          state,
-                          work,
-                          component,
-                          action,
-                          Some(tracked),
-                          initialDraft = Some(draft)
-                        )
-                    }
-                  case Exit.Failure(cause) if cause.isInterruptedOnly =>
-                    observeNewTurnFailed(
-                      Some(tracked),
-                      handlerStarted,
-                      LifecycleError(LifecycleFailure.Interrupted)
-                    ) *> response.fail(SessionRejection.Terminal("closed")).unit
-                  case Exit.Failure(cause) =>
-                    failHandlerTurn(
+                  case OwnerId.Component(_, component) =>
+                    observer.message(commandCorrelation(state.epoch, commandId), message) *>
+                      executeComponentTurn(
+                        state,
+                        work,
+                        component,
+                        ComponentAction.Message(message),
+                        Some(tracked)
+                      )
+              case _ =>
+                response.fail(SessionRejection.StaleResource(token)).unit *> continueLoop(
+                  state,
+                  work
+                )
+          case SessionCommand.ManagedSubscriptionEnded(_, token) =>
+            state.committed.managedResources.current(token) match
+              case Some(subscription: ManagedResource.Subscription) =>
+                subscription.ended.get.flatMap { ended =>
+                  if ended then
+                    executeTurn(
                       state,
-                      Some(tracked),
-                      handlerStarted,
-                      failureFrom(cause, SessionStage.Handler)
+                      work,
+                      ZIO.succeed(
+                        TurnDraft(
+                          state.committed.model,
+                          resourceOperations = Vector(ResourceOperation.Complete(token))
+                        )
+                      ),
+                      Some(tracked)
+                    )
+                  else
+                    response.fail(SessionRejection.StaleResource(token)).unit *> continueLoop(
+                      state,
+                      work
                     )
                 }
+              case _ =>
+                response.fail(SessionRejection.StaleResource(token)).unit *> continueLoop(
+                  state,
+                  work
+                )
+          case SessionCommand.ComponentMessage(_, component, message) =>
+            executeComponentTurn(
+              state,
+              work,
+              component,
+              ComponentAction.Message(message),
+              Some(tracked)
+            )
+          case SessionCommand.Upload(_, uploadCommand, mutation, publish) =>
+            logic.handleUpload match
+              case Some(handler) =>
+                executeTurn(
+                  state,
+                  work,
+                  handler(state.committed.model, uploadCommand, mutation),
+                  Some(tracked),
+                  publish = publish
+                )
+              case None =>
+                response.fail(SessionRejection.UploadUnavailable).unit *> continueLoop(state, work)
+          case client: SessionCommand.ComponentClientEvent =>
+            val intercepted = client.event match
+              case Some(event) =>
+                logic.interceptClientEvent(state.committed.model, event, Some(client.component))
+              case None =>
+                ZIO.succeed(ClientEventInterception.Continue(TurnDraft(state.committed.model)))
+            Clock.nanoTime.flatMap { handlerStarted =>
+              controlled(phase(SessionStage.Handler)(intercepted)).exit.flatMap {
+                case Exit.Success(ClientEventInterception.Halt(draft)) =>
+                  executeTurn(state, work, ZIO.succeed(draft), Some(tracked))
+                case Exit.Success(ClientEventInterception.Dispatch(draft, message)) =>
+                  executeRootEvent(draft, message, client.event)
+                case Exit.Success(ClientEventInterception.Continue(draft)) =>
+                  resolveComponentClient(state, client).flatMap {
+                    case Left(SessionRejection.UnknownBinding(binding))
+                        if state.committed.components
+                          .get(client.component).exists(_.render.generates(binding)) =>
+                      ignoreRemovedBinding(binding) *> haltActiveTurn(state, work, Some(tracked))
+                    case Left(SessionRejection.StaleComponent(component)) =>
+                      ignoreDestroyedComponent(component) *>
+                        haltActiveTurn(state, work, Some(tracked))
+                    case Left(rejection) =>
+                      response.fail(rejection).unit *> continueLoop(state, work)
+                    case Right((component, action)) =>
+                      executeComponentTurn(
+                        state,
+                        work,
+                        component,
+                        action,
+                        Some(tracked),
+                        initialDraft = Some(draft)
+                      )
+                  }
+                case Exit.Failure(cause) if cause.isInterruptedOnly =>
+                  observeNewTurnFailed(
+                    Some(tracked),
+                    handlerStarted,
+                    LifecycleError(LifecycleFailure.Interrupted)
+                  ) *> response.fail(SessionRejection.Terminal("closed")).unit
+                case Exit.Failure(cause) =>
+                  failHandlerTurn(
+                    state,
+                    Some(tracked),
+                    handlerStarted,
+                    failureFrom(cause, SessionStage.Handler)
+                  )
               }
-            case SessionCommand.ParamsPatch(_, _) =>
-              response.fail(SessionRejection.UnexpectedPatch).unit *> loop(state, work)
-          command match
-            case SessionCommand.ManagedSubscription(_, token, _) =>
-              val running = state.committed.managedResources.current(token).exists {
-                case _: ManagedResource.RunningSubscription =>
-                  token.owner match
-                    case OwnerId.Root(_)                 => true
-                    case OwnerId.Component(_, component) =>
-                      state.committed.components.isLive(component)
-                case _ => false
-              }
-              if running then guardActiveTurn(state, work, Some(tracked))(execute)
-              else response.fail(SessionRejection.StaleResource(token)).unit *> loop(state, work)
-            case SessionCommand.Upload(_, _, mutation, _)
-                if logic.guardUpload(state.committed.model, mutation) =>
+            }
+          case SessionCommand.ParamsPatch(_, _) =>
+            response.fail(SessionRejection.UnexpectedPatch).unit *> continueLoop(state, work)
+        command match
+          case SessionCommand.ManagedSubscription(_, token, _) =>
+            val running = state.committed.managedResources.current(token).exists {
+              case _: ManagedResource.RunningSubscription =>
+                token.owner match
+                  case OwnerId.Root(_)                 => true
+                  case OwnerId.Component(_, component) =>
+                    state.committed.components.isLive(component)
+              case _ => false
+            }
+            if running then guardActiveTurn(state, work, Some(tracked))(execute)
+            else
+              response.fail(SessionRejection.StaleResource(token)).unit *> continueLoop(state, work)
+          case SessionCommand.Upload(_, _, mutation, _)
+              if logic.guardUpload(state.committed.model, mutation) =>
+            guardActiveTurn(
+              state,
+              work,
+              Some(tracked),
+              beforeControl = mutation.completeGuarded
+            )(execute)
+          case _: SessionCommand.Upload | _: SessionCommand.ManagedSubscriptionEnded => execute
+          case SessionCommand.ManagedAsync(_, token, _)                              =>
+            if state.committed.managedResources.current(token).isEmpty then execute
+            else
               guardActiveTurn(
                 state,
                 work,
                 Some(tracked),
-                beforeControl = mutation.completeGuarded
+                onHalt = Some(haltManagedAsync(state, work, Some(tracked), token))
               )(execute)
-            case _: SessionCommand.Upload | _: SessionCommand.ManagedSubscriptionEnded => execute
-            case SessionCommand.ManagedAsync(_, token, _)                              =>
-              if state.committed.managedResources.current(token).isEmpty then execute
-              else
-                guardActiveTurn(
-                  state,
-                  work,
-                  Some(tracked),
-                  onHalt = Some(haltManagedAsync(state, work, Some(tracked), token))
-                )(execute)
-            case _ => guardActiveTurn(state, work, Some(tracked))(execute)
-          end match
+          case _ => guardActiveTurn(state, work, Some(tracked))(execute)
+        end match
     end match
-  end executeEnvelope
+  end executeCommand
 
   private def guardActiveTurn(
     state: SessionState.Active[Msg, Model],
@@ -803,6 +877,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     beforeControl: UIO[Unit] = ZIO.unit
   )(
     continue: => UIO[Unit]
+  )(using turn: RunningTurn
   ): UIO[Unit] =
     Clock.nanoTime.flatMap { guardStarted =>
       controlled(phase(SessionStage.ConnectedTurnGuard)(logic.guardConnectedTurn)).exit.flatMap {
@@ -886,6 +961,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     response: Option[TrackedCommand],
     deferred: Vector[DeferredSessionCommand[Msg, Model]],
     startedAtNanos: Option[Long]
+  )(using turn: RunningTurn
   ): UIO[Unit] =
     stageNavigation(
       committed,
@@ -918,6 +994,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     work: ImmutableQueue[Work[Msg, Model]],
     response: Option[TrackedCommand],
     token: ResourceToken
+  )(using turn: RunningTurn
   ): UIO[Unit] =
     val removal = state.committed.managedResources.remove(token.owner, token.key)
     val next    = state.committed.copy(managedResources = removal.index)
@@ -934,21 +1011,22 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     work: ImmutableQueue[Work[Msg, Model]],
     response: Option[TrackedCommand],
     startedAtNanos: Option[Long] = None
+  )(using turn: RunningTurn
   ): UIO[Unit] =
     turnStartedAt(startedAtNanos).flatMap { started =>
       response match
         case None =>
           ZIO
-            .fromEither(TurnId.fresh()).foldZIO(
+            .fromEither(turn.id).foldZIO(
               _ => ZIO.unit,
               turnId => observeTurnSucceeded(turnId, response, started)
-            ) *> loop(state, work)
+            ) *> continueLoop(state, work)
         case Some(command) =>
           val publish = ZIO.uninterruptibleMask { restore =>
             for
               reservation <- reserveOutput(awaitsOutput(response), restore)
               result      <- (for
-                          turnId <- restore(identity(TurnId.fresh()))
+                          turnId <- restore(identity(turn.id))
                           output      = SessionOutput(Some(command.id), RenderDelta.Empty)
                           correlation = RuntimeCorrelation(
                                           connection,
@@ -969,7 +1047,10 @@ final private[scalive] class SessionKernel[Msg, Model] private (
               command.response
                 .succeed(
                   TurnResult(command.id, turnId, state.committed.revision, RenderDelta.Empty)
-                ).unit *> observeTurnSucceeded(turnId, response, started) *> loop(state, work)
+                ).unit *> observeTurnSucceeded(turnId, response, started) *> continueLoop(
+                state,
+                work
+              )
             case Exit.Failure(cause) if cause.isInterruptedOnly =>
               observeNewTurnFailed(
                 response,
@@ -1024,7 +1105,10 @@ final private[scalive] class SessionKernel[Msg, Model] private (
               response
                 .fail(SessionRejection.MismatchedPatch(pending.destination, destination)).unit *>
                 loop(state, work)
-            else acknowledgePatch(state, work, commandId, response)
+            else
+              inTurn(LifecycleTurnKind.ParamsPatch, Some(commandId))(
+                acknowledgePatch(state, work, commandId, response)
+              )
           case _ => deferCommand(state, work, commandId, command, response)
       case Some(Envelope.PatchAcknowledgement(commandId, actualEpoch, destination, response)) =>
         if actualEpoch != state.epoch then
@@ -1034,7 +1118,10 @@ final private[scalive] class SessionKernel[Msg, Model] private (
           response
             .fail(SessionRejection.MismatchedPatch(pending.destination, destination)).unit *>
             loop(state, work)
-        else acknowledgePatch(state, work, commandId, response)
+        else
+          inTurn(LifecycleTurnKind.ParamsPatch, Some(commandId))(
+            acknowledgePatch(state, work, commandId, response)
+          )
       case Some(Envelope.DestroyComponents(tokens)) =>
         // The staged turn still owns snapshots of dormant instances and resources. Destroy only
         // after it commits, and only if those instances are still dormant.
@@ -1076,6 +1163,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     work: ImmutableQueue[Work[Msg, Model]],
     commandId: CommandId,
     response: Promise[SessionRejection, TurnResult]
+  )(using turn: RunningTurn
   ): UIO[Unit] =
     val pending = state.pending
     controlled(commit(Some(pending.committed), pending.candidate, work, None, publish = false)).exit
@@ -1092,11 +1180,16 @@ final private[scalive] class SessionKernel[Msg, Model] private (
               response
             )
           }
+        // A commit that does not finish is reported as the end of the lifecycle, not as a failed
+        // turn, so its outcome is recorded here.
         case Exit.Failure(cause) if cause.isInterruptedOnly =>
-          response.fail(SessionRejection.Terminal("closed")).unit
+          turn.failed(LifecycleError(LifecycleFailure.Interrupted)) *>
+            response.fail(SessionRejection.Terminal("closed")).unit
         case Exit.Failure(cause) =>
           val failure = failureFrom(cause, SessionStage.Handler)
-          val reject  = response.fail(SessionRejection.SessionFailed(failure)).unit *>
+          val reject  = turn.failed(
+            LifecycleError(RuntimeObserver.lifecycleFailure(runtimeFailure(failure)), Some(failure))
+          ) *> response.fail(SessionRejection.SessionFailed(failure)).unit *>
             failDeferred(state.pending.deferred, SessionRejection.SessionFailed(failure))
           failure match
             case _: SessionFailure.CommitDefect => reject *> crash(failure)
@@ -1110,6 +1203,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     work: ImmutableQueue[Work[Msg, Model]],
     commandId: CommandId,
     response: Promise[SessionRejection, TurnResult]
+  )(using turn: RunningTurn
   ): UIO[Unit] =
     val pending = state.pending
     val replay  = work.enqueueAll(pending.deferred.map(Work.Correlated(_)))
@@ -1188,6 +1282,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     response: Option[TrackedCommand],
     startedAtNanos: Long,
     failure: SessionFailure
+  )(using turn: RunningTurn
   ): UIO[Unit] =
     val error = LifecycleError(
       LifecycleFailure.Stage(LifecycleFailureStage.Handler),
@@ -1202,6 +1297,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     draft: Task[TurnDraft[Msg, Model]],
     response: Option[TrackedCommand],
     publish: Boolean = true
+  )(using turn: RunningTurn
   ): UIO[Unit] =
     Clock.nanoTime.flatMap { handlerStarted =>
       controlled(phase(SessionStage.Handler)(draft)).exit.flatMap {
@@ -1246,11 +1342,15 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     response: Option[TrackedCommand],
     resourceOperations: Vector[ResourceOperation] = Vector.empty,
     initialDraft: Option[TurnDraft[Msg, Model]] = None
+  )(using turn: RunningTurn
   ): UIO[Unit] =
     state.committed.components.get(component) match
       case None =>
         val rejection = SessionRejection.StaleComponent(component)
-        response.fold[UIO[Unit]](ZIO.unit)(_.response.fail(rejection).unit) *> loop(state, work)
+        response.fold[UIO[Unit]](ZIO.unit)(_.response.fail(rejection).unit) *> continueLoop(
+          state,
+          work
+        )
       case Some(_) =>
         runTurn(
           Some(state.committed),
@@ -1281,6 +1381,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     completion: ManagedAsyncCompletion,
     token: Option[ResourceToken],
     response: Option[TrackedCommand]
+  )(using turn: RunningTurn
   ): UIO[Unit] =
     val message = completion.message.asInstanceOf[Msg]
     val event   = LiveAsyncEvent(AsyncKey[Any](completion.name), completion.result, message)
@@ -1302,6 +1403,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     response: Option[TrackedCommand],
     publish: Boolean = true,
     startedAtNanos: Option[Long]
+  )(using turn: RunningTurn
   ): UIO[Unit] =
     runTurn(
       Some(state.committed),
@@ -1326,6 +1428,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     work: ImmutableQueue[Work[Msg, Model]],
     result: StagedTurn[Msg, Model],
     response: Option[TrackedCommand]
+  )(using turn: RunningTurn
   ): UIO[Unit] = result match
     case StagedTurn.Committed(outcome) =>
       val complete = response.fold[UIO[Unit]](ZIO.unit) { command =>
@@ -1335,7 +1438,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
           ).unit
       }
       outcome.uploadCompletion *>
-        complete *> loop(SessionState.Active(epoch, outcome.committed), outcome.work)
+        complete *> continueLoop(SessionState.Active(epoch, outcome.committed), outcome.work)
     case StagedTurn.Navigation(candidate) =>
       stageCandidateNavigation(state, work, candidate, response)
 
@@ -1376,6 +1479,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     turnId: TurnId,
     response: Option[TrackedCommand],
     startedAtNanos: Long
+  )(using turn: RunningTurn
   ): UIO[Unit] =
     observeTurnSucceededAs(turnId, response, observedTurnKind(response), startedAtNanos)
 
@@ -1384,9 +1488,10 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     response: Option[TrackedCommand],
     kind: LifecycleTurnKind,
     startedAtNanos: Long
+  )(using turn: RunningTurn
   ): UIO[Unit] =
     Clock.nanoTime.flatMap(ended =>
-      observer.observeLifecycle(
+      turn.succeeded *> observer.observeLifecycle(
         LifecycleEvent.TurnSucceeded(
           connectedLifecycleContext,
           turnId.value,
@@ -1403,6 +1508,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     kind: LifecycleTurnKind,
     startedAtNanos: Long,
     error: LifecycleError
+  )(using turn: RunningTurn
   ): UIO[Unit] =
     Clock.nanoTime.flatMap(ended =>
       observeTurnFailure(
@@ -1421,6 +1527,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     kind: LifecycleTurnKind,
     durationNanos: Long,
     error: LifecycleError
+  )(using turn: RunningTurn
   ): UIO[Unit] =
     val handlerFailed = error.failure match
       case LifecycleFailure.Stage(stage) if HandlerStages.contains(stage) =>
@@ -1434,16 +1541,18 @@ final private[scalive] class SessionKernel[Msg, Model] private (
           )
         )
       case _ => ZIO.unit
-    logTurnFailure(turnId, command, kind, error) *> handlerFailed *> observer.observeLifecycle(
-      LifecycleEvent.TurnFailed(
-        connectedLifecycleContext,
-        turnId.value,
-        command.map(_.value),
-        kind,
-        durationNanos,
-        error
+    turn.failed(error) *> logTurnFailure(turnId, command, kind, error) *> handlerFailed *> observer
+      .observeLifecycle(
+        LifecycleEvent.TurnFailed(
+          connectedLifecycleContext,
+          turnId.value,
+          command.map(_.value),
+          kind,
+          durationNanos,
+          error
+        )
       )
-    )
+  end observeTurnFailure
 
   // Every failed turn crashes its lifecycle, so this is the one log entry for that failure.
   private def logTurnFailure(
@@ -1482,6 +1591,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     response: Option[TrackedCommand],
     startedAtNanos: Long,
     error: LifecycleError
+  )(using turn: RunningTurn
   ): UIO[Unit] =
     observeNewTurnFailedAs(response, observedTurnKind(response), startedAtNanos, error)
 
@@ -1490,18 +1600,20 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     kind: LifecycleTurnKind,
     startedAtNanos: Long,
     error: LifecycleError
+  )(using turn: RunningTurn
   ): UIO[Unit] =
     ZIO
-      .fromEither(TurnId.fresh()).foldZIO(
+      .fromEither(turn.id).foldZIO(
         _ => ZIO.unit,
         turnId => observeTurnFailedAs(turnId, response, kind, startedAtNanos, error)
       )
 
   private def observeCandidateTurnSucceeded(
     candidate: TurnCandidate[Msg, Model]
+  )(using turn: RunningTurn
   ): UIO[Unit] =
     Clock.nanoTime.flatMap(ended =>
-      observer.observeLifecycle(
+      turn.succeeded *> observer.observeLifecycle(
         LifecycleEvent.TurnSucceeded(
           connectedLifecycleContext,
           candidate.id.value,
@@ -1515,6 +1627,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
   private def observeCandidateTurnFailed(
     candidate: TurnCandidate[Msg, Model],
     failure: SessionFailure
+  )(using turn: RunningTurn
   ): UIO[Unit] =
     observeCandidateTurnError(
       candidate,
@@ -1527,6 +1640,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
   private def observeCandidateTurnError(
     candidate: TurnCandidate[Msg, Model],
     error: LifecycleError
+  )(using turn: RunningTurn
   ): UIO[Unit] =
     Clock.nanoTime.flatMap(ended =>
       observeTurnFailure(
@@ -1545,12 +1659,12 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     command: Option[TrackedCommand],
     componentAction: Option[(ComponentInstanceId, ComponentAction)] = None,
     publish: Boolean = true,
-    startedAtNanos: Option[Long] = None,
-    onTurnStarted: UIO[Unit] = ZIO.unit
+    startedAtNanos: Option[Long] = None
+  )(using turn: RunningTurn
   ): ZIO[Any, SessionFailure, StagedTurn[Msg, Model]] =
     ZIO.uninterruptibleMask { restore =>
       for
-        turnId <- identity(TurnId.fresh())
+        turnId <- identity(turn.id)
         descriptor = command.fold(
                        RuntimeCommandKind.Internal -> RuntimeInitiator.Runtime
                      )(value => value.kind -> value.initiator)
@@ -1566,7 +1680,6 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                             turn = Some(turnId)
                           )
         started <- startedAtNanos.fold(Clock.nanoTime)(ZIO.succeed(_))
-        _       <- onTurnStarted
         outcome <- (for
                      _ <- observer.emit(
                             RuntimeEvent.TurnStarted(
@@ -1622,7 +1735,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
         duration = math.max(0L, ended - started)
         _ <- outcome match
                case Exit.Success(_: StagedTurn.Committed[?, ?]) =>
-                 observer.observeLifecycle(
+                 turn.succeeded *> observer.observeLifecycle(
                    LifecycleEvent.TurnSucceeded(
                      connectedLifecycleContext,
                      turnId.value,
@@ -3933,6 +4046,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     response: Option[TrackedCommand],
     redirectCount: Int = 0,
     deferred: Vector[DeferredSessionCommand[Msg, Model]] = Vector.empty
+  )(using turn: RunningTurn
   ): UIO[Unit] =
     val request = candidate.draft.navigation.get
     if request.kind.isPatch || !logic.terminateOnNavigate then
@@ -3947,7 +4061,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
               ).unit
           }
           observeCandidateTurnSucceeded(candidate) *>
-            complete *> loop(SessionState.Navigating(epoch, pending), nextWork)
+            complete *> continueLoop(SessionState.Navigating(epoch, pending), nextWork)
         case Exit.Failure(cause) if cause.isInterruptedOnly =>
           observeCandidateTurnError(
             candidate,
@@ -4106,6 +4220,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     redirectCount: Int,
     deferred: Vector[DeferredSessionCommand[Msg, Model]],
     startedAtNanos: Option[Long]
+  )(using turn: RunningTurn
   ): UIO[Unit] =
     val request = draft.navigation.get
     if request.kind.isPatch || !logic.terminateOnNavigate then
@@ -4130,6 +4245,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     redirectCount: Int,
     deferred: Vector[DeferredSessionCommand[Msg, Model]],
     startedAtNanos: Option[Long]
+  )(using turn: RunningTurn
   ): UIO[Unit] =
     val active: SessionState.Active[Msg, Model] = SessionState.Active(epoch, committed)
     if redirectCount > config.navigationRedirectLimit then
@@ -4174,6 +4290,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     response: Option[TrackedCommand],
     deferred: Vector[DeferredSessionCommand[Msg, Model]],
     startedAtNanos: Option[Long]
+  )(using turn: RunningTurn
   ): UIO[Unit] =
     turnStartedAt(startedAtNanos).flatMap { started =>
       controlled(
@@ -4239,6 +4356,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     command: Option[CommandId],
     existingContinuations: Int,
     awaitOutput: Boolean
+  )(using turn: RunningTurn
   ): ZIO[Any, SessionFailure, (TurnId, NavigationOutput)] =
     val request = draft.navigation.get
     ZIO.uninterruptibleMask { restore =>
@@ -4249,7 +4367,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
                            validateContinuations(existingContinuations, draft.continuations.size)
                          )
                     navigationId <- restore(identity(NavigationId.fresh()))
-                    turnId       <- restore(identity(TurnId.fresh()))
+                    turnId       <- restore(identity(turn.id))
                     navigation = NavigationOutput(
                                    navigationId,
                                    request.destination,
@@ -4288,6 +4406,7 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     deferred: Vector[DeferredSessionCommand[Msg, Model]],
     reason: Option[String],
     startedAtNanos: Option[Long]
+  )(using turn: RunningTurn
   ): UIO[Unit] =
     turnStartedAt(startedAtNanos).flatMap { started =>
       controlled(
@@ -4348,12 +4467,13 @@ final private[scalive] class SessionKernel[Msg, Model] private (
     command: Option[CommandId],
     reason: Option[String],
     awaitOutput: Boolean
+  )(using turn: RunningTurn
   ): ZIO[Any, SessionFailure, TurnId] =
     ZIO.uninterruptibleMask { restore =>
       for
         reservation <- reserveOutput(awaitOutput, restore)
         result      <- (for
-                    turnId <- restore(identity(TurnId.fresh()))
+                    turnId <- restore(identity(turn.id))
                     correlation = RuntimeCorrelation(
                                     connection,
                                     lifecycle,
@@ -4592,6 +4712,33 @@ private[scalive] object SessionKernel:
     LifecycleFailureStage.ComponentAfterRender
   )
 
+  /** Opens what an application wants active during the turn with this ID, command and kind, and
+    * registers how to close it in the `Scope`. It must not die.
+    */
+  type OpenTurnScope = (TurnId, Option[CommandId], LifecycleTurnKind) => URIO[Scope, Unit]
+
+  /** One connected turn.
+    *
+    * @param id
+    *   The ID every event of the turn reports, issued before the turn scope opens so that the scope
+    *   can name it.
+    */
+  final private class RunningTurn(val id: Either[RuntimeIdentityError, TurnId]):
+    // The outcome reported for the turn as `TurnSucceeded` or `TurnFailed`, once it is.
+    var outcome: Option[Exit[LifecycleError, Unit]] = None
+    // Whether the turn ended with `continueLoop`.
+    var continues: Boolean = false
+
+    def observed: Boolean = outcome.nonEmpty
+
+    def succeeded: UIO[Unit] = ZIO.succeed { outcome = Some(Exit.unit) }
+
+    def failed(error: LifecycleError): UIO[Unit] = ZIO.succeed {
+      outcome = Some(error.failure match
+        case LifecycleFailure.Interrupted => Exit.interrupt(FiberId.None)
+        case _                            => Exit.fail(error))
+    }
+
   final private case class TrackedCommand(
     id: CommandId,
     kind: RuntimeCommandKind,
@@ -4669,7 +4816,8 @@ private[scalive] object SessionKernel:
     providedLifecycle: Option[LifecycleId] = None,
     topologyPreparer: NestedTopologyPreparer = NestedTopologyPreparer.unavailable,
     providedConnection: Option[ConnectionId] = None,
-    observer: RuntimeObserver = RuntimeObserver.noop
+    observer: RuntimeObserver = RuntimeObserver.noop,
+    turnScope: Option[OpenTurnScope] = None
   ): ZIO[Scope, SessionFailure, SessionKernel[Msg, Model]] =
     ZIO.uninterruptibleMask { restore =>
       for
@@ -4717,7 +4865,8 @@ private[scalive] object SessionKernel:
                    sessionScope,
                    activeOwner,
                    shutdown,
-                   observer
+                   observer,
+                   turnScope
                  )
         _ <- sessionScope.addFinalizerExit(_ => renderProgram.close)
         _ <- kernel.run(ready).interruptible.forkIn(sessionScope)

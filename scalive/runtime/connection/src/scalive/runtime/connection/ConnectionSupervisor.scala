@@ -4,6 +4,7 @@ import zio.*
 import zio.http.URL
 
 import scalive.BindingPayload
+import scalive.LifecycleJoinTarget
 import scalive.LiveEvent
 import scalive.render.BindingId
 import scalive.render.EvaluatedTree
@@ -479,7 +480,8 @@ final private[scalive] class ConnectionSupervisor private (
                                       providedConnection = Some(connectionId),
                                       observer = observer,
                                       closeAfterNavigate = !reservation.registration.sticky,
-                                      topic = Some(reservation.registration.topic)
+                                      topic = Some(reservation.registration.topic),
+                                      target = LifecycleJoinTarget.Nested
                                     )
                                   )
                     connected = ConnectedLifecycle(
